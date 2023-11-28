@@ -21,7 +21,9 @@ The `code` folder contains the main scripts used for data processing and analysi
 
 #### PCA
 - **Description**: Implements Principal Component Analysis (PCA) to identify the closest reduced events to a subset of simulated meteors, using the WMPG's GenerateSimulations.py for simulation.
-- **Usage**: `python -m wmpl.MetSim.ML.GenerateSimulations_MAX "C:\Users\maxiv\Documents\UWO\Western Meteor Physics Group\Conferences\20230618 - ACM\Code_use\Simulations_PER" ErosionSimParametersEMCCD_PER 100` `python -m EMCCD_PCA_Shower_PhysProp /home/mvovk/PCA/PER_1000_1milion_manual PER /home/mvovk/PCA/ 1000` `python -m Plots_LightCurves`
+- **Usage**: `python -m wmpl.MetSim.ML.GenerateSimulations_MAX "C:\Users\maxiv\Documents\UWO\Western Meteor Physics Group\Conferences\20230618 - ACM\Code_use\Simulations_PER" ErosionSimParametersEMCCD_PER 100`
+`python -m EMCCD_PCA_Shower_PhysProp /home/mvovk/PCA/PER_1000_1milion_manual PER /home/mvovk/PCA/ 1000`
+`python -m Plots_LightCurves`
 - **Dependencies**: WMPG
 
 #### `Utils` Folder

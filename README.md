@@ -11,8 +11,8 @@ This repository contains a collection of tools and scripts designed for the anal
 
 ## Repository Structure
 
-### `code` Folder
-The `code` folder contains the main scripts used for data processing and analysis.
+### `Code` Folder
+The `Code` folder contains the main scripts used for data processing and analysis.
 
 #### ERROR_PLOT
 - **Description**: This script generates plots to compare the pixel positions of meteors as determined by manual reductions against those obtained from automated methods.

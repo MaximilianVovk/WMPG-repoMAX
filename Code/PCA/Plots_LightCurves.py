@@ -6,7 +6,7 @@ import json
 import numpy as np
 import math
 from sklearn.linear_model import LinearRegression
- 
+  
 # MODIFY HERE THE PARAMETERS ###############################################################################
 # Set the shower name (can be multiple) e.g. 'GEM' or ['GEM','PER', 'ORI', 'ETA', 'SDA', 'CAP']
 Shower=['PER']#['PER']

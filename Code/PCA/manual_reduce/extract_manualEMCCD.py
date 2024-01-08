@@ -13,6 +13,7 @@ from sklearn.preprocessing import StandardScaler
 from heapq import nsmallest
 import wmpl
 from wmpl.MetSim.GUI import loadConstants
+from wmpl.Utils.Physics import dynamicPressure
 import shutil
 from scipy.stats import kurtosis, skew
 from wmpl.Utils.OSTools import mkdirP
@@ -24,17 +25,6 @@ Shower='PER' # ORI ETA SDA CAP GEM PER
 def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\Reductions\\manual_reductions']):
     
     Shower=Shower[0]
-    
-    dataList = [['','', 0, 0, 0,\
-        0, 0, 0, 0, 0, 0, 0,\
-        0, 0, 0, 0, 0, 0,\
-        0]]
-
-    infov = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
-    'mass','peak_mag_height','begin_height','end_height','peak_abs_mag','beg_abs_mag','end_abs_mag',\
-    'F','trail_len','acceleration','zenith_angle', 'kurtosis','skew',\
-    'kc'])
-
 
     all_picklefiles=[]
 
@@ -74,6 +64,13 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
 
     lag_trend=[]
 
+    # knee of the velocity caracteristics
+    height_knee_vel=[]
+    decel_after_knee_vel=[]
+    peak_mag_vel=[]
+    # the dynamic pressure at the knee at the peak of absolute mag
+    Dynamic_pressure_peak_abs_mag=[]
+
     # directory='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\Reductions\\manual_reductions'
     # open the directory and walk through all the files and subfolders and open only the files with the extension .pickle
     for root, dirs, files in os.walk(INPUT_PATH):
@@ -84,7 +81,7 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
                 print('Loading pickle file: ', name_file)
 
                 traj = wmpl.Utils.Pickling.loadPickle(root,name_file)
-
+                jd_dat=traj.jdt_ref
 
                 vel_pickl=[]
                 time_pickl=[]
@@ -92,9 +89,24 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
                 height_pickl=[]
                 lag=[]
                 elev_angle_pickl=[]
-                trail_len_pickl=[]
-                mass_pickl=[]
+                elg_pickl=[]
+                tav_pickl=[]
+                
+                lat_dat=[]
+                lon_dat=[]
+
+                jj=0
                 for obs in traj.observations:
+                    jj+=1
+                    if jj==1:
+                        elg_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                        if len(elg_pickl)==0:
+                            elg_pickl=obs.velocities[1:2]
+                    elif jj==2:
+                        tav_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                        # if tav_pickl is empty append the first value of obs.velocities
+                        if len(tav_pickl)==0:
+                            tav_pickl=obs.velocities[1:2]
                     # put it at the end obs.velocities[1:] at the end of vel_pickl list
                     vel_pickl.extend(obs.velocities[1:])
                     time_pickl.extend(obs.time_data[1:])
@@ -102,6 +114,9 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
                     height_pickl.extend(obs.model_ht[1:])
                     lag.extend(obs.lag[1:])
                     elev_angle_pickl.extend(obs.elev_data)
+                    
+                    lat_dat=obs.lat
+                    lon_dat=obs.lon
 
                 # compute the linear regression
                 vel_pickl = [i/1000 for i in vel_pickl] # convert m/s to km/s
@@ -109,6 +124,15 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
                 height_pickl = [i/1000 for i in height_pickl]
                 abs_mag_pickl = [i for i in abs_mag_pickl]
                 lag=[i for i in lag]
+
+                # find the height when the velocity start dropping from the initial value 
+                vel_init_mean = (np.mean(elg_pickl)+np.mean(tav_pickl))/2/1000
+                # print('mean_vel_init', vel_init_mean)
+
+                # find the smallest among all elg_pickl and all tav_pickl
+                vel_small=min([min(elg_pickl),min(tav_pickl)])/1000
+                # print('vel_small:', vel_small)
+                
 
                 # fit a line to the throught the vel_sim and ht_sim
                 a, b = np.polyfit(time_pickl,vel_pickl, 1)
@@ -119,9 +143,9 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
 
                 lag_line = [trendLAG*x+bLAG for x in time_pickl] 
 
-                hcoef1, hcoef2 = np.polyfit(time_pickl,height_pickl, 1)
+                # hcoef1, hcoef2 = np.polyfit(time_pickl,height_pickl, 1)
 
-                height_line=[hcoef1*x+hcoef2 for x in time_pickl]
+                # height_line=[hcoef1*x+hcoef2 for x in time_pickl]
 
                 # infov_percentile.acceleration[ii]=(-1)*a
                 # infov_percentile.vel_init_norot[ii]=vel_sim_line[0]
@@ -133,12 +157,26 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
                 height_pickl = [x for _,x in sorted(zip(time_pickl,height_pickl))]
                 time_pickl = sorted(time_pickl)
 
+                # find the sigle index of the height when the velocity start dropping from the vel_init_mean of about 0.5 km/s
+                index = [i for i in range(len(vel_pickl)) if vel_pickl[i] < vel_small-0.2]
+                # only use first index to pick the height
+                height_knee_vel.append(height_pickl[index[0]-1])
+                # print('height_knee_vel', height_pickl[index[0]-1])
+
+                a2, b2 = np.polyfit(time_pickl[index[0]-1:],vel_pickl[index[0]-1:], 1)
+
+                # print('decel_after_knee_vel', (-1)*a2)
+                # print(vel_pickl[index[0]-1:])
+
                 # append the values to the list
                 acceleration.append((-1)*a)
+                decel_after_knee_vel.append((-1)*a2)
                 lag_trend.append(trendLAG)
                 # vel_init_norot=(vel_sim_line[0])
                 vel_init_norot.append(vel_sim_line[0])
+                # print('mean_vel_init', vel_sim_line[0])
                 vel_avg_norot.append(np.mean(vel_sim_line))
+                peak_mag_vel.append(vel_pickl[np.argmin(abs_mag_pickl)])   
 
                 begin_height.append(height_pickl[0])
                 end_height.append(height_pickl[-1])
@@ -164,6 +202,7 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
 
                 name.append(name_file.split('_trajectory')[0]+'A')
 
+                Dynamic_pressure_peak_abs_mag.append(wmpl.Utils.Physics.dynamicPressure(lat_dat, lon_dat, height_pickl[np.argmin(abs_mag_pickl)]*1000, jd_dat, vel_pickl[np.argmin(abs_mag_pickl)]*1000))
 
 
                 # check if in os.path.join(root, name_file) present and then open the .json file with the same name as the pickle file with in stead of _trajectory.pickle it has _sim_fit_latest.json
@@ -233,16 +272,40 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
                 kurtosisness.append(kurtosis(mag_sampled_distr))
                 skewness.append(skew(mag_sampled_distr))
 
+    # dataList = [['','', 0, 0, 0,\
+    #     0, 0, 0, 0, 0, 0, 0,\
+    #     0, 0, 0, 0, 0, 0,\
+    #     0]]
+
+    # infov = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
+    # 'mass','peak_mag_height','begin_height','end_height','peak_abs_mag','beg_abs_mag','end_abs_mag',\
+    # 'F','trail_len','acceleration','zenith_angle', 'kurtosis','skew',\
+    # 'kc'])
+
+    dataList = [['','', 0, 0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0,\
+        0, 0]]
+
+    infov = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','vel_peak_mag','duration',\
+    'mass','peak_mag_height','begin_height','end_height','height_knee_vel','peak_abs_mag','beg_abs_mag','end_abs_mag',\
+    'F','trail_len','acceleration','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
+    'kc','Dynamic_pressure_peak_abs_mag'])
+
     # create a loop to populate the dataframe
     for ii in range(len(name)):
         # print(name[ii], shower_code[ii], vel_init_norot[ii], vel_avg_norot[ii], duration[ii],\
         #       mass[ii], peak_mag_height[ii], begin_height[ii], end_height[ii], peak_abs_mag[ii], beg_abs_mag[ii], end_abs_mag[ii],\
         #         F_data[ii], trail_len[ii], acceleration[ii], zenith_angle[ii], kurtosisness[ii], skewness[ii],\
         #             kc_par[ii])
-        infov.loc[ii] = [name[ii], shower_code[ii], vel_init_norot[ii], vel_avg_norot[ii], duration[ii],\
-        mass[ii], peak_mag_height[ii], begin_height[ii], end_height[ii], peak_abs_mag[ii], beg_abs_mag[ii], end_abs_mag[ii],\
-        F_data[ii], trail_len[ii], acceleration[ii], zenith_angle[ii], kurtosisness[ii], skewness[ii],\
-        kc_par[ii]]
+        # infov.loc[ii] = [name[ii], shower_code[ii], vel_init_norot[ii], vel_avg_norot[ii], duration[ii],\
+        # mass[ii], peak_mag_height[ii], begin_height[ii], end_height[ii], peak_abs_mag[ii], beg_abs_mag[ii], end_abs_mag[ii],\
+        # F_data[ii], trail_len[ii], acceleration[ii], zenith_angle[ii], kurtosisness[ii], skewness[ii],\
+        # kc_par[ii]]
+        infov.loc[ii] = [name[ii], shower_code[ii], vel_init_norot[ii], vel_avg_norot[ii], peak_mag_vel[ii], duration[ii],\
+        mass[ii], peak_mag_height[ii], begin_height[ii], end_height[ii], height_knee_vel[ii], peak_abs_mag[ii], beg_abs_mag[ii], end_abs_mag[ii],\
+        F_data[ii], trail_len[ii], acceleration[ii], decel_after_knee_vel[ii], zenith_angle[ii], kurtosisness[ii], skewness[ii],\
+        kc_par[ii], Dynamic_pressure_peak_abs_mag[ii]]
 
     
     # save the dataframe to a csv file

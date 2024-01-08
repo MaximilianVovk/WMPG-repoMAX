@@ -30,227 +30,6 @@ import math
 from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 
 
-# CONST #######################################
-
-class Constants(object):
-    def __init__(self):
-        """ Constant parameters for the ablation modelling. """
-
-        ### Simulation parameters ###
-
-        # Time step
-        self.dt = 0.005
-
-        # Time elapsed since the beginning
-        self.total_time = 0
-
-        # Number of active fragments
-        self.n_active = 0
-
-        # Minimum possible mass for ablation (kg)
-        self.m_kill = 1e-14
-
-        # Minimum ablation velocity (m/s)
-        self.v_kill = 3000
-
-        # Minimum height (m)
-        self.h_kill = 60000
-
-        # Initial meteoroid height (m)
-        self.h_init = 180000
-
-        # Power of a 0 magnitude meteor
-        self.P_0m = 840
-
-        # Atmosphere density coefficients
-        self.dens_co = np.array([6.96795507e+01, -4.14779163e+03, 9.64506379e+04, -1.16695944e+06, \
-            7.62346229e+06, -2.55529460e+07, 3.45163318e+07])
-        
-        # Radius of the Earth (m)
-        self.r_earth = 6_371_008.7714
-
-        self.total_fragments = 0
-
-        ### ###
-
-
-        ### Wake parameters ###
-
-        # PSF stddev (m)
-        self.wake_psf = 3.0
-
-        # Wake extension from the leading fragment (m)
-        self.wake_extension = 200
-
-        ### ###
-
-
-
-        ### Main meteoroid properties ###
-
-        # Meteoroid bulk density (kg/m^3)
-        self.rho = 1000
-
-        # Initial meteoroid mass (kg)
-        self.m_init = 2e-5
-
-        # Initial meteoroid veocity (m/s)
-        self.v_init = 23570
-
-        # Shape factor (1.21 is sphere)
-        self.shape_factor = 1.21
-
-        # Main fragment ablation coefficient (s^2/km^2)
-        self.sigma = 0.023/1e6
-
-        # Zenith angle (radians)
-        self.zenith_angle = math.radians(45)
-
-        # Drag coefficient
-        self.gamma = 1.0
-
-        # Grain bulk density (kg/m^3)
-        self.rho_grain = 3000
-
-
-        # Luminous efficiency type
-        #   0 - Constant
-        #   1 - TDB
-        #   2 - TDB ...
-        self.lum_eff_type = 0
-
-        # Constant luminous efficiency (percent)
-        self.lum_eff = 0.7
-
-        # Mean atomic mass of a meteor atom, kg (Jones 1997)
-        self.mu = 23*1.66*1e-27
-
-        ### ###
-
-
-        ### Erosion properties ###
-
-        # Toggle erosion on/off
-        self.erosion_on = True
-
-
-        # Bins per order of magnitude mass
-        self.erosion_bins_per_10mass = 10
-        
-        # Height at which the erosion starts (meters)
-        self.erosion_height_start = 102000
-
-        # Erosion coefficient (s^2/m^2)
-        self.erosion_coeff = 0.33/1e6
-
-        
-        # Height at which the erosion coefficient changes (meters)
-        self.erosion_height_change = 90000
-
-        # Erosion coefficient after the change (s^2/m^2)
-        self.erosion_coeff_change = 0.33/1e6
-
-        # Density after erosion change (density of small chondrules by default)
-        self.erosion_rho_change = 3700
-
-        # Ablation coeff after erosion change
-        self.erosion_sigma_change = self.sigma
-
-
-        # Grain mass distribution index
-        self.erosion_mass_index = 2.5
-
-        # Mass range for grains (kg)
-        self.erosion_mass_min = 1.0e-11
-        self.erosion_mass_max = 5.0e-10
-
-        ###
-
-
-        ### Disruption properties ###
-
-        # Toggle disruption on/off
-        self.disruption_on = True
-
-        # Meteoroid compressive strength (Pa)
-        self.compressive_strength = 2000
-
-        # Height of disruption (will be assigned when the disruption occures)
-        self.disruption_height = None
-
-        # Erosion coefficient to use after disruption
-        self.disruption_erosion_coeff = self.erosion_coeff
-
-        # Disruption mass distribution index
-        self.disruption_mass_index = 2.0
-
-
-        # Mass ratio for disrupted fragments as the ratio of the disrupted mass
-        self.disruption_mass_min_ratio = 1.0/100
-        self.disruption_mass_max_ratio = 10.0/100
-
-        # Ratio of mass that will disrupt into grains
-        self.disruption_mass_grain_ratio = 0.25
-
-        ### ###
-
-
-        ### Complex fragmentation behaviour ###
-
-        # Indicate if the complex fragmentation is used
-        self.fragmentation_on = False
-
-        # Track light curves of individual fragments
-        self.fragmentation_show_individual_lcs = False
-
-        # A list of fragmentation entries
-        self.fragmentation_entries = []
-
-        # Name of the fragmentation file
-        self.fragmentation_file_name = "metsim_fragmentation.txt"
-
-        ### ###
-
-
-        ### Radar measurements ###
-
-        # Height at which the electron line density is measured (m)
-        self.electron_density_meas_ht = -1000
-
-        # Measured electron line density (e-/m)
-        self.electron_density_meas_q = -1
-
-        ### ###
-
-
-        
-        ### OUTPUT PARAMETERS ###
-
-        # Velocity at the beginning of erosion
-        self.erosion_beg_vel = None
-
-        # Mass at the beginning of erosion
-        self.erosion_beg_mass = None
-
-        # Dynamic pressure at the beginning of erosion
-        self.erosion_beg_dyn_press = None
-
-        # Mass of main fragment at erosion change
-        self.mass_at_erosion_change = None
-
-        # Energy received per unit cross section prior to to erosion begin
-        self.energy_per_cs_before_erosion = None
-
-        # Energy received per unit mass prior to to erosion begin
-        self.energy_per_mass_before_erosion = None
-
-        # Height at which the main mass was depleeted
-        self.main_mass_exhaustion_ht = None
-
-
-        ### ###
-
-
 # FUNCTIONS ###########################################################################################
 
 
@@ -451,58 +230,6 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
         return df_json
 
 
-def loadConstants(sim_fit_json):
-    """ Load the simulation constants from a JSON file. 
-        
-    Arguments:
-        sim_fit_json: [str] Path to the sim_fit JSON file.
-
-    Return:
-        (const, const_json): 
-            - const: [Constants object]
-            - const_json: [dict]
-
-    """
-
-    # Init the constants
-    const = Constants()
-
-
-    # Load the nominal simulation
-    with open(sim_fit_json) as f:
-        const_json = json.load(f)
-
-
-        # Fill in the constants
-        for key in const_json:
-            setattr(const, key, const_json[key])
-            
-    if 'const' in const_json:
-        # Open the constants parameter part of .json file for simulaitons
-        for key in const_json['const']:
-            setattr(const, key, const_json['const'][key])
-
-
-    if 'fragmentation_entries' in const_json:
-
-        # Convert fragmentation entries from dictionaties to objects
-        frag_entries = []
-        if len(const_json['fragmentation_entries']) > 0:
-            for frag_entry_dict in const_json['fragmentation_entries']:
-
-                # Only take entries which are variable names for the FragmentationEntry class
-                frag_entry_dict = {key:frag_entry_dict[key] for key in frag_entry_dict \
-                    if key in FragmentationEntry.__init__.__code__.co_varnames}
-
-                frag_entry = FragmentationEntry(**frag_entry_dict)
-                frag_entries.append(frag_entry)
-
-        const.fragmentation_entries = frag_entries
-
-
-    return const, const_json
-
-
 def read_solution_table_json(Shower=''):
     '''
     It reads the solution_table.json file and extract the observable property from the EMCCD camera results
@@ -558,7 +285,7 @@ def read_solution_table_json(Shower=''):
         # split the namefile base on the '_' character and pick the first element
         folder=namefile.split('_')[0]
 
-        traj = wmpl.Utils.Pickling.loadPickle("/home/mvovk/PCA/PER_pk/", namefile+".pylig.pickle")
+        traj = wmpl.Utils.Pickling.loadPickle("M:\\emccd\\pylig\\trajectory\\"+folder+"\\", namefile+".pylig.pickle")
         vel_pickl=[]
         time_pickl=[]
         abs_mag_pickl=[]
@@ -924,7 +651,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
         df_sim_PCA = df_sim_PCA.drop(['distance_meteor'], axis=1)
 
         # save the dataframe to a csv file withouth the index
-        df_sel_PCA.to_csv(OUT_PUT_PATH+r'/Simulated_'+current_shower+'_select_PCA.csv', index=False)
+        df_sel_PCA.to_csv(OUT_PUT_PATH+r'\\Simulated_'+current_shower+'_select_PCA.csv', index=False)
 
         # concatenate the list of the properties to a dataframe
         df_sel_shower = pd.concat(df_sel_shower)
@@ -937,17 +664,17 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
             distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, df_sel_PCA_NEW[i_shower]))
         df_sel_shower['distance']=distance_current # from the mean of the selected shower
         # save the dataframe to a csv file withouth the index
-        df_sel_shower.to_csv(OUT_PUT_PATH+r'/Simulated_'+current_shower+'_select.csv', index=False)
+        df_sel_shower.to_csv(OUT_PUT_PATH+r'\\Simulated_'+current_shower+'_select.csv', index=False)
 
         # save dist also on selected shower
         distance_current = []
         for i_shower in range(len(shower_current)):
             distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, shower_current_PCA[i_shower]))
         shower_current['distance']=distance_current # from the mean of the selected shower
-        shower_current.to_csv(OUT_PUT_PATH+r'/'+current_shower+'_and_dist.csv', index=False)
+        shower_current.to_csv(OUT_PUT_PATH+r'\\'+current_shower+'_and_dist.csv', index=False)
 
     # copy Simulated_PER.csv in OUT_PUT_PATH
-    shutil.copyfile(INPUT_PATH+r'/Simulated_PER.csv', OUT_PUT_PATH+r'/Simulated_PER.csv')
+    shutil.copyfile(INPUT_PATH+r'\\Simulated_PER.csv', OUT_PUT_PATH+r'\\Simulated_PER.csv')
 
 
     # PLOT the selected simulated shower ########################################
@@ -1029,9 +756,9 @@ if __name__ == "__main__":
     # search for the simulated showers in the folder
     for current_shower in Shower:
         # check in the current folder there is a csv file with the name of the simulated shower
-        if os.path.isfile(cml_args.input_dir+r'/Simulated_'+current_shower+'.csv'):
+        if os.path.isfile(cml_args.input_dir+r'\\Simulated_'+current_shower+'.csv'):
             # if yes read the csv file
-            df_sim = pd.read_csv(cml_args.input_dir+r'/Simulated_'+current_shower+'.csv')
+            df_sim = pd.read_csv(cml_args.input_dir+r'\\Simulated_'+current_shower+'.csv')
         else:
             # open the folder and extract all the json files
             os.chdir(folder_GenerateSimulations_json[Shower.index(current_shower)])
@@ -1054,13 +781,13 @@ if __name__ == "__main__":
             df_sim.reset_index(drop=True, inplace=True)
 
 
-            df_sim.to_csv(cml_args.input_dir+r'/Simulated_'+current_shower+'.csv', index=False)
+            df_sim.to_csv(cml_args.input_dir+r'\\Simulated_'+current_shower+'.csv', index=False)
 
 
 
-        if os.path.isfile(cml_args.input_dir+r'/'+current_shower+'.csv'):
+        if os.path.isfile(cml_args.input_dir+r'\\'+current_shower+'.csv'):
             # if yes read the csv file
-            df_obs = pd.read_csv(cml_args.input_dir+r'/'+current_shower+'.csv')
+            df_obs = pd.read_csv(cml_args.input_dir+r'\\'+current_shower+'.csv')
         else:
             # if no read the solution_table.json file
             df_obs = read_solution_table_json(current_shower)

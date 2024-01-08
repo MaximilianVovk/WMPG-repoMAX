@@ -173,9 +173,10 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
                 decel_after_knee_vel.append((-1)*a2)
                 lag_trend.append(trendLAG)
                 # vel_init_norot=(vel_sim_line[0])
-                vel_init_norot.append(vel_sim_line[0])
+                # vel_init_norot.append(vel_sim_line[0])
+                vel_init_norot.append(vel_init_mean)
                 # print('mean_vel_init', vel_sim_line[0])
-                vel_avg_norot.append(np.mean(vel_sim_line))
+                vel_avg_norot.append(np.mean(vel_pickl)) #trail_len / duration
                 peak_mag_vel.append(vel_pickl[np.argmin(abs_mag_pickl)])   
 
                 begin_height.append(height_pickl[0])
@@ -198,7 +199,8 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
 
                 zenith_angle.append(90 - elev_angle_pickl[0]*180/np.pi)
                 trail_len.append((height_pickl[0] - height_pickl[-1])/(np.sin(np.radians(elev_angle_pickl[0]*180/np.pi))))
-
+                
+                # vel_avg_norot.append( ((height_pickl[0] - height_pickl[-1])/(np.sin(np.radians(elev_angle_pickl[0]*180/np.pi))))/(time_pickl[-1]-time_pickl[0]) ) #trail_len / duration
 
                 name.append(name_file.split('_trajectory')[0]+'A')
 

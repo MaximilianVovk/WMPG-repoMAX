@@ -284,12 +284,12 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
     # 'F','trail_len','acceleration','zenith_angle', 'kurtosis','skew',\
     # 'kc'])
 
-    dataList = [['','', 0, 0, 0, 0,\
+    dataList = [['','', 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0,\
         0, 0]]
 
-    infov = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','vel_peak_mag','duration',\
+    infov = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
     'mass','peak_mag_height','begin_height','end_height','height_knee_vel','peak_abs_mag','beg_abs_mag','end_abs_mag',\
     'F','trail_len','acceleration','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
     'kc','Dynamic_pressure_peak_abs_mag'])
@@ -304,7 +304,7 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
         # mass[ii], peak_mag_height[ii], begin_height[ii], end_height[ii], peak_abs_mag[ii], beg_abs_mag[ii], end_abs_mag[ii],\
         # F_data[ii], trail_len[ii], acceleration[ii], zenith_angle[ii], kurtosisness[ii], skewness[ii],\
         # kc_par[ii]]
-        infov.loc[ii] = [name[ii], shower_code[ii], vel_init_norot[ii], vel_avg_norot[ii], peak_mag_vel[ii], duration[ii],\
+        infov.loc[ii] = [name[ii], shower_code[ii], vel_init_norot[ii], vel_avg_norot[ii], duration[ii],\
         mass[ii], peak_mag_height[ii], begin_height[ii], end_height[ii], height_knee_vel[ii], peak_abs_mag[ii], beg_abs_mag[ii], end_abs_mag[ii],\
         F_data[ii], trail_len[ii], acceleration[ii], decel_after_knee_vel[ii], zenith_angle[ii], kurtosisness[ii], skewness[ii],\
         kc_par[ii], Dynamic_pressure_peak_abs_mag[ii]]

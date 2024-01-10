@@ -57,18 +57,18 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
     # save all the variables in a list ths is used to initialized the values of the dataframe
     dataList = [['','', 0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0,\
-        0, 0, 0, 0, 0, 0,\
-        0, 0, 0,\
+        0, 0, 0, 0,\
         0, 0, 0,\
         0, 0, 0,\
         0, 0]]
 
     # create a dataframe to store the data
     df_json = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
-    'mass','peak_mag_height','begin_height','end_height','peak_abs_mag','beg_abs_mag','end_abs_mag',\
-    'F','trail_len','acceleration','zenith_angle', 'kurtosis','skew',\
-    'kc','rho','sigma',\
+    'mass','peak_mag_height','begin_height','end_height','height_knee_vel','peak_abs_mag','beg_abs_mag','end_abs_mag',\
+    'F','trail_len','acceleration','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
+    'kc','Dynamic_pressure_peak_abs_mag','rho','sigma',\
     'erosion_height_start','erosion_coeff', 'erosion_mass_index',\
     'erosion_mass_min','erosion_mass_max','erosion_range',\
     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'])
@@ -114,7 +114,6 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             trail_len = data['len_sampled'][-1] / 1000
             shower_code = 'sim_'+Shower
             vel_avg_norot = trail_len / duration
-            # acceleration = (vel_init_norot - vel_avg_norot)/duration
 
             vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
             ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
@@ -135,16 +134,30 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
             # time_sim=time_sim[index_ht_sim:index_ht_sim_end]
 
+            ht_sim = [i/1000 for i in ht_sim]
+            # find the index_mag_peak in ht_sim that has a value smaller than the peak_mag_height
+            # index_mag_peak = next(x for x, val in enumerate(ht_sim) if val <= peak_mag_height)
+            index_mag_peak = [i for i in range(len(ht_sim)) if ht_sim[i] < peak_mag_height]
+            Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][index_mag_peak[0]]
+
             # pick from the end of vel_sim the same number of element of time_sim
             # vel_sim=vel_sim[-len(time_sim):]
 
             vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
             time_sim=time_sim[index_ht_sim:index_ht_sim_end]
+            ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
 
             # divide the vel_sim by 1000 considering is a list
             vel_sim = [i/1000 for i in vel_sim]
             time_sim = [i-time_sim[0] for i in time_sim]
-            
+
+            # find the sigle index of the height when the velocity start dropping from the vel_init_norot of 0.2 km/s
+            index_knee = next(x for x, val in enumerate(vel_sim) if val <= vel_sim[0]-0.2)
+            # only use first index to pick the height
+            height_knee_vel = ht_sim[index_knee]
+            # define thelinear deceleration from that index to the end of the simulation
+            a2, b2 = np.polyfit(time_sim[index_knee:],vel_sim[index_knee:], 1)
+            decel_after_knee_vel=((-1)*a2)
 
             # fit a line to the throught the vel_sim and ht_sim
             acceleration, b = np.polyfit(time_sim,vel_sim, 1)
@@ -202,9 +215,9 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
             # add a new line in dataframe
             df_json.loc[len(df_json)] = [name,shower_code, vel_init_norot, vel_avg_norot, duration,\
-            mass, peak_mag_height,begin_height, end_height, peak_abs_mag, beg_abs_mag, end_abs_mag,\
-            F, trail_len, acceleration, zenith_angle, kurtosyness,skewness,\
-            kc_par,rho, sigma,\
+            mass, peak_mag_height,begin_height, end_height, height_knee_vel, peak_abs_mag, beg_abs_mag, end_abs_mag,\
+            F, trail_len, acceleration, decel_after_knee_vel, zenith_angle, kurtosyness,skewness,\
+            kc_par, Dynamic_pressure_peak_abs_mag, rho, sigma,\
             erosion_height_start, erosion_coeff, erosion_mass_index,\
             erosion_mass_min, erosion_mass_max, erosion_range,\
             erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass]

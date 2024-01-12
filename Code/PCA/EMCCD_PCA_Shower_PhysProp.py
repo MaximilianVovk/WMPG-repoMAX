@@ -152,9 +152,21 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             time_sim = [i-time_sim[0] for i in time_sim]
 
             # find the sigle index of the height when the velocity start dropping from the vel_init_norot of 0.2 km/s
-            index_knee = next(x for x, val in enumerate(vel_sim) if val <= vel_sim[0]-0.2)
+            # index_knee = next(x for x, val in enumerate(vel_sim) if val <= vel_sim[0]-10)
+            index_knee = [i for i in range(len(vel_sim)) if vel_sim[i] < vel_sim[0]-0.2]
+            jj_index_knee=2
+            # if index_knee == empty start a loop to find one
+            while index_knee == []:
+                index_knee = [i for i in range(len(vel_sim)) if vel_sim[i] < vel_sim[0]-0.2/jj_index_knee]
+                print('index_knee is None so ',0.2/jj_index_knee)
+                jj_index_knee=jj_index_knee+1
+            index_knee=index_knee[0]
             # only use first index to pick the height
             height_knee_vel = ht_sim[index_knee]
+            # find the height of the height_knee_vel in data['ht_sampled']
+            index_ht_knee = next(x for x, val in enumerate(data['ht_sampled']) if val/1000 <= height_knee_vel)
+            height_knee_vel=data['ht_sampled'][index_ht_knee]/1000
+            
             # define thelinear deceleration from that index to the end of the simulation
             a2, b2 = np.polyfit(time_sim[index_knee:],vel_sim[index_knee:], 1)
             decel_after_knee_vel=((-1)*a2)

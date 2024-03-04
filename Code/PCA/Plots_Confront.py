@@ -15,6 +15,7 @@ import glob
 import os
 import seaborn as sns
 import scipy.spatial.distance
+import scipy.stats
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
@@ -26,13 +27,13 @@ from sklearn.preprocessing import StandardScaler
 Shower=['PER']#['CAP']
 
 # number of selected events selected
-n_select=100000000
+n_select=10
 dist_select=10000000000
 
 # weight factor for the distance
 distance_weight_fact=0
 
-only_select_meteors_from=''
+only_select_meteors_from='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json'
 
 # FUNCTIONS ###########################################################################################
 
@@ -58,7 +59,6 @@ for current_shower in Shower:
     # weight=((1/df_obs['distance']))**distance_weight_fact
     # df_obs['weight']=weight/weight.sum()
     df_obs['weight']=1/len(df_obs)
-    df_obs=df_obs[df_obs['acceleration']>0]
     # append the observed shower to the list
     df_obs_shower.append(df_obs)
     
@@ -67,9 +67,6 @@ for current_shower in Shower:
     df_sim = pd.read_csv(os.getcwd()+r'\Simulated_'+current_shower+'.csv')
     print('simulation: '+str(len(df_sim)))
     # simulation with acc positive
-    df_sim=df_sim[df_sim['acceleration']>0]
-    df_sim=df_sim[df_sim['acceleration']<100]
-    df_sim=df_sim[df_sim['trail_len']<50]
     df_sim['weight']=1/len(df_sim)
     # df_sim['weight']=0.00000000000000000000001
 
@@ -78,11 +75,13 @@ for current_shower in Shower:
 
     # check in the current folder there is a csv file with the name of the simulated shower
     df_sel = pd.read_csv(os.getcwd()+r'\Simulated_'+current_shower+'_select.csv')
+    df_sel_save = pd.read_csv(os.getcwd()+r'\Simulated_'+current_shower+'_select.csv')
 
     # if there only_select_meteors_from is equal to any solution_id_dist
     if only_select_meteors_from in df_sel['solution_id_dist'].values:
         # select only the one with the similar name as only_select_meteors_from in solution_id_dist for df_sel
         df_sel=df_sel[df_sel['solution_id_dist']==only_select_meteors_from]
+        df_sel_save=df_sel_save[df_sel_save['solution_id_dist']==only_select_meteors_from]
         print('selected events for : '+only_select_meteors_from)
 
     if len(df_sel)>n_select:
@@ -106,7 +105,7 @@ for current_shower in Shower:
         print('OBS = MAX mean dist: '+str(np.round(np.max(df_obs['distance']),2)) +' min mean dist:'+str(np.round(np.min(df_obs['distance']),2)))
 
     # weight=((1/df_sel['distance']))**distance_weight_fact
-    weight=((1/df_sel['distance_meteor']))**distance_weight_fact 
+    weight=((1/(df_sel['distance_meteor']+0.001)))**distance_weight_fact 
     df_sel['weight']=weight/weight.sum()
     # df_sel['weight']=0.00000000000000000000001
     # df_sel=df_sel[df_sel['acceleration']>0]
@@ -144,6 +143,7 @@ for current_shower in Shower:
     curr_obs=df_obs_shower[df_obs_shower['shower_code']==current_shower]
     curr_obs['shower_code']=current_shower+'_obs'
     curr_sel=df_sel_shower[df_sel_shower['shower_code']==current_shower+'_sel']
+    curr_sel_save=df_sel_save[df_sel_save['shower_code']==current_shower+'_sel']
     curr_df=pd.concat([curr_sim.drop(['rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max','erosion_energy_per_unit_cross_section',  'erosion_energy_per_unit_mass', 'erosion_range'], axis=1),curr_sel.drop(['distance_meteor','solution_id_dist','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max','erosion_energy_per_unit_cross_section',  'erosion_energy_per_unit_mass','distance','erosion_range'], axis=1)], axis=0, ignore_index=True)
     curr_df=pd.concat([curr_df,curr_obs.drop(['distance'], axis=1)], axis=0, ignore_index=True)
     curr_df=curr_df.dropna()
@@ -153,60 +153,76 @@ for current_shower in Shower:
     # sns.pairplot(curr_df, hue='shower_code', diag_kind='kde', plot_kws={'alpha':0.6, 's':80, 'edgecolor':'k'}, height=3,corner=True)
     # subplot with all the parameters histograms
 
-    fig, axs = plt.subplots(4, 3)
-    fig.suptitle(current_shower)
-    # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
-    ii=0
+    # fig, axs = plt.subplots(4, 3)
+    # fig.suptitle(current_shower)
+    # # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
+    # ii=0
 
-    # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','mass [kg]','begin height [km]','end height [km]','','peak abs mag [-]','begin abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','acceleration [km/s^2]','','zenith angle [deg]','kurtosis','kc']
-    # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','end height [km]','peak abs mag [-]','','begin abs mag [-]','end abs mag [-]','F parameter [-]','','trail lenght [km]','deceleration [km/s^2]','zenith angle [deg]','','kc','kurtosis','skew']
-    # to_plot_unit=['init vel [km/s]','avg vel [km/s]','acceleration [km/s^2]','','begin height [km]','end height [km]','peak abs mag [-]','','begin abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','acceleration [km/s^2]','','zenith angle [deg]','kurtosis','kc']
-    to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','peak height [km]','end height [km]','','begin abs mag [-]','peak abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','deceleration [km/s^2]','','zenith angle [deg]','kurtosis','skew']
+    # # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','mass [kg]','begin height [km]','end height [km]','','peak abs mag [-]','begin abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','acceleration [km/s^2]','','zenith angle [deg]','kurtosis','kc']
+    # # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','end height [km]','peak abs mag [-]','','begin abs mag [-]','end abs mag [-]','F parameter [-]','','trail lenght [km]','deceleration [km/s^2]','zenith angle [deg]','','kc','kurtosis','skew']
+    # # to_plot_unit=['init vel [km/s]','avg vel [km/s]','acceleration [km/s^2]','','begin height [km]','end height [km]','peak abs mag [-]','','begin abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','acceleration [km/s^2]','','zenith angle [deg]','kurtosis','kc']
+    # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','peak height [km]','end height [km]','','begin abs mag [-]','peak abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','deceleration [km/s^2]','','zenith angle [deg]','kurtosis','skew']
 
 
-    # to_plot=['vel_init_norot','vel_avg_norot','duration','','mass','begin_height','end_height','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
-    # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','end_height','peak_abs_mag','','beg_abs_mag','end_abs_mag','F','','trail_len','acceleration','zenith_angle','','kc','kurtosis','skew']
-    # to_plot=['vel_init_norot','vel_avg_norot','acceleration','','begin_height','end_height','peak_abs_mag','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
-    to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','peak_abs_mag','end_height','','beg_abs_mag','peak_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
+    # # to_plot=['vel_init_norot','vel_avg_norot','duration','','mass','begin_height','end_height','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
+    # # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','end_height','peak_abs_mag','','beg_abs_mag','end_abs_mag','F','','trail_len','acceleration','zenith_angle','','kc','kurtosis','skew']
+    # # to_plot=['vel_init_norot','vel_avg_norot','acceleration','','begin_height','end_height','peak_abs_mag','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
+    # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','peak_mag_height','end_height','','beg_abs_mag','peak_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
 
-    # deleter form curr_df the mass
-    #curr_df=curr_df.drop(['mass'], axis=1)
-    for i in range(4):
-        for j in range(3):
-            plotvar=to_plot[ii]
-            if plotvar=='mass':
-                            # put legendoutside north curr_df.columns[i*3+j+2]
-                sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, log_scale=True)
-            elif plotvar=='kurtosis':
-                sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=2000)
-                # x limits
-                axs[i,j].set_xlim(-1.5,0)
-            elif plotvar=='skew':
-                sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=200)
-                # x limits
-                axs[i,j].set_xlim(-1,1)
-            else:
-                # put legendoutside north
-                sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20)
-            axs[i,j].set_ylabel('percentage')
-            axs[i,j].set_xlabel(to_plot_unit[ii])
-            if ii!=0:
-                axs[i,j].get_legend().remove()
-            ii=ii+1
-        ii=ii+1
+    # # deleter form curr_df the mass
+    # #curr_df=curr_df.drop(['mass'], axis=1)
+    # for i in range(4):
+    #     for j in range(3):
+    #         plotvar=to_plot[ii]
+    #         if plotvar=='mass':
+    #                         # put legendoutside north curr_df.columns[i*3+j+2]
+    #             sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, log_scale=True)
+    #         elif plotvar=='kurtosis':
+    #             sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=2000)
+    #             # x limits
+    #             axs[i,j].set_xlim(-1.5,0)
+    #         elif plotvar=='skew':
+    #             sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=200)
+    #             # x limits
+    #             axs[i,j].set_xlim(-1,1)
+    #         else:
+    #             # put legendoutside north
+    #             sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20)
+    #         axs[i,j].set_ylabel('percentage')
+    #         axs[i,j].set_xlabel(to_plot_unit[ii])
+    #         if ii!=0:
+    #             axs[i,j].get_legend().remove()
+    #         ii=ii+1
+    #     ii=ii+1
             
-    # more space between the subplots
-    plt.tight_layout()
-    # full screen
-    figManager = plt.get_current_fig_manager()
-    figManager.window.showMaximized()
-    plt.show()
+    # # more space between the subplots
+    # plt.tight_layout()
+    # # full screen
+    # figManager = plt.get_current_fig_manager()
+    # figManager.window.showMaximized()
+    # plt.show()
+
     
     # # save the figure
     # fig.savefig(os.getcwd()+r'\Plots\Histograms_'+current_shower+'.png', dpi=300)
 
-    fig, axs = plt.subplots(3, 3)
-    fig.suptitle(current_shower)
+######### DISTANCE PLOT ##################################################
+    # save the distance_meteor from df_sel_save
+    distance_meteor_sel_save=curr_sel_save['distance_meteor']
+    # save the distance_meteor from df_sel_save
+    distance_meteor_sel=curr_sel['distance_meteor']
+    # plot the cumulative distribution histogram of distance_meteor_sel_save and distance_meteor_sel wihouth considering the first two elements
+    sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, stat='density')
+    # axis label
+    plt.xlabel('Distance in PCA space')
+    plt.ylabel('Probability')
+
+    # plot a dasced line with the max distance_meteor_sel
+    plt.axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
+    # show
+    plt.show()
+##########################################################################
+
     # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
     to_plot=['rho','sigma','erosion_height_start','','erosion_coeff','erosion_mass_index','erosion_mass_min','','erosion_mass_max','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_mass']
     ii=0
@@ -218,12 +234,18 @@ for current_shower in Shower:
     to_plot=['mass','rho','sigma','','erosion_height_start','erosion_coeff','erosion_mass_index','','erosion_mass_min','erosion_mass_max','erosion_range','','erosion_energy_per_unit_mass','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_cross_section']
     to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','','erosion mass min [kg]','erosion mass max [kg]','log erosion mass range [-]','','erosion energy per unit mass [MJ/kg]','erosion energy per unit cross section [MJ/m^2]','erosion energy per unit cross section [MJ/m^2]']
     
-
     # multiply the erosion coeff by 1000000 to have it in km/s
     curr_df_sim_sel['erosion_coeff']=curr_df_sim_sel['erosion_coeff']*1000000
     curr_df_sim_sel['sigma']=curr_df_sim_sel['sigma']*1000000
     curr_df_sim_sel['erosion_energy_per_unit_cross_section']=curr_df_sim_sel['erosion_energy_per_unit_cross_section']/1000000
     curr_df_sim_sel['erosion_energy_per_unit_mass']=curr_df_sim_sel['erosion_energy_per_unit_mass']/1000000
+    # pick the one with shower_code==current_shower+'_sel'
+    Acurr_df_sel=curr_df_sim_sel[curr_df_sim_sel['shower_code']==current_shower+'_sel']
+    Acurr_df_sim=curr_df_sim_sel[curr_df_sim_sel['shower_code']=='sim_'+current_shower]
+    
+    fig, axs = plt.subplots(3, 3)
+    fig.suptitle(current_shower)
+    
     for i in range(3):
         for j in range(3):
             # put legendoutside north
@@ -232,31 +254,63 @@ for current_shower in Shower:
                 sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, log_scale=True)
                 axs[i,j].set_xlabel(to_plot_unit[ii])
                 axs[i,j].set_ylabel('percentage')
+                # gaussian_kde_sel=scipy.stats.gaussian_kde(Acurr_df_sel[plotvar], bw_method=None, weights=None)
+                # gaussian_kde_sim=scipy.stats.gaussian_kde(Acurr_df_sim[plotvar], bw_method=None, weights=None)
+                # # plot the difference between the two gaussian kde
+                # diff_gaussian_kde=gaussian_kde_sel(Acurr_df_sel[plotvar])-gaussian_kde_sim(Acurr_df_sim[plotvar])
+                # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
+
+                if only_select_meteors_from in curr_df_sim_sel['solution_id_dist'].values:
+                    axs[i,j].axvline(x=curr_df_sim_sel[curr_df_sim_sel['solution_id_dist']==only_select_meteors_from][plotvar].values[0], color='r', linewidth=2)
+                            
                 
+
                 if ii!=0:
                     axs[i,j].get_legend().remove()
+                # else:
+                    # put the legend outside the plot and in the north position with two columns
+                    # axs[i,j].legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=2)
             elif plotvar == 'erosion_range':
                 sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20)
                 axs[i,j].set_xlabel(to_plot_unit[ii])
                 axs[i,j].set_ylabel('percentage')
-                
+                # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
+                if only_select_meteors_from in df_sel_shower['solution_id_dist'].values:
+                    axs[i,j].axvline(x=curr_df_sim_sel[curr_df_sim_sel['solution_id_dist']==only_select_meteors_from][plotvar].values[0], color='r', linewidth=2)
+
                 if ii!=0:
                     axs[i,j].get_legend().remove()
+
             else:
                 sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20)
                 axs[i,j].set_ylabel('percentage')
                 axs[i,j].set_xlabel(to_plot_unit[ii])
                 axs[i,j].get_legend().remove()
+                # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
+                if only_select_meteors_from in df_sel_shower['solution_id_dist'].values:
+                    axs[i,j].axvline(x=curr_df_sim_sel[curr_df_sim_sel['solution_id_dist']==only_select_meteors_from][plotvar].values[0], color='r', linewidth=2)
+
             ii=ii+1
         ii=ii+1
-        
+
+
+    # compute the kernel density estimate curve of curr_df_sim_sel['rho'] with curr_df_sim_sel['shower_code']=='PER'
+    
+
+    
+
     # more space between the subplots erosion_coeff sigma
     plt.tight_layout()
+
     # full screen
     figManager = plt.get_current_fig_manager()
     figManager.window.showMaximized()
-    plt.show()
-    
+    # plt.show()
+    print(os.getcwd()+r'\\PhysicProp'+str(len(df_sel))+'_dist'+str(np.round(np.min(df_sel['distance_meteor']),2))+'-'+str(np.round(np.max(df_sel['distance_meteor']),2))+'.png')
     # save the figure maximized and with the right name
-    # fig.savefig(os.getcwd()+r'\Plots\Histograms_'+current_shower+'_output.png', dpi=300)
+    fig.savefig(os.getcwd()+r'\\PhysicProp'+str(len(df_sel))+'_dist'+str(np.round(np.min(df_sel['distance_meteor']),2))+'-'+str(np.round(np.max(df_sel['distance_meteor']),2))+'.png', dpi=300)
 
+
+
+                # # cumulative distribution histogram of the distance wihouth considering the first two elements
+                # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, cumulative=True, stat='density')

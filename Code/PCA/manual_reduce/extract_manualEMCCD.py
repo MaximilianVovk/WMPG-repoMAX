@@ -32,6 +32,7 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
     shower_code=[]
 
     acceleration=[]
+    acceleration_lin=[]
     vel_init_norot=[]
     vel_avg_norot=[]
     duration=[]
@@ -71,16 +72,30 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
     # the dynamic pressure at the knee at the peak of absolute mag
     Dynamic_pressure_peak_abs_mag=[]
 
+    a_acc=[]
+    b_acc=[]
+
+    a_mag_init=[]
+    b_mag_init=[]
+
+    a_mag_end=[]
+    b_mag_end=[]
+
     # directory='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\Reductions\\manual_reductions'
     # open the directory and walk through all the files and subfolders and open only the files with the extension .pickle
     for root, dirs, files in os.walk(INPUT_PATH):
         for name_file in files:
-            if name_file.endswith(".pickle"):
+            if name_file.endswith("_sim.pickle"):
+                print('Not Load pickle file: ', name_file)
+            elif name_file.endswith(".pickle"):
                 # print(os.path.join(root, name_file))
 
                 print('Loading pickle file: ', name_file)
 
                 traj = wmpl.Utils.Pickling.loadPickle(root,name_file)
+                # save the pickle file in a folder PER_pk
+                shutil.copy(os.path.join(root, name_file), OUT_PUT_PATH+r'\\'+Shower+'_pk')
+                
                 jd_dat=traj.jdt_ref
 
                 vel_pickl=[]
@@ -165,11 +180,72 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
 
                 a2, b2 = np.polyfit(time_pickl[index[0]-1:],vel_pickl[index[0]-1:], 1)
 
+                #######################################################
+                # fit a line to the throught the vel_sim and ht_sim
+                a3, b3, c3 = np.polyfit(time_pickl,vel_pickl, 2)
+                curve_fit=[a3*x**2+x*b3+c3 for x in time_pickl]
+
+                # only use first index to pick the height
+                a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:np.argmin(abs_mag_pickl)],abs_mag_pickl[:np.argmin(abs_mag_pickl)], 2)
+                curve_fit_absBEGIN=[a3_Inabs*x**2+x*b3_Inabs+c3_Inabs for x in height_pickl[:np.argmin(abs_mag_pickl)]]
+                #
+                a3_Outabs, b3_Outabs, c3_Outabs = np.polyfit(height_pickl[np.argmin(abs_mag_pickl):],abs_mag_pickl[np.argmin(abs_mag_pickl):], 2)
+                curve_fit_absEND=[a3_Outabs*x**2+x*b3_Outabs+c3_Outabs for x in height_pickl[np.argmin(abs_mag_pickl):]]
+
+                # a3, b3, c3 = np.polyfit(time_pickl,vel_pickl, 2)
+                # curve_fit=[a3*x**2+x*b3+vel_init_mean for x in time_pickl]
+
+                # # only use first index to pick the height
+                # a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:np.argmin(abs_mag_pickl)],abs_mag_pickl[:np.argmin(abs_mag_pickl)], 2)
+                # curve_fit_absBEGIN=[a3_Inabs*(x-height_pickl[0])**2+(x-height_pickl[0])*abs(b3_Inabs)+abs_mag_pickl[0] for x in height_pickl[:np.argmin(abs_mag_pickl)]]
+                # #
+                # a3_Outabs, b3_Outabs, c3_Outabs = np.polyfit(height_pickl[np.argmin(abs_mag_pickl):],abs_mag_pickl[np.argmin(abs_mag_pickl):], 2)
+                # curve_fit_absEND=[a3_Outabs*(height_pickl[-1]-x)**2-(height_pickl[-1]-x)*abs(b3_Outabs)+abs_mag_pickl[-1] for x in height_pickl[np.argmin(abs_mag_pickl):]]
+                
+
+                fig, axs = plt.subplots(1, 2)
+                fig.suptitle(name_file.split('_trajectory')[0]+'A')
+                # plot the velocity and the time and the curve_fit in the first subplot
+                axs[0].plot(time_pickl,vel_pickl, 'd', color='black', label=name_file.split('_trajectory')[0]+'A')
+                axs[0].plot(0,vel_init_mean, 's', color='black', label='initial velocity')
+                axs[0].plot(time_pickl,curve_fit, 'o', color='red', label='Fitted Parabula')
+                axs[0].set_xlabel('time [s]')
+                axs[0].set_ylabel('velocity [km/s]')
+                axs[0].legend()
+                axs[0].grid(True)
+
+                # plot the velocity and the time and the curve_fit in the first subplot
+                axs[1].plot(abs_mag_pickl,height_pickl, 'd', color='black', label=name_file.split('_trajectory')[0]+'A')
+                axs[1].plot(curve_fit_absBEGIN,height_pickl[:np.argmin(abs_mag_pickl)], 'o', color='blue', label='1 Fitted Parabula')
+                axs[1].plot(curve_fit_absEND,height_pickl[np.argmin(abs_mag_pickl):], 'o', color='green', label='2 Fitted Parabula')
+                axs[1].set_xlabel('mag [-]')
+                axs[1].set_ylabel('height [km]')
+                axs[1].legend()
+                axs[1].grid(True)
+
+                # give space between the subplots
+                fig.tight_layout(pad=2.0)
+                fig.savefig(os.getcwd()+r'\\fit'+name_file.split('_trajectory')[0]+'A'+'.png', dpi=300)
+                plt.close(fig)
+
+                #############################################################
+
+                #plot the velocity and the time and the 
                 # print('decel_after_knee_vel', (-1)*a2)
                 # print(vel_pickl[index[0]-1:])
 
+                a_acc.append(a3)
+                b_acc.append(b3)
+
+                a_mag_init.append(a3_Inabs)
+                b_mag_init.append(b3_Inabs)
+
+                a_mag_end.append(a3_Outabs)
+                b_mag_end.append(b3_Outabs)
+
                 # append the values to the list
-                acceleration.append((-1)*a)
+                acceleration.append(a3*2+b3)
+                acceleration_lin.append((-1)*a)
                 decel_after_knee_vel.append((-1)*a2)
                 lag_trend.append(trendLAG)
                 # vel_init_norot=(vel_sim_line[0])
@@ -286,13 +362,15 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
 
     dataList = [['','', 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0, 0,\
-        0, 0, 0, 0, 0, 0, 0,\
-        0, 0]]
+        0, 0, 0, 0, 0, 0, 0, 0,\
+        0, 0,\
+        0, 0, 0, 0, 0, 0]]
 
     infov = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
     'mass','peak_mag_height','begin_height','end_height','height_knee_vel','peak_abs_mag','beg_abs_mag','end_abs_mag',\
-    'F','trail_len','acceleration','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
-    'kc','Dynamic_pressure_peak_abs_mag'])
+    'F','trail_len','acceleration','acceleration_lin','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
+    'kc','Dynamic_pressure_peak_abs_mag',\
+    'a_acc','b_acc','a_mag_init','b_mag_init','a_mag_end','b_mag_end'])
 
     # create a loop to populate the dataframe
     for ii in range(len(name)):
@@ -306,8 +384,9 @@ def PCAmanuallyReduced(OUT_PUT_PATH=os.getcwd(), Shower='PER', INPUT_PATH=['C:\\
         # kc_par[ii]]
         infov.loc[ii] = [name[ii], shower_code[ii], vel_init_norot[ii], vel_avg_norot[ii], duration[ii],\
         mass[ii], peak_mag_height[ii], begin_height[ii], end_height[ii], height_knee_vel[ii], peak_abs_mag[ii], beg_abs_mag[ii], end_abs_mag[ii],\
-        F_data[ii], trail_len[ii], acceleration[ii], decel_after_knee_vel[ii], zenith_angle[ii], kurtosisness[ii], skewness[ii],\
-        kc_par[ii], Dynamic_pressure_peak_abs_mag[ii]]
+        F_data[ii], trail_len[ii], acceleration[ii], acceleration_lin[ii], decel_after_knee_vel[ii], zenith_angle[ii], kurtosisness[ii], skewness[ii],\
+        kc_par[ii], Dynamic_pressure_peak_abs_mag[ii],\
+        a_acc[ii], b_acc[ii], a_mag_init[ii], b_mag_init[ii], a_mag_end[ii], b_mag_end[ii]]
 
     
     # save the dataframe to a csv file

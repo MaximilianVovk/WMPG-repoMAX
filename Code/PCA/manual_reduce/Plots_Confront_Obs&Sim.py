@@ -100,6 +100,15 @@ df_sim_shower = pd.concat(df_sim_shower)
 # # shift the plot to the right
 # plt.show()
 
+# # seaborn plot of the correlation matrix of the observed shower
+# corr = df_obs_shower.drop(['solution_id','shower_code','mass','weight'], axis=1).corr() # need solar longitude
+# sns.heatmap(corr,
+#             xticklabels=corr.columns.values,
+#             yticklabels=corr.columns.values,
+#             cmap="coolwarm")
+# plt.title('Correlation Matrix')
+# # # shift the plot to the right
+# plt.show()
 
 for current_shower in Shower:
     curr_sim=df_sim_shower[df_sim_shower['shower_code']=='sim_'+current_shower]
@@ -121,15 +130,17 @@ for current_shower in Shower:
     ii=0
 
     # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','mass [kg]','begin height [km]','end height [km]','','peak abs mag [-]','begin abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','acceleration [km/s^2]','','zenith angle [deg]','kurtosis','kc']
-    # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','end height [km]','peak abs mag [-]','','begin abs mag [-]','end abs mag [-]','F parameter [-]','','trail lenght [km]','deceleration [km/s^2]','zenith angle [deg]','','kc','kurtosis','skew']
+    to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','end height [km]','peak abs mag [-]','','begin abs mag [-]','end abs mag [-]','F parameter [-]','','trail lenght [km]','deceleration [km/s^2]','zenith angle [deg]','','kc','kurtosis','skew']
     # to_plot_unit=['init vel [km/s]','avg vel [km/s]','acceleration [km/s^2]','','begin height [km]','end height [km]','peak abs mag [-]','','begin abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','acceleration [km/s^2]','','zenith angle [deg]','kurtosis','kc']
-    to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','peak height [km]','end height [km]','','begin abs mag [-]','peak abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','deceleration [km/s^2]','','zenith angle [deg]','kurtosis','skew']
+    # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','peak height [km]','end height [km]','','begin abs mag [-]','peak abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','deceleration [km/s^2]','','zenith angle [deg]','kurtosis','skew']
+    # to_plot_unit=['init vel [km/s]','avg vel [km/s]','height knee [km]','','begin height [km]','peak height [km]','end height [km]','','begin abs mag [-]','peak abs mag [-]','end abs mag [-]','','Dyn.press. peak abs mag [Pa]','deceleration aft.knee [km/s^2]','deceleration [km/s^2]','','zenith angle [deg]','kurtosis','skew']
 
 
     # to_plot=['vel_init_norot','vel_avg_norot','duration','','mass','begin_height','end_height','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
-    # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','end_height','peak_abs_mag','','beg_abs_mag','end_abs_mag','F','','trail_len','acceleration','zenith_angle','','kc','kurtosis','skew']
+    to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','end_height','peak_abs_mag','','beg_abs_mag','end_abs_mag','F','','trail_len','acceleration','zenith_angle','','kc','kurtosis','skew']
     # to_plot=['vel_init_norot','vel_avg_norot','acceleration','','begin_height','end_height','peak_abs_mag','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
-    to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','peak_mag_height','end_height','','beg_abs_mag','peak_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
+    # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','peak_mag_height','end_height','','beg_abs_mag','peak_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
+    # to_plot=['vel_init_norot','vel_avg_norot','height_knee_vel','','begin_height','peak_mag_height','end_height','','beg_abs_mag','peak_abs_mag','end_abs_mag','','Dynamic_pressure_peak_abs_mag','decel_after_knee_vel','acceleration','','zenith_angle','kurtosis','skew']
 
     # deleter form curr_df the mass
     #curr_df=curr_df.drop(['mass'], axis=1)

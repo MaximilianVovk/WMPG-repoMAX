@@ -278,21 +278,24 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
     # save all the variables in a list ths is used to initialized the values of the dataframe
     dataList = [['','', 0, 0, 0,\
-        0, 0, 0, 0, 0, 0, 0,\
-        0, 0, 0, 0, 0, 0,\
-        0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0,\
+        0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0, 0,\
         0, 0, 0,\
         0, 0]]
 
     # create a dataframe to store the data
     df_json = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
-    'mass','peak_mag_height','begin_height','end_height','peak_abs_mag','beg_abs_mag','end_abs_mag',\
-    'F','trail_len','acceleration','zenith_angle', 'kurtosis','skew',\
-    'kc','rho','sigma',\
+    'mass','peak_mag_height','begin_height','end_height','height_knee_vel','peak_abs_mag','beg_abs_mag','end_abs_mag',\
+    'F','trail_len','acceleration','acceleration_lin','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
+    'kc','Dynamic_pressure_peak_abs_mag',\
+    'a_acc','b_acc','a_mag_init','b_mag_init','a_mag_end','b_mag_end','rho','sigma',\
     'erosion_height_start','erosion_coeff', 'erosion_mass_index',\
     'erosion_mass_min','erosion_mass_max','erosion_range',\
     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'])
+
 
     There_is_data=False
 
@@ -335,7 +338,6 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             trail_len = data['len_sampled'][-1] / 1000
             shower_code = 'sim_'+Shower
             vel_avg_norot = trail_len / duration
-            # acceleration = (vel_init_norot - vel_avg_norot)/duration
 
             vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
             ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
@@ -356,20 +358,66 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
             # time_sim=time_sim[index_ht_sim:index_ht_sim_end]
 
+            ht_sim = [i/1000 for i in ht_sim]
+            # find the index_mag_peak in ht_sim that has a value smaller than the peak_mag_height
+            # index_mag_peak = next(x for x, val in enumerate(ht_sim) if val <= peak_mag_height)
+            index_mag_peak = [i for i in range(len(ht_sim)) if ht_sim[i] < peak_mag_height]
+            Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][index_mag_peak[0]]
+
             # pick from the end of vel_sim the same number of element of time_sim
             # vel_sim=vel_sim[-len(time_sim):]
 
             vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
             time_sim=time_sim[index_ht_sim:index_ht_sim_end]
+            ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
 
             # divide the vel_sim by 1000 considering is a list
             vel_sim = [i/1000 for i in vel_sim]
             time_sim = [i-time_sim[0] for i in time_sim]
+
+            # find the sigle index of the height when the velocity start dropping from the vel_init_norot of 0.2 km/s
+            # index_knee = next(x for x, val in enumerate(vel_sim) if val <= vel_sim[0]-10)
+            index_knee = [i for i in range(len(vel_sim)) if vel_sim[i] < vel_sim[0]-0.2]
+            jj_index_knee=2
+            # if index_knee == empty start a loop to find one
+            while index_knee == []:
+                index_knee = [i for i in range(len(vel_sim)) if vel_sim[i] < vel_sim[0]-0.2/jj_index_knee]
+                print('index_knee is None so ',0.2/jj_index_knee)
+                jj_index_knee=jj_index_knee+1
+            index_knee=index_knee[0]
+            # only use first index to pick the height
+            height_knee_vel = ht_sim[index_knee]
+            # find the height of the height_knee_vel in data['ht_sampled']
+            index_ht_knee = next(x for x, val in enumerate(data['ht_sampled']) if val/1000 <= height_knee_vel)
+            height_knee_vel=data['ht_sampled'][index_ht_knee]/1000
             
+            # define thelinear deceleration from that index to the end of the simulation
+            a2, b2 = np.polyfit(time_sim[index_knee:],vel_sim[index_knee:], 1)
+            decel_after_knee_vel=((-1)*a2)
 
             # fit a line to the throught the vel_sim and ht_sim
             acceleration, b = np.polyfit(time_sim,vel_sim, 1)
-            acceleration = (-1)*acceleration
+            acceleration_lin = (-1)*acceleration
+
+            a3, b3, c3 = np.polyfit(time_sim,vel_sim, 2)
+            acceleration=a3*2+b3
+
+            # fit a line to the throught the vel_sim and ht_sim
+            index_ht_peak = next(x for x, val in enumerate(data['ht_sampled']) if val/1000 <= peak_mag_height)
+            # only use first index to pick the height
+            height_pickl = [i/1000 for i in data['ht_sampled']]
+
+            # check if the height_pickl[:index_ht_peak] and data['mag_sampled'][:index_ht_peak] are empty
+            if height_pickl[:index_ht_peak] == [] or data['mag_sampled'][:index_ht_peak] == []:
+                a3_Inabs, b3_Inabs, c3_Inabs = 0, 0, 0
+            else:
+                a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:index_ht_peak], data['mag_sampled'][:index_ht_peak], 2)
+
+            # check if the height_pickl[index_ht_peak:] and data['mag_sampled'][index_ht_peak:] are empty
+            if height_pickl[index_ht_peak:] == [] or data['mag_sampled'][index_ht_peak:] == []:
+                a3_Outabs, b3_Outabs, c3_Outabs = 0, 0, 0
+            else:
+                a3_Outabs, b3_Outabs, c3_Outabs = np.polyfit(height_pickl[index_ht_peak:], data['mag_sampled'][index_ht_peak:], 2)
 
             # from 'params' extract the physical parameters and save them in a list
             rho = data['params']['rho']['val']
@@ -423,12 +471,14 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
             # add a new line in dataframe
             df_json.loc[len(df_json)] = [name,shower_code, vel_init_norot, vel_avg_norot, duration,\
-            mass, peak_mag_height,begin_height, end_height, peak_abs_mag, beg_abs_mag, end_abs_mag,\
-            F, trail_len, acceleration, zenith_angle, kurtosyness,skewness,\
-            kc_par,rho, sigma,\
+            mass, peak_mag_height,begin_height, end_height, height_knee_vel, peak_abs_mag, beg_abs_mag, end_abs_mag,\
+            F, trail_len, acceleration, acceleration_lin, decel_after_knee_vel, zenith_angle, kurtosyness,skewness,\
+            kc_par, Dynamic_pressure_peak_abs_mag,\
+            a3, b3, a3_Inabs, b3_Inabs, a3_Outabs, b3_Outabs, rho, sigma,\
             erosion_height_start, erosion_coeff, erosion_mass_index,\
             erosion_mass_min, erosion_mass_max, erosion_range,\
             erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass]
+
 
             There_is_data=True
 
@@ -710,9 +760,12 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 
     # the variable used in PCA are all = 'vel_init_norot','vel_avg_norot','duration','mass','begin_height','end_height','peak_abs_mag','beg_abs_mag','end_abs_mag','F','trail_len','acceleration','zenith_angle'
     variable_PCA=[] #'vel_init_norot','peak_abs_mag','begin_height','end_height','F','acceleration','duration'
-    # variable_PCA=['vel_init_norot','vel_avg_norot','duration','peak_abs_mag','beg_abs_mag','end_abs_mag','F','acceleration'] #'vel_init_norot','peak_abs_mag','begin_height','end_height','F','acceleration','duration'
+    # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','vel_avg_norot','begin_height','end_height','beg_abs_mag','end_abs_mag','F','Dynamic_pressure_peak_abs_mag']
+    # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','Dynamic_pressure_peak_abs_mag','kurtosis','skew','trail_len'] # perfect!
+    # decel_after_knee_vel and height_knee_vel create errors in the PCA space  decel_after_knee_vel,height_knee_vel
 
-
+    No_var_PCA=['decel_after_knee_vel','height_knee_vel']
+    
     # if variable_PCA is not empty
     if variable_PCA != []:
         # add to variable_PCA array 'shower_code','solution_id'
@@ -807,6 +860,24 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 
     # create a dataframe with the PCA space
     df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
+    
+    print(str(len(percent_variance))+' PC = 99% of the variance explained by ',pca.n_components_,' PC')
+
+    # check if can be refined
+    number_of_deleted_PC=len(percent_variance)-pca.n_components_
+
+    # print('Number of deleted PC: ', number_of_deleted_PC)
+
+
+
+    # repeat the define_PCA_space in order to delete the PC that are not needed and stop when the number of PC is equal to the number of variable_PCA
+    while number_of_deleted_PC>0:
+        df_all_PCA, number_of_deleted_PC = refine_PCA_space(df_all_PCA)
+
+
+
+
+    
     # add the shower code to the dataframe
     df_all_PCA['shower_code'] = df_all['shower_code'].values
 
@@ -814,7 +885,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     df_sim_PCA = df_all_PCA.drop(df_all_PCA.index[len(df_sim_shower):])
     df_obs_PCA = df_all_PCA.drop(df_all_PCA.index[:len(df_sim_shower)])
 
-    print('number of PC that explain 95% of the variance: ',pca.n_components_)
+    # print('number of PC that explain 95% of the variance: ',pca.n_components_)
 
     # # plot all the data in the PCA space
     # sns.pairplot(df_obs_PCA, hue='shower_code', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
@@ -984,6 +1055,50 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 
 
 
+def refine_PCA_space(df_all):
+    '''
+    from the simulated and observed shower dataframe it create a dataframe with the PCA space
+    for the given variable_PCA and the one that are not in No_var_PCA
+    if variable_PCA is empty it takes all except for mass
+    '''
+
+    pca = PCA()
+
+    all_PCA = pca.fit_transform(df_all)
+
+    # compute the explained variance ratio
+    percent_variance = np.round(pca.explained_variance_ratio_* 100, decimals =2)
+    print("explained variance ratio: \n",percent_variance)
+
+    # name of the principal components
+    columns_PC = ['PC' + str(x) for x in range(1, len(percent_variance)+1)]
+
+    # find the number of PC that explain 95% of the variance
+    cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+
+    # recomute PCA with the number of PC that explain 95% of the variance
+    pca= PCA(n_components=np.argmax(cumulative_variance >= 0.95) + 1)
+    all_PCA = pca.fit_transform(df_all)
+
+    # # select only the column with in columns_PC with the same number of n_components
+    columns_PC = ['PC' + str(x) for x in range(1, pca.n_components_+1)]
+
+    # create a dataframe with the PCA space
+    df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
+
+    print(str(len(percent_variance))+' PC = 99% of the variance explained by ',pca.n_components_,' PC')
+
+    number_of_deleted_PC=len(percent_variance)-pca.n_components_
+
+    # print('Number of deleted PC: ', number_of_deleted_PC)
+
+
+    return df_all_PCA, number_of_deleted_PC
+
+
+
+
+
 if __name__ == "__main__":
 
     import argparse
@@ -1044,8 +1159,12 @@ if __name__ == "__main__":
             os.chdir(folder_GenerateSimulations_json[Shower.index(current_shower)])
             directory=cml_args.input_dir
             extension = 'json'
-            all_jsonfiles = [i for i in glob.glob('*.{}'.format(extension))]
+            # all_jsonfiles = [i for i in glob.glob('*.{}'.format(extension))]
+            
+            all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
+            print('Number of simulated files: ',len(all_jsonfiles))
             os.chdir('..')
+                                    
 
             # # append the path to the json files
             # all_jsonfiles = [directory+'\\'+i for i in all_jsonfiles]

@@ -58,8 +58,9 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
     # save all the variables in a list ths is used to initialized the values of the dataframe
     dataList = [['','', 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0, 0,\
-        0, 0, 0, 0, 0, 0, 0,\
-        0, 0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0,\
+        0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0, 0,\
         0, 0, 0,\
         0, 0]]
@@ -67,8 +68,9 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
     # create a dataframe to store the data
     df_json = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
     'mass','peak_mag_height','begin_height','end_height','height_knee_vel','peak_abs_mag','beg_abs_mag','end_abs_mag',\
-    'F','trail_len','acceleration','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
-    'kc','Dynamic_pressure_peak_abs_mag','rho','sigma',\
+    'F','trail_len','acceleration','acceleration_lin','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
+    'kc','Dynamic_pressure_peak_abs_mag',\
+    'a_acc','b_acc','a_mag_init','b_mag_init','a_mag_end','b_mag_end','rho','sigma',\
     'erosion_height_start','erosion_coeff', 'erosion_mass_index',\
     'erosion_mass_min','erosion_mass_max','erosion_range',\
     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'])
@@ -173,8 +175,29 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
             # fit a line to the throught the vel_sim and ht_sim
             acceleration, b = np.polyfit(time_sim,vel_sim, 1)
-            acceleration = (-1)*acceleration
+            acceleration_lin = (-1)*acceleration
 
+            a3, b3, c3 = np.polyfit(time_sim,vel_sim, 2)
+            acceleration=a3*2+b3
+
+            # fit a line to the throught the vel_sim and ht_sim
+            index_ht_peak = next(x for x, val in enumerate(data['ht_sampled']) if val/1000 <= peak_mag_height)
+            #print('index_ht_peak',index_ht_peak)
+            # only use first index to pick the height
+            height_pickl = [i/1000 for i in data['ht_sampled']]
+
+            # check if the height_pickl[:index_ht_peak] and data['mag_sampled'][:index_ht_peak] are empty
+            if height_pickl[:index_ht_peak] == [] or data['mag_sampled'][:index_ht_peak] == []:
+                a3_Inabs, b3_Inabs, c3_Inabs = 0, 0, 0
+            else:
+                a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:index_ht_peak], data['mag_sampled'][:index_ht_peak], 2)
+
+            # check if the height_pickl[index_ht_peak:] and data['mag_sampled'][index_ht_peak:] are empty
+            if height_pickl[index_ht_peak:] == [] or data['mag_sampled'][index_ht_peak:] == []:
+                a3_Outabs, b3_Outabs, c3_Outabs = 0, 0, 0
+            else:
+                a3_Outabs, b3_Outabs, c3_Outabs = np.polyfit(height_pickl[index_ht_peak:], data['mag_sampled'][index_ht_peak:], 2)
+            
             # from 'params' extract the physical parameters and save them in a list
             rho = data['params']['rho']['val']
             sigma = data['params']['sigma']['val']
@@ -228,8 +251,9 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             # add a new line in dataframe
             df_json.loc[len(df_json)] = [name,shower_code, vel_init_norot, vel_avg_norot, duration,\
             mass, peak_mag_height,begin_height, end_height, height_knee_vel, peak_abs_mag, beg_abs_mag, end_abs_mag,\
-            F, trail_len, acceleration, decel_after_knee_vel, zenith_angle, kurtosyness,skewness,\
-            kc_par, Dynamic_pressure_peak_abs_mag, rho, sigma,\
+            F, trail_len, acceleration, acceleration_lin, decel_after_knee_vel, zenith_angle, kurtosyness,skewness,\
+            kc_par, Dynamic_pressure_peak_abs_mag,\
+            a3, b3, a3_Inabs, b3_Inabs, a3_Outabs, b3_Outabs, rho, sigma,\
             erosion_height_start, erosion_coeff, erosion_mass_index,\
             erosion_mass_min, erosion_mass_max, erosion_range,\
             erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass]
@@ -459,9 +483,16 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     The function read the json file in the folder and create a csv file with the simulated shower and take the data from GenerateSimulation.py folder.
     The function return the dataframe of the selected simulated shower.
     '''
-
     # the variable used in PCA are all = 'vel_init_norot','vel_avg_norot','duration','mass','begin_height','end_height','peak_abs_mag','beg_abs_mag','end_abs_mag','F','trail_len','acceleration','zenith_angle'
+    # vel_init_norot	vel_avg_norot	duration	mass	peak_mag_height	begin_height	end_height	height_knee_vel	peak_abs_mag	beg_abs_mag	end_abs_mag	F	trail_len	acceleration	decel_after_knee_vel	zenith_angle	kurtosis	skew	kc	Dynamic_pressure_peak_abs_mag
     variable_PCA=[] #'vel_init_norot','peak_abs_mag','begin_height','end_height','F','acceleration','duration'
+    # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','vel_avg_norot','begin_height','end_height','beg_abs_mag','end_abs_mag','F','Dynamic_pressure_peak_abs_mag']
+    # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','Dynamic_pressure_peak_abs_mag'] # perfect!
+    # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','Dynamic_pressure_peak_abs_mag','kurtosis','skew','trail_len']
+    # decel_after_knee_vel and height_knee_vel create errors in the PCA space  decel_after_knee_vel,height_knee_vel
+
+    No_var_PCA=['decel_after_knee_vel','height_knee_vel','acceleration_lin']
+    # if PC below 7 wrong
 
     # if variable_PCA is not empty
     if variable_PCA != []:
@@ -549,7 +580,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
 
     # recomute PCA with the number of PC that explain 95% of the variance
-    pca= PCA(n_components=np.argmax(cumulative_variance >= 0.95) + 1)
+    pca= PCA(n_components=np.argmax(cumulative_variance >= 0.97) + 1)
     all_PCA = pca.fit_transform(scaled_df_all)
 
     # # select only the column with in columns_PC with the same number of n_components
@@ -557,6 +588,23 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 
     # create a dataframe with the PCA space
     df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
+
+    print(str(len(percent_variance))+' PC = 95% of the variance explained by ',pca.n_components_,' PC')
+
+    # check if can be refined
+    number_of_deleted_PC=len(percent_variance)-pca.n_components_
+
+    # print('Number of deleted PC: ', number_of_deleted_PC)
+
+
+
+    # repeat the define_PCA_space in order to delete the PC that are not needed and stop when the number of PC is equal to the number of variable_PCA
+    while number_of_deleted_PC>0:
+        df_all_PCA, number_of_deleted_PC = refine_PCA_space(df_all_PCA)
+
+
+
+
     # add the shower code to the dataframe
     df_all_PCA['shower_code'] = df_all['shower_code'].values
 
@@ -564,7 +612,9 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     df_sim_PCA = df_all_PCA.drop(df_all_PCA.index[len(df_sim_shower):])
     df_obs_PCA = df_all_PCA.drop(df_all_PCA.index[:len(df_sim_shower)])
 
-    print('number of PC that explain 95% of the variance: ',pca.n_components_)
+
+
+
 
     # # plot all the data in the PCA space
     # sns.pairplot(df_obs_PCA, hue='shower_code', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
@@ -602,6 +652,22 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
         df_sim_PCA_for_now = df_sim_PCA_for_now.drop(['shower_code'], axis=1)
         df_sim_PCA_val = df_sim_PCA_for_now.values 
 
+        # # find the average distance of the closest df_sim_PCA_val to each df_sim_PCA_val
+        # distance_current_sim = []
+        # # but only select a random number of simulation equal to reduce the computational time
+        # df_sim_PCA_val_rand_dist = df_sim_PCA_val[np.random.choice(len(df_sim_PCA_val), 10, replace=False)]
+        # print('sim considered:',len(df_sim_PCA_val_rand_dist))
+        # for i_sim_dist_base in range(len(df_sim_PCA_val_rand_dist)):
+        #     distance_current_sim_curr = []
+        #     for i_sim_dist_curr in range(len(df_sim_PCA_val)):
+        #         distance_current_sim_curr.append(scipy.spatial.distance.euclidean(df_sim_PCA_val[i_sim_dist_curr], df_sim_PCA_val_rand_dist[i_sim_dist_base]))
+        #     # order the distance from the closest to the farest
+        #     distance_current_sim_curr = sorted(distance_current_sim_curr)
+        #     # take the mean of the first 10 closest and do the mean
+        #     distance_current_sim.append(np.mean(distance_current_sim_curr[1]))
+        #     print('Processing ',i_sim_dist_base,' the dist: ', np.round(distance_current_sim[i_sim_dist_base],2), end="\r")
+        # print('Of ',len(df_sim_PCA_val_rand_dist),' the mean distance of the closest neightbor :', np.round(np.mean(distance_current_sim),2))
+
         for i_shower in range(len(shower_current)):
             distance_current = []
             for i_sim in range(len(df_sim_PCA_val)):
@@ -632,10 +698,10 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
             df_sim_selected['shower_code']= current_shower+'_sel'
             df_sel_shower.append(df_sim_selected)
 
-            # sort the distance and select the n_selected closest to the mean
-            df_sim_shower_dis = df_sim_shower.sort_values(by=['distance_meteor'])
-            # drop the index
-            df_sim_shower_dis = df_sim_shower_dis.reset_index(drop=True)
+            # # sort the distance and select the n_selected closest to the mean
+            # df_sim_shower_dis = df_sim_shower.sort_values(by=['distance_meteor'])
+            # # drop the index
+            # df_sim_shower_dis = df_sim_shower_dis.reset_index(drop=True)
 
             ################ PCA ################
 
@@ -727,6 +793,47 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 
 
 
+def refine_PCA_space(df_all):
+    '''
+    from the simulated and observed shower dataframe it create a dataframe with the PCA space
+    for the given variable_PCA and the one that are not in No_var_PCA
+    if variable_PCA is empty it takes all except for mass
+    '''
+
+    pca = PCA()
+
+    all_PCA = pca.fit_transform(df_all)
+
+    # compute the explained variance ratio
+    percent_variance = np.round(pca.explained_variance_ratio_* 100, decimals =2)
+    print("explained variance ratio: \n",percent_variance)
+
+    # name of the principal components
+    columns_PC = ['PC' + str(x) for x in range(1, len(percent_variance)+1)]
+
+    # find the number of PC that explain 95% of the variance
+    cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+
+    # recomute PCA with the number of PC that explain 95% of the variance
+    pca= PCA(n_components=np.argmax(cumulative_variance >= 0.97) + 1)
+    all_PCA = pca.fit_transform(df_all)
+
+    # # select only the column with in columns_PC with the same number of n_components
+    columns_PC = ['PC' + str(x) for x in range(1, pca.n_components_+1)]
+
+    # create a dataframe with the PCA space
+    df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
+
+    print(str(len(percent_variance))+' PC = 95% of the variance explained by ',pca.n_components_,' PC')
+
+    number_of_deleted_PC=len(percent_variance)-pca.n_components_
+
+    # print('Number of deleted PC: ', number_of_deleted_PC)
+
+
+    return df_all_PCA, number_of_deleted_PC
+
+
 
 
 if __name__ == "__main__":
@@ -787,9 +894,16 @@ if __name__ == "__main__":
         else:
             # open the folder and extract all the json files
             os.chdir(folder_GenerateSimulations_json[Shower.index(current_shower)])
+            # print the current directory in
             directory=cml_args.input_dir
             extension = 'json'
-            all_jsonfiles = [i for i in glob.glob('*.{}'.format(extension))]
+            # walk thorought the directories and find all the json files inside each folder inside the directory
+            all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
+            #
+
+            print('Number of simulated files: ',len(all_jsonfiles))
+            
+            # all_jsonfiles = [i for i in glob.glob('*.{}'.format(extension))]
             os.chdir('..')
 
             # # append the path to the json files

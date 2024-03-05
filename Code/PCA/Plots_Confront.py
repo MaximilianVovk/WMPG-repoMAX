@@ -213,13 +213,13 @@ for current_shower in Shower:
     distance_meteor_sel=curr_sel['distance_meteor']
 
     # check if distance_meteor_sel_save index is bigger than the index distance_meteor_sel+50
-    if len(distance_meteor_sel_save)>len(distance_meteor_sel)+50:
-        sns.histplot(distance_meteor_sel_save[1:len(distance_meteor_sel)+50], kde=True, cumulative=True, bins=1000, color='r') # , stat='density' to have probability
-        plt.ylim(0.9,len(distance_meteor_sel)+50) 
+    if len(distance_meteor_sel_save)>len(distance_meteor_sel)+100:
+        sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, bins=1000, color='r') # , stat='density' to have probability
+        plt.ylim(0,len(distance_meteor_sel)+100) 
     else:
     # plot the cumulative distribution histogram of distance_meteor_sel_save with the number of elements on the y axis
         sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, bins=1000, color='r') # , stat='density' to have probability
-        plt.ylim(0.9,len(distance_meteor_sel_save)) 
+        plt.ylim(0,len(distance_meteor_sel_save))
     # axis label
     plt.xlabel('Distance in PCA space')
     plt.ylabel('Number of events')
@@ -228,7 +228,7 @@ for current_shower in Shower:
     plt.axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
 
     # make the y axis logarithmic
-    plt.yscale('log')
+    plt.xscale('log')
     
     # show
     plt.show()

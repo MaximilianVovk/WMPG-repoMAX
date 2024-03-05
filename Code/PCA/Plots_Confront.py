@@ -27,7 +27,7 @@ from sklearn.preprocessing import StandardScaler
 Shower=['PER']#['CAP']
 
 # number of selected events selected
-n_select=10
+n_select=7
 dist_select=10000000000
 
 # weight factor for the distance
@@ -211,14 +211,19 @@ for current_shower in Shower:
     distance_meteor_sel_save=curr_sel_save['distance_meteor']
     # save the distance_meteor from df_sel_save
     distance_meteor_sel=curr_sel['distance_meteor']
-    # plot the cumulative distribution histogram of distance_meteor_sel_save and distance_meteor_sel wihouth considering the first two elements
-    sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, stat='density')
+    # plot the cumulative distribution histogram of distance_meteor_sel_save considering the number of selected events
+    sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, stat='density', bins=1000, color='r')
     # axis label
     plt.xlabel('Distance in PCA space')
     plt.ylabel('Probability')
 
     # plot a dasced line with the max distance_meteor_sel
     plt.axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
+
+    # make the y axis logarithmic
+    plt.yscale('log')
+    # multiply the y axis by 100 to have the percentage
+    
     # show
     plt.show()
 ##########################################################################
@@ -314,3 +319,4 @@ for current_shower in Shower:
 
                 # # cumulative distribution histogram of the distance wihouth considering the first two elements
                 # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, cumulative=True, stat='density')
+

@@ -27,7 +27,7 @@ from sklearn.preprocessing import StandardScaler
 Shower=['PER']#['CAP']
 
 # number of selected events selected
-n_select=7
+n_select=8
 dist_select=10000000000
 
 # weight factor for the distance
@@ -211,18 +211,24 @@ for current_shower in Shower:
     distance_meteor_sel_save=curr_sel_save['distance_meteor']
     # save the distance_meteor from df_sel_save
     distance_meteor_sel=curr_sel['distance_meteor']
-    # plot the cumulative distribution histogram of distance_meteor_sel_save considering the number of selected events
-    sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, stat='density', bins=1000, color='r')
+
+    # check if distance_meteor_sel_save index is bigger than the index distance_meteor_sel+50
+    if len(distance_meteor_sel_save)>len(distance_meteor_sel)+50:
+        sns.histplot(distance_meteor_sel_save[1:len(distance_meteor_sel)+50], kde=True, cumulative=True, bins=1000, color='r') # , stat='density' to have probability
+        plt.ylim(0.9,len(distance_meteor_sel)+50) 
+    else:
+    # plot the cumulative distribution histogram of distance_meteor_sel_save with the number of elements on the y axis
+        sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, bins=1000, color='r') # , stat='density' to have probability
+        plt.ylim(0.9,len(distance_meteor_sel_save)) 
     # axis label
     plt.xlabel('Distance in PCA space')
-    plt.ylabel('Probability')
+    plt.ylabel('Number of events')
 
     # plot a dasced line with the max distance_meteor_sel
     plt.axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
 
     # make the y axis logarithmic
     plt.yscale('log')
-    # multiply the y axis by 100 to have the percentage
     
     # show
     plt.show()

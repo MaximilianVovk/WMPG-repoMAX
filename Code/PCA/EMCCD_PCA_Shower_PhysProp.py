@@ -29,9 +29,18 @@ from wmpl.Utils.OSTools import mkdirP
 import math
 from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 
+add_json_noise = True
+
+PCA_percent = 0.97
 
 # FUNCTIONS ###########################################################################################
 
+def find_closest_index(time_arr, time_sampled):
+    closest_indices = []
+    for sample in time_sampled:
+        closest_index = min(range(len(time_arr)), key=lambda i: abs(time_arr[i] - sample))
+        closest_indices.append(closest_index)
+    return closest_indices
 
 def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None):
     ''' 
@@ -95,36 +104,13 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             vel_init_norot = data['params']['v_init']['val']/1000
             zenith_angle= data['params']['zenith_angle']['val']*180/np.pi
 
-            # Physical parameters
-            rho = data['params']['rho']['val']
-            sigma = data['params']['sigma']['val']
-            erosion_height_start = data['params']['erosion_height_start']['val']/1000
-            erosion_coeff = data['params']['erosion_coeff']['val']
-            erosion_mass_index = data['params']['erosion_mass_index']['val']
-            erosion_mass_min = data['params']['erosion_mass_min']['val']
-            erosion_mass_max = data['params']['erosion_mass_max']['val']
-
-            # from 'time_sampled' extract the last element and save it in a list
-            duration = data['time_sampled'][-1]
-            begin_height = data['ht_sampled'][0] / 1000
-            end_height = data['ht_sampled'][-1] / 1000
-            peak_abs_mag = data['mag_sampled'][np.argmin(data['mag_sampled'])]
-            F = (begin_height - (data['ht_sampled'][np.argmin(data['mag_sampled'])] / 1000)) / (begin_height - end_height)
-            peak_mag_height = data['ht_sampled'][np.argmin(data['mag_sampled'])] / 1000
-            beg_abs_mag	= data['mag_sampled'][0]
-            end_abs_mag	= data['mag_sampled'][-1]
-            trail_len = data['len_sampled'][-1] / 1000
-            shower_code = 'sim_'+Shower
-            vel_avg_norot = trail_len / duration
-
             vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
             ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
             time_sim=data['simulation_results']['time_arr']#['main_time_arr']
-
-            kc_par = begin_height + (2.86 - 2*np.log(vel_init_norot))/0.0612
+            abs_mag_sim=data['simulation_results']['abs_magnitude']
 
             obs_height=data['ht_sampled']
-            
+
             # delete the nan term in vel_sim and ht_sim
             vel_sim=[x for x in vel_sim if str(x) != 'nan']
             ht_sim=[x for x in ht_sim if str(x) != 'nan']
@@ -137,21 +123,98 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             # time_sim=time_sim[index_ht_sim:index_ht_sim_end]
 
             ht_sim = [i/1000 for i in ht_sim]
-            # find the index_mag_peak in ht_sim that has a value smaller than the peak_mag_height
-            # index_mag_peak = next(x for x, val in enumerate(ht_sim) if val <= peak_mag_height)
-            index_mag_peak = [i for i in range(len(ht_sim)) if ht_sim[i] < peak_mag_height]
-            Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][index_mag_peak[0]]
+
 
             # pick from the end of vel_sim the same number of element of time_sim
             # vel_sim=vel_sim[-len(time_sim):]
+            Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][np.argmin(abs_mag_sim)]
 
+            abs_mag_sim=abs_mag_sim[index_ht_sim:index_ht_sim_end]
             vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
             time_sim=time_sim[index_ht_sim:index_ht_sim_end]
             ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
 
             # divide the vel_sim by 1000 considering is a list
-            vel_sim = [i/1000 for i in vel_sim]
             time_sim = [i-time_sim[0] for i in time_sim]
+            vel_sim = [i/1000 for i in vel_sim]
+
+            abs_mag_obs=data['mag_sampled']
+            ht_obs=data['ht_sampled']
+            ht_obs = [i/1000 for i in ht_obs]
+            obs_time=data['time_sampled']
+
+            #### CUT like in EMCCD no noise ####################################################################################
+
+            if add_json_noise == False:   
+                # Find and print the closest indices
+                closest_indices = find_closest_index(time_sim, obs_time)
+
+                abs_mag_sim=[abs_mag_sim[jj_index_cut] for jj_index_cut in closest_indices]
+                vel_sim=[vel_sim[jj_index_cut] for jj_index_cut in closest_indices]
+                time_sim=[time_sim[jj_index_cut] for jj_index_cut in closest_indices]
+                ht_sim=[ht_sim[jj_index_cut] for jj_index_cut in closest_indices]
+
+                abs_mag_obs=abs_mag_sim
+                ht_obs=ht_sim
+
+            ##################################################################################################
+
+            # Physical parameters
+            rho = data['params']['rho']['val']
+            sigma = data['params']['sigma']['val']
+            erosion_height_start = data['params']['erosion_height_start']['val']/1000
+            erosion_coeff = data['params']['erosion_coeff']['val']
+            erosion_mass_index = data['params']['erosion_mass_index']['val']
+            erosion_mass_min = data['params']['erosion_mass_min']['val']
+            erosion_mass_max = data['params']['erosion_mass_max']['val']
+
+            # from 'time_sampled' extract the last element and save it in a list
+            duration = data['time_sampled'][-1]
+            begin_height = ht_obs[0]
+            end_height = ht_obs[-1]
+            peak_abs_mag = abs_mag_obs[np.argmin(abs_mag_obs)]
+            F = (begin_height - (ht_obs[np.argmin(abs_mag_obs)])) / (begin_height - end_height)
+            peak_mag_height = ht_obs[np.argmin(abs_mag_obs)]
+            beg_abs_mag	= abs_mag_obs[0]
+            end_abs_mag	= abs_mag_obs[-1]
+            trail_len = data['len_sampled'][-1]/1000
+            shower_code = 'sim_'+Shower
+            vel_avg_norot = trail_len / duration
+
+            kc_par = begin_height + (2.86 - 2*np.log(vel_init_norot))/0.0612
+            
+            # # find the index_mag_peak in ht_sim that has a value smaller than the peak_mag_height
+            # # index_mag_peak = next(x for x, val in enumerate(ht_sim) if val <= peak_mag_height)
+            # index_mag_peak = [i for i in range(len(ht_sim)) if ht_sim[i] < peak_mag_height]
+            # Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][np.argmin(abs_mag_obs)]
+
+            #### Add Noise to velocity data ####################################################################################
+
+            if add_json_noise == True:            
+                obs_time=data['time_sampled']
+                obs_height=ht_obs
+                obs_length=data['len_sampled']
+                vel_sampled=[data['params']['v_init']['val']]
+                # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
+                rest_vel_sampled=[(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1]) for vel_ii in range(1,len(obs_length))]
+                # append the rest_vel_sampled to vel_sampled
+                vel_sampled.extend(rest_vel_sampled)
+
+                vel_sampled=[x/1000 for x in vel_sampled]
+                obs_height=[x/1000 for x in obs_height]
+
+                time_sim=obs_time
+                ht_sim=obs_height
+                vel_sim=vel_sampled
+
+            ##################################################################################################
+
+            # fit a line to the throught the vel_sim and ht_sim
+            acceleration, b = np.polyfit(time_sim,vel_sim, 1)
+            acceleration_lin = (-1)*acceleration
+
+            a3, b3, c3 = np.polyfit(time_sim,vel_sim, 2)
+            acceleration=a3*2+b3
 
             # find the sigle index of the height when the velocity start dropping from the vel_init_norot of 0.2 km/s
             # index_knee = next(x for x, val in enumerate(vel_sim) if val <= vel_sim[0]-10)
@@ -164,48 +227,43 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
                 jj_index_knee=jj_index_knee+1
             index_knee=index_knee[0]
             # only use first index to pick the height
-            height_knee_vel = ht_sim[index_knee]
-            # find the height of the height_knee_vel in data['ht_sampled']
-            index_ht_knee = next(x for x, val in enumerate(data['ht_sampled']) if val/1000 <= height_knee_vel)
-            height_knee_vel=data['ht_sampled'][index_ht_knee]/1000
+            height_knee_vel = ht_obs[index_knee]
+            # find the height of the height_knee_vel in ht_obs
+            index_ht_knee = next(x for x, val in enumerate(ht_obs) if val <= height_knee_vel)
+            height_knee_vel=ht_obs[index_ht_knee]
             
             # define thelinear deceleration from that index to the end of the simulation
             a2, b2 = np.polyfit(time_sim[index_knee:],vel_sim[index_knee:], 1)
             decel_after_knee_vel=((-1)*a2)
 
             # fit a line to the throught the vel_sim and ht_sim
-            acceleration, b = np.polyfit(time_sim,vel_sim, 1)
-            acceleration_lin = (-1)*acceleration
-
-            a3, b3, c3 = np.polyfit(time_sim,vel_sim, 2)
-            acceleration=a3*2+b3
-
-            # fit a line to the throught the vel_sim and ht_sim
-            index_ht_peak = next(x for x, val in enumerate(data['ht_sampled']) if val/1000 <= peak_mag_height)
+            index_ht_peak = next(x for x, val in enumerate(ht_obs) if val <= peak_mag_height)
             #print('index_ht_peak',index_ht_peak)
             # only use first index to pick the height
-            height_pickl = [i/1000 for i in data['ht_sampled']]
+            # height_pickl = [i/1000 for i in ht_obs]
 
-            # check if the height_pickl[:index_ht_peak] and data['mag_sampled'][:index_ht_peak] are empty
-            if height_pickl[:index_ht_peak] == [] or data['mag_sampled'][:index_ht_peak] == []:
+            height_pickl = ht_obs
+
+            # check if the height_pickl[:index_ht_peak] and abs_mag_obs[:index_ht_peak] are empty
+            if height_pickl[:index_ht_peak] == [] or abs_mag_obs[:index_ht_peak] == []:
                 a3_Inabs, b3_Inabs, c3_Inabs = 0, 0, 0
             else:
-                a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:index_ht_peak], data['mag_sampled'][:index_ht_peak], 2)
+                a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:index_ht_peak], abs_mag_obs[:index_ht_peak], 2)
 
-            # check if the height_pickl[index_ht_peak:] and data['mag_sampled'][index_ht_peak:] are empty
-            if height_pickl[index_ht_peak:] == [] or data['mag_sampled'][index_ht_peak:] == []:
+            # check if the height_pickl[index_ht_peak:] and abs_mag_obs[index_ht_peak:] are empty
+            if height_pickl[index_ht_peak:] == [] or abs_mag_obs[index_ht_peak:] == []:
                 a3_Outabs, b3_Outabs, c3_Outabs = 0, 0, 0
             else:
-                a3_Outabs, b3_Outabs, c3_Outabs = np.polyfit(height_pickl[index_ht_peak:], data['mag_sampled'][index_ht_peak:], 2)
+                a3_Outabs, b3_Outabs, c3_Outabs = np.polyfit(height_pickl[index_ht_peak:], abs_mag_obs[index_ht_peak:], 2)
             
             # from 'params' extract the physical parameters and save them in a list
-            rho = data['params']['rho']['val']
-            sigma = data['params']['sigma']['val']
-            erosion_height_start = data['params']['erosion_height_start']['val']/1000
-            erosion_coeff = data['params']['erosion_coeff']['val']
-            erosion_mass_index = data['params']['erosion_mass_index']['val']
-            erosion_mass_min = data['params']['erosion_mass_min']['val']
-            erosion_mass_max = data['params']['erosion_mass_max']['val']
+            # rho = data['params']['rho']['val']
+            # sigma = data['params']['sigma']['val']
+            # erosion_height_start = data['params']['erosion_height_start']['val']/1000
+            # erosion_coeff = data['params']['erosion_coeff']['val']
+            # erosion_mass_index = data['params']['erosion_mass_index']['val']
+            # erosion_mass_min = data['params']['erosion_mass_min']['val']
+            # erosion_mass_max = data['params']['erosion_mass_max']['val']
             erosion_range = np.log10(erosion_mass_max) - np.log10(erosion_mass_min)
 
             # erosion energy
@@ -220,8 +278,8 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
 
             # # find the index of the first element of the simulation that is equal to the first element of the observation
-            mag_sampled_norm = [0 if math.isnan(x) else x for x in data['mag_sampled']]
-            # normalize the fuction with x data['time_sampled'] and y data['mag_sampled'] and center it at the origin
+            mag_sampled_norm = [0 if math.isnan(x) else x for x in abs_mag_obs]
+            # normalize the fuction with x data['time_sampled'] and y abs_mag_obs and center it at the origin
             time_sampled_norm= data['time_sampled'] - np.mean(data['time_sampled'])
             # subrtract the max value of the mag to center it at the origin
             mag_sampled_norm = (-1)*(mag_sampled_norm - np.max(mag_sampled_norm))
@@ -229,14 +287,14 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             # mag_sampled_norm = mag_sampled_norm/np.sum(mag_sampled_norm)
             mag_sampled_norm = mag_sampled_norm/np.max(mag_sampled_norm)
 
-            # trasform data['mag_sampled'][i] value 'numpy.float64' to int
-            # data['mag_sampled'] = data['mag_sampled'].astype(int)
+            # trasform abs_mag_obs[i] value 'numpy.float64' to int
+            # abs_mag_obs = abs_mag_obs.astype(int)
 
             # create an array with the number the ammount of same number equal to the value of the mag
             mag_sampled_distr = []
             mag_sampled_array=np.asarray(mag_sampled_norm*1000, dtype = 'int')
-            # i_pos=(-1)*np.round(len(data['mag_sampled'])/2)
-            for i in range(len(data['mag_sampled'])):
+            # i_pos=(-1)*np.round(len(abs_mag_obs)/2)
+            for i in range(len(abs_mag_obs)):
                 # create an integer form the array mag_sampled_array[i] and round of the given value
                 numbs=mag_sampled_array[i]
                 # invcrease the array number by the mag_sampled_distr numbs 
@@ -580,7 +638,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
 
     # recomute PCA with the number of PC that explain 95% of the variance
-    pca= PCA(n_components=np.argmax(cumulative_variance >= 0.97) + 1)
+    pca= PCA(n_components=np.argmax(cumulative_variance >= PCA_percent) + 1)
     all_PCA = pca.fit_transform(scaled_df_all)
 
     # # select only the column with in columns_PC with the same number of n_components
@@ -815,7 +873,7 @@ def refine_PCA_space(df_all):
     cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
 
     # recomute PCA with the number of PC that explain 95% of the variance
-    pca= PCA(n_components=np.argmax(cumulative_variance >= 0.97) + 1)
+    pca= PCA(n_components=np.argmax(cumulative_variance >= PCA_percent) + 1)
     all_PCA = pca.fit_transform(df_all)
 
     # # select only the column with in columns_PC with the same number of n_components

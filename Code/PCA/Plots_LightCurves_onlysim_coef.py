@@ -35,7 +35,10 @@ with_legend=True
 with_LEN=False
 
 # add the noise to the reduced simulated event
-with_noise=True
+with_noise=False
+
+# is the input data noisy
+noise_data_input=False
 
 # Standard deviation of the magnitude Gaussian noise
 mag_noise = 0.1*2
@@ -215,11 +218,42 @@ for ii in range(len(curr_sel)):
                     # plot the line
                     abs_mag_sim=obs_abs_mag
             
-            # DELETE
-            # abs_mag_sim=obs_abs_mag
+            if noise_data_input==True:
+                abs_mag_sim=obs_abs_mag
 
             # put it in the first subplot
             ax[0].plot(abs_mag_sim,height_km,label='sel_'+current_shower+'('+str(index_sel)+') MEANdist:'+str(round(curr_sel.iloc[ii]['distance'],2)))
+            # plot the parabolic curve before the peak_mag_height 
+
+
+#############ADD COEF#############################################
+            peak_mag_height = curr_sel.iloc[ii]['peak_mag_height']
+            # fit a line to the throught the vel_sim and ht_sim
+            index_ht_peak = next(x for x, val in enumerate(data['ht_sampled']) if val/1000 <= peak_mag_height)
+            #print('index_ht_peak',index_ht_peak)
+            # only use first index to pick the height
+            height_pickl = [i/1000 for i in data['ht_sampled']]
+
+            a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:index_ht_peak], abs_mag_sim[:index_ht_peak], 2)
+            # plot the parabolic curve before the peak_mag_height with the same color of the line
+            ax[0].plot(a3_Inabs*np.array(height_pickl[:index_ht_peak])**2+b3_Inabs*np.array(height_pickl[:index_ht_peak])+c3_Inabs,height_pickl[:index_ht_peak], color=ax[0].lines[-1].get_color(), linestyle='None', marker='<')# , markersize=5
+            
+            if ii==0:
+                print(str(curr_sel.iloc[ii]['solution_id']))
+                print('Abs.Mag before peak')
+                print('a:',a3_Inabs)
+                print('b:',b3_Inabs)
+
+            # the other side of the peak
+            a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[index_ht_peak:], abs_mag_sim[index_ht_peak:], 2)
+            # plot the parabolic curve before the peak_mag_height with the same color of the line
+            ax[0].plot(a3_Inabs*np.array(height_pickl[index_ht_peak:])**2+b3_Inabs*np.array(height_pickl[index_ht_peak:])+c3_Inabs,height_pickl[index_ht_peak:], color=ax[0].lines[-1].get_color(), linestyle='None', marker='>')# , markersize=5
+            
+            if ii==0:
+                print('Abs.Mag after peak')
+                print('a:',a3_Inabs)
+                print('b:',b3_Inabs)
+
         else:
             ax[0].plot(abs_mag_sim,height_km,label='sel_'+current_shower+'('+str(index_sel)+') MEANdist:'+str(round(curr_sel.iloc[ii]['distance'],2)),color='coral')
 
@@ -304,6 +338,7 @@ for ii in range(len(curr_sel)):
         
         # fit a line to the throught the vel_sim and ht_sim
         a, b = np.polyfit(ht_sim,vel_sim, 1)
+
         # create a list of the same length of vel_sim with the value of the line
         vel_sim_line=[a*x+b for x in ht_sim]
 
@@ -343,20 +378,32 @@ for ii in range(len(curr_sel)):
                         vel_kms_err=np.array(vel_kms)
 
                         # plot noisy area around vel_kms for vel_noise for the fix height_km
-                        ax[1].fill_betweenx(height_km_err, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5)
+                        ax[1].fill_between(obs_time, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5)
                         # plot the line
                         vel_kms=vel_sampled
 
-                # DELETE
-                # vel_kms=vel_sampled
+                if noise_data_input==True:
+                    vel_kms=vel_sampled
 
-                ax[1].plot(vel_kms,height_km,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2))+'\n\
+                ax[1].plot(obs_time, vel_kms,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2))+'\n\
         m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
         rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
         er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
         er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))
 
-   
+
+     ############### add coefficient to the plot ############################################           
+                # fit the to a parabolic curve
+                a3, b3, c3 = np.polyfit(obs_time,vel_kms, 2)
+
+                # plot the parabolic curve before the peak_mag_height with the same color of the line
+                ax[1].plot(obs_time,a3*np.array(obs_time)**2+b3*np.array(obs_time)+c3, color=ax[1].lines[-1].get_color(), linestyle='None', marker='o')# , markersize=5
+
+                if ii==0:
+                    print(str(curr_sel.iloc[ii]['solution_id']))
+                    print('Velocity')
+                    print('a:',a3)
+                    print('b:',b3)
         else:
 
             if ii==0:
@@ -382,6 +429,16 @@ ax[1].lines[0].set_color('black')
 # change the zorder=-1 of the first line
 ax[0].lines[0].set_zorder(n_confront_sel)
 ax[1].lines[0].set_zorder(n_confront_sel)
+
+
+# change dot line color
+ax[0].lines[1].set_color('black')
+ax[0].lines[2].set_color('black')
+ax[1].lines[1].set_color('black')
+# change the zorder=-1 of the first line
+ax[0].lines[1].set_zorder(n_confront_sel)
+ax[0].lines[2].set_zorder(n_confront_sel)
+ax[1].lines[1].set_zorder(n_confront_sel)
 
 if with_LEN==True:
     # change the first plotted line style to be a dashed line
@@ -433,8 +490,8 @@ if with_LEN==True:
 else:
     # title with the current_shower and written also vel vs height in the second subplot
     ax[1].set_title(current_shower+' vel vs height')
-    ax[1].set_ylabel('height [km]')
-    ax[1].set_xlabel('velocity [km/s]')
+    ax[1].set_ylabel('velocity [km/s]')
+    ax[1].set_xlabel('time [s]')
 
 #figManager = plt.get_current_fig_manager()
 #figManager.window.showMaximized()
@@ -444,341 +501,4 @@ else:
 
 # save inintial_folder+'\\'+current_shower+'_Heigh_MagVel.png'
 
-plt.savefig(initial_folder+'\\'+only_select_meteors_from+'Heigh_MagVel.png')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-if with_LEN==True:
-    # put the first plot in 3 sublots
-    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
-else:
-    # put the first plot in 2 sublots
-    fig, ax = plt.subplots(1, 2, figsize=(15, 5))
-                
-
-for current_shower in Shower:
-    curr_obs_og=df_obs_shower[df_obs_shower['shower_code']==current_shower]
-    curr_sel_og=df_sel_shower[df_sel_shower['shower_code']==current_shower+'_sel']
-
-    curr_sel = curr_sel_og.sort_values(by=['distance'])
-    curr_sel = curr_sel[curr_sel['distance']>=min_dist_sel]
-
-    curr_obs = curr_obs_og.sort_values(by=['distance'])
-    curr_obs = curr_obs[curr_obs['distance']>=min_dist_obs]
-
-    if n_confront_obs<len(df_obs_shower):
-        curr_obs=curr_obs.head(n_confront_obs)
-    
-    if n_confront_sel<len(df_sel_shower):
-        curr_sel=curr_sel.head(n_confront_sel)
-
-
-
-# find the directory where the script is running
-current_folder=os.getcwd()
-
-# in current_folder entern in the folder current_folder+'\\Simulation_'current_shower
-os.chdir(current_folder+'\\Simulations_'+current_shower+'\\')
-# os.chdir('Simulations_'+current_shower)
-for ii in range(len(curr_sel)):
-    # pick the ii element of the solution_id column 
-    namefile_sel=curr_sel.iloc[ii]['solution_id']
-    # find the index of curr_obs_og with the same distance
-    index_sel=curr_sel_og[curr_sel_og['solution_id']==namefile_sel].index
-    index_sel=index_sel[0]
-
-    # chec if the file exist
-    if not os.path.isfile(namefile_sel):
-        print('file '+namefile_sel+' not found')
-        continue
-    else:
-        # open the json file with the name namefile_sel
-        f = open(namefile_sel,"r")
-        data = json.loads(f.read())
-        # data['main_vel_arr']
-        # ht_sim=data['simulation_results']['main_height_arr']
-        # absmag_sim=data['simulation_results']['abs_magnitude']
-        # cut out absmag_sim above 7 considering that absmag_sim is a list
-        if with_legend:
-            # put it in the first subplot
-            ax[0].plot(data['time_sampled'],data['mag_sampled'],label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2)))
-        else:
-            ax[0].plot(data['time_sampled'],data['mag_sampled'],label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2)),color='coral')
-
-# if len(df_obs_shower) == 1:
-#     namefile_manual=df_obs_shower.iloc[0]['solution_id']
-#     # check in the "Manual Reduction" folder if there is a folder name "namefile_manual"
-#     # if not, exit
-#     if os.path.exists(os.getcwd()+r'/Manual Reduction/'+namefile_manual):
-#         folder=namefile_manual.split('_')[0]
-#         # put the naeme as a title
-#         plt.title(namefile_manual+' abs.mag vs time')
-    
-
-# y limit
-# plt.ylim(90500, 117500)
-
-# title with the current_shower and written also absolute mag vs height
-ax[0].set_title(current_shower+' abs.mag vs time')
-# grid on
-ax[0].grid(linestyle='--',color='lightgray')
-# invert the y axis
-ax[0].invert_yaxis()
-# if with_legend:
-#     plt.legend()
-# plt.show()
-
-
-
-
-            
-
-for ii in range(len(curr_sel)):
-
-    # pick the ii element of the solution_id column 
-    namefile_sel=curr_sel.iloc[ii]['solution_id']
-    # find the index of curr_obs_og with the same distance
-    index_sel=curr_sel_og[curr_sel_og['solution_id']==namefile_sel].index
-    index_sel=index_sel[0]
-
-    # check if the file exist
-    if os.path.isfile(namefile_sel):
-        # open the json file with the name namefile_sel
-        f = open(namefile_sel,"r")
-        data = json.loads(f.read())
-        # vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
-        # ht_sim=data['simulation_results']['leading_frag_height_arr']#['main_height_arr']
-        vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
-        ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
-        time_sim=data['simulation_results']['time_arr']#['brightest_time_arr']#['leading_frag_time_arr']#['main_time_arr']
-        # absmag_sim=data['simulation_results']['abs_magnitude']
-        obs_time=data['time_sampled']
-        obs_height=data['ht_sampled']
-        obs_length=data['len_sampled']
-
-        # delete the nan term in vel_sim and ht_sim
-        vel_sim=[x for x in vel_sim if str(x) != 'nan']
-        ht_sim=[x for x in ht_sim if str(x) != 'nan']
-
-        # # find the index of the first element of the simulation that is equal to the first element of the observation
-        index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= obs_height[0])
-        # find the index of the last element of the simulation that is equal to the last element of the observation
-        index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= obs_height[-1])
-
-
-        # # # delete term with velocity equal 0
-        # for jj in range(len(vel_sim)):
-        #     if vel_sim[jj]==0:
-        #         vel_sim=vel_sim[:jj]
-        #         ht_sim=ht_sim[:jj]
-        #         time_sim=time_sim[:jj]
-        #         break
-
-        # # delete the nan term
-        # for jj in range(len(vel_sim)):
-        #     if np.isnan(vel_sim[jj]):
-        #         vel_sim=vel_sim[:jj]
-        #         ht_sim=ht_sim[:jj]
-        #         time_sim=time_sim[:jj]
-        #         break
-
-        # for jj in range(len(ht_sim)):
-        #     if ht_sim[jj]<data['ht_sampled'][0]:
-        #         vel_sim=vel_sim[jj:]
-        #         ht_sim=ht_sim[jj:]
-        #         time_sim=time_sim[jj:]
-        #         break
-        
-        # # create an array of vel_sim and ht_sim that start from index_ht_sim and end at index_ht_sim_end
-        vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
-        time_sim=time_sim[index_ht_sim:index_ht_sim_end]
-
-        # pick from the end of vel_sim the same number of element of time_sim
-        # vel_sim=vel_sim[-len(time_sim):]
-
-        time_sim=[x-time_sim[0] for x in time_sim]
-
-        vel_kms=[x/1000 for x in vel_sim]
-
-        # Find and print the closest indices
-        closest_indices = find_closest_index(time_sim, obs_time)
-
-        vel_kms=[vel_kms[i] for i in closest_indices]
-        time_sim=obs_time
-
-        # from data params v_init val
-        vel_sampled=[data['params']['v_init']['val']]
-        # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
-        rest_vel_sampled=[(obs_length[i]-obs_length[i-1])/(obs_time[i]-obs_time[i-1]) for i in range(1,len(obs_length))]
-        # append the rest_vel_sampled to vel_sampled
-        vel_sampled.extend(rest_vel_sampled)
-        
-        vel_sampled=[x/1000 for x in vel_sampled]
-
-        # vel_kms=vel_sampled
-
-        obs_length=[x/1000 for x in obs_length]
-
-
-
-        
-        # fit a line to the throught the vel_sim and ht_sim
-        a, b = np.polyfit(time_sim,vel_kms, 1)
-        # create a list of the same length of vel_sim with the value of the line
-        vel_sim_line=[a*x+b for x in time_sim]
-
-        time_in=[x-time_sim[0] for x in time_sim]
-
-        
-
-        if with_legend:
-
-            if with_LEN==True:
-                ax[1].plot(time_in,obs_length)
-
-                if ii==0:
-                    vel_kms=vel_sampled
-
-                ax[2].plot(time_in,vel_kms,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2))+'\n\
-    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))
-
-
-            else:
-
-                if ii==0:
-                    vel_kms=vel_sampled
-            
-                ax[1].plot(time_in,vel_kms,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2))+'\n\
-        m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-        rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-        er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-        er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))
-            
-        else:
-            if ii==0:
-                vel_kms=vel_sampled
-            # plt.plot(vel_sim,ht_sim,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2)),color='coral')
-            ax[1].plot(time_in,vel_kms,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2)),color='coral')
-
-            
-
-# go back one folder
-os.chdir('..')
-
-# y limit
-# plt.ylim(90500, 117500)
-# plt.xlim(14000, 70500)
-
-if len(df_obs_shower) == 1:
-    namefile_manual=df_obs_shower.iloc[0]['solution_id']
-    # check in the "Manual Reduction" folder if there is a folder name "namefile_manual"
-    # if not, exit
-    if os.path.exists(os.getcwd()+r'\\Manual Reduction\\'+namefile_manual):
-        folder=namefile_manual.split('_')[0]
-        # put the naeme as a super title of the plot
-        plt.suptitle(namefile_manual)
-
-
-
-# change the first plotted line style to be a dashed line
-ax[0].lines[0].set_linestyle("None")
-ax[1].lines[0].set_linestyle("None")
-# change the first plotted marker to be a x
-ax[0].lines[0].set_marker("x")
-ax[1].lines[0].set_marker("x")
-# change first line color
-ax[0].lines[0].set_color('black')
-ax[1].lines[0].set_color('black')
-# change the zorder=-1 of the first line
-ax[0].lines[0].set_zorder(n_confront_sel)
-ax[1].lines[0].set_zorder(n_confront_sel)
-
-if with_LEN==True:
-    # change the first plotted line style to be a dashed line
-    ax[2].lines[0].set_linestyle("None")
-    # change the first plotted marker to be a x
-    ax[2].lines[0].set_marker("x")
-    # change first line color
-    ax[2].lines[0].set_color('black')
-    # change the zorder=-1 of the first line
-    ax[2].lines[0].set_zorder(n_confront_sel)
-
-# title with the current_shower and written also vel vs height in the second subplot
-if with_legend:
-    if n_confront_sel <= 5:
-        # pu the leggend putside the plot and adjust the plot base on the screen size
-        ax[-1].legend(bbox_to_anchor=(1.05, 1.1), loc='upper left', borderaxespad=0.)
-        # the legend do not fit in the plot, so adjust the plot
-        plt.subplots_adjust(right=0.8)
-    else:
-        # pu the leggend putside the plot and adjust the plot base on the screen size
-        ax[-1].legend(bbox_to_anchor=(1.05, 1.1), loc='upper left', borderaxespad=0.,fontsize="10",ncol=2)
-        # the legend do not fit in the plot, so adjust the plot
-        plt.subplots_adjust(right=.6)
-        # push the two subplots left
-        # plt.subplots_adjust(left=-.0001)
-        plt.subplots_adjust(wspace=0.2)
-
-
-
-    # plt.legend()
-
-
-# add the label to the x and y axis
-ax[0].set_xlabel('time [s]')
-ax[0].set_ylabel('abs.mag [-]')
-
-# grid on on both subplot with -- as linestyle and light gray color
-ax[1].grid(linestyle='--',color='lightgray')
-
-if with_LEN==True:
-    ax[1].set_ylabel('length [km]')
-    ax[1].set_xlabel('time [s]')
-    # invert the y axis
-    ax[1].invert_yaxis()
-
-    ax[2].set_xlabel('time [s]')
-    ax[2].set_ylabel('velocity [km/s]')
-
-    ax[2].grid(linestyle='--',color='lightgray')
-    # title with the current_shower and written also vel vs height in the second subplot
-    ax[1].set_title(current_shower+' len vs time')
-    # title with the current_shower and written also vel vs height in the second subplot
-    ax[2].set_title(current_shower+' vel vs time')
-else:
-    # title with the current_shower and written also vel vs height in the second subplot
-    ax[1].set_title(current_shower+' vel vs time')
-    ax[1].set_xlabel('time [s]')
-    ax[1].set_ylabel('velocity [km/s]')
-
-
-
-
-#figManager = plt.get_current_fig_manager()
-# figManager.window.showMaximized()
-#figManager.resize(*figManager.window.maxsize())
-# plt.show()
-# plt.figure(figsize=(13,6))
-# fig.set_size_inches(18.5, 10.5, forward=True)
-plt.savefig(initial_folder+'\\'+only_select_meteors_from+'Time_MagVel.png')
-
-plt.close('all')
+plt.savefig(initial_folder+'\\'+only_select_meteors_from+'Heigh_MagVelCoef.png')

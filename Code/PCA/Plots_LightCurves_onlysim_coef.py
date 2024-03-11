@@ -40,14 +40,29 @@ with_noise=False
 # is the input data noisy
 noise_data_input=False
 
-# Standard deviation of the magnitude Gaussian noise
-mag_noise = 0.1*2
+# 5 sigma confidence interval
+five_sigma=False
 
-# # SD of noise in length (m)
+# Standard deviation of the magnitude Gaussian noise 1 sigma
+mag_noise = 0.1
+
+# SD of noise in length (m) 1 sigma
 len_noise = 20.0/1000
 
-# velocity noise
-vel_noise = (2*len_noise/0.03125)
+# velocity noise 1 sigma
+vel_noise = (len_noise*np.sqrt(2)/0.03125)
+
+# 5 sigma confidence interval
+if five_sigma==True:
+    # 5 sigma confidence interval
+    conf_int = 0.999999426696856
+    # 5 sigma confidence interval
+    mag_noise = 5*mag_noise
+    # 5 sigma confidence interval
+    len_noise = 5*len_noise
+    # 5 sigma confidence interval
+    vel_noise = 5*vel_noise
+
 
 # FUNCTIONS ###########################################################################################
 
@@ -502,3 +517,6 @@ else:
 # save inintial_folder+'\\'+current_shower+'_Heigh_MagVel.png'
 
 plt.savefig(initial_folder+'\\'+only_select_meteors_from+'Heigh_MagVelCoef.png')
+
+# close the plot
+plt.close()

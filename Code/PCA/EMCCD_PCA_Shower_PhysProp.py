@@ -9,8 +9,8 @@ latest update: 2021-05-25
 """
 
 import json
-import copy
-import multiprocessing
+# import copy
+# import multiprocessing
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +20,7 @@ import seaborn as sns
 import scipy.spatial.distance
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from heapq import nsmallest
+# from heapq import nsmallest
 import wmpl
 from wmpl.MetSim.GUI import loadConstants
 import shutil
@@ -28,10 +28,11 @@ from scipy.stats import kurtosis, skew
 from wmpl.Utils.OSTools import mkdirP
 import math
 from wmpl.Utils.PyDomainParallelizer import domainParallelizer
-from scipy.optimize import curve_fit # faster 
-from scipy.optimize import basinhopping # slower but more accurate
+# from scipy.optimize import curve_fit # faster 
+# from scipy.optimize import basinhopping # slower but more accurate
+from scipy.optimize import minimize
 
-add_json_noise = True
+add_json_noise = False
 
 PCA_percent = 98/100
 
@@ -161,7 +162,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
                 time_sim=[time_sim[jj_index_cut] for jj_index_cut in closest_indices]
                 ht_sim=[ht_sim[jj_index_cut] for jj_index_cut in closest_indices]
 
-                Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][np.argmin(abs_mag_sim)]
+                Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][np.argmin(data['simulation_results']['abs_magnitude'])]
 
                 abs_mag_obs=abs_mag_sim
                 ht_obs=ht_sim
@@ -256,11 +257,12 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             # Initial guess for a1 and a2
             initial_guess = [0.005,	10]
 
-            # Apply basinhopping to minimize the residuals # minize the residuals
-            result = basinhopping(residuals, initial_guess, minimizer_kwargs={"method": "L-BFGS-B"}, niter=100)
+            # Apply basinhopping to minimize the residuals
+            # result = basinhopping(residuals, initial_guess, minimizer_kwargs={"method": "L-BFGS-B"}, niter=100)
+            result = minimize(residuals, initial_guess)
 
             # Results
-            jac_a1, jac_a2 = result.x
+            jac_a1, jac_a2 = abs(result.x)
 
             acc_jacchia = abs(jac_a1)*abs(jac_a2)
 
@@ -363,6 +365,15 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             erosion_height_start, erosion_coeff, erosion_mass_index,\
             erosion_mass_min, erosion_mass_max, erosion_range,\
             erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass]
+
+            # df_json.loc[len(df_json)] = [name,shower_code, np.round(vel_init_norot,8), np.round(vel_avg_norot,8), np.round(duration,7),\
+            # np.round(mass,8), np.round(peak_mag_height,7),np.round(begin_height,7), np.round(end_height,8), np.round(height_knee_vel,7), np.round(peak_abs_mag,8), np.round(beg_abs_mag,8), np.round(end_abs_mag,8),\
+            # np.round(F,8), np.round(trail_len,8), np.round(acceleration_lin,8), np.round(acceleration_parab,8), np.round(acc_jacchia,8), np.round(decel_after_knee_vel,8), np.round(zenith_angle,8), np.round(kurtosyness,8),np.round(skewness,8),\
+            # np.round(kc_par,8), np.round(Dynamic_pressure_peak_abs_mag,7),\
+            # np.round(a3,7), np.round(b3,7), np.round(c3,7), np.round(jac_a1,7), np.round(jac_a2,7), np.round(a3_Inabs,7), np.round(b3_Inabs,7), np.round(c3_Inabs,7), np.round(a3_Outabs,7), np.round(b3_Outabs,7), np.round(c3_Outabs,7), rho, sigma,\
+            # erosion_height_start, erosion_coeff, erosion_mass_index,\
+            # erosion_mass_min, erosion_mass_max, erosion_range,\
+            # erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass]
 
             There_is_data=True
 
@@ -597,8 +608,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','Dynamic_pressure_peak_abs_mag','kurtosis','skew','trail_len']
     # decel_after_knee_vel and height_knee_vel create errors in the PCA space  decel_after_knee_vel,height_knee_vel
 
-# solution_id	shower_code	vel_init_norot	vel_avg_norot	duration	mass	peak_mag_height	begin_height	end_height	height_knee_vel	peak_abs_mag	beg_abs_mag	end_abs_mag	F	trail_len	acceleration_lin	acceleration_parab	acc_jacchia	decel_after_knee_vel	zenith_angle	kurtosis	skew	kc	Dynamic_pressure_peak_abs_mag	a_acc	b_acc	c_acc	a1_acc_jac	a2_acc_jac	a_mag_init	b_mag_init	c_mag_init	a_mag_end	b_mag_end	c_mag_end
-    No_var_PCA=['decel_after_knee_vel','height_knee_vel','acceleration_lin','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','kc','acc_jacchia'] #,'acc_jacchia',acceleration_parab
+    No_var_PCA=['decel_after_knee_vel','height_knee_vel','acceleration_lin','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','kc'] #,'acc_jacchia',acceleration_parab
     # if PC below 7 wrong
 
     # if variable_PCA is not empty

@@ -7,12 +7,14 @@ import json
 import numpy as np
 import math
 from sklearn.linear_model import LinearRegression
+from scipy.optimize import curve_fit
 
 #matplotlib.use('Agg')
 #matplotlib.use("Qt5Agg")
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
 # Set the shower name (can be multiple) e.g. 'GEM' or ['GEM','PER', 'ORI', 'ETA', 'SDA', 'CAP']
+
 Shower=['PER']#['PER']
 
 # number of selected events selected
@@ -35,13 +37,13 @@ with_legend=True
 with_LEN=False
 
 # add the noise to the reduced simulated event
-with_noise=False
+with_noise=True
 
 # is the input data noisy
 noise_data_input=False
 
 # 5 sigma confidence interval
-five_sigma=False
+# five_sigma=False
 
 # Standard deviation of the magnitude Gaussian noise 1 sigma
 mag_noise = 0.1
@@ -52,19 +54,16 @@ len_noise = 20.0/1000
 # velocity noise 1 sigma
 vel_noise = (len_noise*np.sqrt(2)/0.03125)
 
-# 5 sigma confidence interval
-if five_sigma==True:
-    # 5 sigma confidence interval
-    conf_int = 0.999999426696856
-    # 5 sigma confidence interval
-    mag_noise = 5*mag_noise
-    # 5 sigma confidence interval
-    len_noise = 5*len_noise
-    # 5 sigma confidence interval
-    vel_noise = 5*vel_noise
-
-
-# FUNCTIONS ###########################################################################################
+# # 5 sigma confidence interval
+# if five_sigma==True:
+#     # 5 sigma confidence interval
+#     conf_int = 0.999999426696856
+#     # 5 sigma confidence interval
+#     mag_noise = 5*mag_noise
+#     # 5 sigma confidence interval
+#     len_noise = 5*len_noise
+#     # 5 sigma confidence interval
+#     vel_noise = 5*vel_noise
 
 if with_LEN==True:
     # put the first plot in 3 sublots
@@ -98,6 +97,12 @@ for current_shower in Shower:
 
     # append the simulated shower to the list
     df_sel_shower.append(df_sel)
+
+    df_PCA_columns = pd.read_csv(os.getcwd()+r'\Simulated_'+current_shower+'_select_PCA.csv')
+    # fid the numbr of columns
+    n_PC_in_PCA=str(len(df_PCA_columns.columns)-1)+'PC'
+    # print the number of selected events
+    print('The PCA space has '+str(n_PC_in_PCA))
 
 # # select the one below 1 in distance and order for distance
 df_sel_shower = pd.concat(df_sel_shower)
@@ -139,11 +144,13 @@ for current_shower in Shower:
     curr_obs_og=df_obs_shower[df_obs_shower['shower_code']==current_shower]
     curr_sel_og=df_sel_shower[df_sel_shower['shower_code']==current_shower+'_sel']
 
-    curr_sel = curr_sel_og.sort_values(by=['distance'])
-    curr_sel = curr_sel[curr_sel['distance']>=min_dist_sel]
-
-    curr_obs = curr_obs_og.sort_values(by=['distance'])
-    curr_obs = curr_obs[curr_obs['distance']>=min_dist_obs]
+    curr_sel = curr_sel_og
+    # curr_sel = curr_sel_og.sort_values(by=['distance'])
+    # curr_sel = curr_sel[curr_sel['distance']>=min_dist_sel]
+    
+    curr_obs = curr_obs_og
+    # curr_obs = curr_obs_og.sort_values(by=['distance'])
+    # curr_obs = curr_obs[curr_obs['distance']>=min_dist_obs]
 
     if n_confront_obs<len(df_obs_shower):
         curr_obs=curr_obs.head(n_confront_obs)
@@ -249,25 +256,29 @@ for ii in range(len(curr_sel)):
             # only use first index to pick the height
             height_pickl = [i/1000 for i in data['ht_sampled']]
 
-            a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:index_ht_peak], abs_mag_sim[:index_ht_peak], 2)
-            # plot the parabolic curve before the peak_mag_height with the same color of the line
-            ax[0].plot(a3_Inabs*np.array(height_pickl[:index_ht_peak])**2+b3_Inabs*np.array(height_pickl[:index_ht_peak])+c3_Inabs,height_pickl[:index_ht_peak], color=ax[0].lines[-1].get_color(), linestyle='None', marker='<')# , markersize=5
-            
-            if ii==0:
-                print(str(curr_sel.iloc[ii]['solution_id']))
-                print('Abs.Mag before peak')
-                print('a:',a3_Inabs)
-                print('b:',b3_Inabs)
+            ax[0].plot(curr_sel.iloc[ii]['a_mag_init']*np.array(height_pickl[:index_ht_peak])**2+curr_sel.iloc[ii]['b_mag_init']*np.array(height_pickl[:index_ht_peak])+curr_sel.iloc[ii]['c_mag_init'],height_pickl[:index_ht_peak], color=ax[0].lines[-1].get_color(), linestyle='None', marker='<')# , markersize=5
 
-            # the other side of the peak
-            a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[index_ht_peak:], abs_mag_sim[index_ht_peak:], 2)
-            # plot the parabolic curve before the peak_mag_height with the same color of the line
-            ax[0].plot(a3_Inabs*np.array(height_pickl[index_ht_peak:])**2+b3_Inabs*np.array(height_pickl[index_ht_peak:])+c3_Inabs,height_pickl[index_ht_peak:], color=ax[0].lines[-1].get_color(), linestyle='None', marker='>')# , markersize=5
+            ax[0].plot(curr_sel.iloc[ii]['a_mag_end']*np.array(height_pickl[index_ht_peak:])**2+curr_sel.iloc[ii]['b_mag_end']*np.array(height_pickl[index_ht_peak:])+curr_sel.iloc[ii]['c_mag_end'],height_pickl[index_ht_peak:], color=ax[0].lines[-1].get_color(), linestyle='None', marker='>')# , markersize=5
             
-            if ii==0:
-                print('Abs.Mag after peak')
-                print('a:',a3_Inabs)
-                print('b:',b3_Inabs)
+            # a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:index_ht_peak], abs_mag_sim[:index_ht_peak], 2)
+            # # plot the parabolic curve before the peak_mag_height with the same color of the line
+            # ax[0].plot(a3_Inabs*np.array(height_pickl[:index_ht_peak])**2+b3_Inabs*np.array(height_pickl[:index_ht_peak])+c3_Inabs,height_pickl[:index_ht_peak], color=ax[0].lines[-1].get_color(), linestyle='None', marker='<')# , markersize=5
+            
+            # if ii==0:
+            #     print(str(curr_sel.iloc[ii]['solution_id']))
+            #     print('Abs.Mag before peak')
+            #     print('a:',a3_Inabs)
+            #     print('b:',b3_Inabs)
+
+            # # the other side of the peak
+            # a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[index_ht_peak:], abs_mag_sim[index_ht_peak:], 2)
+            # # plot the parabolic curve before the peak_mag_height with the same color of the line
+            # ax[0].plot(a3_Inabs*np.array(height_pickl[index_ht_peak:])**2+b3_Inabs*np.array(height_pickl[index_ht_peak:])+c3_Inabs,height_pickl[index_ht_peak:], color=ax[0].lines[-1].get_color(), linestyle='None', marker='>')# , markersize=5
+            
+            # if ii==0:
+            #     print('Abs.Mag after peak')
+            #     print('a:',a3_Inabs)
+            #     print('b:',b3_Inabs)
 
         else:
             ax[0].plot(abs_mag_sim,height_km,label='sel_'+current_shower+'('+str(index_sel)+') MEANdist:'+str(round(curr_sel.iloc[ii]['distance'],2)),color='coral')
@@ -407,18 +418,77 @@ for ii in range(len(curr_sel)):
         er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))
 
 
-     ############### add coefficient to the plot ############################################           
-                # fit the to a parabolic curve
-                a3, b3, c3 = np.polyfit(obs_time,vel_kms, 2)
+     ############### add coefficient to the plot ############################################  
 
-                # plot the parabolic curve before the peak_mag_height with the same color of the line
-                ax[1].plot(obs_time,a3*np.array(obs_time)**2+b3*np.array(obs_time)+c3, color=ax[1].lines[-1].get_color(), linestyle='None', marker='o')# , markersize=5
+                # ax[1].plot(obs_time,curr_sel.iloc[ii]['a_acc']*np.array(obs_time)**2+curr_sel.iloc[ii]['b_acc']*np.array(obs_time)+curr_sel.iloc[ii]['c_acc'], color=ax[1].lines[-1].get_color(), linestyle='None', marker='o')# , markersize=5
+                
+                # Assuming the jacchiaVel function is defined as:
+                def jacchiaVel(t, a1, a2, v_init):
+                    return v_init - np.abs(a1) * np.abs(a2) * np.exp(np.abs(a2) * t)
 
-                if ii==0:
-                    print(str(curr_sel.iloc[ii]['solution_id']))
-                    print('Velocity')
-                    print('a:',a3)
-                    print('b:',b3)
+                ax[1].plot(obs_time, jacchiaVel(np.array(obs_time), curr_sel.iloc[ii]['a1_acc_jac'], curr_sel.iloc[ii]['a2_acc_jac'],vel_kms[0]), color=ax[1].lines[-1].get_color(), linestyle='None', marker='d') 
+
+                # # Generating synthetic observed data for demonstration
+                # t_observed = np.array(obs_time)  # Observed times
+                # v_init=vel_kms[0]  # Initial velocity
+                # velocity_observed = vel_kms
+
+                # # Residuals function for optimization
+                # def residuals(params):
+                #     a1, a2 = params
+                #     predicted_velocity = jacchiaVel(t_observed, a1, a2, v_init)
+                #     return np.sum((velocity_observed - predicted_velocity)**2)
+
+                # # Initial guess for a1 and a2
+                # initial_guess = [0.005,	10]
+
+                # from scipy.optimize import basinhopping
+                # minimizer_kwargsss = {
+                #     "method": "L-BFGS-B",
+                #     "args": (t_observed, velocity_observed)
+                # }
+                # # Apply basinhopping to minimize the residuals
+                # result = basinhopping(residuals, initial_guess, minimizer_kwargs={"method": "L-BFGS-B"}, niter=100)
+
+                # # Results
+                # optimized_a1, optimized_a2 = result.x
+                # print(f"Optimized a1: {optimized_a1}, Optimized a2: {optimized_a2}")
+
+                # ax[1].plot(obs_time, jacchiaVel(t_observed, optimized_a1, optimized_a2, v_init), color=ax[1].lines[-1].get_color(), linestyle='None', marker='d')
+                
+            
+                # ax[1].plot(obs_time, jacchiaVel(np.array(obs_time), curr_sel.iloc[ii]['a1_acc_jac'], curr_sel.iloc[ii]['a2_acc_jac']), color=ax[1].lines[-1].get_color(), linestyle='None', marker='d') 
+
+                # # fit the to a parabolic curve
+                # a3, b3, c3 = np.polyfit(obs_time,vel_kms, 2)
+
+                # # plot the parabolic curve before the peak_mag_height with the same color of the line
+                # ax[1].plot(obs_time,a3*np.array(obs_time)**2+b3*np.array(obs_time)+c3, color=ax[1].lines[-1].get_color(), linestyle='None', marker='o')# , markersize=5
+
+                # v_init=vel_kms[0]
+
+                # def jacchiaVel(t, a1, a2):
+                #     return v_init - np.abs(a1)*np.abs(a2)*np.exp(np.abs(a2)*t)
+
+                # # Perform the curve fitting
+                # popt, pcov = curve_fit(jacchiaVel, np.array(obs_time), np.array(vel_kms))
+
+                # # Extract the optimal coefficients
+                # a1_opt, a2_opt = popt
+
+                # ax[1].plot(obs_time, jacchiaVel(np.array(obs_time), a1_opt, a2_opt), color=ax[1].lines[-1].get_color(), linestyle='None', marker='d')    
+
+                # if ii==0:
+                #     print(str(curr_sel.iloc[ii]['solution_id']))
+                #     print('Velocity')
+                #     print('a:',a3)
+                #     print('b:',b3)
+
+                #     print('Jacchia Velocity')
+                #     print('ja:',a1_opt)
+                #     print('jb:',a2_opt)
+
+
         else:
 
             if ii==0:
@@ -450,10 +520,12 @@ ax[1].lines[0].set_zorder(n_confront_sel)
 ax[0].lines[1].set_color('black')
 ax[0].lines[2].set_color('black')
 ax[1].lines[1].set_color('black')
+# ax[1].lines[2].set_color('black')
 # change the zorder=-1 of the first line
 ax[0].lines[1].set_zorder(n_confront_sel)
 ax[0].lines[2].set_zorder(n_confront_sel)
 ax[1].lines[1].set_zorder(n_confront_sel)
+# ax[1].lines[2].set_zorder(n_confront_sel)
 
 if with_LEN==True:
     # change the first plotted line style to be a dashed line
@@ -516,7 +588,7 @@ else:
 
 # save inintial_folder+'\\'+current_shower+'_Heigh_MagVel.png'
 
-plt.savefig(initial_folder+'\\'+only_select_meteors_from+'Heigh_MagVelCoef.png')
+plt.savefig(initial_folder+'\\'+only_select_meteors_from+'Heigh_MagVelCoef'+str(n_PC_in_PCA)+'.png')
 
 # close the plot
 plt.close()

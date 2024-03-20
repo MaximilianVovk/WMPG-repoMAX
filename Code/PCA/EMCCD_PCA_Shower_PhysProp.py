@@ -28,11 +28,15 @@ from scipy.stats import kurtosis, skew
 from wmpl.Utils.OSTools import mkdirP
 import math
 from wmpl.Utils.PyDomainParallelizer import domainParallelizer
+from scipy.optimize import curve_fit # faster 
+from scipy.optimize import basinhopping # slower but more accurate
 
 add_json_noise = True
 
-PCA_percent = 0.97
+PCA_percent = 98/100
 
+# python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000
+# python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000 > output.txt    
 # FUNCTIONS ###########################################################################################
 
 def find_closest_index(time_arr, time_sampled):
@@ -67,20 +71,20 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
     # save all the variables in a list ths is used to initialized the values of the dataframe
     dataList = [['','', 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0, 0,\
-        0, 0, 0, 0, 0, 0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0,\
-        0, 0, 0, 0, 0, 0, 0, 0,\
-        0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,\
+        0, 0, 0, 0, 0,\
         0, 0, 0,\
         0, 0]]
 
     # create a dataframe to store the data
     df_json = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
     'mass','peak_mag_height','begin_height','end_height','height_knee_vel','peak_abs_mag','beg_abs_mag','end_abs_mag',\
-    'F','trail_len','acceleration','acceleration_lin','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
+    'F','trail_len','acceleration_lin','acceleration_parab','acc_jacchia','decel_after_knee_vel','zenith_angle', 'kurtosis','skew',\
     'kc','Dynamic_pressure_peak_abs_mag',\
-    'a_acc','b_acc','a_mag_init','b_mag_init','a_mag_end','b_mag_end','rho','sigma',\
-    'erosion_height_start','erosion_coeff', 'erosion_mass_index',\
+    'a_acc','b_acc','c_acc','a1_acc_jac','a2_acc_jac','a_mag_init','b_mag_init','c_mag_init','a_mag_end','b_mag_end','c_mag_end',\
+    'rho','sigma','erosion_height_start','erosion_coeff', 'erosion_mass_index',\
     'erosion_mass_min','erosion_mass_max','erosion_range',\
     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'])
 
@@ -127,12 +131,14 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
             # pick from the end of vel_sim the same number of element of time_sim
             # vel_sim=vel_sim[-len(time_sim):]
-            Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][np.argmin(abs_mag_sim)]
+            # Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][np.argmin(abs_mag_sim)]
+            Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr']
 
             abs_mag_sim=abs_mag_sim[index_ht_sim:index_ht_sim_end]
             vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
             time_sim=time_sim[index_ht_sim:index_ht_sim_end]
             ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
+            Dynamic_pressure=Dynamic_pressure[index_ht_sim:index_ht_sim_end]
 
             # divide the vel_sim by 1000 considering is a list
             time_sim = [i-time_sim[0] for i in time_sim]
@@ -144,15 +150,18 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             obs_time=data['time_sampled']
 
             #### CUT like in EMCCD no noise ####################################################################################
-
+            # Find and print the closest indices
+            closest_indices = find_closest_index(time_sim, obs_time)
+            Dynamic_pressure=[Dynamic_pressure[jj_index_cut] for jj_index_cut in closest_indices]
+            Dynamic_pressure_peak_abs_mag = Dynamic_pressure[np.argmin(abs_mag_obs)]
             if add_json_noise == False:   
-                # Find and print the closest indices
-                closest_indices = find_closest_index(time_sim, obs_time)
 
                 abs_mag_sim=[abs_mag_sim[jj_index_cut] for jj_index_cut in closest_indices]
                 vel_sim=[vel_sim[jj_index_cut] for jj_index_cut in closest_indices]
                 time_sim=[time_sim[jj_index_cut] for jj_index_cut in closest_indices]
                 ht_sim=[ht_sim[jj_index_cut] for jj_index_cut in closest_indices]
+
+                Dynamic_pressure_peak_abs_mag = data['simulation_results']['leading_frag_dyn_press_arr'][np.argmin(abs_mag_sim)]
 
                 abs_mag_obs=abs_mag_sim
                 ht_obs=ht_sim
@@ -168,6 +177,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             erosion_mass_min = data['params']['erosion_mass_min']['val']
             erosion_mass_max = data['params']['erosion_mass_max']['val']
 
+            
             # from 'time_sampled' extract the last element and save it in a list
             duration = data['time_sampled'][-1]
             begin_height = ht_obs[0]
@@ -210,11 +220,49 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             ##################################################################################################
 
             # fit a line to the throught the vel_sim and ht_sim
-            acceleration, b = np.polyfit(time_sim,vel_sim, 1)
-            acceleration_lin = (-1)*acceleration
+            a, b = np.polyfit(time_sim,vel_sim, 1)
+            acceleration_lin = a
 
             a3, b3, c3 = np.polyfit(time_sim,vel_sim, 2)
-            acceleration=a3*2+b3
+            acceleration_parab=a3*2 + b3
+            
+##################curve_fit################################################################
+            # v_init=vel_sim[0]
+
+            # def jacchiaVel(t, a1, a2):
+            #     return v_init - np.abs(a1)*np.abs(a2)*np.exp(np.abs(a2)*t)
+            
+            # # Perform the curve fitting
+            # popt, pcov = curve_fit(jacchiaVel, np.array(obs_time), np.array(vel_sim))
+
+            # # Extract the optimal coefficients
+            # jac_a1, jac_a2 = popt
+############################################################################################
+
+            # Assuming the jacchiaVel function is defined as:
+            def jacchiaVel(t, a1, a2, v_init):
+                return v_init - np.abs(a1) * np.abs(a2) * np.exp(np.abs(a2) * t)
+
+            # Generating synthetic observed data for demonstration
+            t_observed = np.array(obs_time)  # Observed times
+            v_init=vel_sim[0]  # Initial velocity
+
+            # Residuals function for optimization
+            def residuals(params):
+                a1, a2 = params
+                predicted_velocity = jacchiaVel(t_observed, a1, a2, v_init)
+                return np.sum((vel_sim - predicted_velocity)**2)
+
+            # Initial guess for a1 and a2
+            initial_guess = [0.005,	10]
+
+            # Apply basinhopping to minimize the residuals # minize the residuals
+            result = basinhopping(residuals, initial_guess, minimizer_kwargs={"method": "L-BFGS-B"}, niter=100)
+
+            # Results
+            jac_a1, jac_a2 = result.x
+
+            acc_jacchia = abs(jac_a1)*abs(jac_a2)
 
             # find the sigle index of the height when the velocity start dropping from the vel_init_norot of 0.2 km/s
             # index_knee = next(x for x, val in enumerate(vel_sim) if val <= vel_sim[0]-10)
@@ -309,9 +357,9 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             # add a new line in dataframe
             df_json.loc[len(df_json)] = [name,shower_code, vel_init_norot, vel_avg_norot, duration,\
             mass, peak_mag_height,begin_height, end_height, height_knee_vel, peak_abs_mag, beg_abs_mag, end_abs_mag,\
-            F, trail_len, acceleration, acceleration_lin, decel_after_knee_vel, zenith_angle, kurtosyness,skewness,\
+            F, trail_len, acceleration_lin, acceleration_parab, acc_jacchia, decel_after_knee_vel, zenith_angle, kurtosyness,skewness,\
             kc_par, Dynamic_pressure_peak_abs_mag,\
-            a3, b3, a3_Inabs, b3_Inabs, a3_Outabs, b3_Outabs, rho, sigma,\
+            a3, b3, c3, jac_a1, jac_a2, a3_Inabs, b3_Inabs, c3_Inabs, a3_Outabs, b3_Outabs, c3_Outabs, rho, sigma,\
             erosion_height_start, erosion_coeff, erosion_mass_index,\
             erosion_mass_min, erosion_mass_max, erosion_range,\
             erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass]
@@ -549,7 +597,8 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','Dynamic_pressure_peak_abs_mag','kurtosis','skew','trail_len']
     # decel_after_knee_vel and height_knee_vel create errors in the PCA space  decel_after_knee_vel,height_knee_vel
 
-    No_var_PCA=['decel_after_knee_vel','height_knee_vel','acceleration_lin']
+# solution_id	shower_code	vel_init_norot	vel_avg_norot	duration	mass	peak_mag_height	begin_height	end_height	height_knee_vel	peak_abs_mag	beg_abs_mag	end_abs_mag	F	trail_len	acceleration_lin	acceleration_parab	acc_jacchia	decel_after_knee_vel	zenith_angle	kurtosis	skew	kc	Dynamic_pressure_peak_abs_mag	a_acc	b_acc	c_acc	a1_acc_jac	a2_acc_jac	a_mag_init	b_mag_init	c_mag_init	a_mag_end	b_mag_end	c_mag_end
+    No_var_PCA=['decel_after_knee_vel','height_knee_vel','acceleration_lin','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','kc','acc_jacchia'] #,'acc_jacchia',acceleration_parab
     # if PC below 7 wrong
 
     # if variable_PCA is not empty
@@ -574,7 +623,6 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     # keep only the variable_PCA variables
     df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
 
-
     # delete nan
     df_all = df_all.dropna()
 
@@ -583,6 +631,8 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     df_all_nameless=df_all.drop(['shower_code','solution_id'], axis=1)
     # print the data columns names
     df_all_columns_names=(df_all_nameless.columns)
+    # print the name of the variables used in PCA
+    print('Variables used in PCA: ',df_all_nameless.columns)
 
     # Separating out the features
     scaled_df_all = df_all_nameless[df_all_columns_names].values
@@ -647,7 +697,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     # create a dataframe with the PCA space
     df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
 
-    print(str(len(percent_variance))+' PC = 95% of the variance explained by ',pca.n_components_,' PC')
+    print(str(len(percent_variance))+' PC = '+str(PCA_percent*100)+'% of the variance explained by ',pca.n_components_,' PC')
 
     # check if can be refined
     number_of_deleted_PC=len(percent_variance)-pca.n_components_
@@ -851,6 +901,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 
 
 
+
 def refine_PCA_space(df_all):
     '''
     from the simulated and observed shower dataframe it create a dataframe with the PCA space
@@ -882,7 +933,7 @@ def refine_PCA_space(df_all):
     # create a dataframe with the PCA space
     df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
 
-    print(str(len(percent_variance))+' PC = 95% of the variance explained by ',pca.n_components_,' PC')
+    print(str(len(percent_variance))+' PC = '+str(PCA_percent*100)+'% of the variance explained by ',pca.n_components_,' PC')
 
     number_of_deleted_PC=len(percent_variance)-pca.n_components_
 
@@ -904,16 +955,16 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('output_dir', metavar='OUTPUT_PATH', type=str, \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
         help="Path to the output directory.")
 
-    arg_parser.add_argument('shower', metavar='SHOWER', type=str, \
+    arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation', \
         help="Path were are store both simulated and observed shower .csv file.")
 
-    arg_parser.add_argument('nsel', metavar='SEL_NUM', type=int, \
+    arg_parser.add_argument('--nsel', metavar='SEL_NUM', type=int, default=1000, \
         help="Number of selected simulations to consider.")
 
     arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=[], \

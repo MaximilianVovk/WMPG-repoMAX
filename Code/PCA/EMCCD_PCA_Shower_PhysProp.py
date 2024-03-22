@@ -581,7 +581,7 @@ def read_solution_table_json(Shower=''):
     df_shower_EMCCD_no_outliers = df_shower_EMCCD_no_outliers.drop(['vel_init_norot_err','beg_fov','end_fov','elevation_norot'], axis=1)
 
     # save the dataframe in a csv file in the same folder of the code withouth the index
-    df_shower_EMCCD_no_outliers.to_csv(os.getcwd()+r'\\'+Shower+'.csv', index=False)
+    df_shower_EMCCD_no_outliers.to_csv(os.getcwd()+os.sep+Shower+'.csv', index=False)
 
     f.close()
 
@@ -647,59 +647,12 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     # Separating out the features
     scaled_df_all = df_all_nameless[df_all_columns_names].values
 
-    # Standardizing the features
+    # performing preprocessing part so to make it readeble for PCA
     scaled_df_all = StandardScaler().fit_transform(scaled_df_all)
 
-    # print(scaled_df_all)
-
+    # Applying PCA function on the data for the number of components
     pca = PCA()
-
-    all_PCA = pca.fit_transform(scaled_df_all)
-
-
-    # PLOT explained variance ratio #########################################
-
-    # compute the explained variance ratio
-    percent_variance = np.round(pca.explained_variance_ratio_* 100, decimals =2)
-    print("explained variance ratio: \n",percent_variance)
-
-    # name of the principal components
-    columns_PC = ['PC' + str(x) for x in range(1, len(percent_variance)+1)]
-
-    # plot the explained variance ratio of each principal componenets base on the number of column of the original dimension
-    plt.bar(x= range(1,len(percent_variance)+1), height=percent_variance, tick_label=columns_PC, color='black')
-    plt.ylabel('Percentance of Variance Explained')
-    plt.xlabel('Principal Component')
-    # plt.show()
-
-    # PLOT the correlation coefficients #########################################
-
-    # Compute the correlation coefficients
-    cov_data = pca.components_.T
-
-    # Plot the correlation matrix
-    img = plt.matshow(cov_data.T, cmap=plt.cm.coolwarm, vmin=-1, vmax=1)
-    plt.colorbar(img)
-    rows=variable_PCA
-
-    # Add the variable names as labels on the x-axis and y-axis
-    plt.xticks(range(len(rows)-2), rows[2:], rotation=90)
-    plt.yticks(range(len(columns_PC)), columns_PC)
-
-    # plot the influence of each component on the original dimension
-    for i in range(cov_data.shape[0]):
-        for j in range(cov_data.shape[1]):
-            plt.text(i, j, "{:.2f}".format(cov_data[i, j]), size=12, color='black', ha="center", va="center")   
-    # plt.show()
-
-    # PLOT the shorter PCA space ########################################
-
-    # find the number of PC that explain 95% of the variance
-    cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
-
-    # recomute PCA with the number of PC that explain 95% of the variance
-    pca= PCA(n_components=np.argmax(cumulative_variance >= PCA_percent) + 1)
-    all_PCA = pca.fit_transform(scaled_df_all)
+    all_PCA = pca.fit_transform(scaled_df_all) # fit the data and transform it
 
     # # select only the column with in columns_PC with the same number of n_components
     columns_PC = ['PC' + str(x) for x in range(1, pca.n_components_+1)]
@@ -707,20 +660,11 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     # create a dataframe with the PCA space
     df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
 
-    print(str(len(percent_variance))+' PC = '+str(PCA_percent*100)+'% of the variance explained by ',pca.n_components_,' PC')
-
-    # check if can be refined
-    number_of_deleted_PC=len(percent_variance)-pca.n_components_
-
-    # print('Number of deleted PC: ', number_of_deleted_PC)
-
-
+    number_of_deleted_PC=1
 
     # repeat the define_PCA_space in order to delete the PC that are not needed and stop when the number of PC is equal to the number of variable_PCA
     while number_of_deleted_PC>0:
         df_all_PCA, number_of_deleted_PC = refine_PCA_space(df_all_PCA)
-
-
 
 
     # add the shower code to the dataframe
@@ -860,7 +804,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
         df_sim_PCA = df_sim_PCA.drop(['distance_meteor'], axis=1)
 
         # save the dataframe to a csv file withouth the index
-        df_sel_PCA.to_csv(OUT_PUT_PATH+r'\\Simulated_'+current_shower+'_select_PCA.csv', index=False)
+        df_sel_PCA.to_csv(OUT_PUT_PATH+os.sep+'Simulated_'+current_shower+'_select_PCA.csv', index=False)
 
         # concatenate the list of the properties to a dataframe
         df_sel_shower = pd.concat(df_sel_shower)
@@ -873,17 +817,17 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
             distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, df_sel_PCA_NEW[i_shower]))
         df_sel_shower['distance']=distance_current # from the mean of the selected shower
         # save the dataframe to a csv file withouth the index
-        df_sel_shower.to_csv(OUT_PUT_PATH+r'\\Simulated_'+current_shower+'_select.csv', index=False)
+        df_sel_shower.to_csv(OUT_PUT_PATH+os.sep+'Simulated_'+current_shower+'_select.csv', index=False)
 
         # save dist also on selected shower
         distance_current = []
         for i_shower in range(len(shower_current)):
             distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, shower_current_PCA[i_shower]))
         shower_current['distance']=distance_current # from the mean of the selected shower
-        shower_current.to_csv(OUT_PUT_PATH+r'\\'+current_shower+'_and_dist.csv', index=False)
+        shower_current.to_csv(OUT_PUT_PATH+os.sep+current_shower+'_and_dist.csv', index=False)
 
     # copy Simulated_PER.csv in OUT_PUT_PATH
-    shutil.copyfile(INPUT_PATH+r'\\Simulated_PER.csv', OUT_PUT_PATH+r'\\Simulated_PER.csv')
+    shutil.copyfile(INPUT_PATH+os.sep+'Simulated_PER.csv', OUT_PUT_PATH+os.sep+'Simulated_PER.csv')
 
 
     # PLOT the selected simulated shower ########################################
@@ -965,13 +909,13 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation', \
         help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--nsel', metavar='SEL_NUM', type=int, default=1000, \
@@ -1007,12 +951,12 @@ if __name__ == "__main__":
     # search for the simulated showers in the folder
     for current_shower in Shower:
         # check in the current folder there is a csv file with the name of the simulated shower
-        if os.path.isfile(cml_args.input_dir+r'\\Simulated_'+current_shower+'.csv'):
+        if os.path.isfile(cml_args.input_dir+os.sep+'Simulated_'+current_shower+'.csv'):
             # if yes read the csv file
-            df_sim = pd.read_csv(cml_args.input_dir+r'\\Simulated_'+current_shower+'.csv')
+            df_sim = pd.read_csv(cml_args.input_dir+os.sep+'Simulated_'+current_shower+'.csv')
         else:
             # open the folder and extract all the json files
-            os.chdir(folder_GenerateSimulations_json[Shower.index(current_shower)])
+            os.chdir(cml_args.input_dir+os.sep+folder_GenerateSimulations_json[Shower.index(current_shower)])
             # print the current directory in
             directory=cml_args.input_dir
             extension = 'json'
@@ -1039,13 +983,13 @@ if __name__ == "__main__":
             df_sim.reset_index(drop=True, inplace=True)
 
 
-            df_sim.to_csv(cml_args.input_dir+r'\\Simulated_'+current_shower+'.csv', index=False)
+            df_sim.to_csv(cml_args.input_dir+os.sep+'Simulated_'+current_shower+'.csv', index=False)
 
 
 
-        if os.path.isfile(cml_args.input_dir+r'\\'+current_shower+'.csv'):
+        if os.path.isfile(cml_args.input_dir+os.sep+current_shower+'.csv'):
             # if yes read the csv file
-            df_obs = pd.read_csv(cml_args.input_dir+r'\\'+current_shower+'.csv')
+            df_obs = pd.read_csv(cml_args.input_dir+os.sep+current_shower+'.csv')
         else:
             # if no read the solution_table.json file
             df_obs = read_solution_table_json(current_shower)

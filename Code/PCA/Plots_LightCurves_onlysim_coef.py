@@ -13,6 +13,10 @@ from scipy.optimize import curve_fit
 #matplotlib.use("Qt5Agg")
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
+
+
+
+
 # Set the shower name (can be multiple) e.g. 'GEM' or ['GEM','PER', 'ORI', 'ETA', 'SDA', 'CAP']
 def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
     Shower=['PER']#['PER']

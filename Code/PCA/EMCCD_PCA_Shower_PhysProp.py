@@ -258,7 +258,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             # Results
             jac_a1, jac_a2 = abs(result.x)
 
-            acc_jacchia = abs(jac_a1)*abs(jac_a2)
+            acc_jacchia = abs(jac_a1)*abs(jac_a2)**2
 
             # fit a line to the throught the obs_vel and ht_sim
             index_ht_peak = next(x for x, val in enumerate(ht_obs) if val <= peak_mag_height)

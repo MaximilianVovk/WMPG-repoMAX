@@ -15,7 +15,24 @@ from scipy.optimize import curve_fit
 # MODIFY HERE THE PARAMETERS ###############################################################################
 
 
+def quadratic_velocity(t, a, v0, t0):
+    """
+    Quadratic velocity function.
+    """
 
+    # Only take times <= t0
+    t_before = t[t <= t0]
+
+    # Only take times > t0
+    t_after = t[t > t0]
+
+    # Compute the velocity linearly before t0
+    v_before = np.ones_like(t_before)*v0
+
+    # Compute the velocity quadratically after t0
+    v_after = 3*a*(t_after - t0)**2 + v0
+
+    return np.concatenate((v_before, v_after))
 
 # Set the shower name (can be multiple) e.g. 'GEM' or ['GEM','PER', 'ORI', 'ETA', 'SDA', 'CAP']
 def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
@@ -52,6 +69,8 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
     # activate parabolic fit
     parabolic_fit=True
 
+    t0_fit=True
+
     # 5 sigma confidence interval
     # five_sigma=False
 
@@ -77,10 +96,10 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
 
     if with_LEN==True:
         # put the first plot in 3 sublots
-        fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+        fig, ax = plt.subplots(1, 3, figsize=(17, 5))
     else:
         # put the first plot in 2 sublots
-        fig, ax = plt.subplots(1, 2, figsize=(15, 5))
+        fig, ax = plt.subplots(1, 2, figsize=(17, 5))
 
     # save all the simulated showers in a list
     df_obs_shower = []
@@ -461,6 +480,9 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
                     if jacchia_fit==True:
                         ax[1].plot(obs_time, jacchiaVel(np.array(obs_time), curr_sel.iloc[ii]['a1_acc_jac'], curr_sel.iloc[ii]['a2_acc_jac'],vel_kms[0]), color=ax[1].lines[-1].get_color(), linestyle='None', marker='d') 
 
+                    if t0_fit==True: # quadratic_velocity(t, a, v0, t0)
+                        ax[1].plot(obs_time, quadratic_velocity(np.array(obs_time), curr_sel.iloc[ii]['decel_t0'], curr_sel.iloc[ii]['vel_init_norot'], curr_sel.iloc[ii]['t0']), color=ax[1].lines[-1].get_color(), linestyle='None', marker='s') 
+
                     # # Generating synthetic observed data for demonstration
                     # t_observed = np.array(obs_time)  # Observed times
                     # v_init=vel_kms[0]  # Initial velocity
@@ -552,18 +574,36 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
     # change dot line color
     ax[0].lines[1].set_color('black')
     ax[0].lines[2].set_color('black')
-    if jacchia_fit==True or parabolic_fit==True:
+
+
+# check how many of the jacchia_fit and parabolic_fit and t0_fit are set to true
+    numcheck=0
+    if jacchia_fit==True:
+        numcheck+=1
+    if parabolic_fit==True:
+        numcheck+=1
+    if t0_fit==True:
+        numcheck+=1
+
+    if numcheck==1:
         ax[1].lines[1].set_color('black')
-    if jacchia_fit==True and parabolic_fit==True:
+        ax[1].lines[1].set_zorder(n_confront_sel)
+    if numcheck==2:
+        ax[1].lines[1].set_color('black')
         ax[1].lines[2].set_color('black')
+        ax[1].lines[1].set_zorder(n_confront_sel)
+        ax[1].lines[2].set_zorder(n_confront_sel)
+    if numcheck==3:
+        ax[1].lines[1].set_color('black')
+        ax[1].lines[2].set_color('black')
+        ax[1].lines[3].set_color('black')
+        ax[1].lines[1].set_zorder(n_confront_sel)
+        ax[1].lines[2].set_zorder(n_confront_sel)
+        ax[1].lines[3].set_zorder(n_confront_sel)
 
     # change the zorder=-1 of the first line
     ax[0].lines[1].set_zorder(n_confront_sel)
     ax[0].lines[2].set_zorder(n_confront_sel)
-    if jacchia_fit==True or parabolic_fit==True:
-        ax[1].lines[1].set_zorder(n_confront_sel)
-    if jacchia_fit==True and parabolic_fit==True:
-        ax[1].lines[2].set_zorder(n_confront_sel)
 
     if with_LEN==True:
         # change the first plotted line style to be a dashed line

@@ -35,7 +35,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
 
     only_select_meteors_from='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json'
 
-    Sim_data_distribution=False
+    Sim_data_distribution=True
 
     # dist_select=[1,\
     #                    1,\

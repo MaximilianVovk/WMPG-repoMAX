@@ -161,13 +161,13 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
 
     # # select the one below 1 in distance and order for distance
     df_sel_shower = pd.concat(df_sel_shower)
-    # df_sel_shower = df_sel_shower.sort_values(by=['distance'])
-    # df_sel_shower = df_sel_shower[df_sel_shower['distance']<set_dist]
+    # df_sel_shower = df_sel_shower.sort_values(by=['distance_meteor'])
+    # df_sel_shower = df_sel_shower[df_sel_shower['distance_meteor']<set_dist]
     # print('selected: '+str(len(df_sel_shower)))
     # # same for the observed
     df_obs_shower = pd.concat(df_obs_shower)
-    # df_obs_shower = df_obs_shower.sort_values(by=['distance'])
-    # df_obs_shower = df_obs_shower[df_obs_shower['distance']<set_dist]
+    # df_obs_shower = df_obs_shower.sort_values(by=['distance_meteor'])
+    # df_obs_shower = df_obs_shower[df_obs_shower['distance_meteor']<set_dist]
     # print('observed: '+str(len(df_obs_shower)))
 
     df_sel_shower['erosion_coeff']=df_sel_shower['erosion_coeff']*1000000
@@ -200,12 +200,12 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
         curr_sel_og=df_sel_shower[df_sel_shower['shower_code']==current_shower+'_sel']
 
         curr_sel = curr_sel_og
-        # curr_sel = curr_sel_og.sort_values(by=['distance'])
-        # curr_sel = curr_sel[curr_sel['distance']>=min_dist_sel]
+        # curr_sel = curr_sel_og.sort_values(by=['distance_meteor'])
+        # curr_sel = curr_sel[curr_sel['distance_meteor']>=min_dist_sel]
         
         curr_obs = curr_obs_og
-        # curr_obs = curr_obs_og.sort_values(by=['distance'])
-        # curr_obs = curr_obs[curr_obs['distance']>=min_dist_obs]
+        # curr_obs = curr_obs_og.sort_values(by=['distance_meteor'])
+        # curr_obs = curr_obs[curr_obs['distance_meteor']>=min_dist_obs]
 
         if n_confront_obs<len(df_obs_shower):
             curr_obs=curr_obs.head(n_confront_obs)
@@ -296,7 +296,7 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
                     abs_mag_sim=obs_abs_mag
 
                 # put it in the first subplot
-                ax[0].plot(abs_mag_sim,height_km,label='sel_'+current_shower+'('+str(index_sel)+') MEANdist:'+str(round(curr_sel.iloc[ii]['distance'],2)))
+                ax[0].plot(abs_mag_sim,height_km,label='sel_'+current_shower+'('+str(index_sel)+') MEANdist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2)))
                 # plot the parabolic curve before the peak_mag_height 
 
 
@@ -333,7 +333,7 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
                 #     print('b:',b3_Inabs)
 
             else:
-                ax[0].plot(abs_mag_sim,height_km,label='sel_'+current_shower+'('+str(index_sel)+') MEANdist:'+str(round(curr_sel.iloc[ii]['distance'],2)),color='coral')
+                ax[0].plot(abs_mag_sim,height_km,label='sel_'+current_shower+'('+str(index_sel)+') MEANdist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2)),color='coral')
 
 
 
@@ -440,7 +440,7 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
 
                     ax[1].plot(obs_length,height_km)
 
-                    ax[2].plot(vel_kms,height_km,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2))+'\n\
+                    ax[2].plot(vel_kms,height_km,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
             m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
             rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
             er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
@@ -463,7 +463,7 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
                     if noise_data_input==True:
                         vel_kms=vel_sampled
 
-                    ax[1].plot(obs_time, vel_kms,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2))+'\n\
+                    ax[1].plot(obs_time, vel_kms,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
             m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
             rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
             er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
@@ -548,8 +548,8 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
 
                 if ii==0:
                     vel_kms=vel_sampled
-                # plt.plot(vel_sim,ht_sim,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2)),color='coral')
-                ax[1].plot(height_km,vel_kms,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance'],2)),color='coral')
+                # plt.plot(vel_sim,ht_sim,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2)),color='coral')
+                ax[1].plot(height_km,vel_kms,label='sel_'+current_shower+'('+str(index_sel)+') dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2)),color='coral')
 
                     
 

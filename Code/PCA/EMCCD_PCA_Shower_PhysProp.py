@@ -35,7 +35,7 @@ import scipy.optimize as opt
 
 add_json_noise = True
 
-PCA_percent = 98/100
+PCA_percent = 98
 
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000 > output.txt    
@@ -47,27 +47,6 @@ def find_closest_index(time_arr, time_sampled):
         closest_index = min(range(len(time_arr)), key=lambda i: abs(time_arr[i] - sample))
         closest_indices.append(closest_index)
     return closest_indices
-
-def quadratic_lag(t, a, t0):
-    """
-    Quadratic lag function.
-    """
-
-    # Only take times <= t0
-    t_before = t[t <= t0]
-
-    # Only take times > t0
-    t_after = t[t > t0]
-
-    # Compute the lag linearly before t0
-    l_before = np.zeros_like(t_before)
-
-    # Compute the lag quadratically after t0
-    l_after = -abs(a)*(t_after - t0)**3
-
-    return np.concatenate((l_before, l_after))
-
-
 
 def cubic_lag(t, a, b, c, t0):
     """
@@ -870,7 +849,7 @@ def refine_PCA_space(df_all):
     cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
 
     # recomute PCA with the number of PC that explain 95% of the variance
-    pca= PCA(n_components=np.argmax(cumulative_variance >= PCA_percent) + 1)
+    pca= PCA(n_components=np.argmax(cumulative_variance >= PCA_percent/100) + 1)
     all_PCA = pca.fit_transform(df_all)
 
     # # select only the column with in columns_PC with the same number of n_components
@@ -879,7 +858,7 @@ def refine_PCA_space(df_all):
     # create a dataframe with the PCA space
     df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
 
-    print(str(len(percent_variance))+' PC = '+str(PCA_percent*100)+'% of the variance explained by ',pca.n_components_,' PC')
+    print(str(len(percent_variance))+' PC = '+str(PCA_percent)+'% of the variance explained by ',pca.n_components_,' PC')
 
     number_of_deleted_PC=len(percent_variance)-pca.n_components_
 
@@ -901,13 +880,13 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation', \
         help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--nsel', metavar='SEL_NUM', type=int, default=1000, \

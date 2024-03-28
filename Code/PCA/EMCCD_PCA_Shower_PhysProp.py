@@ -33,7 +33,7 @@ from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 from scipy.optimize import minimize
 import scipy.optimize as opt
 
-add_json_noise = False
+add_json_noise = True
 
 PCA_percent = 98/100
 
@@ -67,12 +67,53 @@ def quadratic_lag(t, a, t0):
 
     return np.concatenate((l_before, l_after))
 
+
+
+def cubic_lag(t, a, b, c, t0):
+    """
+    Quadratic lag function.
+    """
+
+    # Only take times <= t0
+    t_before = t[t <= t0]
+
+    # Only take times > t0
+    t_after = t[t > t0]
+
+    # Compute the lag linearly before t0
+    l_before = np.zeros_like(t_before)+c
+
+    # Compute the lag quadratically after t0
+    l_after = -abs(a)*(t_after - t0)**3 - abs(b)*(t_after - t0)**2 + c
+
+    return np.concatenate((l_before, l_after))
+
+
+def cubic_acceleration(t, a, b, t0):
+    """
+    Quadratic acceleration function.
+    """
+
+    # Only take times <= t0
+    t_before = t[t <= t0]
+
+    # Only take times > t0
+    t_after = t[t > t0]
+
+    # No deceleration before t0
+    a_before = np.zeros_like(t_before)
+
+    # Compute the acceleration quadratically after t0
+    a_after = -6*abs(a)*(t_after - t0) - 2*abs(b)
+
+    return np.concatenate((a_before, a_after))
+
 def lag_residual(params, t_time, l_data):
     """
     Residual function for the optimization.
     """
 
-    return np.sum((l_data - quadratic_lag(t_time, *params))**2)
+    return np.sum((l_data - cubic_lag(t_time, *params))**2)
 
 def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None):
     ''' 
@@ -101,7 +142,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
         0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0,\
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0,0,\
         0, 0, 0, 0, 0,\
         0, 0, 0,\
         0, 0]]
@@ -109,9 +150,9 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
     # create a dataframe to store the data
     df_json = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
     'mass','peak_mag_height','begin_height','end_height','t0','peak_abs_mag','beg_abs_mag','end_abs_mag',\
-    'F','trail_len','deceleration_lin','deceleration_parab','decel_jacchia','decel_t0','zenith_angle', 'kurtosis','skew',\
+    'F','trail_len','deceleration_lin','deceleration_parab','decel_t0','decel_jacchia','zenith_angle', 'kurtosis','skew',\
     'kc','Dynamic_pressure_peak_abs_mag',\
-    'a_acc','b_acc','c_acc','a1_acc_jac','a2_acc_jac','a_mag_init','b_mag_init','c_mag_init','a_mag_end','b_mag_end','c_mag_end',\
+    'a_acc','b_acc','c_acc','a_t0', 'b_t0', 'c_t0','a1_acc_jac','a2_acc_jac','a_mag_init','b_mag_init','c_mag_init','a_mag_end','b_mag_end','c_mag_end',\
     'rho','sigma','erosion_height_start','erosion_coeff', 'erosion_mass_index',\
     'erosion_mass_min','erosion_mass_max','erosion_range',\
     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'])
@@ -191,7 +232,6 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
                 abs_mag_obs=data['mag_sampled']
                 obs_vel=[v0]
                 obs_length=[x/1000 for x in obs_length]
-                obs_height=[x/1000 for x in obs_height]
                 # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
                 rest_vel_sampled=[(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1]) for vel_ii in range(1,len(obs_length))]
                 # append the rest_vel_sampled to vel_sampled
@@ -223,14 +263,16 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             t0 = np.mean(obs_time)
 
             # initial guess of deceleration decel equal to linear fit of velocity
-            p0 = [a, t0]
+            p0 = [a,b,0, t0]
 
             opt_res = opt.minimize(lag_residual, p0, args=(np.array(obs_time), np.array(obs_lag)), method='Nelder-Mead')
 
             # sample the fit for the velocity and acceleration
-            decel_t0, t0 = opt_res.x
+            a_t0, b_t0, c_t0, t0 = opt_res.x
 
-            decel_t0=-abs(decel_t0)
+            # compute reference decelearation
+            t_decel_ref = (t0 + np.max(obs_time))/2
+            decel_t0 = cubic_acceleration(t_decel_ref, a_t0, b_t0, t0)[0]
 
 
             a3, b3, c3 = np.polyfit(obs_time,obs_vel, 2)
@@ -334,9 +376,9 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             # add a new line in dataframe
             df_json.loc[len(df_json)] = [name,shower_code, v0, vel_avg_norot, duration,\
             mass, peak_mag_height,begin_height, end_height, t0, peak_abs_mag, beg_abs_mag, end_abs_mag,\
-            F, trail_len, acceleration_lin, acceleration_parab, acc_jacchia, decel_t0, zenith_angle, kurtosyness,skewness,\
+            F, trail_len, acceleration_lin, acceleration_parab, decel_t0, acc_jacchia, zenith_angle, kurtosyness,skewness,\
             kc_par, Dynamic_pressure_peak_abs_mag,\
-            a3, b3, c3, jac_a1, jac_a2, a3_Inabs, b3_Inabs, c3_Inabs, a3_Outabs, b3_Outabs, c3_Outabs, rho, sigma,\
+            a3, b3, c3, a_t0, b_t0, c_t0, jac_a1, jac_a2, a3_Inabs, b3_Inabs, c3_Inabs, a3_Outabs, b3_Outabs, c3_Outabs, rho, sigma,\
             erosion_height_start, erosion_coeff, erosion_mass_index,\
             erosion_mass_min, erosion_mass_max, erosion_range,\
             erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass]
@@ -583,7 +625,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 #     'erosion_mass_min','erosion_mass_max','erosion_range',\
 #     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
 
-    No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0'
+    No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0'
     # if PC below 7 wrong
 
     # if variable_PCA is not empty

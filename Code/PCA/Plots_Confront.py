@@ -27,7 +27,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
     # Shower=['PER']#['CAP']
 
     # number of selected events selected
-    n_select=10
+    n_select=15
     dist_select=np.array([10000000000000])
 
     # weight factor for the distance
@@ -335,7 +335,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
             distance_meteor_sel_save=curr_sel_save['distance_meteor']
             # save the distance_meteor from df_sel_save
             distance_meteor_sel=curr_sel['distance_meteor']
-
+            # delete the index
+            distance_meteor_sel_save=distance_meteor_sel_save.reset_index(drop=True)
             # check if distance_meteor_sel_save index is bigger than the index distance_meteor_sel+50
             if distance_meteor_sel_save[0]==0:
                 sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, bins=len(distance_meteor_sel_save), color='r')

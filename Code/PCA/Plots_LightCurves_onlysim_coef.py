@@ -15,7 +15,7 @@ from scipy.optimize import curve_fit
 # MODIFY HERE THE PARAMETERS ###############################################################################
 
 
-def quadratic_velocity(t, a, v0, t0):
+def quadratic_velocity(t, a, b, v0, t0):
     """
     Quadratic velocity function.
     """
@@ -30,7 +30,7 @@ def quadratic_velocity(t, a, v0, t0):
     v_before = np.ones_like(t_before)*v0
 
     # Compute the velocity quadratically after t0
-    v_after = 3*a*(t_after - t0)**2 + v0
+    v_after = -3*abs(a)*(t_after - t0)**2 - 2*abs(b)*(t_after - t0) + v0
 
     return np.concatenate((v_before, v_after))
 
@@ -64,10 +64,10 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
     noise_data_input=False
 
     # activate jachia
-    jacchia_fit=True
+    jacchia_fit=False
 
     # activate parabolic fit
-    parabolic_fit=True
+    parabolic_fit=False
 
     t0_fit=True
 
@@ -128,9 +128,14 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
 
         if only_select_meteors_from!='':
             df_obs=df_obs[df_obs['solution_id']==only_select_meteors_from]
+
+            # reset index df_sel
+            df_sel=df_sel.reset_index(drop=True)
+
             # check if present the selected meteor in df_sel
             if only_select_meteors_from in df_sel['solution_id'].values:
-
+                
+                
                 # place that meteor in the top row shifiting all the other down
                 # find the index of the selected meteor
                 index_sel=df_sel[df_sel['solution_id']==only_select_meteors_from].index
@@ -481,7 +486,7 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
                         ax[1].plot(obs_time, jacchiaVel(np.array(obs_time), curr_sel.iloc[ii]['a1_acc_jac'], curr_sel.iloc[ii]['a2_acc_jac'],vel_kms[0]), color=ax[1].lines[-1].get_color(), linestyle='None', marker='d') 
 
                     if t0_fit==True: # quadratic_velocity(t, a, v0, t0)
-                        ax[1].plot(obs_time, quadratic_velocity(np.array(obs_time), curr_sel.iloc[ii]['decel_t0'], curr_sel.iloc[ii]['vel_init_norot'], curr_sel.iloc[ii]['t0']), color=ax[1].lines[-1].get_color(), linestyle='None', marker='s') 
+                        ax[1].plot(obs_time, quadratic_velocity(np.array(obs_time), curr_sel.iloc[ii]['a_t0'], curr_sel.iloc[ii]['b_t0'], curr_sel.iloc[ii]['vel_init_norot'], curr_sel.iloc[ii]['t0']), color=ax[1].lines[-1].get_color(), linestyle='None', marker='s') 
 
                     # # Generating synthetic observed data for demonstration
                     # t_observed = np.array(obs_time)  # Observed times

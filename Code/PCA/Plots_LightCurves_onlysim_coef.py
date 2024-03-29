@@ -687,16 +687,16 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
         help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--input_dir_pickle', metavar='INPUT_PATH_PICKLE', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/', \
+    arg_parser.add_argument('--input_dir_pickle', metavar='INPUT_PATH_PICKLE', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation', \
         help="Path were are store all the .pickle file.")
     
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \

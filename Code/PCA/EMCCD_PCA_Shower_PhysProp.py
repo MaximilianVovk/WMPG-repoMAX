@@ -33,7 +33,7 @@ from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 from scipy.optimize import minimize
 import scipy.optimize as opt
 
-add_json_noise = True
+add_json_noise = False
 
 PCA_percent = 98
 
@@ -119,7 +119,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
     # save all the variables in a list ths is used to initialized the values of the dataframe
     dataList = [['','', 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0, 0,\
-        0, 0, 0, 0, 0, 0, 0, 0, 0,\
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0,\
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0,0,\
         0, 0, 0, 0, 0,\
@@ -129,7 +129,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
     # create a dataframe to store the data
     df_json = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
     'mass','peak_mag_height','begin_height','end_height','t0','peak_abs_mag','beg_abs_mag','end_abs_mag',\
-    'F','trail_len','deceleration_lin','deceleration_parab','decel_t0','decel_jacchia','zenith_angle', 'kurtosis','skew',\
+    'F','trail_len','deceleration_lin','deceleration_parab','decel_parab_t0','decel_t0','decel_jacchia','zenith_angle', 'kurtosis','skew',\
     'kc','Dynamic_pressure_peak_abs_mag',\
     'a_acc','b_acc','c_acc','a_t0', 'b_t0', 'c_t0','a1_acc_jac','a2_acc_jac','a_mag_init','b_mag_init','c_mag_init','a_mag_end','b_mag_end','c_mag_end',\
     'rho','sigma','erosion_height_start','erosion_coeff', 'erosion_mass_index',\
@@ -242,7 +242,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             t0 = np.mean(obs_time)
 
             # initial guess of deceleration decel equal to linear fit of velocity
-            p0 = [a,b,0, t0]
+            p0 = [a, 0, 0, 0]
 
             opt_res = opt.minimize(lag_residual, p0, args=(np.array(obs_time), np.array(obs_lag)), method='Nelder-Mead')
 
@@ -253,6 +253,10 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             t_decel_ref = (t0 + np.max(obs_time))/2
             decel_t0 = cubic_acceleration(t_decel_ref, a_t0, b_t0, t0)[0]
 
+            a_t0=-abs(a_t0)
+            b_t0=-abs(b_t0)
+
+            acceleration_parab_t0=a_t0*6 + b_t0*2
 
             a3, b3, c3 = np.polyfit(obs_time,obs_vel, 2)
             acceleration_parab=a3*2 + b3
@@ -355,7 +359,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             # add a new line in dataframe
             df_json.loc[len(df_json)] = [name,shower_code, v0, vel_avg_norot, duration,\
             mass, peak_mag_height,begin_height, end_height, t0, peak_abs_mag, beg_abs_mag, end_abs_mag,\
-            F, trail_len, acceleration_lin, acceleration_parab, decel_t0, acc_jacchia, zenith_angle, kurtosyness,skewness,\
+            F, trail_len, acceleration_lin, acceleration_parab, acceleration_parab_t0, decel_t0, acc_jacchia, zenith_angle, kurtosyness,skewness,\
             kc_par, Dynamic_pressure_peak_abs_mag,\
             a3, b3, c3, a_t0, b_t0, c_t0, jac_a1, jac_a2, a3_Inabs, b3_Inabs, c3_Inabs, a3_Outabs, b3_Outabs, c3_Outabs, rho, sigma,\
             erosion_height_start, erosion_coeff, erosion_mass_index,\
@@ -604,7 +608,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 #     'erosion_mass_min','erosion_mass_max','erosion_range',\
 #     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
 
-    No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0'
+    No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0', 'decel_parab_t0'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
     # if PC below 7 wrong
 
     # if variable_PCA is not empty

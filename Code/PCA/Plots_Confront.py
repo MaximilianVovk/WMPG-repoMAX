@@ -27,7 +27,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
     # Shower=['PER']#['CAP']
 
     # number of selected events selected
-    n_select=15
+    n_select=10
     dist_select=np.array([10000000000000])
 
     # weight factor for the distance
@@ -503,14 +503,15 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
         help="Path were are store both simulated and observed shower .csv file.")
+    
     
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
     #     help="Path were are store both simulated and observed shower .csv file.")

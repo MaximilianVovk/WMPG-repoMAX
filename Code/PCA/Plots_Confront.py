@@ -35,6 +35,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
 
     only_select_meteors_from='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json'
 
+    do_not_select_meteor='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json'
+
     Sim_data_distribution=True
 
     # dist_select=[1,\
@@ -104,7 +106,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
         df_sel = pd.read_csv(output_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
         df_sel_save = pd.read_csv(output_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
 
-
+        # check if the do_not_select_meteor is in the solution_id of the df_sel if yes remove it
+        if do_not_select_meteor in df_sel['solution_id'].values:
+            df_sel=df_sel[df_sel['solution_id']!=do_not_select_meteor]
+            print('removed event : '+do_not_select_meteor)
 
         if Sim_data_distribution==True:
             # if there only_select_meteors_from is equal to any solution_id_dist

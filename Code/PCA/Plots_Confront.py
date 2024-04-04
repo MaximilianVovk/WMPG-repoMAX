@@ -18,6 +18,8 @@ import scipy.spatial.distance
 import scipy.stats
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from scipy.stats import gaussian_kde
+from scipy.optimize import minimize
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
 
@@ -29,6 +31,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
     # number of selected events selected
     n_select=10
     dist_select=np.array([10000000000000])
+    # dist_select=np.ones(9)*10000000000000
 
     # weight factor for the distance
     distance_weight_fact=0
@@ -495,7 +498,79 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
 
                     # # cumulative distribution histogram of the distance wihouth considering the first two elements
                     # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, cumulative=True, stat='density')
+        var_kde=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
 
+        # create the dataframe with the selected variable
+        data = curr_df_sim_sel[var_kde].values
+        kde = gaussian_kde(dataset=data.T)  # Note the transpose to match the expected input shape
+
+        # Negative of the KDE function for optimization
+        def neg_density(x):
+            return -kde(x)
+
+        # Bounds for optimization
+        bounds = [(np.min(data[:,i]), np.max(data[:,i])) for i in range(data.shape[1])]
+
+        # Multi-start optimization
+        # Generate several initial guesses, for example, random points within the bounds
+        num_starts = 10
+        results = []
+
+        for _ in range(num_starts):
+            x0 = [np.random.uniform(low, high) for (low, high) in bounds]
+            result = minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds)
+            results.append(result)
+
+        # Find the best result (highest density, so lowest neg_density)
+        best_result = min(results, key=lambda x: x.fun)
+
+        if best_result.success:
+            densest_point = best_result.x
+            print("Densest point in the multidimensional space:", densest_point)
+        else:
+            print("Optimization was unsuccessful. Consider revising the strategy.")
+
+        # # Objective function to minimize (negative density)
+        # def neg_density(x):
+        #     return -kde(x)
+
+        # # Bounds for each dimension based on your data
+        # bounds = [(data[:,i].min(), data[:,i].max()) for i in range(data.shape[1])]
+
+        # # Initial guess - could be the mean of the data, for example
+        # x0 = data.mean(axis=0)
+
+        # # Optimization
+        # result = minimize(neg_density, x0, bounds=bounds)
+
+        # # The point of highest density in the multidimensional space
+        # densest_point = result.x if result.success else None
+        # print("Densest point in the multidimensional space:", densest_point)
+        # print for each variable the kde
+        for i in range(len(var_kde)):
+
+            x=curr_df_sim_sel[var_kde[i]]
+
+            # Compute KDE
+            kde = gaussian_kde(x)
+            
+            # Define the range for which you want to compute KDE values, with more points for higher accuracy
+            kde_x = np.linspace(x.min(), x.max(), 1000)
+            kde_values = kde(kde_x)
+            
+            # Find the mode (x-value where the KDE curve is at its maximum)
+            mode_index = np.argmax(kde_values)
+            mode = kde_x[mode_index]
+            
+            real_val=df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][var_kde[i]]
+            # put it from Series.__format__ to double format
+            real_val=real_val.values[0]
+
+
+            # Print the mode
+            print(f"Real value {var_kde[i]}: {'{:.4g}'.format(real_val)}")
+            print(f"1D Mode of KDE for {var_kde[i]}: {'{:.4g}'.format(mode)}")
+            print(f"Mult.dim. KDE densest {var_kde[i]}:  {'{:.4g}'.format(densest_point[i])}")
 
 
 if __name__ == "__main__":

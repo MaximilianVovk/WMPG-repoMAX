@@ -66,7 +66,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # number of selected events selected
     n_select=10
     dist_select=np.array([10000000000000])
-    dist_select=np.ones(9)*10000000000000
+    # dist_select=np.ones(9)*10000000000000
 
     # weight factor for the distance
     distance_weight_fact=0
@@ -76,6 +76,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     do_not_select_meteor=['TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json']
 
     Sim_data_distribution=False
+
+    plot_dist=False
 
     # dist_select=[1,\
     #                    1,\
@@ -200,7 +202,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # append the simulated shower to the list
         df_sel_shower.append(df_sel)
 
-
+    # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
+    if os.path.exists(output_dir+os.sep+"log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt"):
+        # remove the file
+        os.remove(output_dir+os.sep+"log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt")
     sys.stdout = Logger(output_dir, "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt")
 
     if flag_remove==True:
@@ -334,89 +339,89 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # fig.savefig(output_dir+os.sep+'Plots/Histograms_'+current_shower+'.png', dpi=300)
 
     ######### DISTANCE PLOT ##################################################
+        if plot_dist==True:
+            if len(dist_select)>1:
 
-        if len(dist_select)>1:
+                # Extract unique locations
+                meteors_IDs = curr_sel_save["solution_id_dist"].unique()
 
-            # Extract unique locations
-            meteors_IDs = curr_sel_save["solution_id_dist"].unique()
+                # save the distance_meteor from df_sel_save
+                distance_meteor_sel_save=curr_sel_save['distance_meteor']
+                # save the distance_meteor from df_sel_save
+                distance_meteor_sel=curr_sel['distance_meteor']
 
-            # save the distance_meteor from df_sel_save
-            distance_meteor_sel_save=curr_sel_save['distance_meteor']
-            # save the distance_meteor from df_sel_save
-            distance_meteor_sel=curr_sel['distance_meteor']
+                # Plotting
+                fig, axes = plt.subplots(nrows=3, ncols=3)
+                axes = axes.flatten()  # Flatten the array for easier iteration
 
-            # Plotting
-            fig, axes = plt.subplots(nrows=3, ncols=3)
-            axes = axes.flatten()  # Flatten the array for easier iteration
+                # use the default matpotlib default color cycle for the plots
+                # print(plt.rcParams['axes.prop_cycle'].by_key()['color'])
+                colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-            # use the default matpotlib default color cycle for the plots
-            # print(plt.rcParams['axes.prop_cycle'].by_key()['color'])
-            colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+                for i, around_meteor in enumerate(meteors_IDs):
+                    # Filter data for the current location
+                    data_for_meteor = curr_sel_save[curr_sel_save["solution_id_dist"] == around_meteor]
+                    data_for_meteor_sel = curr_sel[curr_sel["solution_id_dist"] == around_meteor]
+                    # use the default matpotlib default color cycle
+                    sns.histplot(data_for_meteor, x=data_for_meteor["distance_meteor"], kde=True, cumulative=True, bins=len(data_for_meteor["distance_meteor"]), color=colors[i], ax=axes[i])
+                    # axes[i].set_title(around_meteor[-12:-8])
+                    axes[i].set_xlabel('Dist. PCA space')  # Remove x label for clarity
+                    axes[i].set_ylabel('No.events')
+                    # axes[i].tick_params(labelrotation=45)  # Rotate labels for better readability
+                    # check if distance_meteor_sel have any value
+                    if len(data_for_meteor_sel)>0:
+                        axes[i].axvline(x=np.max(data_for_meteor_sel["distance_meteor"]), color=colors[i], linestyle='--')
+                    # plot a dasced line with the max distance_meteor_sel
+                    #axes[i].axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
+                    # pu a y lim .ylim(0,100) 
+                    if len(distance_meteor_sel)<100:
+                        axes[i].set_ylim(0,20)
 
-            for i, around_meteor in enumerate(meteors_IDs):
-                # Filter data for the current location
-                data_for_meteor = curr_sel_save[curr_sel_save["solution_id_dist"] == around_meteor]
-                data_for_meteor_sel = curr_sel[curr_sel["solution_id_dist"] == around_meteor]
-                # use the default matpotlib default color cycle
-                sns.histplot(data_for_meteor, x=data_for_meteor["distance_meteor"], kde=True, cumulative=True, bins=len(data_for_meteor["distance_meteor"]), color=colors[i], ax=axes[i])
-                # axes[i].set_title(around_meteor[-12:-8])
-                axes[i].set_xlabel('Dist. PCA space')  # Remove x label for clarity
-                axes[i].set_ylabel('No.events')
-                # axes[i].tick_params(labelrotation=45)  # Rotate labels for better readability
-                # check if distance_meteor_sel have any value
-                if len(data_for_meteor_sel)>0:
-                    axes[i].axvline(x=np.max(data_for_meteor_sel["distance_meteor"]), color=colors[i], linestyle='--')
-                # plot a dasced line with the max distance_meteor_sel
-                #axes[i].axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
-                # pu a y lim .ylim(0,100) 
-                if len(distance_meteor_sel)<100:
-                    axes[i].set_ylim(0,20)
+                # Hide unused subplots if there are any
+                for ax in axes[len(meteors_IDs):]:
+                    ax.set_visible(False)
 
-            # Hide unused subplots if there are any
-            for ax in axes[len(meteors_IDs):]:
-                ax.set_visible(False)
+                plt.tight_layout()
+                # plt.show()
+                # save the figure maximized and with the right name
+                plt.savefig(output_dir+os.sep+'DistributionDist'+n_PC_in_PCA+'_'+str(len(df_sel))+'ev_MAXdist'+str(np.round(np.max(distance_meteor_sel),2))+'.png', dpi=300)
 
-            plt.tight_layout()
-            # plt.show()
-            # save the figure maximized and with the right name
-            plt.savefig(output_dir+os.sep+'DistributionDist'+n_PC_in_PCA+'_'+str(len(df_sel))+'ev_MAXdist'+str(np.round(np.max(distance_meteor_sel),2))+'.png', dpi=300)
-
-            # close the figure
-            plt.close()
-        else:
-
-            # save the distance_meteor from df_sel_save
-            distance_meteor_sel_save=curr_sel_save['distance_meteor']
-            # save the distance_meteor from df_sel_save
-            distance_meteor_sel=curr_sel['distance_meteor']
-            # delete the index
-            distance_meteor_sel_save=distance_meteor_sel_save.reset_index(drop=True)
-            # check if distance_meteor_sel_save index is bigger than the index distance_meteor_sel+50
-            if distance_meteor_sel_save[0]==0:
-                sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, bins=len(distance_meteor_sel_save), color='r')
+                # close the figure
+                plt.close()
             else:
-                sns.histplot(distance_meteor_sel_save, kde=True, cumulative=True, bins=len(distance_meteor_sel_save), color='r') # , stat='density' to have probability
-                # plt.ylim(0,len(distance_meteor_sel_save))
-            if len(distance_meteor_sel)<100:
-                plt.ylim(0,100) 
-            # axis label
-            plt.xlabel('Distance in PCA space')
-            plt.ylabel('Number of events')
 
-            # plot a dasced line with the max distance_meteor_sel
-            plt.axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
+                # save the distance_meteor from df_sel_save
+                distance_meteor_sel_save=curr_sel_save['distance_meteor']
+                # save the distance_meteor from df_sel_save
+                distance_meteor_sel=curr_sel['distance_meteor']
+                # delete the index
+                distance_meteor_sel_save=distance_meteor_sel_save.reset_index(drop=True)
+                # check if distance_meteor_sel_save index is bigger than the index distance_meteor_sel+50
+                if distance_meteor_sel_save[0]==0:
+                    sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, bins=len(distance_meteor_sel_save), color='r')
+                else:
+                    sns.histplot(distance_meteor_sel_save, kde=True, cumulative=True, bins=len(distance_meteor_sel_save), color='r') # , stat='density' to have probability
+                    # plt.ylim(0,len(distance_meteor_sel_save))
+                if len(distance_meteor_sel)<100:
+                    plt.ylim(0,100) 
+                # axis label
+                plt.xlabel('Distance in PCA space')
+                plt.ylabel('Number of events')
 
-            # make the y axis logarithmic
-            # plt.xscale('log')
-            
-            # show
-            # plt.show()
+                # plot a dasced line with the max distance_meteor_sel
+                plt.axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
 
-            # save the figure maximized and with the right name
-            plt.savefig(output_dir+os.sep+'DistributionDist'+n_PC_in_PCA+'_'+str(len(df_sel))+'ev_MAXdist'+str(np.round(np.max(distance_meteor_sel),2))+'.png', dpi=300)
+                # make the y axis logarithmic
+                # plt.xscale('log')
+                
+                # show
+                # plt.show()
 
-            # close the figure
-            plt.close()
+                # save the figure maximized and with the right name
+                plt.savefig(output_dir+os.sep+'DistributionDist'+n_PC_in_PCA+'_'+str(len(df_sel))+'ev_MAXdist'+str(np.round(np.max(distance_meteor_sel),2))+'.png', dpi=300)
+
+                # close the figure
+                plt.close()
 
     ##########################################################################
 
@@ -541,7 +546,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         plt.tight_layout()
         
         # plt.show()
-        print(output_dir+os.sep+'PhysicProp'+str(len(curr_sel))+'_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
+        # print(output_dir+os.sep+'PhysicProp'+str(len(curr_sel))+'_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
         # save the figure maximized and with the right name
         fig.savefig(output_dir+os.sep+'PhysicProp'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png', dpi=300)
 
@@ -572,7 +577,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         median_guess = np.median(data, axis=0)
 
         # KMeans centroids as additional guesses
-        kmeans = KMeans(n_clusters=5).fit(data)  # Adjust n_clusters based on your understanding of the data
+        kmeans = KMeans(n_clusters=5, n_init='auto').fit(data)  # Adjust n_clusters based on your understanding of the data
         centroids = kmeans.cluster_centers_
 
         # Combine all initial guesses
@@ -588,44 +593,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             densest_point = best_result.x
             print("Densest point in the multidimensional space:", densest_point)
         else:
-            print("Optimization was unsuccessful. Consider revising the strategy or data preprocessing.")
-
-        # Multi-start optimization
-        # Generate several initial guesses, for example, random points within the bounds
-        # num_starts = 1000
-        # results = []
-
-        # for _ in range(num_starts):
-        #     x0 = [np.random.uniform(low, high) for (low, high) in bounds]
-        #     result = minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds)
-        #     results.append(result)
-
-        # # Find the best result (highest density, so lowest neg_density)
-        # best_result = min(results, key=lambda x: x.fun)
-
-        # if best_result.success:
-        #     densest_point = best_result.x
-        #     print("Densest point in the multidimensional space:", densest_point)
-        # else:
-        #     print("Random ininitial guess for Optimization was unsuccessful.")
-        #     print("Trying an other strategy.")
-
-            # try an other strategy
-            # Bounds for each dimension based on your data
-            bounds = [(data[:,i].min(), data[:,i].max()) for i in range(data.shape[1])]
-
-            # Initial guess - could be the mean of the data, for example
-            x0 = data.mean(axis=0)
-
-            # Optimization
-            result = minimize(neg_density, x0, bounds=bounds)
-
-            # The point of highest density in the multidimensional space
-            densest_point = result.x if result.success else None
-            print("Densest point in the multidimensional space:", densest_point)
-            if densest_point==None:
-                # print an error
-                raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
+            raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
             
 
         # Load the nominal simulation
@@ -687,6 +655,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             # put it from Series.__format__ to double format
             real_val=real_val.values[0]
 
+            print()
             #     var_kde=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
             # Print the mode
             print(f"Real value {var_kde[i]}: {'{:.4g}'.format(real_val)}")
@@ -896,13 +865,13 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab", \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab_Bootstrap", \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab", \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab_Bootstrap", \
         help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \

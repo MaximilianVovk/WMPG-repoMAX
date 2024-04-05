@@ -64,7 +64,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # Shower=['PER']#['CAP']
 
     # number of selected events selected
-    n_select=10
+    n_select=30
     dist_select=np.array([10000000000000])
     # dist_select=np.ones(9)*10000000000000
 
@@ -75,7 +75,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
     do_not_select_meteor=['TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json']
 
-    Sim_data_distribution=False
+    Sim_data_distribution=True
 
     plot_dist=False
 
@@ -278,6 +278,11 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         curr_df=curr_df.dropna()
         if Sim_data_distribution==True:
             curr_df_sim_sel=pd.concat([curr_sim,curr_sel.drop(['distance'], axis=1)], axis=0, ignore_index=True)
+            curr_sel['erosion_coeff']=curr_sel['erosion_coeff']*1000000
+            curr_sel['sigma']=curr_sel['sigma']*1000000
+            curr_sel['erosion_energy_per_unit_cross_section']=curr_sel['erosion_energy_per_unit_cross_section']/1000000
+            curr_sel['erosion_energy_per_unit_mass']=curr_sel['erosion_energy_per_unit_mass']/1000000
+
         elif Sim_data_distribution==False:
             curr_df_sim_sel=curr_sel
         
@@ -561,7 +566,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         var_kde=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
 
         # create the dataframe with the selected variable
-        data = curr_df_sim_sel[var_kde].values
+        data = curr_sel[var_kde].values
         kde = gaussian_kde(dataset=data.T)  # Note the transpose to match the expected input shape
 
         # Negative of the KDE function for optimization
@@ -638,7 +643,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # print for each variable the kde
         for i in range(len(var_kde)):
 
-            x=curr_df_sim_sel[var_kde[i]]
+            x=curr_sel[var_kde[i]]
 
             # Compute KDE
             kde = gaussian_kde(x)
@@ -865,13 +870,13 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab_Bootstrap", \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab", \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab_Bootstrap", \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab", \
         help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \

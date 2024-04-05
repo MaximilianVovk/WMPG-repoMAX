@@ -20,10 +20,21 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import gaussian_kde
 from scipy.optimize import minimize
+from wmpl.MetSim.GUI import loadConstants, SimulationResults
+from wmpl.MetSim.MetSimErosion import runSimulation, Constants
+from sklearn.cluster import KMeans
+import copy
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
 
-def PCA_confrontPLOT(output_dir, Shower, input_dir):
+def find_closest_index(time_arr, time_sampled):
+    closest_indices = []
+    for sample in time_sampled:
+        closest_index = min(range(len(time_arr)), key=lambda i: abs(time_arr[i] - sample))
+        closest_indices.append(closest_index)
+    return closest_indices
+
+def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # Set the shower name (can be multiple) e.g. 'GEM' or ['GEM','PER', 'ORI', 'ETA', 'SDA', 'CAP']
     # Shower=['GEM', 'PER', 'ORI', 'ETA', 'SDA', 'CAP']
     # Shower=['PER']#['CAP']
@@ -31,16 +42,16 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
     # number of selected events selected
     n_select=10
     dist_select=np.array([10000000000000])
-    # dist_select=np.ones(9)*10000000000000
+    dist_select=np.ones(9)*10000000000000
 
     # weight factor for the distance
     distance_weight_fact=0
 
     only_select_meteors_from='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json'
 
-    do_not_select_meteor='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json'
+    do_not_select_meteor=['TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json']
 
-    Sim_data_distribution=True
+    Sim_data_distribution=False
 
     # dist_select=[1,\
     #                    1,\
@@ -74,7 +85,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
     for current_shower in Shower:
         print('\n'+current_shower)
 
-        df_obs = pd.read_csv(output_dir+os.sep+current_shower+'_and_dist.csv')
+        df_obs = pd.read_csv(input_dir+os.sep+current_shower+'_and_dist.csv')
 
         # if there only_select_meteors_from is equal to any solution_id_dist
         if only_select_meteors_from in df_obs['solution_id'].values:
@@ -91,12 +102,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
         
 
         # check in the current folder there is a csv file with the name of the simulated shower
-        df_sim = pd.read_csv(output_dir+os.sep+'Simulated_'+current_shower+'.csv')
+        df_sim = pd.read_csv(input_dir+os.sep+'Simulated_'+current_shower+'.csv')
         print('simulation: '+str(len(df_sim)))
         # simulation with acc positive
         df_sim['weight']=1/len(df_sim)
         # df_sim['weight']=0.00000000000000000000001
-        df_PCA_columns = pd.read_csv(output_dir+os.sep+'Simulated_'+current_shower+'_select_PCA.csv')
+        df_PCA_columns = pd.read_csv(input_dir+os.sep+'Simulated_'+current_shower+'_select_PCA.csv')
         # fid the numbr of columns
         n_PC_in_PCA=str(len(df_PCA_columns.columns)-1)+'PC'
         # print the number of selected events
@@ -106,13 +117,14 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
         df_sim_shower.append(df_sim)
 
         # check in the current folder there is a csv file with the name of the simulated shower
-        df_sel = pd.read_csv(output_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
-        df_sel_save = pd.read_csv(output_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
+        df_sel = pd.read_csv(input_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
+        df_sel_save = pd.read_csv(input_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
 
-        # check if the do_not_select_meteor is in the solution_id of the df_sel if yes remove it
-        if do_not_select_meteor in df_sel['solution_id'].values:
-            df_sel=df_sel[df_sel['solution_id']!=do_not_select_meteor]
-            print('removed event : '+do_not_select_meteor)
+        # check if the do_not_select_meteor any of the array value is in the solution_id of the df_sel if yes remove it
+        for i in range(len(do_not_select_meteor)):
+            if do_not_select_meteor[i] in df_sel['solution_id'].values:
+                df_sel=df_sel[df_sel['solution_id']!=do_not_select_meteor[i]]
+                print('removed: '+do_not_select_meteor[i])
 
         if Sim_data_distribution==True:
             # if there only_select_meteors_from is equal to any solution_id_dist
@@ -333,7 +345,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
             plt.tight_layout()
             # plt.show()
             # save the figure maximized and with the right name
-            plt.savefig(output_dir+os.sep+'DistributionDist'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_ArrayMEANdist'+str(np.round(np.mean(dist_select),2))+'.png', dpi=300)
+            plt.savefig(output_dir+os.sep+'DistributionDist'+n_PC_in_PCA+'_'+str(len(df_sel))+'ev_MAXdist'+str(np.round(np.max(distance_meteor_sel),2))+'.png', dpi=300)
 
             # close the figure
             plt.close()
@@ -481,6 +493,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
                         # place the xaxis exponent in the bottom right corner
                         axs[i,j].xaxis.get_offset_text().set_x(1.10)
 
+                    if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+                        # put it back as it was
+                        curr_df_sim_sel[plotvar]=10**curr_df_sim_sel[plotvar]
+                        df_sel_save[plotvar]=10**df_sel_save[plotvar]
+
+
                 ii=ii+1
             ii=ii+1
         
@@ -498,6 +516,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
 
                     # # cumulative distribution histogram of the distance wihouth considering the first two elements
                     # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, cumulative=True, stat='density')
+        # # cumulative distribution histogram of the distance wihouth considering the first two elements
+        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, cumulative=True, stat='density')
+
         var_kde=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
 
         # create the dataframe with the selected variable
@@ -508,44 +529,110 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
         def neg_density(x):
             return -kde(x)
 
-        # Bounds for optimization
+        # Bounds for optimization within all the sim space
+        # data_sim = df_sim[var_kde].values
         bounds = [(np.min(data[:,i]), np.max(data[:,i])) for i in range(data.shape[1])]
 
-        # Multi-start optimization
-        # Generate several initial guesses, for example, random points within the bounds
-        num_starts = 10
-        results = []
+        # Initial guesses: data mean, data median, and KMeans centroids
+        mean_guess = np.mean(data, axis=0)
+        median_guess = np.median(data, axis=0)
 
-        for _ in range(num_starts):
-            x0 = [np.random.uniform(low, high) for (low, high) in bounds]
-            result = minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds)
-            results.append(result)
+        # KMeans centroids as additional guesses
+        kmeans = KMeans(n_clusters=5).fit(data)  # Adjust n_clusters based on your understanding of the data
+        centroids = kmeans.cluster_centers_
 
-        # Find the best result (highest density, so lowest neg_density)
-        best_result = min(results, key=lambda x: x.fun)
+        # Combine all initial guesses
+        initial_guesses = [mean_guess, median_guess] + centroids.tolist()
 
-        if best_result.success:
+        # Perform optimization from each initial guess
+        results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
+
+        # Filter out unsuccessful optimizations and find the best result
+        successful_results = [res for res in results if res.success]
+        if successful_results:
+            best_result = min(successful_results, key=lambda x: x.fun)
             densest_point = best_result.x
             print("Densest point in the multidimensional space:", densest_point)
         else:
-            print("Optimization was unsuccessful. Consider revising the strategy.")
+            print("Optimization was unsuccessful. Consider revising the strategy or data preprocessing.")
 
-        # # Objective function to minimize (negative density)
-        # def neg_density(x):
-        #     return -kde(x)
+        # Multi-start optimization
+        # Generate several initial guesses, for example, random points within the bounds
+        # num_starts = 1000
+        # results = []
 
-        # # Bounds for each dimension based on your data
-        # bounds = [(data[:,i].min(), data[:,i].max()) for i in range(data.shape[1])]
+        # for _ in range(num_starts):
+        #     x0 = [np.random.uniform(low, high) for (low, high) in bounds]
+        #     result = minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds)
+        #     results.append(result)
 
-        # # Initial guess - could be the mean of the data, for example
-        # x0 = data.mean(axis=0)
+        # # Find the best result (highest density, so lowest neg_density)
+        # best_result = min(results, key=lambda x: x.fun)
 
-        # # Optimization
-        # result = minimize(neg_density, x0, bounds=bounds)
+        # if best_result.success:
+        #     densest_point = best_result.x
+        #     print("Densest point in the multidimensional space:", densest_point)
+        # else:
+        #     print("Random ininitial guess for Optimization was unsuccessful.")
+        #     print("Trying an other strategy.")
 
-        # # The point of highest density in the multidimensional space
-        # densest_point = result.x if result.success else None
-        # print("Densest point in the multidimensional space:", densest_point)
+            # try an other strategy
+            # Bounds for each dimension based on your data
+            bounds = [(data[:,i].min(), data[:,i].max()) for i in range(data.shape[1])]
+
+            # Initial guess - could be the mean of the data, for example
+            x0 = data.mean(axis=0)
+
+            # Optimization
+            result = minimize(neg_density, x0, bounds=bounds)
+
+            # The point of highest density in the multidimensional space
+            densest_point = result.x if result.success else None
+            print("Densest point in the multidimensional space:", densest_point)
+            if densest_point==None:
+                # print an error
+                raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
+            
+
+        # Load the nominal simulation
+        sim_fit_json_nominal = os.path.join(true_path, true_file)
+
+# if pickle change the extension and the code ##################################################################################################
+
+        # Load the nominal simulation parameters
+        const_nominal, _ = loadConstants(sim_fit_json_nominal)
+        const_nominal.dens_co = np.array(const_nominal.dens_co)
+
+        dens_co=np.array(const_nominal.dens_co)
+
+        # print(const_nominal.__dict__)
+
+        ### Calculate atmosphere density coeffs (down to the bottom observed height, limit to 15 km) ###
+
+        # Determine the height range for fitting the density
+        dens_fit_ht_beg = const_nominal.h_init
+        # dens_fit_ht_end = const_nominal.h_final
+
+        # Assign the density coefficients
+        const_nominal.dens_co = dens_co
+
+        # Turn on plotting of LCs of individual fragments 
+        const_nominal.fragmentation_show_individual_lcs = True
+
+        # # change the sigma of the fragmentation
+        # const_nominal.sigma = 1.0
+
+        # 'rho': 209.27575861617834, 'm_init': 1.3339843905562902e-05, 'v_init': 59836.848805126894, 'shape_factor': 1.21, 'sigma': 1.387556841276162e-08, 'zenith_angle': 0.6944268835985749, 'gamma': 1.0, 'rho_grain': 3000, 'lum_eff_type': 5, 'lum_eff': 0.7, 'mu': 3.8180000000000003e-26, 'erosion_on': True, 'erosion_bins_per_10mass': 10, 'erosion_height_start': 117311.48011974395, 'erosion_coeff': 6.356639734390828e-07, 'erosion_height_change': 0, 'erosion_coeff_change': 3.3e-07, 'erosion_rho_change': 3700, 'erosion_sigma_change': 2.3e-08, 'erosion_mass_index': 1.614450928834309, 'erosion_mass_min': 4.773894502090459e-11, 'erosion_mass_max': 7.485333377052805e-10, 'disruption_on': False, 'compressive_strength': 2000, 
+
+    # create a copy of the const_nominal
+        const_nominal_1D_KDE = copy.deepcopy(const_nominal)
+        const_nominal_allD_KDE = copy.deepcopy(const_nominal)
+
+        # Plot the simulation results
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+
+
+        var_cost=['m_init','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
         # print for each variable the kde
         for i in range(len(var_kde)):
 
@@ -566,11 +653,197 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir):
             # put it from Series.__format__ to double format
             real_val=real_val.values[0]
 
-
+            #     var_kde=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
             # Print the mode
             print(f"Real value {var_kde[i]}: {'{:.4g}'.format(real_val)}")
             print(f"1D Mode of KDE for {var_kde[i]}: {'{:.4g}'.format(mode)}")
             print(f"Mult.dim. KDE densest {var_kde[i]}:  {'{:.4g}'.format(densest_point[i])}")
+            # print the value of const_nominal
+            # print(f"const_nominal {var_cost[i]}:  {'{:.4g}'.format(const_nominal.__dict__[var_cost[i]])}")
+
+            if var_cost[i] == 'sigma' or var_cost[i] == 'erosion_coeff':
+                # put it back as it was
+                const_nominal_1D_KDE.__dict__[var_cost[i]]=mode/1000000
+                const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]/1000000
+            elif var_cost[i] == 'erosion_height_start':
+                # put it back as it was
+                const_nominal_1D_KDE.__dict__[var_cost[i]]=mode*1000
+                const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]*1000
+            else:
+                # add each to const_nominal_1D_KDE and const_nominal_allD_KDE
+                const_nominal_1D_KDE.__dict__[var_cost[i]]=mode
+                const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]
+
+        # Run the simulation
+        frag_main, results_list, wake_results = runSimulation(const_nominal, \
+            compute_wake=False)
+
+        sr_nominal = SimulationResults(const_nominal, frag_main, results_list, wake_results)
+
+        # Run the simulation
+        frag_main, results_list, wake_results = runSimulation(const_nominal_1D_KDE, \
+            compute_wake=False)
+
+        sr_nominal_1D_KDE = SimulationResults(const_nominal_1D_KDE, frag_main, results_list, wake_results)
+
+        # Run the simulation
+        frag_main, results_list, wake_results = runSimulation(const_nominal_allD_KDE, \
+            compute_wake=False)
+
+        sr_nominal_allD_KDE = SimulationResults(const_nominal_allD_KDE, frag_main, results_list, wake_results)
+
+        # const_nominal = sr_nominal.const
+
+        # open the json file with the name namefile_sel
+        f = open(sim_fit_json_nominal,"r")
+        data = json.loads(f.read())
+
+        zenith_angle= data['params']['zenith_angle']['val']*180/np.pi
+
+        vel_sim_brigh=data['simulation_results']['brightest_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+        vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+        ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
+        time_sim=data['simulation_results']['time_arr']#['main_time_arr']
+        abs_mag_sim=data['simulation_results']['abs_magnitude']
+        len_sim=data['simulation_results']['brightest_length_arr']#['brightest_length_arr']
+
+        erosion_height_start = data['params']['erosion_height_start']['val']/1000
+
+        ht_obs=data['ht_sampled']
+
+        v0 = vel_sim[0]/1000
+
+        # find the index of the first element of the simulation that is equal to the first element of the observation
+        index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[0])
+        # find the index of the last element of the simulation that is equal to the last element of the observation
+        index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[-1])
+
+        abs_mag_sim=abs_mag_sim[index_ht_sim:index_ht_sim_end]
+        vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
+        time_sim=time_sim[index_ht_sim:index_ht_sim_end]
+        ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
+        len_sim=len_sim[index_ht_sim:index_ht_sim_end]
+
+        # divide the vel_sim by 1000 considering is a list
+        time_sim = [i-time_sim[0] for i in time_sim]
+        vel_sim = [i/1000 for i in vel_sim]
+        len_sim = [(i-len_sim[0])/1000 for i in len_sim]
+        ht_sim = [i/1000 for i in ht_sim]
+
+        ht_obs=[x/1000 for x in ht_obs]
+
+        closest_indices = find_closest_index(ht_sim, ht_obs)
+
+        abs_mag_sim=[abs_mag_sim[jj_index_cut] for jj_index_cut in closest_indices]
+        vel_sim=[vel_sim[jj_index_cut] for jj_index_cut in closest_indices]
+        time_sim=[time_sim[jj_index_cut] for jj_index_cut in closest_indices]
+        ht_sim=[ht_sim[jj_index_cut] for jj_index_cut in closest_indices]
+        len_sim=[len_sim[jj_index_cut] for jj_index_cut in closest_indices]
+
+    ############ add noise to the simulation
+
+        obs_time=data['time_sampled']
+        obs_length=data['len_sampled']
+        abs_mag_sim=data['mag_sampled']
+        vel_sim=[v0]
+        obs_length=[x/1000 for x in obs_length]
+        # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
+        rest_vel_sampled=[(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1]) for vel_ii in range(1,len(obs_length))]
+        # append the rest_vel_sampled to vel_sampled
+        vel_sim.extend(rest_vel_sampled)
+
+    ############ add noise to the simulation
+
+        # plot a line plot in the first subplot the magnitude vs height dashed with x markers
+        ax[0].plot(abs_mag_sim, ht_sim, linestyle='dashed', marker='x', label='1')
+
+        # add the erosion_height_start as a horizontal line in the first subplot grey dashed
+        ax[0].axhline(y=erosion_height_start, color='grey', linestyle='dashed')
+        # add the name on the orizontal height line
+        ax[0].text(max(abs_mag_sim)+1, erosion_height_start, 'Erosion heig', color='grey')
+
+        # plot a scatter plot in the second subplot the velocity vs height
+        # ax[1].scatter(vel_sim, ht_sim, marker='.', label='1')
+        # use the . maker and none linestyle
+        ax[1].plot(vel_sim, ht_sim, marker='.', linestyle='none', label='1')
+
+        # set the xlim and ylim of the first subplot
+        ax[0].set_xlim([min(abs_mag_sim)-1, max(abs_mag_sim)+1])
+        # check if the max(ht_sim) is greater than the erosion_height_start and set the ylim of the first subplot
+        if max(ht_sim)>erosion_height_start:
+            ax[0].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
+            ax[1].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
+        else:
+            ax[0].set_ylim([min(ht_sim)-1, erosion_height_start+2])
+            ax[1].set_ylim([min(ht_sim)-1, erosion_height_start+2])
+
+        # set the xlim and ylim of the second subplot
+        ax[1].set_xlim([min(vel_sim)-1, max(vel_sim)+1])
+    
+        # Plot the height vs magnitude
+        ax[0].plot(sr_nominal.abs_magnitude, sr_nominal.leading_frag_height_arr/1000, label="Simulated", \
+            color='k')
+        
+        ax[0].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="KDE 1D")
+        
+        ax[0].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD")
+        
+        # # Plot the magnitude of the main mass
+        # ax[0].plot(sr_nominal.abs_magnitude_main, sr_nominal.leading_frag_height_arr/1000, color='k', \
+        #     linestyle='dashed', linewidth=2, alpha=0.75, label="Initial body")
+
+        # height vs velocity
+        ax[1].plot(sr_nominal.brightest_vel_arr/1000, sr_nominal.brightest_height_arr/1000, label="Simulated - brightest", \
+            color='k', alpha=0.75)  
+        
+        # Plot the velocity of the main mass
+        ax[1].plot(sr_nominal.leading_frag_vel_arr/1000, sr_nominal.leading_frag_height_arr/1000, color='k', \
+            linestyle='dashed', label="Simulated - leading")
+        
+        ax[1].plot(sr_nominal_1D_KDE.brightest_vel_arr/1000, sr_nominal_1D_KDE.brightest_height_arr/1000, \
+                    label="KDE 1D - brightest", alpha=0.75)
+
+        # keep the same color and use a dashed line
+        ax[1].plot(sr_nominal_1D_KDE.leading_frag_vel_arr/1000, sr_nominal_1D_KDE.leading_frag_height_arr/1000, \
+            linestyle='dashed', label="KDE 1D - leading", color=ax[1].lines[-1].get_color())
+
+        ax[1].plot(sr_nominal_allD_KDE.brightest_vel_arr/1000, sr_nominal_allD_KDE.brightest_height_arr/1000, \
+                    label="KDE allD - brightest")
+
+        # keep the same color and use a dashed line
+        ax[1].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
+            linestyle='dashed', label="KDE allD - leading", color=ax[1].lines[-1].get_color())
+        
+
+
+        # # Plot the velocity of the main mass
+        # ax[1].plot(sr_nominal.leading_frag_vel_arr/1000, sr_nominal.leading_frag_height_arr/1000, color='k', \
+        #     linestyle='dashed', linewidth=2, alpha=0.75, label="Simulated - leading")
+        
+        # put the grid in the subplots and make it dashed
+        ax[0].grid(linestyle='dashed')
+        ax[1].grid(linestyle='dashed')
+        # add the legend
+        ax[0].legend()
+        ax[1].legend()
+
+        # add the labels
+        ax[0].set_ylabel('Height [km]')
+        ax[0].set_xlabel('Absolute Magnitude')
+        # invert the x axis
+        ax[0].invert_xaxis()
+
+        ax[1].set_ylabel('Height [km]')
+        ax[1].set_xlabel('Velocity [km/s]')
+
+        # make the plot visible
+        # plt.show()
+        print(output_dir+os.sep+'BestFitKDE'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
+        # save the figure maximized and with the right name
+        fig.savefig(output_dir+os.sep+'BestFitKDE'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png', dpi=300)
+        
+        # close the figure
+        plt.close()
 
 
 if __name__ == "__main__":
@@ -591,7 +864,12 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
         help="Path were are store both simulated and observed shower .csv file.")
-    
+
+    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \
+        help="The real json file the ground truth for the PCA simulation results.") 
+
+    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\Simulations_PER', \
+        help="Path to the real file the ground truth for the PCA simulation results.") 
     
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
     #     help="Path were are store both simulated and observed shower .csv file.")
@@ -607,4 +885,4 @@ if __name__ == "__main__":
 
     #########################
 
-    PCA_confrontPLOT(cml_args.output_dir, Shower, cml_args.input_dir)
+    PCA_confrontPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)

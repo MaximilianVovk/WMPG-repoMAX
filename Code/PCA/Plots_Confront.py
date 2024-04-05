@@ -24,8 +24,32 @@ from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants
 from sklearn.cluster import KMeans
 import copy
+import sys
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
+
+# create a txt file where you save averithing that has been printed
+class Logger(object):
+    def __init__(self, directory=".", filename="log.txt"):
+        self.terminal = sys.stdout
+        # Ensure the directory exists
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        # Combine the directory and filename to create the full path
+        filepath = os.path.join(directory, filename)
+        self.log = open(filepath, "a")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        # This might be necessary as stdout could call flush
+        self.terminal.flush()
+
+    def close(self):
+        # Close the log file when done
+        self.log.close()
 
 def find_closest_index(time_arr, time_sampled):
     closest_indices = []
@@ -120,11 +144,14 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         df_sel = pd.read_csv(input_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
         df_sel_save = pd.read_csv(input_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
 
+        flag_remove=False
         # check if the do_not_select_meteor any of the array value is in the solution_id of the df_sel if yes remove it
         for i in range(len(do_not_select_meteor)):
             if do_not_select_meteor[i] in df_sel['solution_id'].values:
                 df_sel=df_sel[df_sel['solution_id']!=do_not_select_meteor[i]]
                 print('removed: '+do_not_select_meteor[i])
+                flag_remove=True
+
 
         if Sim_data_distribution==True:
             # if there only_select_meteors_from is equal to any solution_id_dist
@@ -174,8 +201,15 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         df_sel_shower.append(df_sel)
 
 
+    sys.stdout = Logger(output_dir, "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt")
 
-        
+    if flag_remove==True:
+        print('TOT simulations : '+str(len(df_sim)))            
+        print('removed: '+do_not_select_meteor[i])
+    else:
+        print('TOT simulations : '+str(len(df_sim)))
+        print('removed nothing')
+                
 
     # concatenate all the simulated shower in a single dataframe
     df_sim_shower = pd.concat(df_sim_shower)
@@ -674,6 +708,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 const_nominal_1D_KDE.__dict__[var_cost[i]]=mode
                 const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]
 
+        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+        sys.stdout.close()
+
+        # Reset sys.stdout to its original value if needed
+        sys.stdout = sys.__stdout__
+
         # Run the simulation
         frag_main, results_list, wake_results = runSimulation(const_nominal, \
             compute_wake=False)
@@ -856,13 +896,13 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab", \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab", \
         help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \

@@ -64,7 +64,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # Shower=['PER']#['CAP']
 
     # number of selected events selected
-    n_select=30
+    n_select=3
     dist_select=np.array([10000000000000])
     # dist_select=np.ones(9)*10000000000000
 
@@ -75,7 +75,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
     do_not_select_meteor=['TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json']
 
-    Sim_data_distribution=True
+    Sim_data_distribution=False
 
     plot_dist=False
 
@@ -278,6 +278,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         curr_df=curr_df.dropna()
         if Sim_data_distribution==True:
             curr_df_sim_sel=pd.concat([curr_sim,curr_sel.drop(['distance'], axis=1)], axis=0, ignore_index=True)
+            
             curr_sel['erosion_coeff']=curr_sel['erosion_coeff']*1000000
             curr_sel['sigma']=curr_sel['sigma']*1000000
             curr_sel['erosion_energy_per_unit_cross_section']=curr_sel['erosion_energy_per_unit_cross_section']/1000000
@@ -635,10 +636,6 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         const_nominal_1D_KDE = copy.deepcopy(const_nominal)
         const_nominal_allD_KDE = copy.deepcopy(const_nominal)
 
-        # Plot the simulation results
-        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-
-
         var_cost=['m_init','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
         # print for each variable the kde
         for i in range(len(var_kde)):
@@ -766,89 +763,170 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # append the rest_vel_sampled to vel_sampled
         vel_sim.extend(rest_vel_sampled)
 
-    ############ add noise to the simulation
+    ############ plot the simulation
+        # multiply ht_sim by 1000 to have it in m
+        ht_sim_meters=[x*1000 for x in ht_sim]
+
+        # find for the index of sr_nominal.leading_frag_height_arr with the same values as sr_nominal_1D_KDE.leading_frag_height_arr
+        closest_indices_1D = find_closest_index(sr_nominal_1D_KDE.leading_frag_height_arr, ht_sim_meters )
+        # make the subtraction of the closest_indices between sr_nominal.abs_magnitude and sr_nominal_1D_KDE.abs_magnitude
+        diff_mag_1D=[(sr_nominal.abs_magnitude[jj_index_cut]-sr_nominal_1D_KDE.abs_magnitude[jj_index_cut]) for jj_index_cut in closest_indices_1D]
+        diff_vel_1D=[(sr_nominal.leading_frag_vel_arr[jj_index_cut]-sr_nominal_1D_KDE.leading_frag_vel_arr[jj_index_cut])/1000 for jj_index_cut in closest_indices_1D]
+        # do the same for the sr_nominal_allD_KDE
+        closest_indices_allD = find_closest_index(sr_nominal_allD_KDE.leading_frag_height_arr, ht_sim_meters )
+        diff_mag_allD=[(sr_nominal.abs_magnitude[jj_index_cut]-sr_nominal_allD_KDE.abs_magnitude[jj_index_cut]) for jj_index_cut in closest_indices_allD]
+        diff_vel_allD=[(sr_nominal.leading_frag_vel_arr[jj_index_cut]-sr_nominal_allD_KDE.leading_frag_vel_arr[jj_index_cut])/1000 for jj_index_cut in closest_indices_allD]
+
+        # Plot the simulation results
+        fig, ax = plt.subplots(1, 4, figsize=(15, 5), gridspec_kw={'width_ratios': [0.5, 3, 3, 0.5]}) #  figsize=(10, 5), dpi=300
+
+        # flat the ax
+        ax = ax.flatten()
 
         # plot a line plot in the first subplot the magnitude vs height dashed with x markers
-        ax[0].plot(abs_mag_sim, ht_sim, linestyle='dashed', marker='x', label='1')
+        ax[1].plot(abs_mag_sim, ht_sim, linestyle='dashed', marker='x', label='1')
 
         # add the erosion_height_start as a horizontal line in the first subplot grey dashed
-        ax[0].axhline(y=erosion_height_start, color='grey', linestyle='dashed')
+        ax[1].axhline(y=erosion_height_start, color='grey', linestyle='dashed')
         # add the name on the orizontal height line
-        ax[0].text(max(abs_mag_sim)+1, erosion_height_start, 'Erosion heig', color='grey')
+        ax[1].text(max(abs_mag_sim)+1, erosion_height_start, 'Erosion heig', color='grey')
 
         # plot a scatter plot in the second subplot the velocity vs height
-        # ax[1].scatter(vel_sim, ht_sim, marker='.', label='1')
+        # ax[2].scatter(vel_sim, ht_sim, marker='.', label='1')
         # use the . maker and none linestyle
-        ax[1].plot(vel_sim, ht_sim, marker='.', linestyle='none', label='1')
+        ax[2].plot(vel_sim, ht_sim, marker='.', linestyle='none', label='1')
 
         # set the xlim and ylim of the first subplot
-        ax[0].set_xlim([min(abs_mag_sim)-1, max(abs_mag_sim)+1])
+        ax[1].set_xlim([min(abs_mag_sim)-1, max(abs_mag_sim)+1])
         # check if the max(ht_sim) is greater than the erosion_height_start and set the ylim of the first subplot
-        if max(ht_sim)>erosion_height_start:
-            ax[0].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
-            ax[1].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
-        else:
-            ax[0].set_ylim([min(ht_sim)-1, erosion_height_start+2])
-            ax[1].set_ylim([min(ht_sim)-1, erosion_height_start+2])
 
         # set the xlim and ylim of the second subplot
-        ax[1].set_xlim([min(vel_sim)-1, max(vel_sim)+1])
+        ax[2].set_xlim([min(vel_sim)-1, max(vel_sim)+1])
     
         # Plot the height vs magnitude
-        ax[0].plot(sr_nominal.abs_magnitude, sr_nominal.leading_frag_height_arr/1000, label="Simulated", \
+        ax[1].plot(sr_nominal.abs_magnitude, sr_nominal.leading_frag_height_arr/1000, label="Simulated", \
             color='k')
         
-        ax[0].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="KDE 1D")
+        ax[1].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="KDE 1D")
         
-        ax[0].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD")
-        
-        # # Plot the magnitude of the main mass
-        # ax[0].plot(sr_nominal.abs_magnitude_main, sr_nominal.leading_frag_height_arr/1000, color='k', \
-        #     linestyle='dashed', linewidth=2, alpha=0.75, label="Initial body")
+        ax[1].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD")
+
+        # velocity vs height
 
         # height vs velocity
-        ax[1].plot(sr_nominal.brightest_vel_arr/1000, sr_nominal.brightest_height_arr/1000, label="Simulated - brightest", \
+        ax[2].plot(sr_nominal.brightest_vel_arr/1000, sr_nominal.brightest_height_arr/1000, label="Simulated - brightest", \
             color='k', alpha=0.75)  
         
         # Plot the velocity of the main mass
-        ax[1].plot(sr_nominal.leading_frag_vel_arr/1000, sr_nominal.leading_frag_height_arr/1000, color='k', \
+        ax[2].plot(sr_nominal.leading_frag_vel_arr/1000, sr_nominal.leading_frag_height_arr/1000, color='k', \
             linestyle='dashed', label="Simulated - leading")
         
-        ax[1].plot(sr_nominal_1D_KDE.brightest_vel_arr/1000, sr_nominal_1D_KDE.brightest_height_arr/1000, \
+        ax[2].plot(sr_nominal_1D_KDE.brightest_vel_arr/1000, sr_nominal_1D_KDE.brightest_height_arr/1000, \
                     label="KDE 1D - brightest", alpha=0.75)
 
         # keep the same color and use a dashed line
-        ax[1].plot(sr_nominal_1D_KDE.leading_frag_vel_arr/1000, sr_nominal_1D_KDE.leading_frag_height_arr/1000, \
-            linestyle='dashed', label="KDE 1D - leading", color=ax[1].lines[-1].get_color())
+        ax[2].plot(sr_nominal_1D_KDE.leading_frag_vel_arr/1000, sr_nominal_1D_KDE.leading_frag_height_arr/1000, \
+            linestyle='dashed', label="KDE 1D - leading", color=ax[2].lines[-1].get_color())
+        
 
-        ax[1].plot(sr_nominal_allD_KDE.brightest_vel_arr/1000, sr_nominal_allD_KDE.brightest_height_arr/1000, \
+        ax[0].scatter(diff_mag_1D,sr_nominal.leading_frag_height_arr[closest_indices_1D]/1000, color=ax[2].lines[-1].get_color(), marker='.')
+        ax[3].scatter(diff_vel_1D,sr_nominal.leading_frag_height_arr[closest_indices_1D]/1000, color=ax[2].lines[-1].get_color(), marker='.')
+
+        ax[2].plot(sr_nominal_allD_KDE.brightest_vel_arr/1000, sr_nominal_allD_KDE.brightest_height_arr/1000, \
                     label="KDE allD - brightest")
 
         # keep the same color and use a dashed line
-        ax[1].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
-            linestyle='dashed', label="KDE allD - leading", color=ax[1].lines[-1].get_color())
+        ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
+            linestyle='dashed', label="KDE allD - leading", color=ax[2].lines[-1].get_color())
         
+        ax[0].scatter(diff_mag_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
+        ax[3].scatter(diff_vel_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
 
+        if max(ht_sim)>erosion_height_start:
+            ax[0].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
+            ax[1].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
+            ax[2].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
+            ax[3].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
+        else:
+            ax[0].set_ylim([min(ht_sim)-1, erosion_height_start+2])
+            ax[1].set_ylim([min(ht_sim)-1, erosion_height_start+2])
+            ax[2].set_ylim([min(ht_sim)-1, erosion_height_start+2])
+            ax[3].set_ylim([min(ht_sim)-1, erosion_height_start+2])
+        
+        # set the xlabel and ylabel of the subplots
 
-        # # Plot the velocity of the main mass
-        # ax[1].plot(sr_nominal.leading_frag_vel_arr/1000, sr_nominal.leading_frag_height_arr/1000, color='k', \
-        #     linestyle='dashed', linewidth=2, alpha=0.75, label="Simulated - leading")
+        # on ax[0] the sides of the plot put the error in the magnitude as a value with one axis
+        ax[0].set_xlabel('abs.mag.err')
+        # set the same y axis as the plot above
+        # ax[0].set_ylim(ax[1].get_ylim())
+        # place the y axis along the zero
+        ax[0].spines['left'].set_position(('data', 0))
+        # place the ticks along the zero
+        ax[0].yaxis.set_ticks_position('left')
+        # delete the numbers from the y axis
+        ax[0].yaxis.set_tick_params(labelleft=False)
+        # invert the y axis
+        ax[0].invert_xaxis()
+        # delte the border of the plot
+        ax[0].spines['right'].set_color('none')
+        ax[0].spines['top'].set_color('none')
+        # append diff_vel_allD to diff_vel_1D
+        diff_mag_allD.extend(diff_mag_1D)
+        # delete any nan or inf from the list
+        diff_mag_allD = [x for x in diff_mag_allD if str(x) != 'nan' and str(x) != 'inf']
+        # put the ticks in the x axis to -1*max(abs(np.array(diff_mag_allD))), max(abs(np.array(diff_mag_allD)) with only 2 significant digits
+        ax[0].set_xticks([-1*max(abs(np.array(diff_mag_allD))), max(abs(np.array(diff_mag_allD)))])
+        # Rotate tick labels
+        ax[0].tick_params(axis='x', rotation=45)
+        # rotate that by 45 degrees
+        ax[0].set_xlim([-1*max(abs(np.array(diff_mag_allD)))-max(abs(np.array(diff_mag_allD)))/4, max(abs(np.array(diff_mag_allD)))+max(abs(np.array(diff_mag_allD)))/4])
+
+        # on ax[3] the sides of the plot put the error in the velocity as a value with one axis
+        ax[3].set_xlabel('vel.lead.err [km/s]')
+        # set the same y axis as the plot above
+        # ax[3].set_ylim(ax[2].get_ylim())
+        # place the y axis along the zero
+        ax[3].spines['right'].set_position(('data', 0))
+        # place the ticks along the zero
+        ax[3].yaxis.set_ticks_position('right')
+        # delete the numbers from the y axis
+        ax[3].yaxis.set_tick_params(labelright=False)
+        # delte the border of the plot
+        ax[3].spines['left'].set_color('none')
+        ax[3].spines['top'].set_color('none')
+        # append diff_vel_allD to diff_vel_1D
+        diff_vel_allD.extend(diff_vel_1D)
+        # delete any nan or inf from the list
+        diff_vel_allD = [x for x in diff_vel_allD if str(x) != 'nan' and str(x) != 'inf']
+        # x limit of the plot equal to max of the absolute magnitude
+        ax[3].set_xticks([-1*max(abs(np.array(diff_vel_allD))), max(abs(np.array(diff_vel_allD)))])
+        # Rotate tick labels
+        ax[3].tick_params(axis='x', rotation=45)
+        ax[3].set_xlim([-1*max(abs(np.array(diff_vel_allD)))-max(abs(np.array(diff_vel_allD)))/4, max(abs(np.array(diff_vel_allD)))+max(abs(np.array(diff_vel_allD)))/4])
         
         # put the grid in the subplots and make it dashed
-        ax[0].grid(linestyle='dashed')
         ax[1].grid(linestyle='dashed')
+        ax[2].grid(linestyle='dashed')
         # add the legend
-        ax[0].legend()
         ax[1].legend()
+        ax[2].legend()
 
         # add the labels
-        ax[0].set_ylabel('Height [km]')
-        ax[0].set_xlabel('Absolute Magnitude')
-        # invert the x axis
-        ax[0].invert_xaxis()
-
         ax[1].set_ylabel('Height [km]')
-        ax[1].set_xlabel('Velocity [km/s]')
+        ax[1].set_xlabel('Absolute Magnitude')
+        # invert the x axis
+        ax[1].invert_xaxis()
+
+        # put the ticks on the right
+        ax[2].yaxis.tick_right()
+        ax[2].set_ylabel('Height [km]')
+        ax[2].set_xlabel('Velocity [km/s]')
+        # put the labels on the right
+        ax[2].yaxis.set_label_position("right")
+
+
+        # make more space between the subplots
+        plt.tight_layout()
 
         # make the plot visible
         # plt.show()
@@ -870,13 +948,13 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab", \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab_Bootstrap", \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab", \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab_Bootstrap", \
         help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \

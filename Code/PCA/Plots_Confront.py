@@ -778,18 +778,18 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         diff_vel_allD=[(sr_nominal.leading_frag_vel_arr[jj_index_cut]-sr_nominal_allD_KDE.leading_frag_vel_arr[jj_index_cut])/1000 for jj_index_cut in closest_indices_allD]
 
         # Plot the simulation results
-        fig, ax = plt.subplots(1, 4, figsize=(15, 5), gridspec_kw={'width_ratios': [0.5, 3, 3, 0.5]}) #  figsize=(10, 5), dpi=300
+        fig, ax = plt.subplots(2, 2, figsize=(8, 10),gridspec_kw={'width_ratios': [ 3, 0.5]}, dpi=300) #  figsize=(10, 5), dpi=300 0.5, 3, 3, 0.5
 
         # flat the ax
         ax = ax.flatten()
 
         # plot a line plot in the first subplot the magnitude vs height dashed with x markers
-        ax[1].plot(abs_mag_sim, ht_sim, linestyle='dashed', marker='x', label='1')
+        ax[0].plot(abs_mag_sim, ht_sim, linestyle='dashed', marker='x', label='1')
 
         # add the erosion_height_start as a horizontal line in the first subplot grey dashed
-        ax[1].axhline(y=erosion_height_start, color='grey', linestyle='dashed')
+        ax[0].axhline(y=erosion_height_start, color='grey', linestyle='dashed')
         # add the name on the orizontal height line
-        ax[1].text(max(abs_mag_sim)+1, erosion_height_start, 'Erosion heig', color='grey')
+        ax[0].text(max(abs_mag_sim)+1, erosion_height_start, 'Erosion height', color='grey')
 
         # plot a scatter plot in the second subplot the velocity vs height
         # ax[2].scatter(vel_sim, ht_sim, marker='.', label='1')
@@ -797,92 +797,99 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         ax[2].plot(vel_sim, ht_sim, marker='.', linestyle='none', label='1')
 
         # set the xlim and ylim of the first subplot
-        ax[1].set_xlim([min(abs_mag_sim)-1, max(abs_mag_sim)+1])
+        ax[0].set_xlim([min(abs_mag_sim)-1, max(abs_mag_sim)+1])
         # check if the max(ht_sim) is greater than the erosion_height_start and set the ylim of the first subplot
 
         # set the xlim and ylim of the second subplot
         ax[2].set_xlim([min(vel_sim)-1, max(vel_sim)+1])
     
         # Plot the height vs magnitude
-        ax[1].plot(sr_nominal.abs_magnitude, sr_nominal.leading_frag_height_arr/1000, label="Simulated", \
+        ax[0].plot(sr_nominal.abs_magnitude, sr_nominal.leading_frag_height_arr/1000, label="Simulated", \
             color='k')
         
-        ax[1].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="KDE 1D")
+        ax[0].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="KDE 1D")
         
-        ax[1].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD")
+        ax[0].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD")
 
         # velocity vs height
 
-        # height vs velocity
-        ax[2].plot(sr_nominal.brightest_vel_arr/1000, sr_nominal.brightest_height_arr/1000, label="Simulated - brightest", \
-            color='k', alpha=0.75)  
+        # # height vs velocity
+        # ax[2].plot(sr_nominal.brightest_vel_arr/1000, sr_nominal.brightest_height_arr/1000, label="Simulated - brightest", \
+        #     color='k', alpha=0.75)  
         
-        # Plot the velocity of the main mass
+        # # Plot the velocity of the main mass
+        # ax[2].plot(sr_nominal.leading_frag_vel_arr/1000, sr_nominal.leading_frag_height_arr/1000, color='k', \
+        #     linestyle='dashed', label="Simulated - leading")        
         ax[2].plot(sr_nominal.leading_frag_vel_arr/1000, sr_nominal.leading_frag_height_arr/1000, color='k', \
-            linestyle='dashed', label="Simulated - leading")
+            label="Simulated")
         
-        ax[2].plot(sr_nominal_1D_KDE.brightest_vel_arr/1000, sr_nominal_1D_KDE.brightest_height_arr/1000, \
-                    label="KDE 1D - brightest", alpha=0.75)
+        # ax[2].plot(sr_nominal_1D_KDE.brightest_vel_arr/1000, sr_nominal_1D_KDE.brightest_height_arr/1000, \
+        #             label="KDE 1D - brightest", alpha=0.75)
 
-        # keep the same color and use a dashed line
+        # # keep the same color and use a dashed line
+        # ax[2].plot(sr_nominal_1D_KDE.leading_frag_vel_arr/1000, sr_nominal_1D_KDE.leading_frag_height_arr/1000, \
+        #     linestyle='dashed', label="KDE 1D - leading", color=ax[2].lines[-1].get_color())
         ax[2].plot(sr_nominal_1D_KDE.leading_frag_vel_arr/1000, sr_nominal_1D_KDE.leading_frag_height_arr/1000, \
-            linestyle='dashed', label="KDE 1D - leading", color=ax[2].lines[-1].get_color())
+            label="KDE 1D")
         
 
-        ax[0].scatter(diff_mag_1D,sr_nominal.leading_frag_height_arr[closest_indices_1D]/1000, color=ax[2].lines[-1].get_color(), marker='.')
+        ax[1].scatter(diff_mag_1D,sr_nominal.leading_frag_height_arr[closest_indices_1D]/1000, color=ax[2].lines[-1].get_color(), marker='.')
         ax[3].scatter(diff_vel_1D,sr_nominal.leading_frag_height_arr[closest_indices_1D]/1000, color=ax[2].lines[-1].get_color(), marker='.')
 
-        ax[2].plot(sr_nominal_allD_KDE.brightest_vel_arr/1000, sr_nominal_allD_KDE.brightest_height_arr/1000, \
-                    label="KDE allD - brightest")
+        # ax[2].plot(sr_nominal_allD_KDE.brightest_vel_arr/1000, sr_nominal_allD_KDE.brightest_height_arr/1000, \
+        #             label="KDE allD - brightest")
 
-        # keep the same color and use a dashed line
+        # # keep the same color and use a dashed line
+        # ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
+        #     linestyle='dashed', label="KDE allD - leading", color=ax[2].lines[-1].get_color())
         ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
-            linestyle='dashed', label="KDE allD - leading", color=ax[2].lines[-1].get_color())
+            label="KDE allD")
         
-        ax[0].scatter(diff_mag_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
+        ax[1].scatter(diff_mag_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
         ax[3].scatter(diff_vel_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
 
         if max(ht_sim)>erosion_height_start:
-            ax[0].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
             ax[1].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
+            ax[0].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
             ax[2].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
             ax[3].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
         else:
-            ax[0].set_ylim([min(ht_sim)-1, erosion_height_start+2])
             ax[1].set_ylim([min(ht_sim)-1, erosion_height_start+2])
+            ax[0].set_ylim([min(ht_sim)-1, erosion_height_start+2])
             ax[2].set_ylim([min(ht_sim)-1, erosion_height_start+2])
             ax[3].set_ylim([min(ht_sim)-1, erosion_height_start+2])
         
         # set the xlabel and ylabel of the subplots
 
-        # on ax[0] the sides of the plot put the error in the magnitude as a value with one axis
-        ax[0].set_xlabel('abs.mag.err')
+        # on ax[1] the sides of the plot put the error in the magnitude as a value with one axis
+        ax[1].set_xlabel('abs.mag.err')
         # set the same y axis as the plot above
-        # ax[0].set_ylim(ax[1].get_ylim())
+        # ax[1].set_ylim(ax[0].get_ylim())
         # place the y axis along the zero
-        ax[0].spines['left'].set_position(('data', 0))
+        ax[1].spines['left'].set_position(('data', 0))
         # place the ticks along the zero
-        ax[0].yaxis.set_ticks_position('left')
+        ax[1].yaxis.set_ticks_position('left')
         # delete the numbers from the y axis
-        ax[0].yaxis.set_tick_params(labelleft=False)
+        ax[1].yaxis.set_tick_params(labelleft=False)
         # invert the y axis
-        ax[0].invert_xaxis()
+        ax[1].invert_xaxis()
         # delte the border of the plot
-        ax[0].spines['right'].set_color('none')
-        ax[0].spines['top'].set_color('none')
+        ax[1].spines['right'].set_color('none')
+        ax[1].spines['top'].set_color('none')
         # append diff_vel_allD to diff_vel_1D
         diff_mag_allD.extend(diff_mag_1D)
         # delete any nan or inf from the list
         diff_mag_allD = [x for x in diff_mag_allD if str(x) != 'nan' and str(x) != 'inf']
         # put the ticks in the x axis to -1*max(abs(np.array(diff_mag_allD))), max(abs(np.array(diff_mag_allD)) with only 2 significant digits
-        ax[0].set_xticks([-1*max(abs(np.array(diff_mag_allD))), max(abs(np.array(diff_mag_allD)))])
+        ax[1].set_xticks([-1*max(abs(np.array(diff_mag_allD))), max(abs(np.array(diff_mag_allD)))])
         # Rotate tick labels
-        ax[0].tick_params(axis='x', rotation=45)
+        ax[1].tick_params(axis='x', rotation=45)
         # rotate that by 45 degrees
-        ax[0].set_xlim([-1*max(abs(np.array(diff_mag_allD)))-max(abs(np.array(diff_mag_allD)))/4, max(abs(np.array(diff_mag_allD)))+max(abs(np.array(diff_mag_allD)))/4])
+        ax[1].set_xlim([-1*max(abs(np.array(diff_mag_allD)))-max(abs(np.array(diff_mag_allD)))/4, max(abs(np.array(diff_mag_allD)))+max(abs(np.array(diff_mag_allD)))/4])
 
         # on ax[3] the sides of the plot put the error in the velocity as a value with one axis
-        ax[3].set_xlabel('vel.lead.err [km/s]')
+        # ax[3].set_xlabel('vel.lead.err [km/s]')
+        ax[3].set_xlabel('vel.err [km/s]')
         # set the same y axis as the plot above
         # ax[3].set_ylim(ax[2].get_ylim())
         # place the y axis along the zero
@@ -905,24 +912,24 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         ax[3].set_xlim([-1*max(abs(np.array(diff_vel_allD)))-max(abs(np.array(diff_vel_allD)))/4, max(abs(np.array(diff_vel_allD)))+max(abs(np.array(diff_vel_allD)))/4])
         
         # put the grid in the subplots and make it dashed
-        ax[1].grid(linestyle='dashed')
+        ax[0].grid(linestyle='dashed')
         ax[2].grid(linestyle='dashed')
         # add the legend
-        ax[1].legend()
+        ax[0].legend()
         ax[2].legend()
 
         # add the labels
-        ax[1].set_ylabel('Height [km]')
-        ax[1].set_xlabel('Absolute Magnitude')
+        ax[0].set_ylabel('Height [km]')
+        ax[0].set_xlabel('Absolute Magnitude')
         # invert the x axis
-        ax[1].invert_xaxis()
+        ax[0].invert_xaxis()
 
         # put the ticks on the right
-        ax[2].yaxis.tick_right()
+        # ax[2].yaxis.tick_right()
         ax[2].set_ylabel('Height [km]')
         ax[2].set_xlabel('Velocity [km/s]')
         # put the labels on the right
-        ax[2].yaxis.set_label_position("right")
+        # ax[2].yaxis.set_label_position("right")
 
 
         # make more space between the subplots

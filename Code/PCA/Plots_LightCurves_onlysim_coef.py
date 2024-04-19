@@ -49,7 +49,7 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
     n_confront_obs=1
     n_confront_sel=4
 
-    only_select_meteors_from='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json'
+    only_select_meteors_from='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
 
     # no legend for a lot of simulations
     with_legend=True

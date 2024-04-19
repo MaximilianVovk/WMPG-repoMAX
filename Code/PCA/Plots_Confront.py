@@ -25,6 +25,7 @@ from wmpl.MetSim.MetSimErosion import runSimulation, Constants
 from sklearn.cluster import KMeans
 import copy
 import sys
+from scipy.integrate import simps  # For numerical integration
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
 
@@ -58,26 +59,101 @@ def find_closest_index(time_arr, time_sampled):
         closest_indices.append(closest_index)
     return closest_indices
 
+def find_curvature_distribution_KDE(data_for_meteor,sensib):
+    # # Compute the cumulative KDE 
+    # kde = gaussian_kde(data_for_meteor["distance_meteor"], bw_method='silverman')
+    
+    # # Define the range for which you want to compute KDE values, with more points for higher accuracy
+    # kde_x = np.linspace(data_for_meteor["distance_meteor"].min(), data_for_meteor["distance_meteor"].max(), 1000)
+    # kde_values = kde(kde_x)
+
+    # ddy_kde_values = np.gradient(kde_values, kde_x)
+
+    # # plot the kde
+    # plt.plot(kde_x, kde_values)
+    # plt.xlabel('Distance in PCA space')
+    # plt.ylabel('Density')
+    # plt.title('KDE of the distance in PCA space')
+    # plt.show()
+
+
+    sns.histplot(data_for_meteor, x=data_for_meteor["distance_meteor"], kde=True, cumulative=True, bins=len(data_for_meteor["distance_meteor"]))
+    # data_range = [data_for_meteor["distance_meteor"].min(), data_for_meteor["distance_meteor"].max()]
+    # sns.kdeplot(data_for_meteor, x=data_for_meteor["distance_meteor"], cumulative=True, bw_adjust=sensib, cut=0, clip=data_range)
+
+    # get the data from the last plotted line
+    kde_line = plt.gca().get_lines()[-1]
+    # plt.show() 
+    plt.close() 
+                    
+    # Get the x and y data from the KDE line
+    kde_x = kde_line.get_xdata()
+    kde_values = kde_line.get_ydata()
+
+    # fit a third order polinomial
+    p = np.polyfit(kde_x, kde_values, 3)
+    # Compute the second derivative of the polynomial
+    ddy_kde_values = np.polyder(p, 2)
+    # Compute the roots of the second derivative
+    inflection_points = np.roots(ddy_kde_values)
+
+    # Find the index of the nearest points in the original data for each inflection point
+    inflection_indices = find_closest_index(data_for_meteor["distance_meteor"].values, inflection_points)
+
+
+    # # Compute first derivative using central difference
+    # dy_kde_values = np.gradient(kde_values, kde_x)
+
+    # # Compute second derivative
+    # ddy_kde_values = np.gradient(dy_kde_values, kde_x)
+
+    # # Find zero crossings in the second derivative, indicating inflection points
+    # sign_changes = np.diff(np.sign(ddy_kde_values))
+    # # # inflection_indices = np.where(sign_changes)[0]
+    # # inflection_indices = kde_x[:-1][sign_changes != 0]  
+    # # Filter zero crossings to include only where sign actually changes to opposite
+    # inflection_points = kde_x[:-1][(sign_changes > 0) | (sign_changes < 0)]
+
+    # # Find the index of the nearest points in the original data for each inflection point
+    # inflection_indices = find_closest_index(data_for_meteor["distance_meteor"].values, inflection_points)
+    # print(inflection_points)
+    # print(inflection_indices)
+
+    if inflection_indices[0]==0:
+        # get the next that is not equal to 0
+        for i in range(1,len(inflection_indices)):
+            if inflection_indices[i]!=0:
+                inflectionpoint=inflection_indices[i]
+                break
+    else:
+        inflectionpoint=inflection_indices[0]
+
+    return inflectionpoint
+
 def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # Set the shower name (can be multiple) e.g. 'GEM' or ['GEM','PER', 'ORI', 'ETA', 'SDA', 'CAP']
     # Shower=['GEM', 'PER', 'ORI', 'ETA', 'SDA', 'CAP']
     # Shower=['PER']#['CAP']
 
     # number of selected events selected
-    n_select=3
-    dist_select=np.array([10000000000000])
-    # dist_select=np.ones(9)*10000000000000
+    n_select=10
+    # dist_select=np.array([10000000000000])
+    dist_select=np.ones(9)*10000000000000
 
     # weight factor for the distance
     distance_weight_fact=0
 
-    only_select_meteors_from='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json'
+    only_select_meteors_from=true_file
 
-    do_not_select_meteor=['TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json']
+    do_not_select_meteor=[true_file]
 
     Sim_data_distribution=False
 
-    plot_dist=False
+    curvature_selection=True
+    sensib=0.5
+
+    plot_dist=True
+    
 
     # dist_select=[1,\
     #                    1,\
@@ -100,7 +176,6 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     #                 1000000000000]
 
     # FUNCTIONS ###########################################################################################
-
 
 
     # save all the simulated showers in a list
@@ -151,47 +226,87 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         for i in range(len(do_not_select_meteor)):
             if do_not_select_meteor[i] in df_sel['solution_id'].values:
                 df_sel=df_sel[df_sel['solution_id']!=do_not_select_meteor[i]]
+                df_sel_save_dist=df_sel_save[df_sel_save['solution_id']!=do_not_select_meteor[i]]
                 print('removed: '+do_not_select_meteor[i])
                 flag_remove=True
 
+        if curvature_selection==True:
 
-        if Sim_data_distribution==True:
-            # if there only_select_meteors_from is equal to any solution_id_dist
-            if only_select_meteors_from in df_sel['solution_id_dist'].values:
-                # select only the one with the similar name as only_select_meteors_from in solution_id_dist for df_sel
-                df_sel=df_sel[df_sel['solution_id_dist']==only_select_meteors_from]
-                df_sel_save=df_sel_save[df_sel_save['solution_id_dist']==only_select_meteors_from]
-                print('selected events for : '+only_select_meteors_from)
+            if Sim_data_distribution==True or Sim_data_distribution==False and len(dist_select)==1:
+                # if there only_select_meteors_from is equal to any solution_id_dist
+                if only_select_meteors_from in df_sel['solution_id_dist'].values:
+                    # select only the one with the similar name as only_select_meteors_from in solution_id_dist for df_sel
+                    df_sel=df_sel[df_sel['solution_id_dist']==only_select_meteors_from]
+                    df_sel_save=df_sel_save[df_sel_save['solution_id_dist']==only_select_meteors_from]
+                #     print('selected events for : '+only_select_meteors_from)
+                # print(len(df_sel))
+                dist_to_cut=find_curvature_distribution_KDE(df_sel)
 
-            if len(df_sel)>n_select:
-                df_sel=df_sel.head(n_select)
-        elif Sim_data_distribution==False:
-            # pick the first n_select for each set of solution_id_dist selected event
-            df_sel=df_sel.groupby('solution_id_dist').head(n_select)
-            # print the number of selected events
-            print('selected events for each case below the value: '+str(len(df_sel)))
+                # change of curvature print  
+                # print('Change of curvature at:'+str(dist_to_cut))
+
+                # get the data from df_sel upto the dist_to_cut
+                df_sel=df_sel.iloc[:dist_to_cut]  
+
+            elif Sim_data_distribution==False:
+                # create a for loop for each different solution_id_dist in df_sel
+                df_app=[]
+                for around_meteor in df_sel['solution_id_dist'].unique():
+                    # select the data with distance less than dist_select and check if there are more than n_select
+                    df_curr_sel_curv = df_sel[df_sel['solution_id_dist']==around_meteor]
+                    dist_to_cut=find_curvature_distribution_KDE(df_curr_sel_curv,sensib)
+                    # # change of curvature print
+                    # print(around_meteor)
+                    # print('- Curvature change in the first '+str(dist_to_cut)+' at a distance of: '+str(df_curr_sel_curv['distance_meteor'].iloc[dist_to_cut]))
+                    # get the data from df_sel upto the dist_to_cut
+                    dist_to_cut=df_curr_sel_curv.iloc[:dist_to_cut]
+                    # print(dist_to_cut)
+                    df_app.append(dist_to_cut)
+                df_sel=pd.concat(df_app)
+                # print(df_sel['solution_id_dist'])
+                # print(df_sel["solution_id_dist"].unique())
+                # print(df_sel_save["solution_id_dist"].unique())
 
 
-        
-        # # find the one with the same solution_id_dist and select the first n_select in df_sel
-        # for i in range(len(df_sel)):
-        #     df_sel['solution_id_dist'].iloc[i]=df_sel['solution_id_dist'].iloc[i].split('_')[0]
+        else:
+            if Sim_data_distribution==True:
+                # if there only_select_meteors_from is equal to any solution_id_dist
+                if only_select_meteors_from in df_sel['solution_id_dist'].values:
+                    # select only the one with the similar name as only_select_meteors_from in solution_id_dist for df_sel
+                    df_sel=df_sel[df_sel['solution_id_dist']==only_select_meteors_from]
+                    df_sel_save=df_sel_save[df_sel_save['solution_id_dist']==only_select_meteors_from]
+                    print('selected events for : '+only_select_meteors_from)
 
-        # if dist_select has more than one element
-        if len(dist_select)==1:
-            dist_select_1=dist_select[0]
-            # select the data with distance less than dist_select and check if there are more than n_select
-            if np.min(df_sel['distance_meteor'])>dist_select_1:
-                print('No selected event below the given minimum distance :'+str(dist_select))
-                print('SEL = MAX dist: '+str(np.round(np.max(df_sel['distance_meteor']),2)) +' min dist:'+str(np.round(np.min(df_sel['distance_meteor']),2)))
-                print('OBS = MAX mean dist: '+str(np.round(np.max(df_obs['distance']),2)) +' min mean dist:'+str(np.round(np.min(df_obs['distance']),2)))
-            else:
-                df_sel=df_sel[df_sel['distance_meteor']<dist_select_1]
+                if len(df_sel)>n_select:
+                    df_sel=df_sel.head(n_select)
+            elif Sim_data_distribution==False:
+                # pick the first n_select for each set of solution_id_dist selected event
+                df_sel=df_sel.groupby('solution_id_dist').head(n_select)
                 # print the number of selected events
-                print('selected events below the value: '+str(len(df_sel)))
-                print('SEL = MAX dist: '+str(np.round(np.max(df_sel['distance_meteor']),2)) +' min dist:'+str(np.round(np.min(df_sel['distance_meteor']),2)))
-                print('OBS = MAX mean dist: '+str(np.round(np.max(df_obs['distance']),2)) +' min mean dist:'+str(np.round(np.min(df_obs['distance']),2)))
+                print('selected events for each case below the value: '+str(len(df_sel)))
 
+
+            
+            # # find the one with the same solution_id_dist and select the first n_select in df_sel
+            # for i in range(len(df_sel)):
+            #     df_sel['solution_id_dist'].iloc[i]=df_sel['solution_id_dist'].iloc[i].split('_')[0]
+
+            # if dist_select has more than one element
+            if len(dist_select)==1:
+                dist_select_1=dist_select[0]
+                # select the data with distance less than dist_select and check if there are more than n_select
+                if np.min(df_sel['distance_meteor'])>dist_select_1:
+                    print('No selected event below the given minimum distance :'+str(dist_select))
+                    print('SEL = MAX dist: '+str(np.round(np.max(df_sel['distance_meteor']),2)) +' min dist:'+str(np.round(np.min(df_sel['distance_meteor']),2)))
+                    print('OBS = MAX mean dist: '+str(np.round(np.max(df_obs['distance']),2)) +' min mean dist:'+str(np.round(np.min(df_obs['distance']),2)))
+                else:
+                    df_sel=df_sel[df_sel['distance_meteor']<dist_select_1]
+                    # print the number of selected events
+                    print('selected events below the value: '+str(len(df_sel)))
+                    print('SEL = MAX dist: '+str(np.round(np.max(df_sel['distance_meteor']),2)) +' min dist:'+str(np.round(np.min(df_sel['distance_meteor']),2)))
+                    print('OBS = MAX mean dist: '+str(np.round(np.max(df_obs['distance']),2)) +' min mean dist:'+str(np.round(np.min(df_obs['distance']),2)))
+
+      
         # weight=((1/df_sel['distance']))**distance_weight_fact
         weight=((1/(df_sel['distance_meteor']+0.001)))**distance_weight_fact 
         df_sel['weight']=weight/weight.sum()
@@ -202,11 +317,15 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # append the simulated shower to the list
         df_sel_shower.append(df_sel)
 
+    ########## txt file for the print ############################################################
+
     # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
     if os.path.exists(output_dir+os.sep+"log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt"):
         # remove the file
         os.remove(output_dir+os.sep+"log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt")
     sys.stdout = Logger(output_dir, "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt")
+
+    ########## txt file for the print ############################################################
 
     if flag_remove==True:
         print('TOT simulations : '+str(len(df_sim)))            
@@ -214,7 +333,13 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     else:
         print('TOT simulations : '+str(len(df_sim)))
         print('removed nothing')
-                
+    
+    for around_meteor in df_sel['solution_id_dist'].unique():
+        # select the data with distance less than dist_select and check if there are more than n_select
+        df_curr_sel_curv = df_sel[df_sel['solution_id_dist']==around_meteor]
+        # change of curvature print
+        print(around_meteor)
+        print('- Curvature change in the first '+str(df_curr_sel_curv['distance_meteor'].index[-1])+' at a distance of: '+str(df_curr_sel_curv['distance_meteor'].iloc[-1]))
 
     # concatenate all the simulated shower in a single dataframe
     df_sim_shower = pd.concat(df_sim_shower)
@@ -242,37 +367,40 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         curr_obs['shower_code']=current_shower+'_obs'
         curr_sel=df_sel_shower[df_sel_shower['shower_code']==current_shower+'_sel']
         curr_sel_save=df_sel_save[df_sel_save['shower_code']==current_shower+'_sel']
-        
-        if len(dist_select)>1:
+        curr_sel_save_dist=df_sel_save_dist[df_sel_save_dist['shower_code']==current_shower+'_sel']
 
-            # Extract unique locations
-            meteors_IDs = curr_sel_save["solution_id_dist"].unique()
+        if curvature_selection==False:
+            if len(dist_select)>1:
 
-            # # split the pd for the different solution_id_dist
-            # curr_sel_split = [curr_sel[curr_sel["solution_id_dist"] == around_meteor] for around_meteor in meteors_IDs]
-            sel_split_curr=[]
-            # for each meteors_IDs consider the dist_select to cut the data
-            for i, around_meteor in enumerate(meteors_IDs):
-                curr_sel_for_meteor = curr_sel[curr_sel["solution_id_dist"] == around_meteor]
+                # Extract unique locations
+                meteors_IDs = curr_sel_save["solution_id_dist"].unique()
+
+                # # split the pd for the different solution_id_dist
+                # curr_sel_split = [curr_sel[curr_sel["solution_id_dist"] == around_meteor] for around_meteor in meteors_IDs]
+                sel_split_curr=[]
                 # for each meteors_IDs consider the dist_select to cut the data
-                if np.min(curr_sel_for_meteor['distance_meteor'])>dist_select[i]:
-                    forprint=curr_sel_for_meteor
-                    sel_split_curr.append(curr_sel_for_meteor)
-                    print(around_meteor)
-                    print(str(i+1)+') No selected event below the given minimum distance :'+str(len(forprint)))
-                    print('SEL = MAX dist: '+str(np.round(np.max(forprint['distance_meteor']),2)) +' min dist:'+str(np.round(np.min(forprint['distance_meteor']),2)))
-                else:
-                    forprint=curr_sel_for_meteor[curr_sel_for_meteor['distance_meteor']<dist_select[i]]
-                    # delete the data with the same around_meteor ["solution_id_dist"] that have distance_meteor bigger than dist_select[i]
-                    sel_split_curr.append(curr_sel_for_meteor[curr_sel_for_meteor['distance_meteor']<dist_select[i]])
-                    print(around_meteor)
-                    # print the number of selected events
-                    print(str(i+1)+') selected events below the value: '+str(len(forprint)))
-                    print('SEL = MAX dist: '+str(np.round(np.max(forprint['distance_meteor']),2)) +' min dist:'+str(np.round(np.min(forprint['distance_meteor']),2)))
-                    
-            curr_sel=pd.concat(sel_split_curr)
-            print('selected events below the distances give : '+str(len(curr_sel)))
-        
+                for i, around_meteor in enumerate(meteors_IDs):
+
+                    curr_sel_for_meteor = curr_sel[curr_sel["solution_id_dist"] == around_meteor]
+                    # for each meteors_IDs consider the dist_select to cut the data
+                    if np.min(curr_sel_for_meteor['distance_meteor'])>dist_select[i]:
+                        forprint=curr_sel_for_meteor
+                        sel_split_curr.append(curr_sel_for_meteor)
+                        print(around_meteor)
+                        print(str(i+1)+') No selected event below the given minimum distance :'+str(len(forprint)))
+                        print('SEL = MAX dist: '+str(np.round(np.max(forprint['distance_meteor']),2)) +' min dist:'+str(np.round(np.min(forprint['distance_meteor']),2)))
+                    else:
+                        forprint=curr_sel_for_meteor[curr_sel_for_meteor['distance_meteor']<dist_select[i]]
+                        # delete the data with the same around_meteor ["solution_id_dist"] that have distance_meteor bigger than dist_select[i]
+                        sel_split_curr.append(curr_sel_for_meteor[curr_sel_for_meteor['distance_meteor']<dist_select[i]])
+                        print(around_meteor)
+                        # print the number of selected events
+                        print(str(i+1)+') selected events below the value: '+str(len(forprint)))
+                        print('SEL = MAX dist: '+str(np.round(np.max(forprint['distance_meteor']),2)) +' min dist:'+str(np.round(np.min(forprint['distance_meteor']),2)))
+                        
+                curr_sel=pd.concat(sel_split_curr)
+                print('selected events below the distances give : '+str(len(curr_sel)))
+            
         curr_df=pd.concat([curr_sim.drop(['rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max','erosion_energy_per_unit_cross_section',  'erosion_energy_per_unit_mass', 'erosion_range'], axis=1),curr_sel.drop(['distance_meteor','solution_id_dist','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max','erosion_energy_per_unit_cross_section',  'erosion_energy_per_unit_mass','distance','erosion_range'], axis=1)], axis=0, ignore_index=True)
         curr_df=pd.concat([curr_df,curr_obs.drop(['distance'], axis=1)], axis=0, ignore_index=True)
         curr_df=curr_df.dropna()
@@ -287,9 +415,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         elif Sim_data_distribution==False:
             curr_df_sim_sel=curr_sel
         
-        # sns plot of duration trail lenght and F and acceleration parameters
-        # sns.pairplot(curr_df, hue='shower_code', diag_kind='kde', plot_kws={'alpha':0.6, 's':80, 'edgecolor':'k'}, height=3,corner=True)
-        # subplot with all the parameters histograms
+        # # sns plot of duration trail lenght and F and acceleration parameters
+        # # sns.pairplot(curr_df, hue='shower_code', diag_kind='kde', plot_kws={'alpha':0.6, 's':80, 'edgecolor':'k'}, height=3,corner=True)
+        # # subplot with all the parameters histograms
 
         # fig, axs = plt.subplots(4, 3)
         # fig.suptitle(current_shower)
@@ -305,7 +433,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # # to_plot=['vel_init_norot','vel_avg_norot','duration','','mass','begin_height','end_height','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
         # # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','end_height','peak_abs_mag','','beg_abs_mag','end_abs_mag','F','','trail_len','acceleration','zenith_angle','','kc','kurtosis','skew']
         # # to_plot=['vel_init_norot','vel_avg_norot','acceleration','','begin_height','end_height','peak_abs_mag','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
-        # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','peak_mag_height','end_height','','beg_abs_mag','peak_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
+        # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','peak_mag_height','end_height','','beg_abs_mag','peak_abs_mag','end_abs_mag','','F','trail_len','decel_parab_t0','','zenith_angle','kurtosis','skew']
 
         # # deleter form curr_df the mass
         # #curr_df=curr_df.drop(['mass'], axis=1)
@@ -342,7 +470,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
         
         # # save the figure
-        # fig.savefig(output_dir+os.sep+'Plots/Histograms_'+current_shower+'.png', dpi=300)
+        # fig.savefig(output_dir+os.sep+'Histograms_'+current_shower+'.png', dpi=300)
 
     ######### DISTANCE PLOT ##################################################
         if plot_dist==True:
@@ -350,7 +478,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
                 # Extract unique locations
                 meteors_IDs = curr_sel_save["solution_id_dist"].unique()
-
+                
                 # save the distance_meteor from df_sel_save
                 distance_meteor_sel_save=curr_sel_save['distance_meteor']
                 # save the distance_meteor from df_sel_save
@@ -364,12 +492,23 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 # print(plt.rcParams['axes.prop_cycle'].by_key()['color'])
                 colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
+                # if above meteors_IDs is bigger than 9 cut it to 9
+                if len(meteors_IDs)>9:
+                    meteors_IDs=meteors_IDs[:9]
+
                 for i, around_meteor in enumerate(meteors_IDs):
+                        
                     # Filter data for the current location
-                    data_for_meteor = curr_sel_save[curr_sel_save["solution_id_dist"] == around_meteor]
+                    data_for_meteor = curr_sel_save_dist[curr_sel_save_dist["solution_id_dist"] == around_meteor]
                     data_for_meteor_sel = curr_sel[curr_sel["solution_id_dist"] == around_meteor]
                     # use the default matpotlib default color cycle
                     sns.histplot(data_for_meteor, x=data_for_meteor["distance_meteor"], kde=True, cumulative=True, bins=len(data_for_meteor["distance_meteor"]), color=colors[i], ax=axes[i])
+                    
+                    data_range = [data_for_meteor["distance_meteor"].min(), data_for_meteor["distance_meteor"].max()]
+
+                    # sns.histplot(data_for_meteor, x=data_for_meteor["distance_meteor"], kde=True, cumulative=True, bins=len(data_for_meteor["distance_meteor"]))
+                    # sns.kdeplot(data_for_meteor, x=data_for_meteor["distance_meteor"], cumulative=True, bw_adjust=sensib, clip=data_range, color='k',ax=axes[i])
+                    
                     # axes[i].set_title(around_meteor[-12:-8])
                     axes[i].set_xlabel('Dist. PCA space')  # Remove x label for clarity
                     axes[i].set_ylabel('No.events')
@@ -380,8 +519,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     # plot a dasced line with the max distance_meteor_sel
                     #axes[i].axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
                     # pu a y lim .ylim(0,100) 
-                    if len(distance_meteor_sel)<100:
-                        axes[i].set_ylim(0,20)
+                    axes[i].set_ylim(0,100)
+                    # axes[i].set_ylim(0,0.01)
+                    # if len(distance_meteor_sel)<1000:
+                    #     axes[i].set_ylim(0,100)
 
                 # Hide unused subplots if there are any
                 for ax in axes[len(meteors_IDs):]:
@@ -397,17 +538,14 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             else:
 
                 # save the distance_meteor from df_sel_save
-                distance_meteor_sel_save=curr_sel_save['distance_meteor']
+                distance_meteor_sel_save=curr_sel_save_dist['distance_meteor']
                 # save the distance_meteor from df_sel_save
                 distance_meteor_sel=curr_sel['distance_meteor']
                 # delete the index
                 distance_meteor_sel_save=distance_meteor_sel_save.reset_index(drop=True)
                 # check if distance_meteor_sel_save index is bigger than the index distance_meteor_sel+50
-                if distance_meteor_sel_save[0]==0:
-                    sns.histplot(distance_meteor_sel_save[1:], kde=True, cumulative=True, bins=len(distance_meteor_sel_save), color='r')
-                else:
-                    sns.histplot(distance_meteor_sel_save, kde=True, cumulative=True, bins=len(distance_meteor_sel_save), color='r') # , stat='density' to have probability
-                    # plt.ylim(0,len(distance_meteor_sel_save))
+                sns.histplot(distance_meteor_sel_save, kde=True, cumulative=True, bins=len(distance_meteor_sel_save)) # , stat='density' to have probability
+                # plt.ylim(0,len(distance_meteor_sel_save))
                 if len(distance_meteor_sel)<100:
                     plt.ylim(0,100) 
                 # axis label
@@ -429,22 +567,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 # close the figure
                 plt.close()
 
-    ##########################################################################
+        ############################################################################
 
-        # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
-        to_plot=['rho','sigma','erosion_height_start','','erosion_coeff','erosion_mass_index','erosion_mass_min','','erosion_mass_max','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_mass']
-        ii=0
-        to_plot=['mass','rho','sigma','','erosion_height_start','erosion_coeff','erosion_energy_per_unit_mass','','erosion_mass_index','erosion_mass_min','erosion_mass_max','','erosion_range','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_cross_section']
-        to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','','erosion height start [km]','erosion coeff [s^2/km^2]','erosion energy per unit mass [MJ/kg]','','erosion mass index [-]','erosion mass min [kg]','erosion mass max [kg]','','log erosion mass range [-]','erosion energy per unit cross section [MJ/m^2]','erosion energy per unit cross section [MJ/m^2]']
-        
-        to_plot=['rho','sigma','erosion_height_start','','erosion_coeff','erosion_mass_index','erosion_mass_min','','erosion_mass_max','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_mass']
-        ii=0
-        to_plot=['mass','rho','sigma','','erosion_height_start','erosion_coeff','erosion_mass_index','','erosion_mass_min','erosion_mass_max','erosion_range','','erosion_energy_per_unit_mass','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_cross_section']
-        to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','','erosion mass min [kg]','erosion mass max [kg]','log erosion mass range [-]','','erosion energy per unit mass [MJ/kg]','erosion energy per unit cross section [MJ/m^2]','erosion energy per unit cross section [MJ/m^2]']
-        ii=0
-        to_plot=['mass','rho','sigma','','erosion_height_start','erosion_coeff','erosion_mass_index','','erosion_mass_min','erosion_mass_max','erosion_range','','erosion_energy_per_unit_mass','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_cross_section']
-        to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','','log eros. mass min [kg]','log eros. mass max [kg]','log eros. mass range [-]','','erosion energy per unit mass [MJ/kg]','erosion energy per unit cross section [MJ/m^2]','erosion energy per unit cross section [MJ/m^2]']
-        
         # multiply the erosion coeff by 1000000 to have it in km/s
         curr_df_sim_sel['erosion_coeff']=curr_df_sim_sel['erosion_coeff']*1000000
         curr_df_sim_sel['sigma']=curr_df_sim_sel['sigma']*1000000
@@ -454,120 +578,19 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         curr_df_sim_sel['erosion_energy_per_unit_mass']=curr_df_sim_sel['erosion_energy_per_unit_mass']/1000000
         df_sel_save['erosion_energy_per_unit_cross_section']=df_sel_save['erosion_energy_per_unit_cross_section']/1000000
         df_sel_save['erosion_energy_per_unit_mass']=df_sel_save['erosion_energy_per_unit_mass']/1000000
-        # pick the one with shower_code==current_shower+'_sel'
-        Acurr_df_sel=curr_df_sim_sel[curr_df_sim_sel['shower_code']==current_shower+'_sel']
-        Acurr_df_sim=curr_df_sim_sel[curr_df_sim_sel['shower_code']=='sim_'+current_shower]
-        
-        fig, axs = plt.subplots(3, 3)
-        # fig.suptitle(current_shower)
-        
-        for i in range(3):
-            for j in range(3):
-                # put legendoutside north
-                plotvar=to_plot[ii]
-                if plotvar == 'erosion_energy_per_unit_cross_section'or plotvar == 'erosion_energy_per_unit_mass':
-                    
-                    if Sim_data_distribution==True:
-                        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, log_scale=True)
-                    elif Sim_data_distribution==False:
-                        # make the axis from the max to the min df_sel_save[plotvar]
-                        axs[i,j].set_xlim(np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar]))# int(np.round(len(df_sel)/3))
-                        if len(curr_df_sim_sel[plotvar])<8:
-                            sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i,j], multiple="stack", bins=len(curr_df_sim_sel[plotvar]), log_scale=True) #binrange=[np.log(np.min(df_sel_save[plotvar])),np.log(np.max(df_sel_save[plotvar]))],binwidth=0.001) #, binrange=[np.log(np.min(df_sel_save[plotvar])),np.log(np.max(df_sel_save[plotvar]))]
-                        else: 
-                            sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i,j], kde=True, multiple="stack", bins=20, log_scale=True) #binrange=[np.log(np.min(df_sel_save[plotvar])),np.log(np.max(df_sel_save[plotvar]))],binwidth=0.001) #, binrange=[np.log(np.min(df_sel_save[plotvar])),np.log(np.max(df_sel_save[plotvar]))]
-                        
-
-                                
-
-
-                        
-                    axs[i,j].set_xlabel(to_plot_unit[ii])
-                    axs[i,j].set_ylabel('probability')
-                                
-                    if only_select_meteors_from in df_sel_save['solution_id'].values:
-                        axs[i,j].axvline(x=df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0], color='r', linewidth=2)
-                    
-
-                    axs[i,j].get_legend().remove()
-
-                # elif plotvar == 'erosion_range':
-
-                #     if Sim_data_distribution==True:
-                #         sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20)
-                #     elif Sim_data_distribution==False:
-                #         if len(curr_df_sim_sel[plotvar])<10:
-                #             sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i,j], multiple="stack", bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-                #         else:
-                #             sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i,j], kde=True, multiple="stack", bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-                #     axs[i,j].set_xlabel(to_plot_unit[ii])
-                #     axs[i,j].set_ylabel('probability')
-
-                #     # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
-                #     if only_select_meteors_from in df_sel_save['solution_id'].values:
-                #         axs[i,j].axvline(x=df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0], color='r', linewidth=2)
-
-                #     axs[i,j].get_legend().remove(
-
-                else:
-                    if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
-                        # take the log of the erosion_mass_min and erosion_mass_max
-                        curr_df_sim_sel[plotvar]=np.log10(curr_df_sim_sel[plotvar])
-                        df_sel_save[plotvar]=np.log10(df_sel_save[plotvar])
-
-
-                    if Sim_data_distribution==True:
-                        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20)
-                    elif Sim_data_distribution==False:
-                        if len(curr_df_sim_sel[plotvar])<10:
-                            sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i,j], multiple="stack", bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-                        else:
-                            sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i,j], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-                    axs[i,j].set_ylabel('probability')
-                    axs[i,j].set_xlabel(to_plot_unit[ii])
-                    
-                    # if ii!=0:
-                    axs[i,j].get_legend().remove()
-
-                    # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
-                    if only_select_meteors_from in df_sel_save['solution_id'].values:
-                        axs[i,j].axvline(x=df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0], color='r', linewidth=2)
-                        
-
-                    if ii==0:
-                        # place the xaxis exponent in the bottom right corner
-                        axs[i,j].xaxis.get_offset_text().set_x(1.10)
-
-                    if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
-                        # put it back as it was
-                        curr_df_sim_sel[plotvar]=10**curr_df_sim_sel[plotvar]
-                        df_sel_save[plotvar]=10**df_sel_save[plotvar]
-
-
-                ii=ii+1
-            ii=ii+1
-        
-
-        # # more space between the subplots erosion_coeff sigma
-        plt.tight_layout()
-        
-        # plt.show()
-        # print(output_dir+os.sep+'PhysicProp'+str(len(curr_sel))+'_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
-        # save the figure maximized and with the right name
-        fig.savefig(output_dir+os.sep+'PhysicProp'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png', dpi=300)
-
-        # close the figure
-        plt.close()
-
-                    # # cumulative distribution histogram of the distance wihouth considering the first two elements
-                    # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, cumulative=True, stat='density')
-        # # cumulative distribution histogram of the distance wihouth considering the first two elements
-        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, cumulative=True, stat='density')
+        # # pick the one with shower_code==current_shower+'_sel'
+        # Acurr_df_sel=curr_df_sim_sel[curr_df_sim_sel['shower_code']==current_shower+'_sel']
+        # Acurr_df_sim=curr_df_sim_sel[curr_df_sim_sel['shower_code']=='sim_'+current_shower]
 
         var_kde=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
 
         # create the dataframe with the selected variable
         data = curr_sel[var_kde].values
+
+        # check if leng of data is bigger than 1
+        if len(data)<8:
+            raise ValueError('The data is ill-conditioned. Consider a bigger number of elements.')
+
         kde = gaussian_kde(dataset=data.T)  # Note the transpose to match the expected input shape
 
         # Negative of the KDE function for optimization
@@ -807,9 +830,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         ax[0].plot(sr_nominal.abs_magnitude, sr_nominal.leading_frag_height_arr/1000, label="Simulated", \
             color='k')
         
-        ax[0].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="KDE 1D")
+        ax[0].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="KDE 1D", color='r')
         
-        ax[0].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD")
+        ax[0].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD", color='b')
 
         # velocity vs height
 
@@ -830,7 +853,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # ax[2].plot(sr_nominal_1D_KDE.leading_frag_vel_arr/1000, sr_nominal_1D_KDE.leading_frag_height_arr/1000, \
         #     linestyle='dashed', label="KDE 1D - leading", color=ax[2].lines[-1].get_color())
         ax[2].plot(sr_nominal_1D_KDE.leading_frag_vel_arr/1000, sr_nominal_1D_KDE.leading_frag_height_arr/1000, \
-            label="KDE 1D")
+            label="KDE 1D", color='r')
         
 
         ax[1].scatter(diff_mag_1D,sr_nominal.leading_frag_height_arr[closest_indices_1D]/1000, color=ax[2].lines[-1].get_color(), marker='.')
@@ -843,7 +866,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
         #     linestyle='dashed', label="KDE allD - leading", color=ax[2].lines[-1].get_color())
         ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
-            label="KDE allD")
+            label="KDE allD", color='b')
         
         ax[1].scatter(diff_mag_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
         ax[3].scatter(diff_vel_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
@@ -943,6 +966,134 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         
         # close the figure
         plt.close()
+        
+    ##########################################################################
+
+        # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
+        to_plot=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max','erosion_range','erosion_energy_per_unit_mass','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_cross_section']
+        to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','log eros. mass min [kg]','log eros. mass max [kg]','log eros. mass range [-]','erosion energy per unit mass [MJ/kg]','erosion energy per unit cross section [MJ/m^2]','erosion energy per unit cross section [MJ/m^2]']
+        
+        # # multiply the erosion coeff by 1000000 to have it in km/s
+        # curr_df_sim_sel['erosion_coeff']=curr_df_sim_sel['erosion_coeff']*1000000
+        # curr_df_sim_sel['sigma']=curr_df_sim_sel['sigma']*1000000
+        # df_sel_save['erosion_coeff']=df_sel_save['erosion_coeff']*1000000
+        # df_sel_save['sigma']=df_sel_save['sigma']*1000000
+        # curr_df_sim_sel['erosion_energy_per_unit_cross_section']=curr_df_sim_sel['erosion_energy_per_unit_cross_section']/1000000
+        # curr_df_sim_sel['erosion_energy_per_unit_mass']=curr_df_sim_sel['erosion_energy_per_unit_mass']/1000000
+        # df_sel_save['erosion_energy_per_unit_cross_section']=df_sel_save['erosion_energy_per_unit_cross_section']/1000000
+        # df_sel_save['erosion_energy_per_unit_mass']=df_sel_save['erosion_energy_per_unit_mass']/1000000
+        # # pick the one with shower_code==current_shower+'_sel'
+        # Acurr_df_sel=curr_df_sim_sel[curr_df_sim_sel['shower_code']==current_shower+'_sel']
+        # Acurr_df_sim=curr_df_sim_sel[curr_df_sim_sel['shower_code']=='sim_'+current_shower]
+        
+        fig, axs = plt.subplots(3, 3)
+        # from 2 numbers to one numbr for the subplot axs
+        axs = axs.flatten()
+
+        ii_densest=0        
+        for i in range(9):
+            # put legendoutside north
+            plotvar=to_plot[i]
+
+
+            if Sim_data_distribution==True:
+                if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+                    # take the log of the erosion_mass_min and erosion_mass_max
+                    curr_df_sim_sel[plotvar]=np.log10(curr_df_sim_sel[plotvar])
+                    df_sel_save[plotvar]=np.log10(df_sel_save[plotvar])
+                    curr_sel[plotvar]=np.log10(curr_sel[plotvar])
+                    densest_point[ii_densest]=np.log10(densest_point[ii_densest])
+                    densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
+                # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i], kde=True, palette='bright', bins=20)
+                sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i], palette='bright', bins=20)
+                # # add the kde to the plot probability density function
+                sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
+                kde_line = axs[i].lines[-1]
+
+                if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+                    # put it back as it was
+                    curr_df_sim_sel[plotvar]=10**curr_df_sim_sel[plotvar]
+                    df_sel_save[plotvar]=10**df_sel_save[plotvar]
+                    curr_sel[plotvar]=10**curr_sel[plotvar]
+                
+            elif Sim_data_distribution==False:
+
+                    if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+                        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
+                        sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", bins=20, binrange=[np.log10(np.min(df_sel_save[plotvar])),np.log10(np.max(df_sel_save[plotvar]))])
+                        # # add the kde to the plot as a probability density function
+                        sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'], bins=20, ax=axs[i],  multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.log10(np.min(df_sel_save[plotvar])),np.log10(np.max(df_sel_save[plotvar]))])
+                        
+                        kde_line = axs[i].lines[-1]
+                        
+                        # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
+                        if only_select_meteors_from in df_sel_save['solution_id'].values:
+                            axs[i].axvline(x=np.log10(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]), color='k', linewidth=2)
+                        densest_point[ii_densest]=np.log10(densest_point[ii_densest])
+                        densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
+                    
+                    else:
+                        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
+                        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
+                        # # add the kde to the plot as a probability density function
+                        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], bins=20, ax=axs[i],  multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
+                        
+                        kde_line = axs[i].lines[-1]
+
+                        # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
+                        if only_select_meteors_from in df_sel_save['solution_id'].values:
+                            axs[i].axvline(x=df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0], color='k', linewidth=2)
+                    
+            if len(densest_point)>ii_densest:                    
+                # Get the x and y data from the KDE line
+                x = kde_line.get_xdata()
+                y = kde_line.get_ydata()
+
+                # Find the index of the maximum y value
+                max_index = np.argmax(y)
+
+                # Plot a dot at the maximum point
+                axs[i].plot(x[max_index], y[max_index], 'ro')  # 'ro' for red dot
+            
+                # print(densest_point[ii_densest])
+                # Find the index with the closest value to densest_point[ii_dense] to all y values
+                densest_index = find_closest_index(x, [densest_point[ii_densest]])
+
+                # add also the densest_point[i] as a blue dot
+                axs[i].plot(densest_point[ii_densest], y[densest_index[0]], 'bo')
+                
+                ii_densest=ii_densest+1
+
+            axs[i].set_ylabel('probability')
+            axs[i].set_xlabel(to_plot_unit[i])
+            
+            # # plot the legend outside the plot
+            # axs[i].legend()
+            axs[i].get_legend().remove()
+                
+
+            if i==0:
+                # place the xaxis exponent in the bottom right corner
+                axs[i].xaxis.get_offset_text().set_x(1.10)
+        
+
+        # # more space between the subplots erosion_coeff sigma
+        plt.tight_layout()
+        
+        # plt.show()
+        # print(output_dir+os.sep+'PhysicProp'+str(len(curr_sel))+'_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
+        # save the figure maximized and with the right name
+        fig.savefig(output_dir+os.sep+'PhysicProp'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png', dpi=300)
+
+        # close the figure
+        plt.close()
+
+                    # # cumulative distribution histogram of the distance wihouth considering the first two elements
+                    # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i], kde=True, palette='bright', bins=20, cumulative=True, stat='density')
+        # # cumulative distribution histogram of the distance wihouth considering the first two elements
+        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i], kde=True, palette='bright', bins=20, cumulative=True, stat='density')
+
+    ##########################################################################################################
 
 
 if __name__ == "__main__":
@@ -955,19 +1106,19 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab_Bootstrap", \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\V59_results\98perc_10Noise_dect0_parab_Bootstrap", \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
         help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \
         help="The real json file the ground truth for the PCA simulation results.") 
 
-    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\Simulations_PER', \
+    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER_v59", \
         help="Path to the real file the ground truth for the PCA simulation results.") 
     
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \

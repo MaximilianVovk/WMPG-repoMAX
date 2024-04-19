@@ -608,7 +608,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 #     'erosion_mass_min','erosion_mass_max','erosion_range',\
 #     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
 
-    No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0', 'decel_parab_t0'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
+    No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0', 'decel_t0'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
     # if PC below 7 wrong
 
     # if variable_PCA is not empty

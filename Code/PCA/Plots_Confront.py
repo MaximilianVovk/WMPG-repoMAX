@@ -59,7 +59,7 @@ def find_closest_index(time_arr, time_sampled):
         closest_indices.append(closest_index)
     return closest_indices
 
-def find_curvature_distribution_KDE(data_for_meteor,sensib):
+def find_curvature_distribution_KDE(data_for_meteor,sensib=1):
     # # Compute the cumulative KDE 
     # kde = gaussian_kde(data_for_meteor["distance_meteor"], bw_method='silverman')
     
@@ -220,6 +220,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # check in the current folder there is a csv file with the name of the simulated shower
         df_sel = pd.read_csv(input_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
         df_sel_save = pd.read_csv(input_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
+        df_sel_save_dist = df_sel_save
 
         flag_remove=False
         # check if the do_not_select_meteor any of the array value is in the solution_id of the df_sel if yes remove it
@@ -238,6 +239,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     # select only the one with the similar name as only_select_meteors_from in solution_id_dist for df_sel
                     df_sel=df_sel[df_sel['solution_id_dist']==only_select_meteors_from]
                     df_sel_save=df_sel_save[df_sel_save['solution_id_dist']==only_select_meteors_from]
+                    df_sel_save_dist=df_sel_save_dist[df_sel_save_dist['solution_id_dist']==only_select_meteors_from]
                 #     print('selected events for : '+only_select_meteors_from)
                 # print(len(df_sel))
                 dist_to_cut=find_curvature_distribution_KDE(df_sel)
@@ -254,12 +256,13 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 for around_meteor in df_sel['solution_id_dist'].unique():
                     # select the data with distance less than dist_select and check if there are more than n_select
                     df_curr_sel_curv = df_sel[df_sel['solution_id_dist']==around_meteor]
-                    dist_to_cut=find_curvature_distribution_KDE(df_curr_sel_curv,sensib)
+                    dist_to_cut=find_curvature_distribution_KDE(df_curr_sel_curv)
                     # # change of curvature print
                     # print(around_meteor)
                     # print('- Curvature change in the first '+str(dist_to_cut)+' at a distance of: '+str(df_curr_sel_curv['distance_meteor'].iloc[dist_to_cut]))
                     # get the data from df_sel upto the dist_to_cut
                     dist_to_cut=df_curr_sel_curv.iloc[:dist_to_cut]
+
                     # print(dist_to_cut)
                     df_app.append(dist_to_cut)
                 df_sel=pd.concat(df_app)
@@ -338,8 +341,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # select the data with distance less than dist_select and check if there are more than n_select
         df_curr_sel_curv = df_sel[df_sel['solution_id_dist']==around_meteor]
         # change of curvature print
+        print()
         print(around_meteor)
-        print('- Curvature change in the first '+str(df_curr_sel_curv['distance_meteor'].index[-1])+' at a distance of: '+str(df_curr_sel_curv['distance_meteor'].iloc[-1]))
+        print('- Curvature change in the first '+str(len(df_curr_sel_curv['distance_meteor']))+' at a distance of: '+str(df_curr_sel_curv['distance_meteor'].iloc[-1]))
 
     # concatenate all the simulated shower in a single dataframe
     df_sim_shower = pd.concat(df_sim_shower)
@@ -474,7 +478,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
     ######### DISTANCE PLOT ##################################################
         if plot_dist==True:
-            if len(dist_select)>1:
+            if len(dist_select)>1 and Sim_data_distribution==False:
 
                 # Extract unique locations
                 meteors_IDs = curr_sel_save["solution_id_dist"].unique()
@@ -585,45 +589,45 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         var_kde=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
 
         # create the dataframe with the selected variable
-        data = curr_sel[var_kde].values
+        curr_sel_data = curr_sel[var_kde].values
 
-        # check if leng of data is bigger than 1
-        if len(data)<8:
-            raise ValueError('The data is ill-conditioned. Consider a bigger number of elements.')
+        # check if leng of curr_sel_data is bigger than 1
+        if len(curr_sel_data)>8:
+            kde = gaussian_kde(dataset=curr_sel_data.T)  # Note the transpose to match the expected input shape
 
-        kde = gaussian_kde(dataset=data.T)  # Note the transpose to match the expected input shape
+            # Negative of the KDE function for optimization
+            def neg_density(x):
+                return -kde(x)
 
-        # Negative of the KDE function for optimization
-        def neg_density(x):
-            return -kde(x)
+            # Bounds for optimization within all the sim space
+            # data_sim = df_sim[var_kde].values
+            bounds = [(np.min(curr_sel_data[:,i]), np.max(curr_sel_data[:,i])) for i in range(curr_sel_data.shape[1])]
 
-        # Bounds for optimization within all the sim space
-        # data_sim = df_sim[var_kde].values
-        bounds = [(np.min(data[:,i]), np.max(data[:,i])) for i in range(data.shape[1])]
+            # Initial guesses: curr_sel_data mean, curr_sel_data median, and KMeans centroids
+            mean_guess = np.mean(curr_sel_data, axis=0)
+            median_guess = np.median(curr_sel_data, axis=0)
 
-        # Initial guesses: data mean, data median, and KMeans centroids
-        mean_guess = np.mean(data, axis=0)
-        median_guess = np.median(data, axis=0)
+            # KMeans centroids as additional guesses
+            kmeans = KMeans(n_clusters=5, n_init='auto').fit(curr_sel_data)  # Adjust n_clusters based on your understanding of the curr_sel_data
+            centroids = kmeans.cluster_centers_
 
-        # KMeans centroids as additional guesses
-        kmeans = KMeans(n_clusters=5, n_init='auto').fit(data)  # Adjust n_clusters based on your understanding of the data
-        centroids = kmeans.cluster_centers_
+            # Combine all initial guesses
+            initial_guesses = [mean_guess, median_guess] + centroids.tolist()
 
-        # Combine all initial guesses
-        initial_guesses = [mean_guess, median_guess] + centroids.tolist()
+            # Perform optimization from each initial guess
+            results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
 
-        # Perform optimization from each initial guess
-        results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
-
-        # Filter out unsuccessful optimizations and find the best result
-        successful_results = [res for res in results if res.success]
-        if successful_results:
-            best_result = min(successful_results, key=lambda x: x.fun)
-            densest_point = best_result.x
-            print("Densest point in the multidimensional space:", densest_point)
+            # Filter out unsuccessful optimizations and find the best result
+            successful_results = [res for res in results if res.success]
+            if successful_results:
+                best_result = min(successful_results, key=lambda x: x.fun)
+                densest_point = best_result.x
+                print("Densest point in the multidimensional space:", densest_point)
+            else:
+                raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
         else:
-            raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
-            
+            print('Not enough data to perform the KDE ned more than 8 meteors')
+            # raise ValueError('The data is ill-conditioned. Consider a bigger number of elements.')
 
         # Load the nominal simulation
         sim_fit_json_nominal = os.path.join(true_path, true_file)
@@ -661,6 +665,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
         var_cost=['m_init','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
         # print for each variable the kde
+        percent_diff_1D=[]
+        percent_diff_allD=[]
         for i in range(len(var_kde)):
 
             x=curr_sel[var_kde[i]]
@@ -684,23 +690,29 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             #     var_kde=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
             # Print the mode
             print(f"Real value {var_kde[i]}: {'{:.4g}'.format(real_val)}")
-            print(f"1D Mode of KDE for {var_kde[i]}: {'{:.4g}'.format(mode)}")
-            print(f"Mult.dim. KDE densest {var_kde[i]}:  {'{:.4g}'.format(densest_point[i])}")
+            print(f"1D Mode of KDE for {var_kde[i]}: {'{:.4g}'.format(mode)} percent diff: {'{:.4g}'.format(abs((real_val-mode)/(real_val+mode))/2*100)}%")
+            percent_diff_1D[i]=abs((real_val-mode)/(real_val+mode))/2*100
+            if len(curr_sel_data)>8:
+                print(f"Mult.dim. KDE densest {var_kde[i]}:  {'{:.4g}'.format(densest_point[i])} percent diff: {'{:.4g}'.format(abs((real_val-densest_point[i])/(real_val+densest_point[i]))/2*100)}%")
+                percent_diff_allD[i]=abs((real_val-densest_point[i])/(real_val+densest_point[i]))/2*100
             # print the value of const_nominal
             # print(f"const_nominal {var_cost[i]}:  {'{:.4g}'.format(const_nominal.__dict__[var_cost[i]])}")
 
             if var_cost[i] == 'sigma' or var_cost[i] == 'erosion_coeff':
                 # put it back as it was
                 const_nominal_1D_KDE.__dict__[var_cost[i]]=mode/1000000
-                const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]/1000000
+                if len(curr_sel_data)>8:
+                    const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]/1000000
             elif var_cost[i] == 'erosion_height_start':
                 # put it back as it was
                 const_nominal_1D_KDE.__dict__[var_cost[i]]=mode*1000
-                const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]*1000
+                if len(curr_sel_data)>8:
+                    const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]*1000
             else:
                 # add each to const_nominal_1D_KDE and const_nominal_allD_KDE
                 const_nominal_1D_KDE.__dict__[var_cost[i]]=mode
-                const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]
+                if len(curr_sel_data)>8:
+                    const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]
 
         # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
         sys.stdout.close()
@@ -720,11 +732,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
         sr_nominal_1D_KDE = SimulationResults(const_nominal_1D_KDE, frag_main, results_list, wake_results)
 
-        # Run the simulation
-        frag_main, results_list, wake_results = runSimulation(const_nominal_allD_KDE, \
-            compute_wake=False)
+        if len(curr_sel_data)>8:
+            # Run the simulation
+            frag_main, results_list, wake_results = runSimulation(const_nominal_allD_KDE, \
+                compute_wake=False)
 
-        sr_nominal_allD_KDE = SimulationResults(const_nominal_allD_KDE, frag_main, results_list, wake_results)
+            sr_nominal_allD_KDE = SimulationResults(const_nominal_allD_KDE, frag_main, results_list, wake_results)
 
         # const_nominal = sr_nominal.const
 
@@ -796,9 +809,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         diff_mag_1D=[(sr_nominal.abs_magnitude[jj_index_cut]-sr_nominal_1D_KDE.abs_magnitude[jj_index_cut]) for jj_index_cut in closest_indices_1D]
         diff_vel_1D=[(sr_nominal.leading_frag_vel_arr[jj_index_cut]-sr_nominal_1D_KDE.leading_frag_vel_arr[jj_index_cut])/1000 for jj_index_cut in closest_indices_1D]
         # do the same for the sr_nominal_allD_KDE
-        closest_indices_allD = find_closest_index(sr_nominal_allD_KDE.leading_frag_height_arr, ht_sim_meters )
-        diff_mag_allD=[(sr_nominal.abs_magnitude[jj_index_cut]-sr_nominal_allD_KDE.abs_magnitude[jj_index_cut]) for jj_index_cut in closest_indices_allD]
-        diff_vel_allD=[(sr_nominal.leading_frag_vel_arr[jj_index_cut]-sr_nominal_allD_KDE.leading_frag_vel_arr[jj_index_cut])/1000 for jj_index_cut in closest_indices_allD]
+        if len(curr_sel_data)>8:
+            closest_indices_allD = find_closest_index(sr_nominal_allD_KDE.leading_frag_height_arr, ht_sim_meters )
+            diff_mag_allD=[(sr_nominal.abs_magnitude[jj_index_cut]-sr_nominal_allD_KDE.abs_magnitude[jj_index_cut]) for jj_index_cut in closest_indices_allD]
+            diff_vel_allD=[(sr_nominal.leading_frag_vel_arr[jj_index_cut]-sr_nominal_allD_KDE.leading_frag_vel_arr[jj_index_cut])/1000 for jj_index_cut in closest_indices_allD]
 
         # Plot the simulation results
         fig, ax = plt.subplots(2, 2, figsize=(8, 10),gridspec_kw={'width_ratios': [ 3, 0.5]}, dpi=300) #  figsize=(10, 5), dpi=300 0.5, 3, 3, 0.5
@@ -832,7 +846,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         
         ax[0].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="KDE 1D", color='r')
         
-        ax[0].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD", color='b')
+        if len(curr_sel_data)>8:
+            ax[0].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD", color='b')
 
         # velocity vs height
 
@@ -865,11 +880,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # # keep the same color and use a dashed line
         # ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
         #     linestyle='dashed', label="KDE allD - leading", color=ax[2].lines[-1].get_color())
-        ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
-            label="KDE allD", color='b')
+        if len(curr_sel_data)>8:
+            ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
+                label="KDE allD", color='b')
         
-        ax[1].scatter(diff_mag_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
-        ax[3].scatter(diff_vel_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
+            ax[1].scatter(diff_mag_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
+            ax[3].scatter(diff_vel_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
 
         if max(ht_sim)>erosion_height_start:
             ax[1].set_ylim([min(ht_sim)-1, max(ht_sim)+1])
@@ -899,16 +915,20 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # delte the border of the plot
         ax[1].spines['right'].set_color('none')
         ax[1].spines['top'].set_color('none')
-        # append diff_vel_allD to diff_vel_1D
-        diff_mag_allD.extend(diff_mag_1D)
+        
+        
+        if len(curr_sel_data)>8:
+            # append diff_vel_allD to diff_vel_1D
+            diff_mag_1D.extend(diff_mag_allD)
+        
         # delete any nan or inf from the list
-        diff_mag_allD = [x for x in diff_mag_allD if str(x) != 'nan' and str(x) != 'inf']
+        diff_mag_1D = [x for x in diff_mag_1D if str(x) != 'nan' and str(x) != 'inf']
         # put the ticks in the x axis to -1*max(abs(np.array(diff_mag_allD))), max(abs(np.array(diff_mag_allD)) with only 2 significant digits
-        ax[1].set_xticks([-1*max(abs(np.array(diff_mag_allD))), max(abs(np.array(diff_mag_allD)))])
+        ax[1].set_xticks([-1*max(abs(np.array(diff_mag_1D))), max(abs(np.array(diff_mag_1D)))])
         # Rotate tick labels
         ax[1].tick_params(axis='x', rotation=45)
         # rotate that by 45 degrees
-        ax[1].set_xlim([-1*max(abs(np.array(diff_mag_allD)))-max(abs(np.array(diff_mag_allD)))/4, max(abs(np.array(diff_mag_allD)))+max(abs(np.array(diff_mag_allD)))/4])
+        ax[1].set_xlim([-1*max(abs(np.array(diff_mag_1D)))-max(abs(np.array(diff_mag_1D)))/4, max(abs(np.array(diff_mag_1D)))+max(abs(np.array(diff_mag_1D)))/4])
 
         # on ax[3] the sides of the plot put the error in the velocity as a value with one axis
         # ax[3].set_xlabel('vel.lead.err [km/s]')
@@ -924,15 +944,17 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # delte the border of the plot
         ax[3].spines['left'].set_color('none')
         ax[3].spines['top'].set_color('none')
-        # append diff_vel_allD to diff_vel_1D
-        diff_vel_allD.extend(diff_vel_1D)
+        if len(curr_sel_data)>8:
+            # append diff_vel_allD to diff_vel_1D
+            diff_vel_1D.extend(diff_vel_allD)
+
         # delete any nan or inf from the list
-        diff_vel_allD = [x for x in diff_vel_allD if str(x) != 'nan' and str(x) != 'inf']
+        diff_vel_1D = [x for x in diff_vel_1D if str(x) != 'nan' and str(x) != 'inf']
         # x limit of the plot equal to max of the absolute magnitude
-        ax[3].set_xticks([-1*max(abs(np.array(diff_vel_allD))), max(abs(np.array(diff_vel_allD)))])
+        ax[3].set_xticks([-1*max(abs(np.array(diff_vel_1D))), max(abs(np.array(diff_vel_1D)))])
         # Rotate tick labels
         ax[3].tick_params(axis='x', rotation=45)
-        ax[3].set_xlim([-1*max(abs(np.array(diff_vel_allD)))-max(abs(np.array(diff_vel_allD)))/4, max(abs(np.array(diff_vel_allD)))+max(abs(np.array(diff_vel_allD)))/4])
+        ax[3].set_xlim([-1*max(abs(np.array(diff_vel_1D)))-max(abs(np.array(diff_vel_1D)))/4, max(abs(np.array(diff_vel_1D)))+max(abs(np.array(diff_vel_1D)))/4])
         
         # put the grid in the subplots and make it dashed
         ax[0].grid(linestyle='dashed')
@@ -1002,13 +1024,18 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     curr_df_sim_sel[plotvar]=np.log10(curr_df_sim_sel[plotvar])
                     df_sel_save[plotvar]=np.log10(df_sel_save[plotvar])
                     curr_sel[plotvar]=np.log10(curr_sel[plotvar])
-                    densest_point[ii_densest]=np.log10(densest_point[ii_densest])
-                    densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
+                    if len(curr_sel_data)>8:
+                        densest_point[ii_densest]=np.log10(densest_point[ii_densest])
+                        densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
                 # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i], kde=True, palette='bright', bins=20)
                 sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i], palette='bright', bins=20)
                 # # add the kde to the plot probability density function
                 sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
                 kde_line = axs[i].lines[-1]
+
+                # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
+                if only_select_meteors_from in df_sel_save['solution_id'].values:
+                    axs[i].axvline(x=df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0], color='k', linewidth=2)
 
                 if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
                     # put it back as it was
@@ -1029,8 +1056,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                         # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
                         if only_select_meteors_from in df_sel_save['solution_id'].values:
                             axs[i].axvline(x=np.log10(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]), color='k', linewidth=2)
-                        densest_point[ii_densest]=np.log10(densest_point[ii_densest])
-                        densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
+                        if len(curr_sel_data)>8:
+                            densest_point[ii_densest]=np.log10(densest_point[ii_densest])
+                            densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
                     
                     else:
                         # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
@@ -1043,26 +1071,30 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                         # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
                         if only_select_meteors_from in df_sel_save['solution_id'].values:
                             axs[i].axvline(x=df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0], color='k', linewidth=2)
-                    
-            if len(densest_point)>ii_densest:                    
-                # Get the x and y data from the KDE line
-                x = kde_line.get_xdata()
-                y = kde_line.get_ydata()
+                            # put the value of diff_percent_1d at th upper left of the line
+                            
 
-                # Find the index of the maximum y value
-                max_index = np.argmax(y)
+            # Get the x and y data from the KDE line
+            x = kde_line.get_xdata()
+            y = kde_line.get_ydata()
 
+            # Find the index of the maximum y value
+            max_index = np.argmax(y)
+            if i!=8:
                 # Plot a dot at the maximum point
                 axs[i].plot(x[max_index], y[max_index], 'ro')  # 'ro' for red dot
-            
-                # print(densest_point[ii_densest])
-                # Find the index with the closest value to densest_point[ii_dense] to all y values
-                densest_index = find_closest_index(x, [densest_point[ii_densest]])
 
-                # add also the densest_point[i] as a blue dot
-                axs[i].plot(densest_point[ii_densest], y[densest_index[0]], 'bo')
+            if len(curr_sel_data)>8:        
+                if len(densest_point)>ii_densest:                    
                 
-                ii_densest=ii_densest+1
+                    # print(densest_point[ii_densest])
+                    # Find the index with the closest value to densest_point[ii_dense] to all y values
+                    densest_index = find_closest_index(x, [densest_point[ii_densest]])
+
+                    # add also the densest_point[i] as a blue dot
+                    axs[i].plot(densest_point[ii_densest], y[densest_index[0]], 'bo')
+                    
+                    ii_densest=ii_densest+1
 
             axs[i].set_ylabel('probability')
             axs[i].set_xlabel(to_plot_unit[i])

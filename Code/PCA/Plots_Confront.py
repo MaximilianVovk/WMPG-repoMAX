@@ -691,10 +691,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             # Print the mode
             print(f"Real value {var_kde[i]}: {'{:.4g}'.format(real_val)}")
             print(f"1D Mode of KDE for {var_kde[i]}: {'{:.4g}'.format(mode)} percent diff: {'{:.4g}'.format(abs((real_val-mode)/(real_val+mode))/2*100)}%")
-            percent_diff_1D[i]=abs((real_val-mode)/(real_val+mode))/2*100
+            percent_diff_1D.append(abs((real_val-mode)/(real_val+mode))/2*100)
             if len(curr_sel_data)>8:
                 print(f"Mult.dim. KDE densest {var_kde[i]}:  {'{:.4g}'.format(densest_point[i])} percent diff: {'{:.4g}'.format(abs((real_val-densest_point[i])/(real_val+densest_point[i]))/2*100)}%")
-                percent_diff_allD[i]=abs((real_val-densest_point[i])/(real_val+densest_point[i]))/2*100
+                percent_diff_allD.append(abs((real_val-densest_point[i])/(real_val+densest_point[i]))/2*100)
             # print the value of const_nominal
             # print(f"const_nominal {var_cost[i]}:  {'{:.4g}'.format(const_nominal.__dict__[var_cost[i]])}")
 

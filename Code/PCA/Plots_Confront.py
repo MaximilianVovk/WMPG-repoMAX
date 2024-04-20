@@ -714,11 +714,11 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 if len(curr_sel_data)>8:
                     const_nominal_allD_KDE.__dict__[var_cost[i]]=densest_point[i]
 
-        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-        sys.stdout.close()
+        # # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+        # sys.stdout.close()
 
-        # Reset sys.stdout to its original value if needed
-        sys.stdout = sys.__stdout__
+        # # Reset sys.stdout to its original value if needed
+        # sys.stdout = sys.__stdout__
 
         # Run the simulation
         frag_main, results_list, wake_results = runSimulation(const_nominal, \
@@ -1012,6 +1012,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # from 2 numbers to one numbr for the subplot axs
         axs = axs.flatten()
 
+        print('\\hline')
+        print('var & $real$ & $1D_{KDE}$ & $1D_{KDE}\\%_{dif}$ & $allD_{KDE}$ & $allD_{KDE}\\%_{dif}$\\\\')
+
         ii_densest=0        
         for i in range(9):
             # put legendoutside north
@@ -1026,7 +1029,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     curr_sel[plotvar]=np.log10(curr_sel[plotvar])
                     if len(curr_sel_data)>8:
                         densest_point[ii_densest]=np.log10(densest_point[ii_densest])
-                        densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
+                        # densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
                 # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i], kde=True, palette='bright', bins=20)
                 sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i], palette='bright', bins=20)
                 # # add the kde to the plot probability density function
@@ -1058,7 +1061,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                             axs[i].axvline(x=np.log10(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]), color='k', linewidth=2)
                         if len(curr_sel_data)>8:
                             densest_point[ii_densest]=np.log10(densest_point[ii_densest])
-                            densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
+                            # densest_point[ii_densest-1]=np.log10(densest_point[ii_densest-1])
                     
                     else:
                         # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
@@ -1078,6 +1081,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             x = kde_line.get_xdata()
             y = kde_line.get_ydata()
 
+            # \hline
+            # $h_{init}$ & $v_{init}$ & $\vartheta_z$ &size  & $\tau$ & Peak Mag\\
+            # \hline
+            # 130 km & 7 to 9 km/s & 88° to 85° &5 to 20 cm & 0.001 to 0.1 & 0 to -5 \\
+            # \hline
+
             # Find the index of the maximum y value
             max_index = np.argmax(y)
             if i!=8:
@@ -1094,6 +1103,16 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     # add also the densest_point[i] as a blue dot
                     axs[i].plot(densest_point[ii_densest], y[densest_index[0]], 'bo')
                     
+                    x_10mode=x[max_index]
+                    if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+                        densest_point[ii_densest]=10**(densest_point[ii_densest])
+                        x_10mode=10**x[max_index]
+                
+                    if i<9:
+                        print('\\hline') #df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]
+                        print(f"{to_plot_unit[i]} & ${'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])}$ & ${'{:.4g}'.format(x_10mode)}$ & $ {'{:.2g}'.format(percent_diff_1D[i])}$\\% & $ {'{:.4g}'.format(densest_point[i])}$ & $ {'{:.2g}'.format(percent_diff_allD[i])}$\\% \\\\")
+                        # print(to_plot_unit[i]+'& $'+str(x[max_index])+'$ & $'+str(percent_diff_1D[i])+'$\\% & $'+str(densest_point[ii_densest])+'$ & $'+str(percent_diff_allD[i])+'\\% \\\\')
+
                     ii_densest=ii_densest+1
 
             axs[i].set_ylabel('probability')
@@ -1111,6 +1130,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
         # # more space between the subplots erosion_coeff sigma
         plt.tight_layout()
+
+        print('\\hline')
         
         # plt.show()
         # print(output_dir+os.sep+'PhysicProp'+str(len(curr_sel))+'_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
@@ -1119,6 +1140,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
         # close the figure
         plt.close()
+
+        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+        sys.stdout.close()
+
+        # Reset sys.stdout to its original value if needed
+        sys.stdout = sys.__stdout__
 
                     # # cumulative distribution histogram of the distance wihouth considering the first two elements
                     # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar][2:], weights=curr_df_sim_sel['weight'][2:],hue='shower_code', ax=axs[i], kde=True, palette='bright', bins=20, cumulative=True, stat='density')

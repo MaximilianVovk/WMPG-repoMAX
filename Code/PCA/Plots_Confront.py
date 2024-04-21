@@ -119,12 +119,13 @@ def find_curvature_distribution_KDE(data_for_meteor,sensib=1):
     # print(inflection_points)
     # print(inflection_indices)
 
-    if inflection_indices[0]==0:
+    if inflection_indices[0]==0 or inflection_indices[0]>100:
+        inflectionpoint=1
         # get the next that is not equal to 0
-        for i in range(1,len(inflection_indices)):
-            if inflection_indices[i]!=0:
-                inflectionpoint=inflection_indices[i]
-                break
+        # for i in range(1,len(inflection_indices)):
+        #     if inflection_indices[i]!=0:
+        #         inflectionpoint=inflection_indices[i]
+        #         break
     else:
         inflectionpoint=inflection_indices[0]
 

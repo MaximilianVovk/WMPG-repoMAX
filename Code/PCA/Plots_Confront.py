@@ -26,110 +26,10 @@ from sklearn.cluster import KMeans
 import copy
 import sys
 from scipy.integrate import simps  # For numerical integration
+from Plots_LightCurves_onlysim_coef import PCA_LightCurveCoefPLOT
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
 
-# create a txt file where you save averithing that has been printed
-class Logger(object):
-    def __init__(self, directory=".", filename="log.txt"):
-        self.terminal = sys.stdout
-        # Ensure the directory exists
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-        # Combine the directory and filename to create the full path
-        filepath = os.path.join(directory, filename)
-        self.log = open(filepath, "a")
-
-    def write(self, message):
-        self.terminal.write(message)
-        self.log.write(message)
-
-    def flush(self):
-        # This might be necessary as stdout could call flush
-        self.terminal.flush()
-
-    def close(self):
-        # Close the log file when done
-        self.log.close()
-
-def find_closest_index(time_arr, time_sampled):
-    closest_indices = []
-    for sample in time_sampled:
-        closest_index = min(range(len(time_arr)), key=lambda i: abs(time_arr[i] - sample))
-        closest_indices.append(closest_index)
-    return closest_indices
-
-def find_curvature_distribution_KDE(data_for_meteor,sensib=1):
-    # # Compute the cumulative KDE 
-    # kde = gaussian_kde(data_for_meteor["distance_meteor"], bw_method='silverman')
-    
-    # # Define the range for which you want to compute KDE values, with more points for higher accuracy
-    # kde_x = np.linspace(data_for_meteor["distance_meteor"].min(), data_for_meteor["distance_meteor"].max(), 1000)
-    # kde_values = kde(kde_x)
-
-    # ddy_kde_values = np.gradient(kde_values, kde_x)
-
-    # # plot the kde
-    # plt.plot(kde_x, kde_values)
-    # plt.xlabel('Distance in PCA space')
-    # plt.ylabel('Density')
-    # plt.title('KDE of the distance in PCA space')
-    # plt.show()
-
-
-    sns.histplot(data_for_meteor, x=data_for_meteor["distance_meteor"], kde=True, cumulative=True, bins=len(data_for_meteor["distance_meteor"]))
-    # data_range = [data_for_meteor["distance_meteor"].min(), data_for_meteor["distance_meteor"].max()]
-    # sns.kdeplot(data_for_meteor, x=data_for_meteor["distance_meteor"], cumulative=True, bw_adjust=sensib, cut=0, clip=data_range)
-
-    # get the data from the last plotted line
-    kde_line = plt.gca().get_lines()[-1]
-    # plt.show() 
-    plt.close() 
-                    
-    # Get the x and y data from the KDE line
-    kde_x = kde_line.get_xdata()
-    kde_values = kde_line.get_ydata()
-
-    # fit a third order polinomial
-    p = np.polyfit(kde_x, kde_values, 3)
-    # Compute the second derivative of the polynomial
-    ddy_kde_values = np.polyder(p, 2)
-    # Compute the roots of the second derivative
-    inflection_points = np.roots(ddy_kde_values)
-
-    # Find the index of the nearest points in the original data for each inflection point
-    inflection_indices = find_closest_index(data_for_meteor["distance_meteor"].values, inflection_points)
-
-
-    # # Compute first derivative using central difference
-    # dy_kde_values = np.gradient(kde_values, kde_x)
-
-    # # Compute second derivative
-    # ddy_kde_values = np.gradient(dy_kde_values, kde_x)
-
-    # # Find zero crossings in the second derivative, indicating inflection points
-    # sign_changes = np.diff(np.sign(ddy_kde_values))
-    # # # inflection_indices = np.where(sign_changes)[0]
-    # # inflection_indices = kde_x[:-1][sign_changes != 0]  
-    # # Filter zero crossings to include only where sign actually changes to opposite
-    # inflection_points = kde_x[:-1][(sign_changes > 0) | (sign_changes < 0)]
-
-    # # Find the index of the nearest points in the original data for each inflection point
-    # inflection_indices = find_closest_index(data_for_meteor["distance_meteor"].values, inflection_points)
-    # print(inflection_points)
-    # print(inflection_indices)
-
-    if inflection_indices[0]==0 or inflection_indices[0]>100:
-        inflectionpoint=1
-        # get the next that is not equal to 0
-        # for i in range(1,len(inflection_indices)):
-        #     if inflection_indices[i]!=0:
-        #         inflectionpoint=inflection_indices[i]
-        #         break
-    else:
-        inflectionpoint=inflection_indices[0]
-
-    return inflectionpoint
 
 def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # Set the shower name (can be multiple) e.g. 'GEM' or ['GEM','PER', 'ORI', 'ETA', 'SDA', 'CAP']
@@ -138,8 +38,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
     # number of selected events selected
     n_select=10
-    # dist_select=np.array([10000000000000])
-    dist_select=np.ones(9)*10000000000000
+    dist_select=np.array([10000000000000])
+    # dist_select=np.ones(9)*10000000000000
 
     # weight factor for the distance
     distance_weight_fact=0
@@ -147,13 +47,17 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     only_select_meteors_from=true_file
 
     do_not_select_meteor=[true_file]
+    # do_not_select_meteor=[]
 
-    Sim_data_distribution=False
+    Sim_data_distribution=True
 
-    curvature_selection=True
-    sensib=0.5
+    curvature_selection_diff=False
+    num_10percdist=5
+    num_repeat=1
 
     plot_dist=True
+
+    plot_var=True
     
 
     # dist_select=[1,\
@@ -223,6 +127,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         df_sel_save = pd.read_csv(input_dir+os.sep+'Simulated_'+current_shower+'_select.csv')
         df_sel_save_dist = df_sel_save
 
+        n_sample_noise=len(df_sel['solution_id_dist'].unique())
+
         flag_remove=False
         # check if the do_not_select_meteor any of the array value is in the solution_id of the df_sel if yes remove it
         for i in range(len(do_not_select_meteor)):
@@ -232,9 +138,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 print('removed: '+do_not_select_meteor[i])
                 flag_remove=True
 
-        if curvature_selection==True:
+        if curvature_selection_diff==True:
 
-            if Sim_data_distribution==True or Sim_data_distribution==False and len(dist_select)==1:
+            if Sim_data_distribution==True or Sim_data_distribution==False and n_sample_noise==1:
                 # if there only_select_meteors_from is equal to any solution_id_dist
                 if only_select_meteors_from in df_sel['solution_id_dist'].values:
                     # select only the one with the similar name as only_select_meteors_from in solution_id_dist for df_sel
@@ -243,7 +149,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     df_sel_save_dist=df_sel_save_dist[df_sel_save_dist['solution_id_dist']==only_select_meteors_from]
                 #     print('selected events for : '+only_select_meteors_from)
                 # print(len(df_sel))
-                dist_to_cut=find_curvature_distribution_KDE(df_sel)
+                dist_to_cut=diff_dist_index(df_sel,num_10percdist,num_repeat)
 
                 # change of curvature print  
                 # print('Change of curvature at:'+str(dist_to_cut))
@@ -257,7 +163,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 for around_meteor in df_sel['solution_id_dist'].unique():
                     # select the data with distance less than dist_select and check if there are more than n_select
                     df_curr_sel_curv = df_sel[df_sel['solution_id_dist']==around_meteor]
-                    dist_to_cut=find_curvature_distribution_KDE(df_curr_sel_curv)
+                    dist_to_cut=diff_dist_index(df_curr_sel_curv,num_10percdist,num_repeat)
                     # # change of curvature print
                     # print(around_meteor)
                     # print('- Curvature change in the first '+str(dist_to_cut)+' at a distance of: '+str(df_curr_sel_curv['distance_meteor'].iloc[dist_to_cut]))
@@ -274,6 +180,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
         else:
             if Sim_data_distribution==True:
+                n_sample_noise=1
                 # if there only_select_meteors_from is equal to any solution_id_dist
                 if only_select_meteors_from in df_sel['solution_id_dist'].values:
                     # select only the one with the similar name as only_select_meteors_from in solution_id_dist for df_sel
@@ -296,7 +203,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             #     df_sel['solution_id_dist'].iloc[i]=df_sel['solution_id_dist'].iloc[i].split('_')[0]
 
             # if dist_select has more than one element
-            if len(dist_select)==1:
+            if n_sample_noise==1:
                 dist_select_1=dist_select[0]
                 # select the data with distance less than dist_select and check if there are more than n_select
                 if np.min(df_sel['distance_meteor'])>dist_select_1:
@@ -374,8 +281,11 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         curr_sel_save=df_sel_save[df_sel_save['shower_code']==current_shower+'_sel']
         curr_sel_save_dist=df_sel_save_dist[df_sel_save_dist['shower_code']==current_shower+'_sel']
 
-        if curvature_selection==False:
-            if len(dist_select)>1:
+        if curvature_selection_diff==False:
+            if n_sample_noise>1:
+
+                if len(dist_select)<n_sample_noise:
+                    dist_select=np.ones(n_sample_noise)*10000000000000
 
                 # Extract unique locations
                 meteors_IDs = curr_sel_save["solution_id_dist"].unique()
@@ -387,6 +297,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 for i, around_meteor in enumerate(meteors_IDs):
 
                     curr_sel_for_meteor = curr_sel[curr_sel["solution_id_dist"] == around_meteor]
+
                     # for each meteors_IDs consider the dist_select to cut the data
                     if np.min(curr_sel_for_meteor['distance_meteor'])>dist_select[i]:
                         forprint=curr_sel_for_meteor
@@ -420,66 +331,60 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         elif Sim_data_distribution==False:
             curr_df_sim_sel=curr_sel
         
-        # # sns plot of duration trail lenght and F and acceleration parameters
-        # # sns.pairplot(curr_df, hue='shower_code', diag_kind='kde', plot_kws={'alpha':0.6, 's':80, 'edgecolor':'k'}, height=3,corner=True)
-        # # subplot with all the parameters histograms
 
-        # fig, axs = plt.subplots(4, 3)
-        # fig.suptitle(current_shower)
-        # # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
-        # ii=0
+        if plot_var==True:
+            fig, axs = plt.subplots(4, 3)
+            # flatten the axs
+            axs = axs.flatten()
+            fig.suptitle('Data between the 5 and 95 percentile of the variable values')
+            # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
+            ii=0
 
-        # # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','mass [kg]','begin height [km]','end height [km]','','peak abs mag [-]','begin abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','acceleration [km/s^2]','','zenith angle [deg]','kurtosis','kc']
-        # # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','end height [km]','peak abs mag [-]','','begin abs mag [-]','end abs mag [-]','F parameter [-]','','trail lenght [km]','deceleration [km/s^2]','zenith angle [deg]','','kc','kurtosis','skew']
-        # # to_plot_unit=['init vel [km/s]','avg vel [km/s]','acceleration [km/s^2]','','begin height [km]','end height [km]','peak abs mag [-]','','begin abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','acceleration [km/s^2]','','zenith angle [deg]','kurtosis','kc']
-        # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','','begin height [km]','peak height [km]','end height [km]','','begin abs mag [-]','peak abs mag [-]','end abs mag [-]','','F parameter [-]','trail lenght [km]','deceleration [km/s^2]','','zenith angle [deg]','kurtosis','skew']
+            to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','begin height [km]','peak height [km]','end height [km]','begin abs mag [-]','peak abs mag [-]','end abs mag [-]','F parameter [-]','zenith angle [deg]','deceleration [km/s^2]','trail lenght [km]','kurtosis','skew']
 
+            to_plot=['vel_init_norot','vel_avg_norot','duration','begin_height','peak_mag_height','end_height','beg_abs_mag','peak_abs_mag','end_abs_mag','F','zenith_angle','decel_parab_t0','trail_len','kurtosis','skew']
 
-        # # to_plot=['vel_init_norot','vel_avg_norot','duration','','mass','begin_height','end_height','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
-        # # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','end_height','peak_abs_mag','','beg_abs_mag','end_abs_mag','F','','trail_len','acceleration','zenith_angle','','kc','kurtosis','skew']
-        # # to_plot=['vel_init_norot','vel_avg_norot','acceleration','','begin_height','end_height','peak_abs_mag','','peak_abs_mag','beg_abs_mag','end_abs_mag','','F','trail_len','acceleration','','zenith_angle','kurtosis','skew']
-        # to_plot=['vel_init_norot','vel_avg_norot','duration','','begin_height','peak_mag_height','end_height','','beg_abs_mag','peak_abs_mag','end_abs_mag','','F','trail_len','decel_parab_t0','','zenith_angle','kurtosis','skew']
+            # deleter form curr_df the mass
+            #curr_df=curr_df.drop(['mass'], axis=1)
+            for ii in range(len(axs)):
+                plotvar=to_plot[ii]
+                # plot x within the 5 and 95 percentile of curr_df[plotvar] 
+                x_plot=curr_df[plotvar]
+                # cut the x axis after the 95 percentile and 5 percentile for the one that have a shower_code Shower+'_sim'
+                x_plot= x_plot[(x_plot > np.percentile(curr_df[plotvar], 5)) & (x_plot < np.percentile(curr_df[plotvar], 95))]
+                sns.histplot(curr_df, x=x_plot, weights=curr_df['weight'],hue='shower_code', ax=axs[ii], kde=True, palette='bright', bins=20)
 
-        # # deleter form curr_df the mass
-        # #curr_df=curr_df.drop(['mass'], axis=1)
-        # for i in range(4):
-        #     for j in range(3):
-        #         plotvar=to_plot[ii]
-        #         if plotvar=='mass':
-        #                         # put legendoutside north curr_df.columns[i*3+j+2]
-        #             sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20, log_scale=True)
-        #         elif plotvar=='kurtosis':
-        #             sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=2000)
-        #             # x limits
-        #             axs[i,j].set_xlim(-1.5,0)
-        #         elif plotvar=='skew':
-        #             sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=200)
-        #             # x limits
-        #             axs[i,j].set_xlim(-1,1)
-        #         else:
-        #             # put legendoutside north
-        #             sns.histplot(curr_df, x=curr_df[plotvar], weights=curr_df['weight'],hue='shower_code', ax=axs[i,j], kde=True, palette='bright', bins=20)
-        #         axs[i,j].set_ylabel('percentage')
-        #         axs[i,j].set_xlabel(to_plot_unit[ii])
-        #         if ii!=0:
-        #             axs[i,j].get_legend().remove()
-        #         ii=ii+1
-        #     ii=ii+1
+                # if beg_abs_mag','peak_abs_mag','end_abs_mag inver the x axis
+                if plotvar in ['beg_abs_mag','peak_abs_mag','end_abs_mag']:
+                    axs[ii].invert_xaxis()
+
+                axs[ii].set_ylabel('probability')
+                axs[ii].set_xlabel(to_plot_unit[ii])
+                axs[ii].get_legend().remove()
+                # check if there are more than 3 ticks and if yes only use the first and the last
+                if len(axs[ii].get_xticks())>=3:
+                    axs[ii].set_xticks([np.round(np.min(x_plot),2),np.round(np.max(x_plot),2)])
+
+                # put y axis in log scale
+                axs[ii].set_yscale('log')
+                axs[ii].set_ylim(0.01,1)
                 
-        # # more space between the subplots
-        # plt.tight_layout()
-        # # full screen
-        # figManager = plt.get_current_fig_manager()
-        # figManager.window.showMaximized()
-        # plt.show()
 
-        
-        # # save the figure
-        # fig.savefig(output_dir+os.sep+'Histograms_'+current_shower+'.png', dpi=300)
+                    
+            # more space between the subplots
+            plt.tight_layout()
+            # # full screen
+            # figManager = plt.get_current_fig_manager()
+            # figManager.window.showMaximized()
+
+            print(output_dir+os.sep+'HistogramsVar_'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
+            # save the figure
+            fig.savefig(output_dir+os.sep+'Histograms'+str(len(axs))+'Var_'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_MAXdist-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png', dpi=300)
+            plt.close()
 
     ######### DISTANCE PLOT ##################################################
         if plot_dist==True:
-            if len(dist_select)>1 and Sim_data_distribution==False:
+            if n_sample_noise>1 and Sim_data_distribution==False:
 
                 # Extract unique locations
                 meteors_IDs = curr_sel_save["solution_id_dist"].unique()
@@ -521,6 +426,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     # check if distance_meteor_sel have any value
                     if len(data_for_meteor_sel)>0:
                         axes[i].axvline(x=np.max(data_for_meteor_sel["distance_meteor"]), color=colors[i], linestyle='--')
+                    else:
+                        axes[i].axvline(x=distance_meteor_sel[0], color=colors[i], linestyle='--')
                     # plot a dasced line with the max distance_meteor_sel
                     #axes[i].axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
                     # pu a y lim .ylim(0,100) 
@@ -542,6 +449,11 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 plt.close()
             else:
 
+                # Extract unique locations
+                meteors_IDs = curr_sel_save["solution_id_dist"].unique()
+
+                curr_sel_save_dist=curr_sel_save_dist[curr_sel_save_dist["solution_id_dist"] == meteors_IDs[0]]
+
                 # save the distance_meteor from df_sel_save
                 distance_meteor_sel_save=curr_sel_save_dist['distance_meteor']
                 # save the distance_meteor from df_sel_save
@@ -557,8 +469,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 plt.xlabel('Distance in PCA space')
                 plt.ylabel('Number of events')
 
+                colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
                 # plot a dasced line with the max distance_meteor_sel
-                plt.axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
+                plt.axvline(x=np.max(distance_meteor_sel), color=colors[0], linestyle='--')
 
                 # make the y axis logarithmic
                 # plt.xscale('log')
@@ -627,7 +541,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             else:
                 raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
         else:
-            print('Not enough data to perform the KDE ned more than 8 meteors')
+            print('Not enough data to perform the KDE need more than 8 meteors')
             # raise ValueError('The data is ill-conditioned. Consider a bigger number of elements.')
 
         # Load the nominal simulation
@@ -1135,7 +1049,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         print('\\hline')
         
         # plt.show()
-        # print(output_dir+os.sep+'PhysicProp'+str(len(curr_sel))+'_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
+        print(output_dir+os.sep+'PhysicProp'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
         # save the figure maximized and with the right name
         fig.savefig(output_dir+os.sep+'PhysicProp'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png', dpi=300)
 
@@ -1155,6 +1069,90 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
     ##########################################################################################################
 
+# create a txt file where you save averithing that has been printed
+class Logger(object):
+    def __init__(self, directory=".", filename="log.txt"):
+        self.terminal = sys.stdout
+        # Ensure the directory exists
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        # Combine the directory and filename to create the full path
+        filepath = os.path.join(directory, filename)
+        self.log = open(filepath, "a")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        # This might be necessary as stdout could call flush
+        self.terminal.flush()
+
+    def close(self):
+        # Close the log file when done
+        self.log.close()
+
+def find_closest_index(time_arr, time_sampled):
+    closest_indices = []
+    for sample in time_sampled:
+        closest_index = min(range(len(time_arr)), key=lambda i: abs(time_arr[i] - sample))
+        closest_indices.append(closest_index)
+    return closest_indices
+
+
+def diff_dist_index(data_for_meteor, numbr_10=10, numbr_10percent=2):
+    #make subtraction of the next element and the previous element of data_for_meteor["distance_meteor"]
+    diff_distance_meteor = np.diff(data_for_meteor["distance_meteor"][:int(len(data_for_meteor["distance_meteor"])/10)])
+    # histogram plot of the difference with the count on the x axis and diff_distance_meteor on the y axis 
+    indices = np.arange(len(diff_distance_meteor))
+    # create the cumulative sum of the diff_distance_meteor
+    cumsum_diff_distance_meteor = np.cumsum(diff_distance_meteor)
+    # normalize the diff_distance_meteor xnormalized = (x - xminimum) / range of x
+    diff_distance_meteor_normalized = (diff_distance_meteor - np.min(diff_distance_meteor)) / (np.max(diff_distance_meteor) - np.min(diff_distance_meteor))
+
+    # find the index equal to 1 in diff_distance_meteor_normalized
+    index1 = np.where(diff_distance_meteor_normalized == 1)[0]
+    # check when the diff_distance_meteor is two nxt to eac other are smaller than 0.1 starting from the first element
+    select=0
+    for ii in range(len(diff_distance_meteor_normalized)):
+        if index1<numbr_10:
+            ii+=index1[0]
+        if diff_distance_meteor_normalized[ii] < 0.1:
+            index10percent = ii-1
+            select+=1
+            if ii<numbr_10:
+                if select==numbr_10percent:
+                    break
+            else:
+                if select==1:
+                    break
+        else:
+            select=0
+   
+    # # dimension of the plot 15,5
+    # plt.figure(figsize=(15,5))
+    # plt.subplot(1,3,1)
+    # plt.bar(indices, diff_distance_meteor_normalized,color='blue', edgecolor='black')
+    # plt.xlabel('Index')
+    # plt.ylabel('Difference')
+    # plt.title('Diff normalized')
+
+    # plt.subplot(1,3,2)
+    # plt.bar(indices, cumsum_diff_distance_meteor,color='blue', edgecolor='black')
+    # plt.xlabel('Index')
+    # plt.ylabel('Cumulative sum')
+    # plt.title('Cumulative sum diff')
+
+    # plt.subplot(1,3,3)
+    # sns.histplot(data_for_meteor, x=data_for_meteor["distance_meteor"][:100], kde=True, cumulative=True, bins=len(data_for_meteor["distance_meteor"]))
+    # plt.ylabel('Index')
+    # plt.xlabel('distance')
+    # plt.title('Dist')  
+    # # give more space
+    # plt.tight_layout()  
+    # plt.show()
+
+    return index10percent
 
 if __name__ == "__main__":
 
@@ -1175,10 +1173,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
         help="Path were are store both simulated and observed shower .csv file.")
 
-    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \
+    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v61.46_m6.96e-04g_rho0240_z63.2_abl0.015_eh116.1_er0.169_s1.50.json', \
         help="The real json file the ground truth for the PCA simulation results.") 
 
-    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER_v59", \
+    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
         help="Path to the real file the ground truth for the PCA simulation results.") 
     
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
@@ -1196,3 +1194,5 @@ if __name__ == "__main__":
     #########################
 
     PCA_confrontPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)
+
+    PCA_LightCurveCoefPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)

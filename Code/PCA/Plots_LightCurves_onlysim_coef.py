@@ -14,42 +14,19 @@ from scipy.optimize import curve_fit
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
 
-
-def quadratic_velocity(t, a, b, v0, t0):
-    """
-    Quadratic velocity function.
-    """
-
-    # Only take times <= t0
-    t_before = t[t <= t0]
-
-    # Only take times > t0
-    t_after = t[t > t0]
-
-    # Compute the velocity linearly before t0
-    v_before = np.ones_like(t_before)*v0
-
-    # Compute the velocity quadratically after t0
-    v_after = -3*abs(a)*(t_after - t0)**2 - 2*abs(b)*(t_after - t0) + v0
-
-    return np.concatenate((v_before, v_after))
-
 # Set the shower name (can be multiple) e.g. 'GEM' or ['GEM','PER', 'ORI', 'ETA', 'SDA', 'CAP']
-def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
+#PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
+def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     Shower=['PER']#['PER']
 
     # number of selected events selected
     n_select=1000
 
-    # min distance over which are selected
-    min_dist_obs=0
-    min_dist_sel=0
-
     # number to confront
     n_confront_obs=1
     n_confront_sel=4
 
-    only_select_meteors_from='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
+    only_select_meteors_from=true_file
 
     # no legend for a lot of simulations
     with_legend=True
@@ -93,6 +70,10 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
     #     len_noise = 5*len_noise
     #     # 5 sigma confidence interval
     #     vel_noise = 5*vel_noise
+
+    # min distance over which are selected
+    min_dist_obs=0
+    min_dist_sel=0
 
     if with_LEN==True:
         # put the first plot in 3 sublots
@@ -226,7 +207,7 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
     # find the directory where the script is running
 
     # in current_folder entern in the folder current_folder+os.sep+'Simulation_'current_shower
-    os.chdir(input_dir_pickle+os.sep+'Simulations_'+current_shower+os.sep)
+    os.chdir(true_path)
     # os.chdir('Simulations_'+current_shower)
     for ii in range(len(curr_sel)):
         # pick the ii element of the solution_id column 
@@ -676,6 +657,25 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, input_dir_pickle):
     # close the plot
     plt.close()
 
+def quadratic_velocity(t, a, b, v0, t0):
+    """
+    Quadratic velocity function.
+    """
+
+    # Only take times <= t0
+    t_before = t[t <= t0]
+
+    # Only take times > t0
+    t_after = t[t > t0]
+
+    # Compute the velocity linearly before t0
+    v_before = np.ones_like(t_before)*v0
+
+    # Compute the velocity quadratically after t0
+    v_after = -3*abs(a)*(t_after - t0)**2 - 2*abs(b)*(t_after - t0) + v0
+
+    return np.concatenate((v_before, v_after))
+
 
 if __name__ == "__main__":
 
@@ -687,16 +687,19 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
         help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--input_dir_pickle', metavar='INPUT_PATH_PICKLE', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation', \
+    arg_parser.add_argument('--true_file', metavar='TRUE_PICKLE', type=str, default='TRUEerosion_sim_v61.46_m6.96e-04g_rho0240_z63.2_abl0.015_eh116.1_er0.169_s1.50.json', \
+        help="the real .pickle file name.")
+    
+    arg_parser.add_argument('--true_path', metavar='TRUE_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
         help="Path were are store all the .pickle file.")
     
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
@@ -713,4 +716,4 @@ if __name__ == "__main__":
 
     #########################
 
-    PCA_LightCurveCoefPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.input_dir_pickle)
+    PCA_LightCurveCoefPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.true_path)

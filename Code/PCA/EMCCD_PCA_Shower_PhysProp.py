@@ -32,6 +32,8 @@ from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 # from scipy.optimize import basinhopping # slower but more accurate
 from scipy.optimize import minimize
 import scipy.optimize as opt
+import sys
+from scipy.interpolate import UnivariateSpline
 
 add_json_noise = False
 
@@ -40,6 +42,29 @@ PCA_percent = 98
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000 > output.txt    
 # FUNCTIONS ###########################################################################################
+
+# create a txt file where you save averithing that has been printed
+class Logger(object):
+    def __init__(self, directory=".", filename="log.txt"):
+        self.terminal = sys.stdout
+        # Ensure the directory exists
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        # Combine the directory and filename to create the full path
+        filepath = os.path.join(directory, filename)
+        self.log = open(filepath, "a")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        # This might be necessary as stdout could call flush
+        self.terminal.flush()
+
+    def close(self):
+        # Close the log file when done
+        self.log.close()
 
 def find_closest_index(time_arr, time_sampled):
     closest_indices = []
@@ -209,6 +234,11 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
                 obs_time=data['time_sampled']
                 obs_length=data['len_sampled']
                 abs_mag_obs=data['mag_sampled']
+                
+                # spline and smooth the data
+                spline_mag = UnivariateSpline(obs_time, abs_mag_obs, s=0.1)  # 's' is the smoothing factor
+                abs_mag_obs=spline_mag(obs_time)
+
                 obs_vel=[v0]
                 obs_length=[x/1000 for x in obs_length]
                 # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
@@ -242,7 +272,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             t0 = np.mean(obs_time)
 
             # initial guess of deceleration decel equal to linear fit of velocity
-            p0 = [a, 0, 0, 0]
+            p0 = [a, 0, 0, t0]
 
             opt_res = opt.minimize(lag_residual, p0, args=(np.array(obs_time), np.array(obs_lag)), method='Nelder-Mead')
 
@@ -609,7 +639,9 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 #     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
 
     No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0', 'decel_t0'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
-    # if PC below 7 wrong
+    # # if PC below 7 wrong
+    # No_var_PCA=['duration','vel_avg_norot','t0','peak_abs_mag','deceleration_lin','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc', 'decel_t0','trail_len','vel_init_norot','zenith_angle','F','Dynamic_pressure_peak_abs_mag','beg_abs_mag','end_abs_mag'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
+    # No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0', 'decel_t0','peak_mag_height','F','Dynamic_pressure_peak_abs_mag','beg_abs_mag','end_abs_mag'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
 
     # if variable_PCA is not empty
     if variable_PCA != []:
@@ -637,12 +669,9 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     df_all = df_all.dropna()
 
     # Now we have all the data and we apply PCA to the dataframe
-
     df_all_nameless=df_all.drop(['shower_code','solution_id'], axis=1)
     # print the data columns names
     df_all_columns_names=(df_all_nameless.columns)
-    # print the name of the variables used in PCA
-    print('Variables used in PCA: ',df_all_nameless.columns)
 
     # Separating out the features
     scaled_df_all = df_all_nameless[df_all_columns_names].values
@@ -651,7 +680,7 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     scaled_df_all = StandardScaler().fit_transform(scaled_df_all)
 
     # Applying PCA function on the data for the number of components
-    pca = PCA()
+    pca = PCA(PCA_percent/100)
     all_PCA = pca.fit_transform(scaled_df_all) # fit the data and transform it
 
     # # select only the column with in columns_PC with the same number of n_components
@@ -660,11 +689,63 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     # create a dataframe with the PCA space
     df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
 
-    number_of_deleted_PC=1
+    ### plot var explained by each PC bar
 
-    # repeat the define_PCA_space in order to delete the PC that are not needed and stop when the number of PC is equal to the number of variable_PCA
-    while number_of_deleted_PC>0:
-        df_all_PCA, number_of_deleted_PC = refine_PCA_space(df_all_PCA)
+    percent_variance = np.round(pca.explained_variance_ratio_* 100, decimals =2)
+
+    # plot the explained variance ratio of each principal componenets base on the number of column of the original dimension
+    plt.bar(x= range(1,len(percent_variance)+1), height=percent_variance, tick_label=columns_PC, color='black')
+    plt.ylabel('Percentance of Variance Explained')
+    plt.xlabel('Principal Component')
+    # save the figure
+    plt.savefig(OUT_PUT_PATH+os.sep+'PCAexplained_variance_ratio_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
+    # close the figure
+    plt.close()
+    # plt.show()
+
+    ### plot covariance matrix
+
+    # make the image big as the screen
+    # plt.figure(figsize=(20, 20))
+
+    # Compute the correlation coefficients
+    cov_data = pca.components_.T
+
+    # Plot the correlation matrix
+    img = plt.matshow(cov_data.T, cmap=plt.cm.coolwarm, vmin=-1, vmax=1)
+    plt.colorbar(img)
+    rows=variable_PCA
+
+    # delete after the 8th cararacter of the string in columns_PC
+    rows_8 = [x[:10] for x in rows]
+
+    # Add the variable names as labels on the x-axis and y-axis
+    plt.xticks(range(len(rows_8)-2), rows_8[2:], rotation=90)
+    plt.yticks(range(len(columns_PC)), columns_PC)
+
+    # plot the influence of each component on the original dimension
+    for i in range(cov_data.shape[0]):
+        for j in range(cov_data.shape[1]):
+            plt.text(i, j, "{:.2f}".format(cov_data[i, j]), size=5, color='black', ha="center", va="center")   
+    # save the figure
+    plt.savefig(OUT_PUT_PATH+os.sep+'PCAcovariance_matrix_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
+    # close the figure
+    plt.close()
+    # plt.show()
+    ###
+    # 10PC_10ev_dist1.38-2.08
+    # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist OUT_PUT_PATH+os.sep+'Simulated_'+current_shower+'_select_PCA.csv'
+    if os.path.exists(OUT_PUT_PATH+os.sep+"logPCA"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt"):
+        # remove the file
+        os.remove(OUT_PUT_PATH+os.sep+"logPCA"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt")
+    sys.stdout = Logger(OUT_PUT_PATH, "logPCA"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt")
+
+    # print the name of the variables used in PCA
+    print('Variables used in PCA: ',df_all_nameless.columns)
+
+    print("explained variance ratio: \n",percent_variance)
+
+    print(str(len(variable_PCA)-2)+' var = '+str(PCA_percent)+'% of the variance explained by ',pca.n_components_,' PC')
 
 
     # add the shower code to the dataframe
@@ -674,13 +755,41 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     df_sim_PCA = df_all_PCA.drop(df_all_PCA.index[len(df_sim_shower):])
     df_obs_PCA = df_all_PCA.drop(df_all_PCA.index[:len(df_sim_shower)])
 
-    # # plot all the data in the PCA space
+    # # # plot all the data in the PCA space
     # sns.pairplot(df_obs_PCA, hue='shower_code', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
-    # plt.show()
+    # # plt.show()
     # # # sns.pairplot(df_obs_PCA, plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k', 'c':'palegreen'},corner=True)
 
     # sns.pairplot(df_sim_PCA, hue='shower_code', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
     # plt.show()
+
+
+    ##############
+    # create a new dataframe with the selected simulated shower
+    # df_obs_PCA_rho=df_obs_PCA
+    # df_obs_PCA_rho['rho_n']='REAL'
+
+    # df_sim_PCA_rho=df_sim_PCA
+    # for ii in range(9):
+    #     # find index in df_sim_shower that have rho btween 100*ii and 100*(ii+1) and label it as str(ii*100)
+    #     df_sim_PCA_rho.loc[(df_sim_shower['rho'] > ii*100) & (df_sim_shower['rho'] <= (ii+1)*100), 'rho_n'] = str(ii*100)
+    
+
+    # Test=pd.concat([df_sim_PCA_rho,df_obs_PCA_rho], axis=0)
+
+    # sns.pairplot(Test, hue='rho_n', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
+    # # plt.show()
+    # # delete the rho_n column
+    # df_obs_PCA_rho = df_obs_PCA_rho.drop(['rho_n'], axis=1)
+    # df_sim_PCA_rho = df_sim_PCA_rho.drop(['rho_n'], axis=1)
+    # plt.savefig(OUT_PUT_PATH+os.sep+'PCA_pairplot_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
+    # plt.close()
+    ##############
+    
+    # # save the figure
+    # plt.savefig(OUT_PUT_PATH+os.sep+'PCA_pairplot_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
+    # # close the figure
+    # plt.close()
 
     ##########################################
     # define the mean position and extract the n_selected meteor closest to the mean
@@ -828,49 +937,11 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 
     print('\nSUCCESS: the simulated shower have been selected')
 
+    # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+    sys.stdout.close()
 
-
-
-def refine_PCA_space(df_all):
-    '''
-    from the simulated and observed shower dataframe it create a dataframe with the PCA space
-    for the given variable_PCA and the one that are not in No_var_PCA
-    if variable_PCA is empty it takes all except for mass
-    '''
-
-    pca = PCA()
-
-    all_PCA = pca.fit_transform(df_all)
-
-    # compute the explained variance ratio
-    percent_variance = np.round(pca.explained_variance_ratio_* 100, decimals =2)
-    print("explained variance ratio: \n",percent_variance)
-
-    # name of the principal components
-    columns_PC = ['PC' + str(x) for x in range(1, len(percent_variance)+1)]
-
-    # find the number of PC that explain 95% of the variance
-    cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
-
-    # recomute PCA with the number of PC that explain 95% of the variance
-    pca= PCA(n_components=np.argmax(cumulative_variance >= PCA_percent/100) + 1)
-    all_PCA = pca.fit_transform(df_all)
-
-    # # select only the column with in columns_PC with the same number of n_components
-    columns_PC = ['PC' + str(x) for x in range(1, pca.n_components_+1)]
-
-    # create a dataframe with the PCA space
-    df_all_PCA = pd.DataFrame(data = all_PCA, columns = columns_PC)
-
-    print(str(len(percent_variance))+' PC = '+str(PCA_percent)+'% of the variance explained by ',pca.n_components_,' PC')
-
-    number_of_deleted_PC=len(percent_variance)-pca.n_components_
-
-    # print('Number of deleted PC: ', number_of_deleted_PC)
-
-
-    return df_all_PCA, number_of_deleted_PC
-
+    # Reset sys.stdout to its original value if needed
+    sys.stdout = sys.__stdout__
 
 
 
@@ -987,3 +1058,4 @@ if __name__ == "__main__":
     df_obs_shower = pd.concat(df_obs_shower)
 
     PCASim(cml_args.output_dir, Shower, cml_args.nsel, cml_args.NoPCA, cml_args.input_dir)
+

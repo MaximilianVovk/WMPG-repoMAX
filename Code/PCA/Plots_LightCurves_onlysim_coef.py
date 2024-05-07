@@ -696,7 +696,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
         help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--true_file', metavar='TRUE_PICKLE', type=str, default='TRUEerosion_sim_v61.46_m6.96e-04g_rho0240_z63.2_abl0.015_eh116.1_er0.169_s1.50.json', \
+    arg_parser.add_argument('--true_file', metavar='TRUE_PICKLE', type=str, default='TRUEerosion_sim_v60.05_m1.05e-04g_rho0588_z39.3_abl0.009_eh108.3_er0.763_s2.08.json', \
         help="the real .pickle file name.")
     
     arg_parser.add_argument('--true_path', metavar='TRUE_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \

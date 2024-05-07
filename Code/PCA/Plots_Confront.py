@@ -53,7 +53,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
     curvature_selection_diff=False
     num_10percdist=5
-    num_repeat=1
+    num_repeat=2
 
     plot_dist=True
 
@@ -155,7 +155,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 # print('Change of curvature at:'+str(dist_to_cut))
 
                 # get the data from df_sel upto the dist_to_cut
-                df_sel=df_sel.iloc[:dist_to_cut]  
+                df_sel=df_sel.iloc[:dist_to_cut+1]  
 
             elif Sim_data_distribution==False:
                 # create a for loop for each different solution_id_dist in df_sel
@@ -168,7 +168,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     # print(around_meteor)
                     # print('- Curvature change in the first '+str(dist_to_cut)+' at a distance of: '+str(df_curr_sel_curv['distance_meteor'].iloc[dist_to_cut]))
                     # get the data from df_sel upto the dist_to_cut
-                    dist_to_cut=df_curr_sel_curv.iloc[:dist_to_cut]
+                    dist_to_cut=df_curr_sel_curv.iloc[:dist_to_cut+1]
 
                     # print(dist_to_cut)
                     df_app.append(dist_to_cut)
@@ -336,7 +336,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             fig, axs = plt.subplots(4, 3)
             # flatten the axs
             axs = axs.flatten()
-            fig.suptitle('Data between the 5 and 95 percentile of the variable values')
+            # fig.suptitle('Data between the 5 and 95 percentile of the variable values')
             # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
             ii=0
 
@@ -350,9 +350,16 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 plotvar=to_plot[ii]
                 # plot x within the 5 and 95 percentile of curr_df[plotvar] 
                 x_plot=curr_df[plotvar]
-                # cut the x axis after the 95 percentile and 5 percentile for the one that have a shower_code Shower+'_sim'
-                x_plot= x_plot[(x_plot > np.percentile(curr_df[plotvar], 5)) & (x_plot < np.percentile(curr_df[plotvar], 95))]
-                sns.histplot(curr_df, x=x_plot, weights=curr_df['weight'],hue='shower_code', ax=axs[ii], kde=True, palette='bright', bins=20)
+
+                if plotvar in ['decel_parab_t0','decel_t0']:
+                    sns.histplot(curr_df, x=x_plot[x_plot>-500], weights=curr_df['weight'][x_plot>-500],hue='shower_code', ax=axs[ii], kde=True, palette='bright', bins=20)
+                    axs[ii].set_xticks([np.round(np.min(x_plot[x_plot>-500]),2),np.round(np.max(x_plot[x_plot>-500]),2)])
+                
+                else:
+                    # cut the x axis after the 95 percentile and 5 percentile for the one that have a shower_code Shower+'_sim'
+                    # x_plot= x_plot[(x_plot > np.percentile(curr_df[plotvar], 5)) & (x_plot < np.percentile(curr_df[plotvar], 95))]
+                    sns.histplot(curr_df, x=x_plot, weights=curr_df['weight'],hue='shower_code', ax=axs[ii], kde=True, palette='bright', bins=20)
+                    axs[ii].set_xticks([np.round(np.min(x_plot),2),np.round(np.max(x_plot),2)])
 
                 # if beg_abs_mag','peak_abs_mag','end_abs_mag inver the x axis
                 if plotvar in ['beg_abs_mag','peak_abs_mag','end_abs_mag']:
@@ -362,8 +369,6 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 axs[ii].set_xlabel(to_plot_unit[ii])
                 axs[ii].get_legend().remove()
                 # check if there are more than 3 ticks and if yes only use the first and the last
-                if len(axs[ii].get_xticks())>=3:
-                    axs[ii].set_xticks([np.round(np.min(x_plot),2),np.round(np.max(x_plot),2)])
 
                 # put y axis in log scale
                 axs[ii].set_yscale('log')
@@ -427,7 +432,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     if len(data_for_meteor_sel)>0:
                         axes[i].axvline(x=np.max(data_for_meteor_sel["distance_meteor"]), color=colors[i], linestyle='--')
                     else:
-                        axes[i].axvline(x=distance_meteor_sel[0], color=colors[i], linestyle='--')
+                        axes[i].axvline(x=distance_meteor_sel, color=colors[i], linestyle='--')
                     # plot a dasced line with the max distance_meteor_sel
                     #axes[i].axvline(x=np.max(distance_meteor_sel), color='k', linestyle='--')
                     # pu a y lim .ylim(0,100) 
@@ -1173,7 +1178,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
         help="Path were are store both simulated and observed shower .csv file.")
 
-    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v61.46_m6.96e-04g_rho0240_z63.2_abl0.015_eh116.1_er0.169_s1.50.json', \
+    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json', \
         help="The real json file the ground truth for the PCA simulation results.") 
 
     arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \

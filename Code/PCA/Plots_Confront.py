@@ -27,6 +27,7 @@ import copy
 import sys
 from scipy.integrate import simps  # For numerical integration
 from Plots_LightCurves_onlysim_coef import PCA_LightCurveCoefPLOT
+from sklearn.preprocessing import StandardScaler
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
 
@@ -549,8 +550,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             print('Not enough data to perform the KDE need more than 8 meteors')
             # raise ValueError('The data is ill-conditioned. Consider a bigger number of elements.')
 
+
         # Load the nominal simulation
-        sim_fit_json_nominal = os.path.join(true_path, true_file)
+        sim_fit_json_nominal = os.path.join(true_path, true_file)     
+
 
 # if pickle change the extension and the code ##################################################################################################
 
@@ -712,12 +715,37 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         obs_time=data['time_sampled']
         obs_length=data['len_sampled']
         abs_mag_sim=data['mag_sampled']
-        vel_sim=[v0]
         obs_length=[x/1000 for x in obs_length]
-        # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
-        rest_vel_sampled=[(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1]) for vel_ii in range(1,len(obs_length))]
-        # append the rest_vel_sampled to vel_sampled
-        vel_sim.extend(rest_vel_sampled)
+
+        # vel_sim=[v0]
+        # # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
+        # rest_vel_sampled=[(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1]) for vel_ii in range(1,len(obs_length))]
+        # # append the rest_vel_sampled to vel_sampled
+        # vel_sim.extend(rest_vel_sampled)
+
+
+        # create a list of the same length of obs_time with the value of the first element of vel_sim
+        obs_vel=vel_sim
+
+        for vel_ii in range(1,len(obs_time)):
+            if obs_time[vel_ii]-obs_time[vel_ii-1]<0.03125:
+            # if obs_time[vel_ii] % 0.03125 < 0.000000001:
+                if vel_ii+1<len(obs_length):
+                    obs_vel[vel_ii+1]=(obs_length[vel_ii+1]-obs_length[vel_ii-1])/(obs_time[vel_ii+1]-obs_time[vel_ii-1])
+            else:
+                obs_vel[vel_ii]=(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1])
+
+        vel_sim=obs_vel
+
+        data_index_2cam = pd.DataFrame(list(zip(obs_time, ht_obs, obs_vel, abs_mag_sim)), columns =['time_sampled', 'ht_sampled', 'vel_sampled', 'mag_sampled'])
+
+        # find in the index of camera 1 and camera 2 base if time_sampled % 0.03125 < 0.000000001 ==cam1 and the rest cam2
+        time_cam1= [i for i in obs_time if i % 0.03125 < 0.000000001]
+        time_cam2= [i for i in obs_time if i % 0.03125 > 0.000000001]
+        # find the index of the camera 1 and camera 2 in the dataframe
+        index_cam1_df= data_index_2cam[data_index_2cam['time_sampled'].isin(time_cam1)].index
+        index_cam2_df= data_index_2cam[data_index_2cam['time_sampled'].isin(time_cam2)].index
+
 
     ############ plot the simulation
         # multiply ht_sim by 1000 to have it in m
@@ -741,7 +769,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         ax = ax.flatten()
 
         # plot a line plot in the first subplot the magnitude vs height dashed with x markers
-        ax[0].plot(abs_mag_sim, ht_sim, linestyle='dashed', marker='x', label='1')
+        ax[0].plot(data_index_2cam['mag_sampled'][index_cam1_df], data_index_2cam['ht_sampled'][index_cam1_df], linestyle='dashed', marker='x', label='1')
+        ax[0].plot(data_index_2cam['mag_sampled'][index_cam2_df], data_index_2cam['ht_sampled'][index_cam2_df], linestyle='dashed', marker='x', label='2')
+        
 
         # add the erosion_height_start as a horizontal line in the first subplot grey dashed
         ax[0].axhline(y=erosion_height_start, color='grey', linestyle='dashed')
@@ -751,7 +781,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # plot a scatter plot in the second subplot the velocity vs height
         # ax[2].scatter(vel_sim, ht_sim, marker='.', label='1')
         # use the . maker and none linestyle
-        ax[2].plot(vel_sim, ht_sim, marker='.', linestyle='none', label='1')
+        ax[2].plot(data_index_2cam['vel_sampled'][index_cam1_df], data_index_2cam['ht_sampled'][index_cam1_df], marker='.', linestyle='none', label='1')
+        ax[2].plot(data_index_2cam['vel_sampled'][index_cam2_df], data_index_2cam['ht_sampled'][index_cam2_df], marker='.', linestyle='none', label='2')
 
         # set the xlim and ylim of the first subplot
         ax[0].set_xlim([min(abs_mag_sim)-1, max(abs_mag_sim)+1])
@@ -911,6 +942,95 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         
     ##########################################################################
 
+        # open a new figure to plot the pairplot
+        fig = plt.figure(figsize=(10, 10), dpi=300)
+
+        # Define your label mappings
+        label_mappings = {
+            'mass': 'mass [kg]',
+            'rho': 'rho [kg/m^3]',
+            'sigma': 'sigma [s^2/km^2]',
+            'erosion_height_start': 'erosion height start [km]',
+            'erosion_coeff': 'erosion coeff [s^2/km^2]',
+            'erosion_mass_index': 'erosion mass index [-]',
+            'erosion_mass_min': 'log eros. mass min [kg]',
+            'erosion_mass_max': 'log eros. mass max [kg]'
+        }
+
+        if Sim_data_distribution==True:
+            to_plot8=['shower_code','mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
+            # crete the triangular plot to of the selected variables with seaborn with the simulated and the selected events and plot it in the figure
+            fig = sns.pairplot(curr_df_sim_sel[to_plot8], hue='shower_code', diag_kind='kde', corner=True) 
+            fig._legend.remove()
+        elif Sim_data_distribution==False:
+            to_plot8=['solution_id_dist','mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
+            # crete the triangular plot to of the selected variables with seaborn with the simulated and the selected events
+            fig = sns.pairplot(curr_df_sim_sel[to_plot8], hue='solution_id_dist', diag_kind='kde', corner=True)
+            fig._legend.remove()
+        
+        label_plot=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','log eros. mass min [kg]','log eros. mass max [kg]']
+        # change the x and y labels of the plot
+        # Update the labels
+        for ax in fig.axes.flatten():
+            if ax is not None:  # Check if the axis exists
+                xlabel = ax.get_xlabel()
+                ylabel = ax.get_ylabel()
+                if xlabel in label_mappings:
+                    ax.set_xlabel(label_mappings[xlabel])
+                if ylabel in label_mappings:
+                    ax.set_ylabel(label_mappings[ylabel])
+        # plt.tight_layout()
+        # plt.show()
+
+        print(output_dir+os.sep+'PhysicPropPairPlot'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
+        # save the figure maximized and with the right name
+        fig.savefig(output_dir+os.sep+'PhysicPropPairPlot'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png', dpi=300)
+        # close the figure
+        plt.close()
+
+    ##########################################################################
+
+        to_plot8=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
+        # labe for the variables
+        label_plot=['mass','rho','sigma','er.height','er.coeff','er.mass index','er.mass min','er.mass max']
+
+        # # create a covarariance matrix plot of the selected variables
+        # scaler = StandardScaler()
+        # scaled_data = scaler.fit_transform(curr_df_sim_sel[to_plot8])  # Assuming 'df' and 'selected_columns' from your context
+        # scaled_df = pd.DataFrame(scaled_data, columns=to_plot8)
+
+        # # Now compute covariance on scaled data
+        # cov_matrix = scaled_df.cov()
+
+        fig, ax = plt.subplots(figsize=(10, 10), dpi=300)
+        # Compute the correlation coefficients
+        # corr_matrix = curr_df_sim_sel[to_plot8].corr()
+
+        # create covariance matrix plot of the selected variables
+        # sns.heatmap(curr_df_sim_sel[to_plot8].cov(), annot=True, cmap='coolwarm', ax=ax)
+        # create a heatmap of the selected variables base on the covariance matrix corr()
+        if Sim_data_distribution==True:
+            sns.heatmap(curr_sel[to_plot8].corr(), annot=True, fmt=".2f", cmap='coolwarm', ax=ax)
+        if Sim_data_distribution==False:
+            sns.heatmap(curr_df_sim_sel[to_plot8].corr(), annot=True, fmt=".2f", cmap='coolwarm', ax=ax)
+
+        # sns.heatmap(curr_df_sim_sel[to_plot8].cov(), annot=True, fmt=".2f", cmap='coolwarm', ax=ax, vmin=-1, vmax=1)
+        # sns.heatmap(cov_matrix, annot=True, fmt=".2f", cmap='coolwarm', ax=ax)
+        # and put the values of the correlation in the heatmap rounded to 2 decimals in the center of the square
+        for t in ax.texts: t.set_text(np.round(float(t.get_text()), 2))
+        # use the label_plot as the xticks and yticks
+        ax.set_xticklabels(label_plot, rotation=45)
+        ax.set_yticklabels(label_plot, rotation=0)
+
+        # plt.show()
+        # save the figure maximized and with the right name
+        fig.savefig(output_dir+os.sep+'PhysicPropCovar'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png', dpi=300)
+    
+        # close the figure
+        plt.close()
+
+    ##########################################################################
+
         # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
         to_plot=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max','erosion_range','erosion_energy_per_unit_mass','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_cross_section']
         to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','log eros. mass min [kg]','log eros. mass max [kg]','log eros. mass range [-]','erosion energy per unit mass [MJ/kg]','erosion energy per unit cross section [MJ/m^2]','erosion energy per unit cross section [MJ/m^2]']
@@ -933,7 +1053,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         axs = axs.flatten()
 
         print('\\hline')
-        print('var & $real$ & $1D_{KDE}$ & $1D_{KDE}\\%_{dif}$ & $allD_{KDE}$ & $allD_{KDE}\\%_{dif}$\\\\')
+        # print('var & $real$ & $1D_{KDE}$ & $1D_{KDE}\\%_{dif}$ & $allD_{KDE}$ & $allD_{KDE}\\%_{dif}$\\\\')
+        # print('var & real & mode & min$_{KDE}$ & -1\\sigma/+1\\sigma & -2\\sigma/+2\\sigma \\\\')
+        print('Variables & Real & Mode & Min$_{KDE}$ & -2\\sigma & +2\\sigma \\\\')
 
         ii_densest=0        
         for i in range(9):
@@ -1022,17 +1144,24 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
                     # add also the densest_point[i] as a blue dot
                     axs[i].plot(densest_point[ii_densest], y[densest_index[0]], 'bo')
+                    # get te 97.72nd percentile and the 2.28th percentile of curr_sel[plotvar] and call them sigma_97 and sigma_2
+                    sigma_97=np.percentile(curr_sel[plotvar], 97.72)
+                    sigma_84=np.percentile(curr_sel[plotvar], 84.13)
+                    sigma_15=np.percentile(curr_sel[plotvar], 15.87)
+                    sigma_2=np.percentile(curr_sel[plotvar], 2.28)
                     
                     x_10mode=x[max_index]
                     if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
                         densest_point[ii_densest]=10**(densest_point[ii_densest])
                         x_10mode=10**x[max_index]
-                
+
                     if i<9:
                         print('\\hline') #df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]
-                        print(f"{to_plot_unit[i]} & ${'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])}$ & ${'{:.4g}'.format(x_10mode)}$ & $ {'{:.2g}'.format(percent_diff_1D[i])}$\\% & $ {'{:.4g}'.format(densest_point[i])}$ & $ {'{:.2g}'.format(percent_diff_allD[i])}$\\% \\\\")
+                        # print(f"{to_plot_unit[i]} & ${'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])}$ & ${'{:.4g}'.format(x_10mode)}$ & $ {'{:.2g}'.format(percent_diff_1D[i])}$\\% & $ {'{:.4g}'.format(densest_point[i])}$ & $ {'{:.2g}'.format(percent_diff_allD[i])}$\\% \\\\")
                         # print(to_plot_unit[i]+'& $'+str(x[max_index])+'$ & $'+str(percent_diff_1D[i])+'$\\% & $'+str(densest_point[ii_densest])+'$ & $'+str(percent_diff_allD[i])+'\\% \\\\')
-
+                        # print(f"{to_plot_unit[i]} & ${'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])}$ & ${'{:.4g}'.format(x_10mode)}$ & $ {'{:.2g}'.format(percent_diff_1D[i])}$\\% & $ {'{:.4g}'.format(densest_point[i])}$ & $ {'{:.2g}'.format(percent_diff_allD[i])}$\\% \\\\")
+                        # print(f"{to_plot_unit[i]} & {'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(densest_point[i])} & {'{:.4g}'.format(sigma_15)} / {'{:.4g}'.format(sigma_84)} & {'{:.4g}'.format(sigma_2)} / {'{:.4g}'.format(sigma_97)} \\\\")
+                        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(densest_point[i])} & {'{:.4g}'.format(sigma_2)} & {'{:.4g}'.format(sigma_97)} \\\\")
                     ii_densest=ii_densest+1
 
             axs[i].set_ylabel('probability')
@@ -1046,7 +1175,6 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             if i==0:
                 # place the xaxis exponent in the bottom right corner
                 axs[i].xaxis.get_offset_text().set_x(1.10)
-        
 
         # # more space between the subplots erosion_coeff sigma
         plt.tight_layout()
@@ -1096,6 +1224,7 @@ class Logger(object):
     def close(self):
         # Close the log file when done
         self.log.close()
+
 
 def find_closest_index(time_arr, time_sampled):
     closest_indices = []
@@ -1169,19 +1298,23 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    # arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\TEST", \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\TEST", \
         help="Path were are store both simulated and observed shower .csv file.")
 
-    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json', \
+    # arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json', \
+    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \
         help="The real json file the ground truth for the PCA simulation results.") 
 
-    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
+    # arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
+    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\Simulations_PER", \
         help="Path to the real file the ground truth for the PCA simulation results.") 
     
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
@@ -1195,6 +1328,21 @@ if __name__ == "__main__":
 
     # make only one shower
     Shower=[cml_args.shower]
+
+    # check if the file is in the folder
+    if os.path.exists(os.path.join(cml_args.input_dir_true, cml_args.true_file)):
+        # Load the nominal simulation
+        print('Loaded: ', cml_args.true_file)   
+    else:
+        print(cml_args.true_file,' file in not is the folder')   
+        # try and load the first json file in the folder
+        for file in os.listdir(cml_args.input_dir_true):
+            if file.endswith(".json"):
+                sim_fit_json_nominal = os.path.join(cml_args.input_dir_true, file)
+                print('Loaded: ', sim_fit_json_nominal)
+                cml_args.true_file=file
+                break
+
 
     #########################
 

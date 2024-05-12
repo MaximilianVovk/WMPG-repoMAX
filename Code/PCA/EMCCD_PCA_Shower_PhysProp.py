@@ -235,16 +235,29 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
                 obs_length=data['len_sampled']
                 abs_mag_obs=data['mag_sampled']
                 
-                # spline and smooth the data
-                spline_mag = UnivariateSpline(obs_time, abs_mag_obs, s=0.1)  # 's' is the smoothing factor
-                abs_mag_obs=spline_mag(obs_time)
+                # # spline and smooth the data
+                # spline_mag = UnivariateSpline(obs_time, abs_mag_obs, s=0.1)  # 's' is the smoothing factor
+                # abs_mag_obs=spline_mag(obs_time)
 
-                obs_vel=[v0]
+                # obs_vel=[v0]
                 obs_length=[x/1000 for x in obs_length]
-                # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
-                rest_vel_sampled=[(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1]) for vel_ii in range(1,len(obs_length))]
-                # append the rest_vel_sampled to vel_sampled
-                obs_vel.extend(rest_vel_sampled)
+
+                vel_sim=[vel_sim[jj_index_cut] for jj_index_cut in closest_indices]
+                # create a list of the same length of obs_time with the value of the first element of vel_sim
+                obs_vel=vel_sim
+
+                for vel_ii in range(1,len(obs_time)):
+                    if obs_time[vel_ii]-obs_time[vel_ii-1]<0.03125:
+                    # if obs_time[vel_ii] % 0.03125 < 0.000000001:
+                        if vel_ii+1<len(obs_length):
+                            obs_vel[vel_ii+1]=(obs_length[vel_ii+1]-obs_length[vel_ii-1])/(obs_time[vel_ii+1]-obs_time[vel_ii-1])
+                    else:
+                        obs_vel[vel_ii]=(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1])
+
+                # # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
+                # rest_vel_sampled=[(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1]) for vel_ii in range(1,len(obs_length))]
+                # # append the rest_vel_sampled to vel_sampled
+                # obs_vel.extend(rest_vel_sampled)
 
                 
             # create the lag array as the difference betyween the lenght and v0*time+len_sim[0]    
@@ -639,6 +652,8 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
 #     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
 
     No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0', 'decel_t0'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
+    # No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0', 'decel_t0','kurtosis',	'skew'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
+
     # # if PC below 7 wrong
     # No_var_PCA=['duration','vel_avg_norot','t0','peak_abs_mag','deceleration_lin','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc', 'decel_t0','trail_len','vel_init_norot','zenith_angle','F','Dynamic_pressure_peak_abs_mag','beg_abs_mag','end_abs_mag'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
     # No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0', 'decel_t0','peak_mag_height','F','Dynamic_pressure_peak_abs_mag','beg_abs_mag','end_abs_mag'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
@@ -955,13 +970,13 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation\\TEST', \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\TEST', \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='C:\\Users\\maxiv\\Documents\\UWO\\Papers\\1)PCA\\PCA_Error_propagation', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder', \
         help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--nsel', metavar='SEL_NUM', type=int, default=1000, \

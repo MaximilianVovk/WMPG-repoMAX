@@ -8,6 +8,7 @@ import numpy as np
 import math
 from sklearn.linear_model import LinearRegression
 from scipy.optimize import curve_fit
+from scipy.interpolate import UnivariateSpline
 
 #matplotlib.use('Agg')
 #matplotlib.use("Qt5Agg")
@@ -275,6 +276,9 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
 
                         # plot noisy area around vel_kms for vel_noise for the fix height_km
                         ax[0].fill_betweenx(height_km_err, abs_mag_sim_err-mag_noise, abs_mag_sim_err+mag_noise, color='lightgray', alpha=0.5)
+                        # spline and smooth the data
+                        # spline_mag = UnivariateSpline(obs_time, abs_mag_sim_err, s=0.1)  # 's' is the smoothing factor
+                        # ax[0].plot(spline_mag(obs_time),height_km)
                         # plot the line
                         abs_mag_sim=obs_abs_mag
                 
@@ -385,14 +389,24 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
             height_km=[x/1000 for x in ht_sim]
             vel_kms=[x/1000 for x in vel_sim]
             
-
+            # create a list of the same length of obs_time with the value of the first element of vel_sim
+            vel_sampled=vel_sim
             # from data params v_init val
-            vel_sampled=[data['params']['v_init']['val']]
-            # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
-            rest_vel_sampled=[(obs_length[i]-obs_length[i-1])/(obs_time[i]-obs_time[i-1]) for i in range(1,len(obs_length))]
-            # append the rest_vel_sampled to vel_sampled
-            vel_sampled.extend(rest_vel_sampled)
-            
+            vel_sampled[0]=data['params']['v_init']['val']
+            # # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
+            # rest_vel_sampled=[(obs_length[i]-obs_length[i-1])/(obs_time[i]-obs_time[i-1]) for i in range(1,len(obs_length))]
+            # # append the rest_vel_sampled to vel_sampled
+            # vel_sampled.extend(rest_vel_sampled)
+
+            for vel_ii in range(1,len(obs_time)):
+                if obs_time[vel_ii]-obs_time[vel_ii-1]<0.03125:
+                # if obs_time[vel_ii] % 0.03125 < 0.000000001:
+                    # vel_sampled[vel_ii]=data['params']['v_init']['val']
+                    if vel_ii+1<len(obs_length):
+                        vel_sampled[vel_ii+1]=(obs_length[vel_ii+1]-obs_length[vel_ii-1])/(obs_time[vel_ii+1]-obs_time[vel_ii-1])
+                else:
+                    vel_sampled[vel_ii]=(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1])
+
             vel_sampled=[x/1000 for x in vel_sampled]
 
             # vel_kms=vel_sampled

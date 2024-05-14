@@ -1067,7 +1067,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         print('\\hline')
         # print('var & $real$ & $1D_{KDE}$ & $1D_{KDE}\\%_{dif}$ & $allD_{KDE}$ & $allD_{KDE}\\%_{dif}$\\\\')
         # print('var & real & mode & min$_{KDE}$ & -1\\sigma/+1\\sigma & -2\\sigma/+2\\sigma \\\\')
-        print('Variables & Real & Mode & Min$_{KDE}$ & -2\\sigma & +2\\sigma \\\\')
+        print('Variables & Real & Mode & Min$_{KDE}$ & 95\\%CIlow & 95\\%CIup \\\\')
 
         ii_densest=0        
         for i in range(9):

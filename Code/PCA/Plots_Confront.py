@@ -322,6 +322,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         curr_df=pd.concat([curr_df,curr_obs.drop(['distance'], axis=1)], axis=0, ignore_index=True)
         curr_df=curr_df.dropna()
         if Sim_data_distribution==True:
+            if len(curr_sim)>10000:
+            # pick randomly 10000 events
+                curr_sim=curr_sim.sample(n=10000)
             curr_df_sim_sel=pd.concat([curr_sim,curr_sel.drop(['distance'], axis=1)], axis=0, ignore_index=True)
             
             curr_sel['erosion_coeff']=curr_sel['erosion_coeff']*1000000
@@ -763,7 +766,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             diff_vel_allD=[(sr_nominal.leading_frag_vel_arr[jj_index_cut]-sr_nominal_allD_KDE.leading_frag_vel_arr[jj_index_cut])/1000 for jj_index_cut in closest_indices_allD]
 
         # Plot the simulation results
-        fig, ax = plt.subplots(2, 2, figsize=(8, 10),gridspec_kw={'width_ratios': [ 3, 0.5]}, dpi=300) #  figsize=(10, 5), dpi=300 0.5, 3, 3, 0.5
+        fig, ax = plt.subplots(2, 2, figsize=(8, 10),gridspec_kw={'width_ratios': [ 3, 1]}, dpi=300) #  figsize=(10, 5), dpi=300 0.5, 3, 3, 0.5
 
         # flat the ax
         ax = ax.flatten()
@@ -875,11 +878,15 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # delete any nan or inf from the list
         diff_mag_1D = [x for x in diff_mag_1D if str(x) != 'nan' and str(x) != 'inf']
         # put the ticks in the x axis to -1*max(abs(np.array(diff_mag_allD))), max(abs(np.array(diff_mag_allD)) with only 2 significant digits
-        ax[1].set_xticks([-1*max(abs(np.array(diff_mag_1D))), max(abs(np.array(diff_mag_1D)))])
+        # ax[1].set_xticks([-1*max(abs(np.array(diff_mag_1D))), max(abs(np.array(diff_mag_1D)))])
         # Rotate tick labels
         ax[1].tick_params(axis='x', rotation=45)
         # rotate that by 45 degrees
         ax[1].set_xlim([-1*max(abs(np.array(diff_mag_1D)))-max(abs(np.array(diff_mag_1D)))/4, max(abs(np.array(diff_mag_1D)))+max(abs(np.array(diff_mag_1D)))/4])
+        # add more ticks
+        ax[1].xaxis.set_major_locator(plt.MaxNLocator(5))
+        # add grid to the plot
+        ax[1].grid(linestyle='dashed')
 
         # on ax[3] the sides of the plot put the error in the velocity as a value with one axis
         # ax[3].set_xlabel('vel.lead.err [km/s]')
@@ -902,10 +909,14 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # delete any nan or inf from the list
         diff_vel_1D = [x for x in diff_vel_1D if str(x) != 'nan' and str(x) != 'inf']
         # x limit of the plot equal to max of the absolute magnitude
-        ax[3].set_xticks([-1*max(abs(np.array(diff_vel_1D))), max(abs(np.array(diff_vel_1D)))])
+        # ax[3].set_xticks([-1*max(abs(np.array(diff_vel_1D))), max(abs(np.array(diff_vel_1D)))])
         # Rotate tick labels
         ax[3].tick_params(axis='x', rotation=45)
         ax[3].set_xlim([-1*max(abs(np.array(diff_vel_1D)))-max(abs(np.array(diff_vel_1D)))/4, max(abs(np.array(diff_vel_1D)))+max(abs(np.array(diff_vel_1D)))/4])
+        # add more ticks
+        ax[3].xaxis.set_major_locator(plt.MaxNLocator(5))
+        # add grid to the plot
+        ax[3].grid(linestyle='dashed')
         
         # put the grid in the subplots and make it dashed
         ax[0].grid(linestyle='dashed')
@@ -1314,7 +1325,7 @@ if __name__ == "__main__":
         help="The real json file the ground truth for the PCA simulation results.") 
 
     # arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
-    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\Simulations_PER", \
+    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\Simulations_PER_v57_slow", \
         help="Path to the real file the ground truth for the PCA simulation results.") 
     
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \

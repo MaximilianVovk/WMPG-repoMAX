@@ -912,6 +912,8 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
         # create a list of the selected shower
         df_sel_PCA_NEW = df_sel_PCA_NEW.values
         distance_current = []
+        # Flatten meanPCA_current to make it a 1-D array
+        meanPCA_current = meanPCA_current.flatten()
         for i_shower in range(len(df_sel_shower)):
             distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, df_sel_PCA_NEW[i_shower]))
         df_sel_shower['distance']=distance_current # from the mean of the selected shower

@@ -1157,10 +1157,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     # add also the densest_point[i] as a blue dot
                     axs[i].plot(densest_point[ii_densest], y[densest_index[0]], 'bo')
                     # get te 97.72nd percentile and the 2.28th percentile of curr_sel[plotvar] and call them sigma_97 and sigma_2
-                    sigma_97=np.percentile(curr_sel[plotvar], 97.72)
+                    sigma_97=np.percentile(curr_sel[plotvar], 95)
                     sigma_84=np.percentile(curr_sel[plotvar], 84.13)
                     sigma_15=np.percentile(curr_sel[plotvar], 15.87)
-                    sigma_2=np.percentile(curr_sel[plotvar], 2.28)
+                    sigma_2=np.percentile(curr_sel[plotvar], 5)
                     
                     x_10mode=x[max_index]
                     if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':

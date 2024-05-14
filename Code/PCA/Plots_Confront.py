@@ -323,8 +323,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         curr_df=curr_df.dropna()
         if Sim_data_distribution==True:
             if len(curr_sim)>10000:
-            # pick randomly 10000 events
+                # pick randomly 10000 events
                 curr_sim=curr_sim.sample(n=10000)
+                curr_sim['weight']=1/len(curr_sim)
             curr_df_sim_sel=pd.concat([curr_sim,curr_sel.drop(['distance'], axis=1)], axis=0, ignore_index=True)
             
             curr_sel['erosion_coeff']=curr_sel['erosion_coeff']*1000000

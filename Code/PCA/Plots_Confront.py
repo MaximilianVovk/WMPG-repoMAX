@@ -1004,7 +1004,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     # set it to log scale
                     ax.set_yscale('log')
                 if xlabel=='erosion_mass_min' or xlabel=='erosion_mass_max': # xlabel=='erosion_coeff'
-                    # set it to log scale
+                    # set it to log sca
                     ax.set_xscale('log')
                 if xlabel in label_mappings:
                     ax.set_xlabel(label_mappings[xlabel])
@@ -1060,9 +1060,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     ax.set_ylabel(label_mappings[ylabel])
                 if xlabel in label_mappings:
                     ax.set_xlabel(label_mappings[xlabel])
-                if ylabel in ['sigma', 'erosion_mass_min', 'erosion_mass_max']:
+                if ylabel in ['erosion_mass_min', 'erosion_mass_max']:#'sigma', 
                     ax.set_yscale('log')
-                if xlabel in ['sigma', 'erosion_mass_min', 'erosion_mass_max']:
+                if xlabel in ['erosion_mass_min', 'erosion_mass_max']: #'sigma', 
                     ax.set_xscale('log')
 
         # # Calculate the correlation matrix

@@ -1000,10 +1000,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             if ax is not None:  # Check if the axis exists
                 xlabel = ax.get_xlabel()
                 ylabel = ax.get_ylabel()
-                if ylabel == 'sigma' or ylabel=='erosion_mass_min' or ylabel=='erosion_mass_max': # ylabel == 'mass' or 
+                if ylabel=='erosion_mass_min' or ylabel=='erosion_mass_max': # ylabel == 'mass' or xlabel == 'sigma'
                     # set it to log scale
                     ax.set_yscale('log')
-                if xlabel == 'sigma' or xlabel=='erosion_mass_min' or xlabel=='erosion_mass_max': # xlabel=='erosion_coeff'
+                if xlabel=='erosion_mass_min' or xlabel=='erosion_mass_max': # xlabel=='erosion_coeff'
                     # set it to log scale
                     ax.set_xscale('log')
                 if xlabel in label_mappings:

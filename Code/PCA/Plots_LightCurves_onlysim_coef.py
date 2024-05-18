@@ -639,6 +639,8 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
     # add the label to the x and y axis
     ax[0].set_ylabel('height [km]')
     ax[0].set_xlabel('abs.mag [-]')
+    # invert the x axis
+    ax[0].invert_xaxis()
 
     if with_LEN==True:
         ax[1].set_ylabel('height [km]')

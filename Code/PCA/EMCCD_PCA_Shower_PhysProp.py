@@ -39,6 +39,8 @@ add_json_noise = False
 
 PCA_percent = 98
 
+PCA_pairplot=True
+
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000 > output.txt    
 # FUNCTIONS ###########################################################################################
@@ -936,18 +938,72 @@ def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_P
     # dataframe with the simulated and the selected meteors in the PCA space
     # df_sim_sel_PCA = pd.concat([df_sim_PCA,df_sel_PCA], axis=0)
 
-    df_sim_sel_PCA = pd.concat([df_sim_PCA,df_sel_PCA,df_obs_PCA], axis=0)
+    if PCA_pairplot==True:
+        if len(df_sim_PCA)>10000:
+            # pick randomly 10000 events
+            df_sim_PCA=df_sim_PCA.sample(n=10000)
 
+        df_sim_sel_PCA = pd.concat([df_sim_PCA,df_sel_PCA,df_obs_PCA], axis=0)
 
-    # sns.pairplot(df_sim_sel_PCA, hue='shower_code', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
-    # plt.show()
+        # Select only the numeric columns for percentile calculations
+        numeric_columns = df_sim_sel_PCA.select_dtypes(include=[np.number]).columns
+
+        # Calculate the 1st and 99th percentiles for each numeric variable
+        percentiles_1 = df_sim_sel_PCA[numeric_columns].quantile(0.01)
+        percentiles_99 = df_sim_sel_PCA[numeric_columns].quantile(0.99)
+
+        # Create a new column for point sizes
+        df_sim_sel_PCA['point_size'] = df_sim_sel_PCA['shower_code'].map({
+            'sim_PER': 5,
+            'PER_sel': 5,
+            'PER': 40
+        })
+
+        # open a new figure to plot the pairplot
+        fig = plt.figure(figsize=(10, 10), dpi=300)
+
+        # # fig = sns.pairplot(df_sim_sel_PCA, hue='shower_code', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
+        # fig = sns.pairplot(df_sim_sel_PCA, hue='shower_code',corner=True, palette='bright', diag_kind='kde', plot_kws={'s': 5, 'edgecolor': 'k'})
+        # # plt.show()
+
+        # Create the pair plot without points initially
+        fig = sns.pairplot(df_sim_sel_PCA[numeric_columns.append(pd.Index(['shower_code']))], hue='shower_code', corner=True, palette='bright', diag_kind='kde', plot_kws={'s': 5, 'edgecolor': 'k'})
+
+        # Overlay scatter plots with custom point sizes
+        for i in range(len(fig.axes)):
+            for j in range(len(fig.axes)):
+                if i > j:
+                    # check if the variable is in the list of the numeric_columns and set the axis limit
+                    if df_sim_sel_PCA.columns[j] in numeric_columns and df_sim_sel_PCA.columns[i] in numeric_columns:
+
+                        ax = fig.axes[i, j]
+                        sns.scatterplot(data=df_sim_sel_PCA, x=df_sim_sel_PCA.columns[j], y=df_sim_sel_PCA.columns[i], hue='shower_code', size='point_size', sizes=(5, 40), ax=ax, legend=False, edgecolor='k', palette='bright')
+
+                        ax.set_xlim(percentiles_1[df_sim_sel_PCA.columns[j]], percentiles_99[df_sim_sel_PCA.columns[j]])
+                        ax.set_ylim(percentiles_1[df_sim_sel_PCA.columns[i]], percentiles_99[df_sim_sel_PCA.columns[i]])
+
+        # delete the last row of the plot
+        # fig.axes[-1, -1].remove()
+        # Hide the last row of plots
+        # for ax in fig.axes[-1]:
+        #     ax.remove()
+
+        # Adjust the subplots layout parameters to give some padding
+        plt.subplots_adjust(hspace=0.3, wspace=0.3)
+        # plt.show()
+        
+        # save the figure
+        fig.savefig(OUT_PUT_PATH+os.sep+'PCAspace_sim_sel_real_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
+        # close the figure
+        plt.close()
+
 
     # sns.pairplot(df_sel_PCA, hue='shower_code', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
     # plt.show()
 
 
-    # dataframe with the simulated and the selected meteors physical characteristics
-    df_sim_sel_shower = pd.concat([df_sim_shower,df_sel_shower], axis=0)
+    # # dataframe with the simulated and the selected meteors physical characteristics
+    # df_sim_sel_shower = pd.concat([df_sim_shower,df_sel_shower], axis=0)
 
     # sns.pairplot(df_sel_shower[['shower_code','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']], hue='shower_code', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
     # plt.show()

@@ -23,6 +23,7 @@ from scipy.optimize import minimize
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants
 from sklearn.cluster import KMeans
+from matplotlib.colors import Normalize
 import copy
 import sys
 from scipy.integrate import simps  # For numerical integration
@@ -38,7 +39,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # Shower=['PER']#['CAP']
 
     # number of selected events selected
-    n_select=10
+    n_select=99
     dist_select=np.array([10000000000000])
     # dist_select=np.ones(9)*10000000000000
 
@@ -60,6 +61,14 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
     plot_var=True
     
+    # Standard deviation of the magnitude Gaussian noise 1 sigma
+    mag_noise = 0.1
+
+    # SD of noise in length (m) 1 sigma
+    len_noise = 20.0/1000
+
+    # velocity noise 1 sigma
+    vel_noise = (len_noise*np.sqrt(2)/0.03125)
 
     # dist_select=[1,\
     #                    1,\
@@ -799,10 +808,10 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         ax[0].plot(sr_nominal.abs_magnitude, sr_nominal.leading_frag_height_arr/1000, label="Simulated", \
             color='k')
         
-        ax[0].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="KDE 1D", color='r')
+        ax[0].plot(sr_nominal_1D_KDE.abs_magnitude, sr_nominal_1D_KDE.leading_frag_height_arr/1000, label="Mode", color='r')
         
         if len(curr_sel_data)>8:
-            ax[0].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="KDE allD", color='b')
+            ax[0].plot(sr_nominal_allD_KDE.abs_magnitude, sr_nominal_allD_KDE.leading_frag_height_arr/1000, label="Min KDE", color='b')
 
         # velocity vs height
 
@@ -817,27 +826,27 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             label="Simulated")
         
         # ax[2].plot(sr_nominal_1D_KDE.brightest_vel_arr/1000, sr_nominal_1D_KDE.brightest_height_arr/1000, \
-        #             label="KDE 1D - brightest", alpha=0.75)
+        #             label="Mode - brightest", alpha=0.75)
 
         # # keep the same color and use a dashed line
         # ax[2].plot(sr_nominal_1D_KDE.leading_frag_vel_arr/1000, sr_nominal_1D_KDE.leading_frag_height_arr/1000, \
-        #     linestyle='dashed', label="KDE 1D - leading", color=ax[2].lines[-1].get_color())
+        #     linestyle='dashed', label="Mode - leading", color=ax[2].lines[-1].get_color())
         ax[2].plot(sr_nominal_1D_KDE.leading_frag_vel_arr/1000, sr_nominal_1D_KDE.leading_frag_height_arr/1000, \
-            label="KDE 1D", color='r')
+            label="Mode", color='r')
         
 
         ax[1].scatter(diff_mag_1D,sr_nominal.leading_frag_height_arr[closest_indices_1D]/1000, color=ax[2].lines[-1].get_color(), marker='.')
         ax[3].scatter(diff_vel_1D,sr_nominal.leading_frag_height_arr[closest_indices_1D]/1000, color=ax[2].lines[-1].get_color(), marker='.')
 
         # ax[2].plot(sr_nominal_allD_KDE.brightest_vel_arr/1000, sr_nominal_allD_KDE.brightest_height_arr/1000, \
-        #             label="KDE allD - brightest")
+        #             label="Min KDE - brightest")
 
         # # keep the same color and use a dashed line
         # ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
-        #     linestyle='dashed', label="KDE allD - leading", color=ax[2].lines[-1].get_color())
+        #     linestyle='dashed', label="Min KDE - leading", color=ax[2].lines[-1].get_color())
         if len(curr_sel_data)>8:
             ax[2].plot(sr_nominal_allD_KDE.leading_frag_vel_arr/1000, sr_nominal_allD_KDE.leading_frag_height_arr/1000, \
-                label="KDE allD", color='b')
+                label="Min KDE", color='b')
         
             ax[1].scatter(diff_mag_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
             ax[3].scatter(diff_vel_allD,sr_nominal.leading_frag_height_arr[closest_indices_allD]/1000, color=ax[2].lines[-1].get_color(), marker='.')
@@ -880,6 +889,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         diff_mag_1D = [x for x in diff_mag_1D if str(x) != 'nan' and str(x) != 'inf']
         # put the ticks in the x axis to -1*max(abs(np.array(diff_mag_allD))), max(abs(np.array(diff_mag_allD)) with only 2 significant digits
         # ax[1].set_xticks([-1*max(abs(np.array(diff_mag_1D))), max(abs(np.array(diff_mag_1D)))])
+
+        ax[1].axvspan(-mag_noise, mag_noise, color='lightgray', alpha=0.5)
         # Rotate tick labels
         ax[1].tick_params(axis='x', rotation=45)
         # rotate that by 45 degrees
@@ -888,7 +899,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         ax[1].xaxis.set_major_locator(plt.MaxNLocator(5))
         # add grid to the plot
         ax[1].grid(linestyle='dashed')
-
+        
         # on ax[3] the sides of the plot put the error in the velocity as a value with one axis
         # ax[3].set_xlabel('vel.lead.err [km/s]')
         ax[3].set_xlabel('vel.err [km/s]')
@@ -911,6 +922,8 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         diff_vel_1D = [x for x in diff_vel_1D if str(x) != 'nan' and str(x) != 'inf']
         # x limit of the plot equal to max of the absolute magnitude
         # ax[3].set_xticks([-1*max(abs(np.array(diff_vel_1D))), max(abs(np.array(diff_vel_1D)))])
+
+        ax[3].axvspan(-vel_noise, vel_noise, color='lightgray', alpha=0.5)
         # Rotate tick labels
         ax[3].tick_params(axis='x', rotation=45)
         ax[3].set_xlim([-1*max(abs(np.array(diff_vel_1D)))-max(abs(np.array(diff_vel_1D)))/4, max(abs(np.array(diff_vel_1D)))+max(abs(np.array(diff_vel_1D)))/4])
@@ -972,12 +985,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         if Sim_data_distribution==True:
             to_plot8=['shower_code','mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
             # crete the triangular plot to of the selected variables with seaborn with the simulated and the selected events and plot it in the figure
-            fig = sns.pairplot(curr_df_sim_sel[to_plot8], hue='shower_code', diag_kind='kde', corner=True) 
+            fig = sns.pairplot(curr_df_sim_sel[to_plot8], hue='shower_code', palette='bright', diag_kind='kde', corner=True, plot_kws={'edgecolor': 'k'}) 
             fig._legend.remove()
         elif Sim_data_distribution==False:
             to_plot8=['solution_id_dist','mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
             # crete the triangular plot to of the selected variables with seaborn with the simulated and the selected events
-            fig = sns.pairplot(curr_df_sim_sel[to_plot8], hue='solution_id_dist', diag_kind='kde', corner=True)
+            fig = sns.pairplot(curr_df_sim_sel[to_plot8], hue='solution_id_dist', palette='bright', diag_kind='kde', corner=True, plot_kws={'edgecolor': 'k'})
             fig._legend.remove()
         
         label_plot=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','log eros. mass min [kg]','log eros. mass max [kg]']
@@ -987,6 +1000,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             if ax is not None:  # Check if the axis exists
                 xlabel = ax.get_xlabel()
                 ylabel = ax.get_ylabel()
+                if ylabel == 'sigma' or ylabel=='erosion_mass_min' or ylabel=='erosion_mass_max': # ylabel == 'mass' or 
+                    # set it to log scale
+                    ax.set_yscale('log')
+                if xlabel == 'sigma' or xlabel=='erosion_mass_min' or xlabel=='erosion_mass_max': # xlabel=='erosion_coeff'
+                    # set it to log scale
+                    ax.set_xscale('log')
                 if xlabel in label_mappings:
                     ax.set_xlabel(label_mappings[xlabel])
                 if ylabel in label_mappings:
@@ -998,6 +1017,97 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         # save the figure maximized and with the right name
         fig.savefig(output_dir+os.sep+'PhysicPropPairPlot'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png', dpi=300)
         # close the figure
+        plt.close()
+
+##########################################################################
+
+        # Define your label mappings
+        label_mappings = {
+            'mass': 'mass [kg]',
+            'rho': 'rho [kg/m^3]',
+            'sigma': 'sigma [s^2/km^2]',
+            'erosion_height_start': 'erosion height start [km]',
+            'erosion_coeff': 'erosion coeff [s^2/km^2]',
+            'erosion_mass_index': 'erosion mass index [-]',
+            'erosion_mass_min': 'log eros. mass min [kg]',
+            'erosion_mass_max': 'log eros. mass max [kg]'
+        }
+
+        # Choose which columns to plot based on condition
+        if Sim_data_distribution:
+            to_plot8 = ['shower_code', 'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
+            hue_column = 'shower_code'
+        else:
+            to_plot8 = ['solution_id_dist', 'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
+            hue_column = 'solution_id_dist'
+
+        # Create a PairGrid
+        pairgrid = sns.PairGrid(curr_df_sim_sel[to_plot8], hue=hue_column, palette='bright')
+
+        # Map the plots
+        pairgrid.map_lower(sns.scatterplot, edgecolor='k', palette='bright')
+        # for the upper triangle delete x and y axis
+        # pairgrid.map_diag(sns.kdeplot)
+        # pairgrid.map_diag(sns.histplot, kde=True, color='k', edgecolor='k')
+        # pairgrid.add_legend()
+
+        # Update the labels
+        for ax in pairgrid.axes.flatten():
+            if ax is not None:  # Check if the axis exists
+                xlabel = ax.get_xlabel()
+                ylabel = ax.get_ylabel()
+                if ylabel in label_mappings:
+                    ax.set_ylabel(label_mappings[ylabel])
+                if xlabel in label_mappings:
+                    ax.set_xlabel(label_mappings[xlabel])
+                if ylabel in ['sigma', 'erosion_mass_min', 'erosion_mass_max']:
+                    ax.set_yscale('log')
+                if xlabel in ['sigma', 'erosion_mass_min', 'erosion_mass_max']:
+                    ax.set_xscale('log')
+
+        # # Calculate the correlation matrix
+        # corr = curr_df_sim_sel[to_plot8[1:]].corr()
+
+        if Sim_data_distribution==True:
+            corr = curr_sel[to_plot8[1:]].corr()
+        if Sim_data_distribution==False:
+            corr = curr_df_sim_sel[to_plot8[1:]].corr()
+
+        # Find the min and max correlation values
+        vmin = corr.values.min()
+        vmax = corr.values.max()
+        norm = Normalize(vmin=vmin, vmax=vmax)
+        cmap = sns.color_palette('coolwarm', as_cmap=True)
+
+        # Fill the upper triangle plots with the correlation matrix values and color it with the coolwarm cmap
+        for i, row in enumerate(to_plot8[1:]):
+            for j, col in enumerate(to_plot8[1:]):
+                if i < j:
+                    ax = pairgrid.axes[i, j]  # Adjust index to fit the upper triangle
+                    corr_value = corr.loc[row, col]
+                    ax.text(0.5, 0.5, f'{corr_value:.2f}', horizontalalignment='center', verticalalignment='center', fontsize=12, color='black', transform=ax.transAxes)
+                    ax.set_facecolor(cmap(norm(corr_value)))
+                    # cmap = sns.color_palette('coolwarm', as_cmap=True)
+                    # ax.set_facecolor(cmap(corr_value))
+
+                    # Remove the axis labels
+                    ax.xaxis.set_visible(False)
+                    ax.yaxis.set_visible(False)
+                    ax.spines['top'].set_visible(False)
+                    ax.spines['right'].set_visible(False)
+                    ax.spines['left'].set_visible(False)
+                    ax.spines['bottom'].set_visible(False)
+                if i == j:
+                    ax = pairgrid.axes[i, j]
+                    ax.set_axis_off()
+
+        # Adjust layout
+        plt.tight_layout()
+
+        fig_name = (output_dir+os.sep+'MixPhysicPropPairPlot'+n_PC_in_PCA+'_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
+        plt.savefig(fig_name, dpi=300)
+
+        # Close the figure
         plt.close()
 
     ##########################################################################
@@ -1326,7 +1436,7 @@ if __name__ == "__main__":
         help="The real json file the ground truth for the PCA simulation results.") 
 
     # arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
-    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\Simulations_PER_v57_slow", \
+    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\Simulations_PER", \
         help="Path to the real file the ground truth for the PCA simulation results.") 
     
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \

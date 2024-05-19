@@ -9,6 +9,7 @@ import math
 from sklearn.linear_model import LinearRegression
 from scipy.optimize import curve_fit
 from scipy.interpolate import UnivariateSpline
+from wmpl.Utils.Pickling import loadPickle
 
 #matplotlib.use('Agg')
 #matplotlib.use("Qt5Agg")
@@ -27,16 +28,22 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
     n_confront_obs=1
     n_confront_sel=4
 
-    only_select_meteors_from=true_file
+    if true_file.endswith('.pickle'):
+        # delete the extension
+        only_select_meteors_from=true_file.replace('_trajectory.pickle','')
+        # add the noise to the reduced simulated event
+        with_noise=False
+
+    else:
+        only_select_meteors_from=true_file
+        # add the noise to the reduced simulated event
+        with_noise=True
 
     # no legend for a lot of simulations
     with_legend=True
 
     # add the lenght of the simulation
     with_LEN=False
-
-    # add the noise to the reduced simulated event
-    with_noise=True
 
     # is the input data noisy
     noise_data_input=False
@@ -216,8 +223,14 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
         # find the index of curr_obs_og with the same distance
         index_sel=curr_sel_og[curr_sel_og['solution_id']==namefile_sel].index
         index_sel=index_sel[0]
-
-
+        
+        flag_pickl=False
+        if namefile_sel==true_file.replace('_trajectory.pickle',''):
+            # add the name of the file to the path
+            namefile_sel=namefile_sel+'_sim_fit.json'
+            # add the true path to the path
+            namefile_sel=true_path+os.sep+namefile_sel
+            flag_pickl=True
 
         # chec if the file exist
         if not os.path.isfile(namefile_sel):
@@ -227,41 +240,138 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
             # open the json file with the name namefile_sel
             f = open(namefile_sel,"r")
             data = json.loads(f.read())
-            # data['main_vel_arr']
-            # ht_sim=data['simulation_results']['main_height_arr']
-            # absmag_sim=data['simulation_results']['abs_magnitude']
-            # cut out absmag_sim above 7 considering that absmag_sim is a list
-            
-            abs_mag_sim=data['simulation_results']['abs_magnitude']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
-            ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
-            time_sim=data['simulation_results']['time_arr']#['brightest_time_arr']#['leading_frag_time_arr']#['main_time_arr']
+            if flag_pickl==True:
 
-            obs_abs_mag= data['mag_sampled']
-            obs_height= data['ht_sampled']
-            obs_time= data['time_sampled']
+                traj = loadPickle(true_path,true_file)
+
+                obs_vel=[]
+                obs_time=[]
+                abs_mag_sim=[]
+                ht_obs=[]
+                lag_total=[]
+                elg_pickl=[]
+                tav_pickl=[]
 
 
-            # delete the nan term in abs_mag_sim and ht_sim
-            abs_mag_sim=[x for x in abs_mag_sim if str(x) != 'nan']
-            ht_sim=[x for x in ht_sim if str(x) != 'nan']
+                jj=0
+                for obs in traj.observations:
+                    # find all the differrnt names of the variables in the pickle files
+                    # print(obs.__dict__.keys())
+                    jj+=1
+                    if jj==1:
+                        tav_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                        # if tav_pickl is empty append the first value of obs.velocities
+                        if len(tav_pickl)==0:
+                            tav_pickl=obs.velocities[1:2]
+                        
+                        vel_01=obs.velocities
+                        time_01=obs.time_data
+                        abs_mag_01=obs.absolute_magnitudes
+                        height_01=obs.model_ht
 
-            # find the index of the first element of the simulation that is equal to the first element of the observation
-            index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= obs_height[0])
-            # find the index of the last element of the simulation that is equal to the last element of the observation
-            index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= obs_height[-1])
+                    elif jj==2:
+                        elg_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                        if len(elg_pickl)==0:
+                            elg_pickl=obs.velocities[1:2]
+                        
+                        vel_02=obs.velocities
+                        time_02=obs.time_data
+                        abs_mag_02=obs.absolute_magnitudes
+                        height_02=obs.model_ht
 
-            abs_mag_sim=abs_mag_sim[index_ht_sim:index_ht_sim_end]
-            ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
-            time_sim=time_sim[index_ht_sim:index_ht_sim_end]
+                    # put it at the end obs.velocities[1:] at the end of vel_pickl list
+                    obs_vel.extend(obs.velocities)
+                    obs_time.extend(obs.time_data)
+                    abs_mag_sim.extend(obs.absolute_magnitudes)
+                    ht_obs.extend(obs.model_ht)
+                    lag_total.extend(obs.lag)
 
-            time_sim=[x-time_sim[0] for x in time_sim]
+                # compute the linear regression
+                obs_vel = [i/1000 for i in obs_vel] # convert m/s to km/s
+                obs_time = [i for i in obs_time]
+                abs_mag_sim = [i for i in abs_mag_sim]
+                ht_obs = [i/1000 for i in ht_obs]
+                lag_total = [i/1000 for i in lag_total]
 
-            # Find and print the closest indices
-            closest_indices = find_closest_index(time_sim, obs_time)
+                time_cam1 = [i for i in time_01]
 
-            abs_mag_sim=[abs_mag_sim[i] for i in closest_indices]
+                time_cam2 = [i for i in time_02]
 
-            height_km=[x/1000 for x in obs_height]
+
+                # find the height when the velocity start dropping from the initial value 
+                v0 = (np.mean(elg_pickl)+np.mean(tav_pickl))/2/1000
+
+                # find all the values of the velocity that are equal to 0 and put them to v0
+                obs_vel = [v0 if x==0 else x for x in obs_vel]
+                vel_01[0]=v0
+                vel_02[0]=v0
+
+                #####order the list by time
+                obs_vel = [x for _,x in sorted(zip(obs_time,obs_vel))]
+                abs_mag_sim = [x for _,x in sorted(zip(obs_time,abs_mag_sim))]
+                ht_obs = [x for _,x in sorted(zip(obs_time,ht_obs))]
+                lag_total = [x for _,x in sorted(zip(obs_time,lag_total))]
+                # length_pickl = [x for _,x in sorted(zip(time_pickl,length_pickl))]
+                obs_time = sorted(obs_time)
+
+                vel_sim=obs_vel
+                ht_sim=ht_obs
+                height_km=ht_obs
+                obs_abs_mag=abs_mag_sim
+                height_pickl = ht_obs
+
+
+                erosion_height_start = data['erosion_height_start']/1000
+                data_index_2cam = pd.DataFrame(list(zip(obs_time, ht_obs, obs_vel, abs_mag_sim)), columns =['time_sampled', 'ht_sampled', 'vel_sampled', 'mag_sampled'])
+
+                peak_mag_height = curr_sel.iloc[ii]['peak_mag_height']
+                # fit a line to the throught the vel_sim and ht_sim
+                index_ht_peak = next(x for x, val in enumerate(ht_obs) if val <= peak_mag_height)
+
+
+            else:
+                # data['main_vel_arr']
+                # ht_sim=data['simulation_results']['main_height_arr']
+                # absmag_sim=data['simulation_results']['abs_magnitude']
+                # cut out absmag_sim above 7 considering that absmag_sim is a list
+                
+                abs_mag_sim=data['simulation_results']['abs_magnitude']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+                ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
+                time_sim=data['simulation_results']['time_arr']#['brightest_time_arr']#['leading_frag_time_arr']#['main_time_arr']
+
+                obs_abs_mag= data['mag_sampled']
+                obs_height= data['ht_sampled']
+                obs_time= data['time_sampled']
+
+
+                # delete the nan term in abs_mag_sim and ht_sim
+                abs_mag_sim=[x for x in abs_mag_sim if str(x) != 'nan']
+                ht_sim=[x for x in ht_sim if str(x) != 'nan']
+
+                # find the index of the first element of the simulation that is equal to the first element of the observation
+                index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= obs_height[0])
+                # find the index of the last element of the simulation that is equal to the last element of the observation
+                index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= obs_height[-1])
+
+                abs_mag_sim=abs_mag_sim[index_ht_sim:index_ht_sim_end]
+                ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
+                time_sim=time_sim[index_ht_sim:index_ht_sim_end]
+
+                time_sim=[x-time_sim[0] for x in time_sim]
+
+                # Find and print the closest indices
+                closest_indices = find_closest_index(time_sim, obs_time)
+
+                abs_mag_sim=[abs_mag_sim[i] for i in closest_indices]
+
+                height_km=[x/1000 for x in obs_height]
+
+                peak_mag_height = curr_sel.iloc[ii]['peak_mag_height']
+                # fit a line to the throught the vel_sim and ht_sim
+                index_ht_peak = next(x for x, val in enumerate(data['ht_sampled']) if val/1000 <= peak_mag_height)
+                #print('index_ht_peak',index_ht_peak)
+                # only use first index to pick the height
+                height_pickl = [i/1000 for i in data['ht_sampled']]
 
             # ht_sim=height_km 
 
@@ -291,12 +401,6 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
 
 
     #############ADD COEF#############################################
-                peak_mag_height = curr_sel.iloc[ii]['peak_mag_height']
-                # fit a line to the throught the vel_sim and ht_sim
-                index_ht_peak = next(x for x, val in enumerate(data['ht_sampled']) if val/1000 <= peak_mag_height)
-                #print('index_ht_peak',index_ht_peak)
-                # only use first index to pick the height
-                height_pickl = [i/1000 for i in data['ht_sampled']]
 
                 ax[0].plot(curr_sel.iloc[ii]['a_mag_init']*np.array(height_pickl[:index_ht_peak])**2+curr_sel.iloc[ii]['b_mag_init']*np.array(height_pickl[:index_ht_peak])+curr_sel.iloc[ii]['c_mag_init'],height_pickl[:index_ht_peak], color=ax[0].lines[-1].get_color(), linestyle='None', marker='<')# , markersize=5
 
@@ -346,79 +450,173 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
         index_sel=curr_sel_og[curr_sel_og['solution_id']==namefile_sel].index
         index_sel=index_sel[0]
 
+        flag_pickl=False
+        if namefile_sel==true_file.replace('_trajectory.pickle',''):
+            # add the name of the file to the path
+            namefile_sel=namefile_sel+'_sim_fit.json'
+            # add the true path to the path
+            namefile_sel=true_path+os.sep+namefile_sel
+            flag_pickl=True
+
         # check if the file exist
         if os.path.isfile(namefile_sel):
             # open the json file with the name namefile_sel
             f = open(namefile_sel,"r")
             data = json.loads(f.read())
-            # vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
-            # ht_sim=data['simulation_results']['leading_frag_height_arr']#['main_height_arr']
-            vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
-            ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
-            # absmag_sim=data['simulation_results']['abs_magnitude']
 
-            obs_height=data['ht_sampled']
-            obs_time=data['time_sampled']
-            obs_length=data['len_sampled']
+            if flag_pickl==True:
 
-            # delete the nan term in vel_sim and ht_sim
-            vel_sim=[x for x in vel_sim if str(x) != 'nan']
-            ht_sim=[x for x in ht_sim if str(x) != 'nan']
+                traj = loadPickle(true_path,true_file)
 
-            # find the index of the first element of the simulation that is equal to the first element of the observation
-            index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= obs_height[0])
-            # find the index of the last element of the simulation that is equal to the last element of the observation
-            index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= obs_height[-1])
-
-            vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
-            ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
-
-            # pick from the end of vel_sim the same number of element of time_sim
-            # vel_sim=vel_sim[-len(ht_sim):]
-            # Function to find the index of the closest value
+                obs_vel=[]
+                obs_time=[]
+                abs_mag_sim=[]
+                ht_obs=[]
+                lag_total=[]
+                elg_pickl=[]
+                tav_pickl=[]
 
 
+                jj=0
+                for obs in traj.observations:
+                    # find all the differrnt names of the variables in the pickle files
+                    # print(obs.__dict__.keys())
+                    jj+=1
+                    if jj==1:
+                        tav_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                        # if tav_pickl is empty append the first value of obs.velocities
+                        if len(tav_pickl)==0:
+                            tav_pickl=obs.velocities[1:2]
+                        
+                        vel_01=obs.velocities
+                        time_01=obs.time_data
+                        abs_mag_01=obs.absolute_magnitudes
+                        height_01=obs.model_ht
+
+                    elif jj==2:
+                        elg_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                        if len(elg_pickl)==0:
+                            elg_pickl=obs.velocities[1:2]
+                        
+                        vel_02=obs.velocities
+                        time_02=obs.time_data
+                        abs_mag_02=obs.absolute_magnitudes
+                        height_02=obs.model_ht
+
+                    # put it at the end obs.velocities[1:] at the end of vel_pickl list
+                    obs_vel.extend(obs.velocities)
+                    obs_time.extend(obs.time_data)
+                    abs_mag_sim.extend(obs.absolute_magnitudes)
+                    ht_obs.extend(obs.model_ht)
+                    lag_total.extend(obs.lag)
+
+                # compute the linear regression
+                obs_vel = [i/1000 for i in obs_vel] # convert m/s to km/s
+                obs_time = [i for i in obs_time]
+                abs_mag_sim = [i for i in abs_mag_sim]
+                ht_obs = [i/1000 for i in ht_obs]
+                lag_total = [i/1000 for i in lag_total]
+
+                time_cam1 = [i for i in time_01]
+
+                time_cam2 = [i for i in time_02]
+
+
+                # find the height when the velocity start dropping from the initial value 
+                v0 = (np.mean(elg_pickl)+np.mean(tav_pickl))/2/1000
+
+                # find all the values of the velocity that are equal to 0 and put them to v0
+                obs_vel = [v0 if x==0 else x for x in obs_vel]
+                vel_01[0]=v0
+                vel_02[0]=v0
+
+                #####order the list by time
+                obs_vel = [x for _,x in sorted(zip(obs_time,obs_vel))]
+                abs_mag_sim = [x for _,x in sorted(zip(obs_time,abs_mag_sim))]
+                ht_obs = [x for _,x in sorted(zip(obs_time,ht_obs))]
+                lag_total = [x for _,x in sorted(zip(obs_time,lag_total))]
+                # length_pickl = [x for _,x in sorted(zip(time_pickl,length_pickl))]
+                obs_time = sorted(obs_time)
+
+                vel_sim=obs_vel
+                ht_sim=ht_obs
+                height_km=ht_obs
+                vel_kms=obs_vel
+                vel_sampled=obs_vel
+
+                erosion_height_start = data['erosion_height_start']/1000
+                data_index_2cam = pd.DataFrame(list(zip(obs_time, ht_obs, obs_vel, abs_mag_sim)), columns =['time_sampled', 'ht_sampled', 'vel_sampled', 'mag_sampled'])
+
+            else:
             
-            
-            # Find and print the closest indices
-            closest_indices = find_closest_index(ht_sim, obs_height)
+                # vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+                # ht_sim=data['simulation_results']['leading_frag_height_arr']#['main_height_arr']
+                vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+                ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
+                # absmag_sim=data['simulation_results']['abs_magnitude']
 
-            vel_sim=[vel_sim[i] for i in closest_indices]
-            ht_sim=obs_height
-            
-            height_km=[x/1000 for x in ht_sim]
-            vel_kms=[x/1000 for x in vel_sim]
-            
-            # create a list of the same length of obs_time with the value of the first element of vel_sim
-            vel_sampled=vel_sim
-            # from data params v_init val
-            vel_sampled[0]=data['params']['v_init']['val']
-            # # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
-            # rest_vel_sampled=[(obs_length[i]-obs_length[i-1])/(obs_time[i]-obs_time[i-1]) for i in range(1,len(obs_length))]
-            # # append the rest_vel_sampled to vel_sampled
-            # vel_sampled.extend(rest_vel_sampled)
+                obs_height=data['ht_sampled']
+                obs_time=data['time_sampled']
+                obs_length=data['len_sampled']
 
-            for vel_ii in range(1,len(obs_time)):
-                if obs_time[vel_ii]-obs_time[vel_ii-1]<0.03125:
-                # if obs_time[vel_ii] % 0.03125 < 0.000000001:
-                    # vel_sampled[vel_ii]=data['params']['v_init']['val']
-                    if vel_ii+1<len(obs_length):
-                        vel_sampled[vel_ii+1]=(obs_length[vel_ii+1]-obs_length[vel_ii-1])/(obs_time[vel_ii+1]-obs_time[vel_ii-1])
-                else:
-                    vel_sampled[vel_ii]=(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1])
+                # delete the nan term in vel_sim and ht_sim
+                vel_sim=[x for x in vel_sim if str(x) != 'nan']
+                ht_sim=[x for x in ht_sim if str(x) != 'nan']
 
-            vel_sampled=[x/1000 for x in vel_sampled]
+                # find the index of the first element of the simulation that is equal to the first element of the observation
+                index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= obs_height[0])
+                # find the index of the last element of the simulation that is equal to the last element of the observation
+                index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= obs_height[-1])
 
-            # vel_kms=vel_sampled
+                vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
+                ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
 
-            obs_length=[x/1000 for x in obs_length]
+                # pick from the end of vel_sim the same number of element of time_sim
+                # vel_sim=vel_sim[-len(ht_sim):]
+                # Function to find the index of the closest value
 
-            
-            # fit a line to the throught the vel_sim and ht_sim
-            a, b = np.polyfit(ht_sim,vel_sim, 1)
 
-            # create a list of the same length of vel_sim with the value of the line
-            vel_sim_line=[a*x+b for x in ht_sim]
+                
+                
+                # Find and print the closest indices
+                closest_indices = find_closest_index(ht_sim, obs_height)
+
+                vel_sim=[vel_sim[i] for i in closest_indices]
+                ht_sim=obs_height
+                
+                height_km=[x/1000 for x in ht_sim]
+                vel_kms=[x/1000 for x in vel_sim]
+                
+                # create a list of the same length of obs_time with the value of the first element of vel_sim
+                vel_sampled=vel_sim
+                # from data params v_init val
+                vel_sampled[0]=data['params']['v_init']['val']
+                # # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
+                # rest_vel_sampled=[(obs_length[i]-obs_length[i-1])/(obs_time[i]-obs_time[i-1]) for i in range(1,len(obs_length))]
+                # # append the rest_vel_sampled to vel_sampled
+                # vel_sampled.extend(rest_vel_sampled)
+
+                for vel_ii in range(1,len(obs_time)):
+                    if obs_time[vel_ii]-obs_time[vel_ii-1]<0.03125:
+                    # if obs_time[vel_ii] % 0.03125 < 0.000000001:
+                        # vel_sampled[vel_ii]=data['params']['v_init']['val']
+                        if vel_ii+1<len(obs_length):
+                            vel_sampled[vel_ii+1]=(obs_length[vel_ii+1]-obs_length[vel_ii-1])/(obs_time[vel_ii+1]-obs_time[vel_ii-1])
+                    else:
+                        vel_sampled[vel_ii]=(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1])
+
+                vel_sampled=[x/1000 for x in vel_sampled]
+
+                # vel_kms=vel_sampled
+
+                obs_length=[x/1000 for x in obs_length]
+
+                
+                # fit a line to the throught the vel_sim and ht_sim
+                a, b = np.polyfit(ht_sim,vel_sim, 1)
+
+                # create a list of the same length of vel_sim with the value of the line
+                vel_sim_line=[a*x+b for x in ht_sim]
 
 
             if with_legend:
@@ -482,66 +680,6 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
 
                     if t0_fit==True: # quadratic_velocity(t, a, v0, t0)
                         ax[1].plot(obs_time, quadratic_velocity(np.array(obs_time), curr_sel.iloc[ii]['a_t0'], curr_sel.iloc[ii]['b_t0'], curr_sel.iloc[ii]['vel_init_norot'], curr_sel.iloc[ii]['t0']), color=ax[1].lines[-1].get_color(), linestyle='None', marker='s') 
-
-                    # # Generating synthetic observed data for demonstration
-                    # t_observed = np.array(obs_time)  # Observed times
-                    # v_init=vel_kms[0]  # Initial velocity
-                    # velocity_observed = vel_kms
-
-                    # # Residuals function for optimization
-                    # def residuals(params):
-                    #     a1, a2 = params
-                    #     predicted_velocity = jacchiaVel(t_observed, a1, a2, v_init)
-                    #     return np.sum((velocity_observed - predicted_velocity)**2)
-
-                    # # Initial guess for a1 and a2
-                    # initial_guess = [0.005,	10]
-
-                    # from scipy.optimize import basinhopping
-                    # minimizer_kwargsss = {
-                    #     "method": "L-BFGS-B",
-                    #     "args": (t_observed, velocity_observed)
-                    # }
-                    # # Apply basinhopping to minimize the residuals
-                    # result = basinhopping(residuals, initial_guess, minimizer_kwargs={"method": "L-BFGS-B"}, niter=100)
-
-                    # # Results
-                    # optimized_a1, optimized_a2 = result.x
-                    # print(f"Optimized a1: {optimized_a1}, Optimized a2: {optimized_a2}")
-
-                    # ax[1].plot(obs_time, jacchiaVel(t_observed, optimized_a1, optimized_a2, v_init), color=ax[1].lines[-1].get_color(), linestyle='None', marker='d')
-                    
-                
-                    # ax[1].plot(obs_time, jacchiaVel(np.array(obs_time), curr_sel.iloc[ii]['a1_acc_jac'], curr_sel.iloc[ii]['a2_acc_jac']), color=ax[1].lines[-1].get_color(), linestyle='None', marker='d') 
-
-                    # # fit the to a parabolic curve
-                    # a3, b3, c3 = np.polyfit(obs_time,vel_kms, 2)
-
-                    # # plot the parabolic curve before the peak_mag_height with the same color of the line
-                    # ax[1].plot(obs_time,a3*np.array(obs_time)**2+b3*np.array(obs_time)+c3, color=ax[1].lines[-1].get_color(), linestyle='None', marker='o')# , markersize=5
-
-                    # v_init=vel_kms[0]
-
-                    # def jacchiaVel(t, a1, a2):
-                    #     return v_init - np.abs(a1)*np.abs(a2)*np.exp(np.abs(a2)*t)
-
-                    # # Perform the curve fitting
-                    # popt, pcov = curve_fit(jacchiaVel, np.array(obs_time), np.array(vel_kms))
-
-                    # # Extract the optimal coefficients
-                    # a1_opt, a2_opt = popt
-
-                    # ax[1].plot(obs_time, jacchiaVel(np.array(obs_time), a1_opt, a2_opt), color=ax[1].lines[-1].get_color(), linestyle='None', marker='d')    
-
-                    # if ii==0:
-                    #     print(str(curr_sel.iloc[ii]['solution_id']))
-                    #     print('Velocity')
-                    #     print('a:',a3)
-                    #     print('b:',b3)
-
-                    #     print('Jacchia Velocity')
-                    #     print('ja:',a1_opt)
-                    #     print('jb:',a2_opt)
 
 
             else:
@@ -703,21 +841,40 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
 
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    # arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    #     help="Path to the output directory.")
+
+    # arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
+    #     help="Use specific shower from the given simulation.")
+    
+    # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    #     help="Path were are store both simulated and observed shower .csv file.")
+    
+    # arg_parser.add_argument('--true_file', metavar='TRUE_PICKLE', type=str, default='TRUEerosion_sim_v60.05_m1.05e-04g_rho0588_z39.3_abl0.009_eh108.3_er0.763_s2.08.json', \
+    #     help="the real .pickle file name.")
+    
+    # arg_parser.add_argument('--true_path', metavar='TRUE_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
+    #     help="Path were are store all the .pickle file.")
+    
+    # arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\TEST", \
         help="Path to the output directory.")
 
     arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
         help="Use specific shower from the given simulation.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST", \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\TEST", \
         help="Path were are store both simulated and observed shower .csv file.")
-    
-    arg_parser.add_argument('--true_file', metavar='TRUE_PICKLE', type=str, default='TRUEerosion_sim_v60.05_m1.05e-04g_rho0588_z39.3_abl0.009_eh108.3_er0.763_s2.08.json', \
-        help="the real .pickle file name.")
-    
-    arg_parser.add_argument('--true_path', metavar='TRUE_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
-        help="Path were are store all the .pickle file.")
-    
+
+    # arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json', \ TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
+    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='20230811_082648_trajectory.pickle', \
+        help="The real json file the ground truth for the PCA simulation results.") 
+
+    # arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
+    arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\Simulations_PER", \
+        help="Path to the real file the ground truth for the PCA simulation results.") 
+
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default='/home/mvovk/Documents/PCA_Error_propagation/TEST', \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
@@ -732,4 +889,4 @@ if __name__ == "__main__":
 
     #########################
 
-    PCA_LightCurveCoefPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.true_path)
+    PCA_LightCurveCoefPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)

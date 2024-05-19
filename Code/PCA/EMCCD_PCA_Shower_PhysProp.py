@@ -39,7 +39,7 @@ add_json_noise = False
 
 PCA_percent = 98
 
-PCA_pairplot=True
+PCA_pairplot=False
 
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000 > output.txt    
@@ -345,33 +345,79 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             else:
                 a3_Outabs, b3_Outabs, c3_Outabs = np.polyfit(ht_obs[index_ht_peak:], abs_mag_obs[index_ht_peak:], 2)
 
-            # # find the index of the first element of the simulation that is equal to the first element of the observation
-            mag_sampled_norm = [0 if math.isnan(x) else x for x in abs_mag_obs]
-            # normalize the fuction with x data['time_sampled'] and y abs_mag_obs and center it at the origin
-            time_sampled_norm= data['time_sampled'] - np.mean(data['time_sampled'])
+
+            ######## SKEW KURT ################ 
+            # create a new array with the same values as time_pickl
+            index=[]
+            # if the distance between two index is smalle than 0.05 delete the second one
+            for i in range(len(obs_time)-1):
+                if obs_time[i+1]-obs_time[i] < 0.01:
+                    # save the index as an array
+                    index.append(i+1)
+            # delete the index from the list
+            time_pickl = np.delete(obs_time, index)
+            abs_mag_pickl = np.delete(abs_mag_obs, index)
+
+            abs_mag_pickl = [0 if math.isnan(x) else x for x in abs_mag_pickl]
+
             # subrtract the max value of the mag to center it at the origin
-            mag_sampled_norm = (-1)*(mag_sampled_norm - np.max(mag_sampled_norm))
+            mag_sampled_norm = (-1)*(abs_mag_pickl - np.max(abs_mag_pickl))
+            # check if there is any negative value and add the absolute value of the min value to all the values
+            mag_sampled_norm = mag_sampled_norm + np.abs(np.min(mag_sampled_norm))
             # normalize the mag so that the sum is 1
+            time_sampled_norm= time_pickl - np.mean(time_pickl)
             # mag_sampled_norm = mag_sampled_norm/np.sum(mag_sampled_norm)
             mag_sampled_norm = mag_sampled_norm/np.max(mag_sampled_norm)
-
-            # trasform abs_mag_obs[i] value 'numpy.float64' to int
-            # abs_mag_obs = abs_mag_obs.astype(int)
+            # substitute the nan values with zeros
+            mag_sampled_norm = np.nan_to_num(mag_sampled_norm)
 
             # create an array with the number the ammount of same number equal to the value of the mag
             mag_sampled_distr = []
             mag_sampled_array=np.asarray(mag_sampled_norm*1000, dtype = 'int')
-            # i_pos=(-1)*np.round(len(abs_mag_obs)/2)
-            for ii in range(len(abs_mag_obs)):
+            for i in range(len(abs_mag_pickl)):
                 # create an integer form the array mag_sampled_array[i] and round of the given value
-                numbs=mag_sampled_array[ii]
+                numbs=mag_sampled_array[i]
                 # invcrease the array number by the mag_sampled_distr numbs 
-                array_nu=(np.ones(numbs+1)*time_sampled_norm[ii])#.astype(int)
+                # array_nu=(np.ones(numbs+1)*i_pos).astype(int)
+                array_nu=(np.ones(numbs+1)*time_sampled_norm[i])
                 mag_sampled_distr=np.concatenate((mag_sampled_distr, array_nu))
-                # i_pos=i_pos+1
+            
+            # # # plot the mag_sampled_distr as an histogram
+            # plt.hist(mag_sampled_distr)
+            # plt.show()
 
+            # kurtosyness.append(kurtosis(mag_sampled_distr))
+            # skewness.append(skew(mag_sampled_distr))
             kurtosyness=kurtosis(mag_sampled_distr)
             skewness=skew(mag_sampled_distr)
+
+            # # # find the index of the first element of the simulation that is equal to the first element of the observation
+            # mag_sampled_norm = [0 if math.isnan(x) else x for x in abs_mag_obs]
+            # # normalize the fuction with x data['time_sampled'] and y abs_mag_obs and center it at the origin
+            # time_sampled_norm= data['time_sampled'] - np.mean(data['time_sampled'])
+            # # subrtract the max value of the mag to center it at the origin
+            # mag_sampled_norm = (-1)*(mag_sampled_norm - np.max(mag_sampled_norm))
+            # # normalize the mag so that the sum is 1
+            # # mag_sampled_norm = mag_sampled_norm/np.sum(mag_sampled_norm)
+            # mag_sampled_norm = mag_sampled_norm/np.max(mag_sampled_norm)
+
+            # # trasform abs_mag_obs[i] value 'numpy.float64' to int
+            # # abs_mag_obs = abs_mag_obs.astype(int)
+
+            # # create an array with the number the ammount of same number equal to the value of the mag
+            # mag_sampled_distr = []
+            # mag_sampled_array=np.asarray(mag_sampled_norm*1000, dtype = 'int')
+            # # i_pos=(-1)*np.round(len(abs_mag_obs)/2)
+            # for ii in range(len(abs_mag_obs)):
+            #     # create an integer form the array mag_sampled_array[i] and round of the given value
+            #     numbs=mag_sampled_array[ii]
+            #     # invcrease the array number by the mag_sampled_distr numbs 
+            #     array_nu=(np.ones(numbs+1)*time_sampled_norm[ii])#.astype(int)
+            #     mag_sampled_distr=np.concatenate((mag_sampled_distr, array_nu))
+            #     # i_pos=i_pos+1
+
+            # kurtosyness=kurtosis(mag_sampled_distr)
+            # skewness=skew(mag_sampled_distr)
 
 
             ##################################################################################################

@@ -22,6 +22,7 @@ from scipy.stats import gaussian_kde
 from scipy.optimize import minimize
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants
+from wmpl.Utils.Pickling import loadPickle
 from sklearn.cluster import KMeans
 from matplotlib.colors import Normalize
 import copy
@@ -39,16 +40,21 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # Shower=['PER']#['CAP']
 
     # number of selected events selected
-    n_select=99
+    n_select=10
     dist_select=np.array([10000000000000])
     # dist_select=np.ones(9)*10000000000000
 
     # weight factor for the distance
     distance_weight_fact=0
+    # if true_fil has a pickle extension
+    if true_file.endswith('.pickle'):
+        # delete the extension
+        only_select_meteors_from=true_file.replace('_trajectory.pickle','')
+        do_not_select_meteor=[true_file.replace('_trajectory.pickle','')]
+    else:
+        only_select_meteors_from=true_file
+        do_not_select_meteor=[true_file]
 
-    only_select_meteors_from=true_file
-
-    do_not_select_meteor=[true_file]
     # do_not_select_meteor=[]
 
     Sim_data_distribution=True
@@ -564,11 +570,29 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             # raise ValueError('The data is ill-conditioned. Consider a bigger number of elements.')
 
 
-        # Load the nominal simulation
-        sim_fit_json_nominal = os.path.join(true_path, true_file)     
 
 
 # if pickle change the extension and the code ##################################################################################################
+        
+        # check if the file is a pickle
+        if true_file.endswith('.pickle'):
+            # Load the trajectory file
+            traj = loadPickle(true_path, true_file)
+
+            sim_fit_json_nominal = os.path.join(true_path, true_file)
+            # look for the 20230811_082648_sim_fit.json in the same folder
+            sim_fit_json_nominal = sim_fit_json_nominal.replace('.pickle', '_sim_fit.json')
+            # check if the file exist
+            if not os.path.exists(sim_fit_json_nominal):
+                # open any file with the json extension
+                sim_fit_json_nominal = os.path.join(true_path, [f for f in os.listdir(true_path) if f.endswith('.json')][0])
+                # print the file name
+                print(sim_fit_json_nominal)
+
+        else:
+            # Load the nominal simulation
+            sim_fit_json_nominal = os.path.join(true_path, true_file)
+            traj = None
 
         # Load the nominal simulation parameters
         const_nominal, _ = loadConstants(sim_fit_json_nominal)
@@ -619,6 +643,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             mode = kde_x[mode_index]
             
             real_val=df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][var_kde[i]]
+            print(real_val)
             # put it from Series.__format__ to double format
             real_val=real_val.values[0]
 
@@ -681,86 +706,171 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
         f = open(sim_fit_json_nominal,"r")
         data = json.loads(f.read())
 
-        zenith_angle= data['params']['zenith_angle']['val']*180/np.pi
+        if traj == None:
+            zenith_angle= data['params']['zenith_angle']['val']*180/np.pi
 
-        vel_sim_brigh=data['simulation_results']['brightest_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
-        vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
-        ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
-        time_sim=data['simulation_results']['time_arr']#['main_time_arr']
-        abs_mag_sim=data['simulation_results']['abs_magnitude']
-        len_sim=data['simulation_results']['brightest_length_arr']#['brightest_length_arr']
+            vel_sim_brigh=data['simulation_results']['brightest_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+            vel_sim=data['simulation_results']['leading_frag_vel_arr']#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+            ht_sim=data['simulation_results']['leading_frag_height_arr']#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
+            time_sim=data['simulation_results']['time_arr']#['main_time_arr']
+            abs_mag_sim=data['simulation_results']['abs_magnitude']
+            len_sim=data['simulation_results']['brightest_length_arr']#['brightest_length_arr']
 
-        erosion_height_start = data['params']['erosion_height_start']['val']/1000
+            erosion_height_start = data['params']['erosion_height_start']['val']/1000
 
-        ht_obs=data['ht_sampled']
+            ht_obs=data['ht_sampled']
 
-        v0 = vel_sim[0]/1000
+            v0 = vel_sim[0]/1000
 
-        # find the index of the first element of the simulation that is equal to the first element of the observation
-        index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[0])
-        # find the index of the last element of the simulation that is equal to the last element of the observation
-        index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[-1])
+            # find the index of the first element of the simulation that is equal to the first element of the observation
+            index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[0])
+            # find the index of the last element of the simulation that is equal to the last element of the observation
+            index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[-1])
 
-        abs_mag_sim=abs_mag_sim[index_ht_sim:index_ht_sim_end]
-        vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
-        time_sim=time_sim[index_ht_sim:index_ht_sim_end]
-        ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
-        len_sim=len_sim[index_ht_sim:index_ht_sim_end]
+            abs_mag_sim=abs_mag_sim[index_ht_sim:index_ht_sim_end]
+            vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
+            time_sim=time_sim[index_ht_sim:index_ht_sim_end]
+            ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
+            len_sim=len_sim[index_ht_sim:index_ht_sim_end]
 
-        # divide the vel_sim by 1000 considering is a list
-        time_sim = [i-time_sim[0] for i in time_sim]
-        vel_sim = [i/1000 for i in vel_sim]
-        len_sim = [(i-len_sim[0])/1000 for i in len_sim]
-        ht_sim = [i/1000 for i in ht_sim]
+            # divide the vel_sim by 1000 considering is a list
+            time_sim = [i-time_sim[0] for i in time_sim]
+            vel_sim = [i/1000 for i in vel_sim]
+            len_sim = [(i-len_sim[0])/1000 for i in len_sim]
+            ht_sim = [i/1000 for i in ht_sim]
 
-        ht_obs=[x/1000 for x in ht_obs]
+            ht_obs=[x/1000 for x in ht_obs]
 
-        closest_indices = find_closest_index(ht_sim, ht_obs)
+            closest_indices = find_closest_index(ht_sim, ht_obs)
 
-        abs_mag_sim=[abs_mag_sim[jj_index_cut] for jj_index_cut in closest_indices]
-        vel_sim=[vel_sim[jj_index_cut] for jj_index_cut in closest_indices]
-        time_sim=[time_sim[jj_index_cut] for jj_index_cut in closest_indices]
-        ht_sim=[ht_sim[jj_index_cut] for jj_index_cut in closest_indices]
-        len_sim=[len_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            abs_mag_sim=[abs_mag_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            vel_sim=[vel_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            time_sim=[time_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            ht_sim=[ht_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            len_sim=[len_sim[jj_index_cut] for jj_index_cut in closest_indices]
 
-    ############ add noise to the simulation
+        ############ add noise to the simulation
 
-        obs_time=data['time_sampled']
-        obs_length=data['len_sampled']
-        abs_mag_sim=data['mag_sampled']
-        obs_length=[x/1000 for x in obs_length]
+            obs_time=data['time_sampled']
+            obs_length=data['len_sampled']
+            abs_mag_sim=data['mag_sampled']
+            obs_length=[x/1000 for x in obs_length]
 
-        # vel_sim=[v0]
-        # # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
-        # rest_vel_sampled=[(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1]) for vel_ii in range(1,len(obs_length))]
-        # # append the rest_vel_sampled to vel_sampled
-        # vel_sim.extend(rest_vel_sampled)
+            # vel_sim=[v0]
+            # # append from vel_sampled the rest by the difference of the first element of obs_length divided by the first element of obs_time
+            # rest_vel_sampled=[(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1]) for vel_ii in range(1,len(obs_length))]
+            # # append the rest_vel_sampled to vel_sampled
+            # vel_sim.extend(rest_vel_sampled)
 
 
-        # create a list of the same length of obs_time with the value of the first element of vel_sim
-        obs_vel=vel_sim
+            # create a list of the same length of obs_time with the value of the first element of vel_sim
+            obs_vel=vel_sim
 
-        for vel_ii in range(1,len(obs_time)):
-            if obs_time[vel_ii]-obs_time[vel_ii-1]<0.03125:
-            # if obs_time[vel_ii] % 0.03125 < 0.000000001:
-                if vel_ii+1<len(obs_length):
-                    obs_vel[vel_ii+1]=(obs_length[vel_ii+1]-obs_length[vel_ii-1])/(obs_time[vel_ii+1]-obs_time[vel_ii-1])
-            else:
-                obs_vel[vel_ii]=(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1])
+            for vel_ii in range(1,len(obs_time)):
+                if obs_time[vel_ii]-obs_time[vel_ii-1]<0.03125:
+                # if obs_time[vel_ii] % 0.03125 < 0.000000001:
+                    if vel_ii+1<len(obs_length):
+                        obs_vel[vel_ii+1]=(obs_length[vel_ii+1]-obs_length[vel_ii-1])/(obs_time[vel_ii+1]-obs_time[vel_ii-1])
+                else:
+                    obs_vel[vel_ii]=(obs_length[vel_ii]-obs_length[vel_ii-1])/(obs_time[vel_ii]-obs_time[vel_ii-1])
 
-        vel_sim=obs_vel
+            vel_sim=obs_vel
+            
+            data_index_2cam = pd.DataFrame(list(zip(obs_time, ht_obs, obs_vel, abs_mag_sim)), columns =['time_sampled', 'ht_sampled', 'vel_sampled', 'mag_sampled'])
 
-        data_index_2cam = pd.DataFrame(list(zip(obs_time, ht_obs, obs_vel, abs_mag_sim)), columns =['time_sampled', 'ht_sampled', 'vel_sampled', 'mag_sampled'])
+            # find in the index of camera 1 and camera 2 base if time_sampled % 0.03125 < 0.000000001 ==cam1 and the rest cam2
+            time_cam1= [i for i in obs_time if i % 0.03125 < 0.000000001]
+            time_cam2= [i for i in obs_time if i % 0.03125 > 0.000000001]
 
-        # find in the index of camera 1 and camera 2 base if time_sampled % 0.03125 < 0.000000001 ==cam1 and the rest cam2
-        time_cam1= [i for i in obs_time if i % 0.03125 < 0.000000001]
-        time_cam2= [i for i in obs_time if i % 0.03125 > 0.000000001]
+
+        else:
+
+            obs_vel=[]
+            obs_time=[]
+            abs_mag_sim=[]
+            ht_obs=[]
+            lag_total=[]
+            elg_pickl=[]
+            tav_pickl=[]
+
+
+            jj=0
+            for obs in traj.observations:
+                # find all the differrnt names of the variables in the pickle files
+                # print(obs.__dict__.keys())
+                jj+=1
+                if jj==1:
+                    tav_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                    # if tav_pickl is empty append the first value of obs.velocities
+                    if len(tav_pickl)==0:
+                        tav_pickl=obs.velocities[1:2]
+                    
+                    vel_01=obs.velocities
+                    time_01=obs.time_data
+                    abs_mag_01=obs.absolute_magnitudes
+                    height_01=obs.model_ht
+
+                elif jj==2:
+                    elg_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                    if len(elg_pickl)==0:
+                        elg_pickl=obs.velocities[1:2]
+                    
+                    vel_02=obs.velocities
+                    time_02=obs.time_data
+                    abs_mag_02=obs.absolute_magnitudes
+                    height_02=obs.model_ht
+
+                # put it at the end obs.velocities[1:] at the end of vel_pickl list
+                obs_vel.extend(obs.velocities)
+                obs_time.extend(obs.time_data)
+                abs_mag_sim.extend(obs.absolute_magnitudes)
+                ht_obs.extend(obs.model_ht)
+                lag_total.extend(obs.lag)
+
+            # compute the linear regression
+            obs_vel = [i/1000 for i in obs_vel] # convert m/s to km/s
+            obs_time = [i for i in obs_time]
+            abs_mag_sim = [i for i in abs_mag_sim]
+            ht_obs = [i/1000 for i in ht_obs]
+            lag_total = [i/1000 for i in lag_total]
+
+            time_cam1 = [i for i in time_01]
+
+            time_cam2 = [i for i in time_02]
+
+
+            # find the height when the velocity start dropping from the initial value 
+            v0 = (np.mean(elg_pickl)+np.mean(tav_pickl))/2/1000
+
+            # find all the values of the velocity that are equal to 0 and put them to v0
+            obs_vel = [v0 if x==0 else x for x in obs_vel]
+            vel_01[0]=v0
+            vel_02[0]=v0
+
+            #####order the list by time
+            obs_vel = [x for _,x in sorted(zip(obs_time,obs_vel))]
+            abs_mag_sim = [x for _,x in sorted(zip(obs_time,abs_mag_sim))]
+            ht_obs = [x for _,x in sorted(zip(obs_time,ht_obs))]
+            lag_total = [x for _,x in sorted(zip(obs_time,lag_total))]
+            # length_pickl = [x for _,x in sorted(zip(time_pickl,length_pickl))]
+            obs_time = sorted(obs_time)
+
+            vel_sim=obs_vel
+            ht_sim=ht_obs
+
+            erosion_height_start = data['erosion_height_start']/1000
+
+            data_index_2cam = pd.DataFrame(list(zip(obs_time, ht_obs, obs_vel, abs_mag_sim)), columns =['time_sampled', 'ht_sampled', 'vel_sampled', 'mag_sampled'])
+
+
+
         # find the index of the camera 1 and camera 2 in the dataframe
         index_cam1_df= data_index_2cam[data_index_2cam['time_sampled'].isin(time_cam1)].index
         index_cam2_df= data_index_2cam[data_index_2cam['time_sampled'].isin(time_cam2)].index
 
 
-    ############ plot the simulation
+
+        ############ plot the simulation
         # multiply ht_sim by 1000 to have it in m
         ht_sim_meters=[x*1000 for x in ht_sim]
 
@@ -1431,8 +1541,8 @@ if __name__ == "__main__":
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\TEST", \
         help="Path were are store both simulated and observed shower .csv file.")
 
-    # arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json', \
-    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \
+    # arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json', \ TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
+    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='20230811_082648_trajectory.pickle', \
         help="The real json file the ground truth for the PCA simulation results.") 
 
     # arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \

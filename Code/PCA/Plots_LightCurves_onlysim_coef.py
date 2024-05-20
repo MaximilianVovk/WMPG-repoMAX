@@ -811,6 +811,7 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
     # close the plot
     plt.close()
 
+
 def quadratic_velocity(t, a, b, v0, t0):
     """
     Quadratic velocity function.

@@ -164,7 +164,8 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'])
 
     There_is_data=False
-
+    
+    pickle_flag=False
     # open the all file and extract the data
     for i in range(len(all_jsonfiles)):
     # for i in range(len(all_jsonfiles[1:100])):
@@ -174,8 +175,13 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
         # show the current processed file and the number of files left to process
         # print(all_jsonfiles[i]+' - '+str(len(all_jsonfiles)-i)+' left')
         print(all_jsonfiles[i])
+        # check if the json file name has _sim_fit.json
+        if '_sim_fit.json' in all_jsonfiles[i]:
+            # from 'params' extract the observable parameters and save them in a list
+            pickle_df=read_manual_pikle(all_jsonfiles[i],directory,Shower)
+            pickle_flag=True
 
-        if data['ht_sampled']!= None: 
+        elif data['ht_sampled']!= None: 
             # from 'params' extract the observable parameters and save them in a list
             # get only the .json file name
             name=all_jsonfiles[i]
@@ -464,18 +470,391 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
     # delete the first line of the dataframe that is empty
     df_json = df_json.drop([0])
 
-    # df_json=df_json[df_json['acceleration']>0]
-    # df_json=df_json[df_json['acceleration']<100]
-    # df_json=df_json[df_json['trail_len']<50]
-
-    # save the dataframe in a csv file in the same folder of the code withouth the index
-    # if save_it == True:
-    #     df_json.to_csv(os.getcwd()+r'\Simulated_'+Shower+'.csv', index=False)
+    if pickle_flag==True:
+        # merge the two dataframes
+        print('Merging the two dataframes')
+        df_json = pd.concat([pickle_df,df_json], axis=0, ignore_index=True)
+        # df_json = df_json.append(pickle_df, ignore_index=True)
+        # print(df_json)
+        
+        There_is_data=True
 
     f.close()
 
     if There_is_data==True:
         return df_json
+
+
+def read_manual_pikle(ID,INPUT_PATH,Shower=''):
+
+    Shower=Shower
+    # keep the first 14 characters of the ID
+    name=ID[:15]
+    name_file_json=ID
+    name_file=name+'_trajectory.pickle'
+    print('Loading pickle file: ', INPUT_PATH+name)
+    # check if there are any pickle files in the 
+    find_flag=False
+    if os.path.isfile(os.path.join(INPUT_PATH, name_file)):
+        find_flag=True
+        # load the pickle file
+        traj = wmpl.Utils.Pickling.loadPickle(INPUT_PATH,name_file)    
+        jd_dat=traj.jdt_ref
+        # print(os.path.join(root, name_file))
+
+        vel_pickl=[]
+        time_pickl=[]
+        time_total=[]
+        abs_mag_pickl=[]
+        abs_total=[]
+        height_pickl=[]
+        height_total=[]
+        lag=[]
+        lag_total=[]
+        elev_angle_pickl=[]
+        elg_pickl=[]
+        tav_pickl=[]
+        
+        lat_dat=[]
+        lon_dat=[]
+        # create a list to store the values of the pickle file
+        jj=0
+        for obs in traj.observations:
+            # find all the differrnt names of the variables in the pickle files
+            # print(obs.__dict__.keys())
+            jj+=1
+            if jj==1:
+                tav_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                # if tav_pickl is empty append the first value of obs.velocities
+                if len(tav_pickl)==0:
+                    tav_pickl=obs.velocities[1:2]
+
+            elif jj==2:
+                elg_pickl=obs.velocities[1:int(len(obs.velocities)/4)]
+                if len(elg_pickl)==0:
+                    elg_pickl=obs.velocities[1:2]
+
+            # put it at the end obs.velocities[1:] at the end of vel_pickl list
+            vel_pickl.extend(obs.velocities[1:])
+            time_pickl.extend(obs.time_data[1:])
+            time_total.extend(obs.time_data)
+            abs_mag_pickl.extend(obs.absolute_magnitudes[1:])
+            abs_total.extend(obs.absolute_magnitudes)
+            height_pickl.extend(obs.model_ht[1:])
+            height_total.extend(obs.model_ht)
+            lag.extend(obs.lag[1:])
+            lag_total.extend(obs.lag)
+            elev_angle_pickl.extend(obs.elev_data)
+            # length_pickl=len(obs.state_vect_dist[1:])
+            
+            lat_dat=obs.lat
+            lon_dat=obs.lon
+
+        # compute the linear regression
+        vel_pickl = [i/1000 for i in vel_pickl] # convert m/s to km/s
+        time_pickl = [i for i in time_pickl]
+        time_total = [i for i in time_total]
+        height_pickl = [i/1000 for i in height_pickl]
+        height_total = [i/1000 for i in height_total]
+        abs_mag_pickl = [i for i in abs_mag_pickl]
+        abs_total = [i for i in abs_total]
+        lag=[i/1000 for i in lag]
+        lag_total=[i/1000 for i in lag_total]
+
+        # print('length_pickl', length_pickl)
+        # length_pickl = [i/1000 for i in length_pickl]
+
+
+        # find the height when the velocity start dropping from the initial value 
+        vel_init_mean = (np.mean(elg_pickl)+np.mean(tav_pickl))/2/1000
+        v0=vel_init_mean
+        vel_init_norot=vel_init_mean
+        # print('mean_vel_init', vel_init_mean)
+
+        # fit a line to the throught the vel_sim and ht_sim
+        a, b = np.polyfit(time_pickl,vel_pickl, 1)
+        trendLAG, bLAG = np.polyfit(time_pickl,lag, 1)
+
+        vel_sim_line=[a*x+b for x in time_pickl]
+
+        lag_line = [trendLAG*x+bLAG for x in time_pickl] 
+
+        #####order the list by time
+        vel_pickl = [x for _,x in sorted(zip(time_pickl,vel_pickl))]
+        abs_mag_pickl = [x for _,x in sorted(zip(time_pickl,abs_mag_pickl))]
+        abs_total = [x for _,x in sorted(zip(time_total,abs_total))]
+        height_pickl = [x for _,x in sorted(zip(time_pickl,height_pickl))]
+        height_total = [x for _,x in sorted(zip(time_total,height_total))]
+        lag = [x for _,x in sorted(zip(time_pickl,lag))]
+        lag_total = [x for _,x in sorted(zip(time_total,lag_total))]
+        # length_pickl = [x for _,x in sorted(zip(time_pickl,length_pickl))]
+        time_pickl = sorted(time_pickl)
+        time_total = sorted(time_total)
+
+        #######################################################
+        # fit a line to the throught the vel_sim and ht_sim
+        a3, b3, c3 = np.polyfit(time_pickl,vel_pickl, 2)
+
+        t0 = np.mean(time_pickl)
+
+        # initial guess of deceleration decel equal to linear fit of velocity
+        p0 = [a, 0, 0, t0]
+        # print(lag)
+        # lag_calc = length_pickl-(v0*np.array(time_pickl)+length_pickl[0])
+        opt_res = opt.minimize(lag_residual, p0, args=(np.array(time_pickl), np.array(lag)), method='Nelder-Mead')
+
+        # sample the fit for the velocity and acceleration
+        a_t0, b_t0, c_t0, t0 = opt_res.x
+
+        # compute reference decelearation
+        t_decel_ref = (t0 + np.max(time_pickl))/2
+        decel_t0 = cubic_acceleration(t_decel_ref, a_t0, b_t0, t0)[0]
+
+        a_t0=-abs(a_t0)
+        b_t0=-abs(b_t0)
+
+        acceleration_parab_t0=a_t0*6 + b_t0*2
+
+        # Assuming the jacchiaVel function is defined as:
+        def jacchiaVel(t, a1, a2, v_init):
+            return v_init - np.abs(a1) * np.abs(a2) * np.exp(np.abs(a2) * t)
+
+        # Generating synthetic observed data for demonstration
+        t_observed = np.array(time_pickl)  # Observed times
+        vel_observed = np.array(vel_pickl)  # Observed velocities
+
+        # Residuals function for optimization
+        def residuals(params):
+            a1, a2 = params
+            predicted_velocity = jacchiaVel(t_observed, a1, a2, v0)
+            return np.sum((vel_observed - predicted_velocity)**2)
+
+        # Initial guess for a1 and a2
+        initial_guess = [0.005,	10]
+
+        # Apply minimize to the residuals
+        result = minimize(residuals, initial_guess)
+
+        # Results
+        jac_a1, jac_a2 = abs(result.x)
+
+        acc_jacchia = abs(jac_a1)*abs(jac_a2)**2
+
+        # only use first index to pick the height
+        a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_total[:np.argmin(abs_total)],abs_total[:np.argmin(abs_total)], 2)
+        #
+        a3_Outabs, b3_Outabs, c3_Outabs = np.polyfit(height_total[np.argmin(abs_total):],abs_total[np.argmin(abs_total):], 2)
+
+        # append the values to the list
+        acceleration_parab=(a3*2+b3)
+        acceleration_lin=(a)
+        # v0=(vel_sim_line[0])
+        # v0.append(vel_sim_line[0])
+        vel_init_noro=vel_init_mean
+        # print('mean_vel_init', vel_sim_line[0])
+        vel_avg_norot=np.mean(vel_pickl) #trail_len / duration
+        peak_mag_vel=(vel_pickl[np.argmin(abs_mag_pickl)])   
+
+        begin_height=(height_total[0])
+        end_height=(height_total[-1])
+        peak_mag_height=(height_total[np.argmin(abs_total)])
+
+        peak_abs_mag=(np.min(abs_total))
+        beg_abs_mag=(abs_total[0])
+        end_abs_mag=(abs_total[-1])
+
+        lag_fin=(lag_line[-1])
+        lag_init=(lag_line[0])
+        lag_avg=(np.mean(lag_line))
+
+        duration=(time_total[-1]-time_total[0])
+
+        kc_par=(height_total[0] + (2.86 - 2*np.log(vel_sim_line[0]))/0.0612)
+
+        F=((height_total[0] - height_total[np.argmin(abs_total)]) / (height_total[0] - height_total[-1]))
+
+        zenith_angle=(90 - elev_angle_pickl[0]*180/np.pi)
+        trail_len=((height_total[0] - height_total[-1])/(np.sin(np.radians(elev_angle_pickl[0]*180/np.pi))))
+        
+
+        Dynamic_pressure_peak_abs_mag=(wmpl.Utils.Physics.dynamicPressure(lat_dat, lon_dat, height_total[np.argmin(abs_total)]*1000, jd_dat, vel_pickl[np.argmin(abs_mag_pickl)]*1000))
+
+
+        # check if in os.path.join(root, name_file) present and then open the .json file with the same name as the pickle file with in stead of _trajectory.pickle it has _sim_fit_latest.json
+        if os.path.isfile(os.path.join(INPUT_PATH, name_file_json)):
+            with open(os.path.join(INPUT_PATH, name_file_json),'r') as json_file: # 20210813_061453_sim_fit.json
+                print('Loading json file: ', os.path.join(INPUT_PATH, name_file_json))
+                data = json.load(json_file)
+                mass=(data['m_init'])
+                # add also rho	sigma	erosion_height_start	erosion_coeff	erosion_mass_index	erosion_mass_min	erosion_mass_max	erosion_range	erosion_energy_per_unit_cross_section	erosion_energy_per_unit_mass
+                # mass=(data['m_init'])
+                rho=(data['rho'])
+                sigma=(data['sigma'])
+                erosion_height_start=(data['erosion_height_start']/1000)
+                erosion_coeff=(data['erosion_coeff'])
+                erosion_mass_index=(data['erosion_mass_index'])
+                erosion_mass_min=(data['erosion_mass_min'])
+                erosion_mass_max=(data['erosion_mass_max'])
+
+                # Compute the erosion range
+                erosion_range=(np.log10(data['erosion_mass_max']) - np.log10(data['erosion_mass_min']))
+
+                cost_path = os.path.join(INPUT_PATH, name_file_json)
+
+                # Load the constants
+                const, _ = loadConstants(cost_path)
+                const.dens_co = np.array(const.dens_co)
+
+                # Compute the erosion energies
+                erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass = wmpl.MetSim.MetSimErosion.energyReceivedBeforeErosion(const)
+                erosion_energy_per_unit_cross_section_arr=(erosion_energy_per_unit_cross_section)
+                erosion_energy_per_unit_mass_arr=(erosion_energy_per_unit_mass)
+
+
+        else:
+            print('No json file'+os.path.join(INPUT_PATH, name_file_json))
+
+            # if no data on weight is 0
+            mass=(0)
+            rho=(0)
+            sigma=(0)
+            erosion_height_start=(0)
+            erosion_coeff=(0)
+            erosion_mass_index=(0)
+            erosion_mass_min=(0)
+            erosion_mass_max=(0)
+            erosion_range=(0)
+            erosion_energy_per_unit_cross_section_arr=(0)
+            erosion_energy_per_unit_mass_arr=(0)
+
+
+
+
+        shower_code_sim=('sim_'+Shower)
+        
+
+        ########################################## SKEWNESS AND kurtosyness ##########################################
+        
+        # # # find the index that that is a multiples of 0.031 s in time_pickl
+        index = [i for i in range(len(time_pickl)) if time_pickl[i] % 0.031 < 0.01]
+        # only use those index to create a new list
+        time_pickl = [time_total[i] for i in index]
+        abs_mag_pickl = [abs_total[i] for i in index]
+        height_pickl = [height_total[i] for i in index]
+        # vel_pickl = [vel_pickl[i] for i in index]
+
+        # create a new array with the same values as time_pickl
+        index=[]
+        # if the distance between two index is smalle than 0.05 delete the second one
+        for i in range(len(time_pickl)-1):
+            if time_pickl[i+1]-time_pickl[i] < 0.01:
+                # save the index as an array
+                index.append(i+1)
+        # delete the index from the list
+        time_pickl = np.delete(time_pickl, index)
+        abs_mag_pickl = np.delete(abs_mag_pickl, index)
+        height_pickl = np.delete(height_pickl, index)
+        # vel_pickl = np.delete(vel_pickl, index)
+
+
+        abs_mag_pickl = [0 if math.isnan(x) else x for x in abs_mag_pickl]
+
+        # subrtract the max value of the mag to center it at the origin
+        mag_sampled_norm = (-1)*(abs_mag_pickl - np.max(abs_mag_pickl))
+        # check if there is any negative value and add the absolute value of the min value to all the values
+        mag_sampled_norm = mag_sampled_norm + np.abs(np.min(mag_sampled_norm))
+        # normalize the mag so that the sum is 1
+        time_sampled_norm= time_pickl - np.mean(time_pickl)
+        # mag_sampled_norm = mag_sampled_norm/np.sum(mag_sampled_norm)
+        mag_sampled_norm = mag_sampled_norm/np.max(mag_sampled_norm)
+        # substitute the nan values with zeros
+        mag_sampled_norm = np.nan_to_num(mag_sampled_norm)
+
+        # create an array with the number the ammount of same number equal to the value of the mag
+        mag_sampled_distr = []
+        mag_sampled_array=np.asarray(mag_sampled_norm*1000, dtype = 'int')
+        for i in range(len(abs_mag_pickl)):
+            # create an integer form the array mag_sampled_array[i] and round of the given value
+            numbs=mag_sampled_array[i]
+            # invcrease the array number by the mag_sampled_distr numbs 
+            # array_nu=(np.ones(numbs+1)*i_pos).astype(int)
+            array_nu=(np.ones(numbs+1)*time_sampled_norm[i])
+            mag_sampled_distr=np.concatenate((mag_sampled_distr, array_nu))
+        
+        # # # plot the mag_sampled_distr as an histogram
+        # plt.hist(mag_sampled_distr)
+        # plt.show()
+
+        kurtosyness=(kurtosis(mag_sampled_distr))
+        skewness=(skew(mag_sampled_distr))
+
+        # Data to populate the dataframe
+        data_picklefile_pd = {
+            'solution_id': [name],
+            'shower_code': [shower_code_sim],
+            'vel_init_norot': [vel_init_norot],
+            'vel_avg_norot': [vel_avg_norot],
+            'duration': [duration],
+            'mass': [mass],
+            'peak_mag_height': [peak_mag_height],
+            'begin_height': [begin_height],
+            'end_height': [end_height],
+            't0': [t0],
+            'peak_abs_mag': [peak_abs_mag],
+            'beg_abs_mag': [beg_abs_mag],
+            'end_abs_mag': [end_abs_mag],
+            'F': [F],
+            'trail_len': [trail_len],
+            'deceleration_lin': [acceleration_lin],
+            'deceleration_parab': [acceleration_parab],
+            'decel_parab_t0': [acceleration_parab_t0],
+            'decel_t0': [decel_t0],
+            'decel_jacchia': [acc_jacchia],
+            'zenith_angle': [zenith_angle],
+            'kurtosis': [kurtosyness],
+            'skew': [skewness],
+            'kc': [kc_par],
+            'Dynamic_pressure_peak_abs_mag': [Dynamic_pressure_peak_abs_mag],
+            'a_acc': [a3],
+            'b_acc': [b3],
+            'c_acc': [c3],
+            'a_t0': [a_t0],
+            'b_t0': [b_t0],
+            'c_t0': [c_t0],
+            'a1_acc_jac': [jac_a1],
+            'a2_acc_jac': [jac_a2],
+            'a_mag_init': [a3_Inabs],
+            'b_mag_init': [b3_Outabs],
+            'c_mag_init': [c3_Outabs],
+            'a_mag_end': [a3_Outabs],
+            'b_mag_end': [b3_Outabs],
+            'c_mag_end': [c3_Outabs],
+            'rho': [rho],
+            'sigma': [sigma],
+            'erosion_height_start': [erosion_height_start],
+            'erosion_coeff': [erosion_coeff],
+            'erosion_mass_index': [erosion_mass_index],
+            'erosion_mass_min': [erosion_mass_min],
+            'erosion_mass_max': [erosion_mass_max],
+            'erosion_range': [erosion_range],
+            'erosion_energy_per_unit_cross_section': [erosion_energy_per_unit_cross_section_arr],
+            'erosion_energy_per_unit_mass': [erosion_energy_per_unit_mass_arr]
+        }
+
+        # Create the dataframe
+        infov_sim = pd.DataFrame(data_picklefile_pd)
+
+    if find_flag==True:
+        # print(infov_sim)
+        return infov_sim
+    else:
+        # raise an error if the pickle file is not found
+        print('No pickle file found')
+        # raise an error
+        raise ValueError('No pickle file found')
+        return None
+    
+
 
 
 def read_solution_table_json(Shower=''):

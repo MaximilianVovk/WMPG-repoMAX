@@ -23,6 +23,7 @@ from scipy.optimize import minimize
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants
 from wmpl.Utils.Pickling import loadPickle
+from wmpl.Utils.OSTools import mkdirP
 from sklearn.cluster import KMeans
 from matplotlib.colors import Normalize
 import copy
@@ -30,6 +31,7 @@ import sys
 from scipy.integrate import simps  # For numerical integration
 from Plots_LightCurves_onlysim_coef import PCA_LightCurveCoefPLOT
 from sklearn.preprocessing import StandardScaler
+import itertools
 
 # MODIFY HERE THE PARAMETERS ###############################################################################
 
@@ -40,7 +42,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # Shower=['PER']#['CAP']
 
     # number of selected events selected
-    n_select=10
+    n_select=20
     dist_select=np.array([10000000000000])
     # dist_select=np.ones(9)*10000000000000
 
@@ -562,9 +564,32 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
             if successful_results:
                 best_result = min(successful_results, key=lambda x: x.fun)
                 densest_point = best_result.x
-                print("Densest point in the multidimensional space:", densest_point)
+                print("Densest point using KMeans centroid:", densest_point)
             else:
-                raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
+                # raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
+                print('Optimization was unsuccessful. Consider revising the strategy.')
+                # revise the optimization strategy
+                print('Primary optimization strategies were unsuccessful. Trying fallback strategy (Grid Search).')
+                # Fallback strategy: Grid Search
+                grid_size = 5  # Define the grid size for the search
+                grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
+                grid_combinations = list(itertools.product(*grid_points))
+
+                best_grid_point = None
+                best_grid_density = -np.inf
+
+                for point in grid_combinations:
+                    density = kde(point)
+                    if density > best_grid_density:
+                        best_grid_density = density
+                        best_grid_point = point
+
+                if best_grid_point is not None:
+                    print("Densest point found using Grid Search:", best_grid_point)
+                    return best_grid_point
+                else:
+                    raise ValueError('Grid Search was unsuccessful. None of the strategy worked.')
+
         else:
             print('Not enough data to perform the KDE need more than 8 meteors')
             # raise ValueError('The data is ill-conditioned. Consider a bigger number of elements.')
@@ -1542,7 +1567,7 @@ if __name__ == "__main__":
         help="Path were are store both simulated and observed shower .csv file.")
 
     # arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json', \ TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
-    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='20230811_082648_trajectory.pickle', \
+    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_9_noisy.json', \
         help="The real json file the ground truth for the PCA simulation results.") 
 
     # arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
@@ -1565,6 +1590,7 @@ if __name__ == "__main__":
     if os.path.exists(os.path.join(cml_args.input_dir_true, cml_args.true_file)):
         # Load the nominal simulation
         print('Loaded: ', cml_args.true_file)   
+        mkdirP(cml_args.output_dir)
     else:
         print(cml_args.true_file,' file in not is the folder')   
         # try and load the first json file in the folder
@@ -1573,11 +1599,35 @@ if __name__ == "__main__":
                 sim_fit_json_nominal = os.path.join(cml_args.input_dir_true, file)
                 print('Loaded: ', sim_fit_json_nominal)
                 cml_args.true_file=file
+                mkdirP(cml_args.output_dir)
                 break
+                
 
+    # #########################
+
+    file_handler = ['TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json',
+        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_2_noisy.json',
+        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_3_noisy.json',
+        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_4_noisy.json',
+        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_5_noisy.json',
+        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_6_noisy.json',
+        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_7_noisy.json',
+        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_8_noisy.json',
+        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_9_noisy.json']
+     
+    # create an output directory 1_noise, 2_noise, 3_noise, 4_noise, 5_noise, 6_noise, 7_noise, 8_noise, 9_noise
+    for ii in range(len(file_handler)):
+        mkdirP(cml_args.output_dir+os.sep+str(ii+1)+'_noise')
+        folder_output=cml_args.output_dir+os.sep+str(ii+1)+'_noise'
+        print(folder_output)
+        print(file_handler)
+
+        PCA_confrontPLOT(folder_output, Shower, cml_args.input_dir, file_handler[ii], cml_args.input_dir_true)
+
+        PCA_LightCurveCoefPLOT(folder_output, Shower, cml_args.input_dir, file_handler[ii], cml_args.input_dir_true)
 
     #########################
 
-    PCA_confrontPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)
+    # PCA_confrontPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)
 
-    PCA_LightCurveCoefPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)
+    # PCA_LightCurveCoefPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)

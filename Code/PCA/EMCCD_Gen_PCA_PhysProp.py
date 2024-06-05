@@ -1,17 +1,12 @@
 """
 The code is used to extract the physical properties of the simulated showers from EMCCD observations
-by selecting the most similar simulated shower.
-The code is divided in three parts:
-    1. from GenerateSimulations.py output folder extract the simulated showers observable and physiscal characteristics
-    2. extract from the EMCCD solution_table.json file the observable property of the shower
-    3. select the simulated meteors similar to the EMCCD meteor observations and extract their physical properties
-latest update: 2021-05-25
+by selecting the most similar simulated events in the PC space using:
+- Mode of the siumulated events
+- The min of the KDE esults
+- Principal Component Regression (PCR)
 """
 
 import json
-# import copy
-# import multiprocessing
-from numpy.linalg import inv
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,7 +16,6 @@ import seaborn as sns
 import scipy.spatial.distance
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-# from heapq import nsmallest
 import wmpl
 from wmpl.MetSim.GUI import loadConstants
 import shutil
@@ -29,31 +23,21 @@ from scipy.stats import kurtosis, skew
 from wmpl.Utils.OSTools import mkdirP
 import math
 from wmpl.Utils.PyDomainParallelizer import domainParallelizer
-from scipy.linalg import svd
-# from scipy.optimize import curve_fit # faster 
-# from scipy.optimize import basinhopping # slower but more accurate
 from scipy.optimize import minimize
 import scipy.optimize as opt
 import sys
 from scipy.interpolate import UnivariateSpline
-from scipy.stats import zscore
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import mean_squared_error
-import scipy.spatial
-from sklearn.cross_decomposition import PLSRegression
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import make_pipeline
-import scipy.stats as stats
-import statsmodels.api as sm
-from sklearn.preprocessing import PowerTransformer
 
 add_json_noise = False
 
-PCA_percent = 99
+PCA_percent = 98
 
 PCA_pairplot=False
+
+NAME_SUFX_GENSIM = "_GenSim"
+NAME_SUFX_CSV_SIM = "_sim.csv"
+NAME_SUFX_CSV_CURRENT_FIT = "_fit_sim.csv"
+NAME_SUFX_CSV_PHYSICAL_FIT_RESULTS = "_physical_prop.csv"
 
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000 > output.txt    
@@ -108,7 +92,6 @@ def cubic_lag(t, a, b, c, t0):
 
     return np.concatenate((l_before, l_after))
 
-
 def cubic_acceleration(t, a, b, t0):
     """
     Quadratic acceleration function.
@@ -134,6 +117,7 @@ def lag_residual(params, t_time, l_data):
     """
 
     return np.sum((l_data - cubic_lag(t_time, *params))**2)
+
 
 def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None):
     ''' 
@@ -208,7 +192,20 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
             time_sim=data['simulation_results']['time_arr']#['main_time_arr']
             abs_mag_sim=data['simulation_results']['abs_magnitude']
             len_sim=data['simulation_results']['brightest_length_arr']#['brightest_length_arr']
-   
+
+            # # delete nan values from the list ht_sim
+            # # check if there is nan value in the list ht_sim
+            # if np.isnan(ht_sim).any():
+            #     print('There is a nan value in the list ht_sim')
+            #     # find the index of the nan value in the list ht_sim
+            #     index_nan = np.argwhere(np.isnan(ht_sim))
+            #     # delete the nan value from the list ht_sim
+            #     ht_sim = np.delete(ht_sim, index_nan)
+            #     abs_mag_sim = np.delete(abs_mag_sim, index_nan)
+            #     vel_sim = np.delete(vel_sim, index_nan)
+            #     time_sim = np.delete(time_sim, index_nan)
+            #     len_sim = np.delete(len_sim, index_nan)
+            
             ht_obs=data['ht_sampled']
 
             # # find the index of the first element of the simulation that is equal to the first element of the observation
@@ -499,9 +496,8 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
         return df_json
 
 
-def read_manual_pikle(ID,INPUT_PATH,Shower=''):
+def read_manual_pikle(ID,INPUT_PATH):
 
-    Shower=Shower
     # keep the first 14 characters of the ID
     name=ID[:15]
     name_file_json=ID
@@ -867,255 +863,12 @@ def read_manual_pikle(ID,INPUT_PATH,Shower=''):
         # raise an error
         raise ValueError('No pickle file found')
         return None
-    
 
 
 
-def read_solution_table_json(Shower=''):
-    '''
-    It reads the solution_table.json file and extract the observable property from the EMCCD camera results
-    The values are given in a dataframe format and if requestd are saved in .csv file called "Simulated_"+Shower+".csv"
-    Keyword arguments:
-    df_simul:       dataframe of the simulated shower
-    Shower:         Shower name, by default there is no name.
-    save_it:        Boolean - save the extracted dataframe in a .csv, by default it is not saved.
-    '''
+# PCA ####################################################################################
 
-    # open the solution_table.json file
-    f = open('solution_table.json',"r")
-    data = json.loads(f.read())
-    # create a dataframe to store the data
-    df = pd.DataFrame(data, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','vel_init_norot_err','beg_fov','end_fov','elevation_norot','duration','mass','begin_height','end_height','peak_abs_mag','beg_abs_mag','end_abs_mag','F'])
-
-    df_shower_EMCCD = df.loc[(df.shower_code == Shower) & (df.beg_fov) & (df.end_fov) & (df.vel_init_norot_err < 2) & (df.begin_height > df.end_height) & (df.vel_init_norot > df.vel_avg_norot) &
-    (df.elevation_norot >=0) & (df.elevation_norot <= 90) & (df.begin_height < 180) & (df.F > 0) & (df.F < 1) & (df.begin_height > 80) & (df.vel_init_norot < 75)]
-    # delete the rows with NaN values
-    df_shower_EMCCD = df_shower_EMCCD.dropna()
-
-
-    # trail_len in km
-    df_shower_EMCCD['trail_len'] = (df_shower_EMCCD['begin_height'] - df_shower_EMCCD['end_height'])/np.sin(np.radians(df_shower_EMCCD['elevation_norot']))
-    # acceleration in km/s^2
-    df_shower_EMCCD['acceleration'] = (df_shower_EMCCD['vel_init_norot'] - df_shower_EMCCD['vel_avg_norot'])/(df_shower_EMCCD['duration'])
-
-    df_shower_EMCCD['zenith_angle'] = (90 - df_shower_EMCCD['elevation_norot'])
-
-    acceleration=[]
-    vel_init_norot=[]
-    vel_avg_norot=[]
-    abs_mag_pickl=[]
-    height_pickl=[]
-
-    begin_height=[]
-    end_height=[]
-    peak_mag_height=[]
-
-    peak_abs_mag=[]
-    beg_abs_mag=[]
-    end_abs_mag=[]
-
-    kurtosisness=[]
-    skewness=[]
-
-    jj=0
-    for ii in range(len(df_shower_EMCCD)):
-
-        # pick the ii element of the solution_id column 
-        namefile=df_shower_EMCCD.iloc[ii]['solution_id']
-
-        # split the namefile base on the '_' character and pick the first element
-        folder=namefile.split('_')[0]
-
-        traj = wmpl.Utils.Pickling.loadPickle("M:\\emccd\\pylig\\trajectory\\"+folder+"\\", namefile+".pylig.pickle")
-        vel_pickl=[]
-        time_pickl=[]
-        abs_mag_pickl=[]
-        height_pickl=[]
-        for obs in traj.observations:
-            # put it at the end obs.velocities[1:] at the end of vel_pickl list
-            vel_pickl.extend(obs.velocities[1:])
-            time_pickl.extend(obs.time_data[1:])
-            abs_mag_pickl.extend(obs.absolute_magnitudes[1:])
-            height_pickl.extend(obs.model_ht[1:])
-
-
-        # compute the linear regression
-        vel_pickl = [i/1000 for i in vel_pickl] # convert m/s to km/s
-        time_pickl = [i for i in time_pickl]
-        height_pickl = [i/1000 for i in height_pickl]
-        abs_mag_pickl = [i for i in abs_mag_pickl]
-
-        # fit a line to the throught the vel_sim and ht_sim
-        a, b = np.polyfit(time_pickl,vel_pickl, 1)
-
-        vel_sim_line=[a*x+b for x in time_pickl]
-
-        # append the values to the list
-        acceleration.append((-1)*a)
-        vel_init_norot.append(vel_sim_line[0])
-        vel_avg_norot.append(np.mean(vel_sim_line))
-
-        begin_height.append(np.max(height_pickl))
-        end_height.append(np.min(height_pickl))
-        # find the peak of the absolute magnitude in the height_pickl list
-        peak_mag_height.append(height_pickl[abs_mag_pickl.index(min(abs_mag_pickl))])
-
-        peak_abs_mag.append(np.min(abs_mag_pickl))
-        beg_abs_mag.append(abs_mag_pickl[0])
-        end_abs_mag.append(abs_mag_pickl[-1])
-
-        #####order the list by time
-        vel_pickl = [x for _,x in sorted(zip(time_pickl,vel_pickl))]
-        abs_mag_pickl = [x for _,x in sorted(zip(time_pickl,abs_mag_pickl))]
-        height_pickl = [x for _,x in sorted(zip(time_pickl,height_pickl))]
-        time_pickl = sorted(time_pickl)
-        
-        # # # find the index that that is a multiples of 0.031 s in time_pickl
-        index = [i for i in range(len(time_pickl)) if time_pickl[i] % 0.031 < 0.01]
-        # only use those index to create a new list
-        time_pickl = [time_pickl[i] for i in index]
-        abs_mag_pickl = [abs_mag_pickl[i] for i in index]
-        height_pickl = [height_pickl[i] for i in index]
-        vel_pickl = [vel_pickl[i] for i in index]
-
-        # create a new array with the same values as time_pickl
-        index=[]
-        # if the distance between two index is smalle than 0.05 delete the second one
-        for i in range(len(time_pickl)-1):
-            if time_pickl[i+1]-time_pickl[i] < 0.01:
-                # save the index as an array
-                index.append(i+1)
-        # delete the index from the list
-        time_pickl = np.delete(time_pickl, index)
-        abs_mag_pickl = np.delete(abs_mag_pickl, index)
-        height_pickl = np.delete(height_pickl, index)
-        vel_pickl = np.delete(vel_pickl, index)
-
-        ############ KURT AND SKEW
-
-        abs_mag_pickl = [0 if math.isnan(x) else x for x in abs_mag_pickl]
-
-        # subrtract the max value of the mag to center it at the origin
-        mag_sampled_norm = (-1)*(abs_mag_pickl - np.max(abs_mag_pickl))
-        # check if there is any negative value and add the absolute value of the min value to all the values
-        mag_sampled_norm = mag_sampled_norm + np.abs(np.min(mag_sampled_norm))
-        # normalize the mag so that the sum is 1
-        time_sampled_norm= time_pickl - np.mean(time_pickl)
-        # mag_sampled_norm = mag_sampled_norm/np.sum(mag_sampled_norm)
-        mag_sampled_norm = mag_sampled_norm/np.max(mag_sampled_norm)
-        # substitute the nan values with zeros
-        mag_sampled_norm = np.nan_to_num(mag_sampled_norm)
-
-        # create an array with the number the ammount of same number equal to the value of the mag
-        mag_sampled_distr = []
-        mag_sampled_array=np.asarray(mag_sampled_norm*1000, dtype = 'int')
-        for i in range(len(abs_mag_pickl)):
-            # create an integer form the array mag_sampled_array[i] and round of the given value
-            numbs=mag_sampled_array[i]
-            # invcrease the array number by the mag_sampled_distr numbs 
-            # array_nu=(np.ones(numbs+1)*i_pos).astype(int)
-            array_nu=(np.ones(numbs+1)*time_sampled_norm[i])
-            mag_sampled_distr=np.concatenate((mag_sampled_distr, array_nu))
-
-        kurtosisness.append(kurtosis(mag_sampled_distr))
-        skewness.append(skew(mag_sampled_distr))
-
-        jj=jj+1
-        print('Loading pickle file: ', namefile, ' n.', jj, ' of ', len(df_shower_EMCCD), ' done.')
-        
-    df_shower_EMCCD['acceleration'] = acceleration
-    df_shower_EMCCD['vel_init_norot'] = vel_init_norot
-    df_shower_EMCCD['vel_avg_norot'] = vel_avg_norot 
-
-    df_shower_EMCCD['begin_height']=begin_height
-    df_shower_EMCCD['end_height']=end_height
-    df_shower_EMCCD['peak_mag_height']=peak_mag_height
-
-    df_shower_EMCCD['kc'] = df_shower_EMCCD['begin_height'] + (2.86 - 2*np.log(df_shower_EMCCD['vel_init_norot']))/0.0612
-    df_shower_EMCCD['kurtosis'] = kurtosisness
-    df_shower_EMCCD['skew'] = skewness 
-
-    df_shower_EMCCD_no_outliers = df_shower_EMCCD.loc[
-    (df_shower_EMCCD.elevation_norot>25) &
-    (df_shower_EMCCD.acceleration>0) &
-    (df_shower_EMCCD.acceleration<100) &
-    # (df_shower_EMCCD.vel_init_norot<np.percentile(df_shower_EMCCD['vel_init_norot'], 99)) & (df_shower_EMCCD.vel_init_norot>np.percentile(df_shower_EMCCD['vel_init_norot'], 1)) &
-    # (df_shower_EMCCD.vel_avg_norot<np.percentile(df_shower_EMCCD['vel_avg_norot'], 99)) & (df_shower_EMCCD.vel_avg_norot>np.percentile(df_shower_EMCCD['vel_avg_norot'], 1)) &
-    (df_shower_EMCCD.vel_init_norot<72) &
-    (df_shower_EMCCD.trail_len<50)
-    ]
-    # print the number of droped observation
-    print(len(df_shower_EMCCD)-len(df_shower_EMCCD_no_outliers),'number of droped ',Shower,' observation')
-
-    # trail_len in km
-    df_shower_EMCCD_no_outliers['trail_len'] = (df_shower_EMCCD_no_outliers['begin_height'] - df_shower_EMCCD_no_outliers['end_height'])/np.sin(np.radians(df_shower_EMCCD_no_outliers['elevation_norot']))
-    # Zenith angle in radians
-    df_shower_EMCCD_no_outliers['zenith_angle'] = (90 - df_shower_EMCCD_no_outliers['elevation_norot'])
-
-    # delete the columns that are not needed
-    df_shower_EMCCD_no_outliers = df_shower_EMCCD_no_outliers.drop(['vel_init_norot_err','beg_fov','end_fov','elevation_norot'], axis=1)
-
-    # save the dataframe in a csv file in the same folder of the code withouth the index
-    df_shower_EMCCD_no_outliers.to_csv(os.getcwd()+os.sep+Shower+'.csv', index=False)
-
-    f.close()
-
-    return df_shower_EMCCD_no_outliers
-
-# Function to perform Varimax rotation
-def varimax(Phi, gamma=1.0, q=20, tol=1e-6):
-    p, k = Phi.shape
-    R = np.eye(k)
-    d = 0
-    for i in range(q):
-        d_old = d
-        Lambda = np.dot(Phi, R)
-        u, s, vh = svd(np.dot(Phi.T, np.asarray(Lambda) ** 3 - (gamma / p) * np.dot(Lambda, np.diag(np.diag(np.dot(Lambda.T, Lambda))))))
-        R = np.dot(u, vh)
-        d = np.sum(s)
-        if d_old != 0 and d / d_old < 1 + tol:
-            break
-    return np.dot(Phi, R)
-
-def mahalanobis_distance(x, mean, cov_inv):
-    diff = x - mean
-    return np.sqrt(np.dot(np.dot(diff, cov_inv), diff.T))
-
-def check_normality(data, title):
-    print(f"\nNormality check for {title}:")
-
-    # # Q-Q Plot
-    # sm.qqplot(data, line='45')
-    # plt.title(f'Q-Q Plot for {title}')
-    # plt.show()
-
-    # Histogram and Density Plot
-    # plt.hist(data, bins=30, density=True, alpha=0.6, color='g')
-    # xmin, xmax = plt.xlim()
-    # x = np.linspace(xmin, xmax, 100)
-    # p = stats.norm.pdf(x, np.mean(data), np.std(data))
-    # plt.plot(x, p, 'k', linewidth=2)
-    # plt.title(f'Histogram with Density Plot for {title}')
-    # plt.show()
-
-    # Shapiro-Wilk Test
-    shapiro_test = stats.shapiro(data)
-    print("Shapiro-Wilk Test:", shapiro_test)
-
-    # Anderson-Darling Test
-    ad_test = stats.anderson(data, dist='norm')
-    print("Anderson-Darling Test:", ad_test)
-
-    # # Skewness and Kurtosis
-    # skewness = stats.skew(data)
-    # kurtosis = stats.kurtosis(data)
-    # print("Skewness:", skewness)
-    # print("Kurtosis:", kurtosis)
-
-
-# CODE ####################################################################################
-
-def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_PATH=os.getcwd()):
+def PCASim(OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_PATH=os.getcwd()):
     '''
     This function generate the simulated shower from the erosion model and apply PCA.
     The function read the json file in the folder and create a csv file with the simulated shower and take the data from GenerateSimulation.py folder.
@@ -1124,8 +877,6 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # the variable used in PCA are all = 'vel_init_norot','vel_avg_norot','duration','mass','begin_height','end_height','peak_abs_mag','beg_abs_mag','end_abs_mag','F','trail_len','acceleration','zenith_angle'
     # vel_init_norot	vel_avg_norot	duration	mass	peak_mag_height	begin_height	end_height	height_knee_vel	peak_abs_mag	beg_abs_mag	end_abs_mag	F	trail_len	acceleration	decel_after_knee_vel	zenith_angle	kurtosis	skew	kc	Dynamic_pressure_peak_abs_mag
     variable_PCA=[] #'vel_init_norot','peak_abs_mag','begin_height','end_height','F','acceleration','duration'
-    variable_PCA=['vel_init_norot','vel_avg_norot','duration','begin_height','peak_mag_height','end_height','beg_abs_mag','peak_abs_mag','end_abs_mag','F','zenith_angle','decel_parab_t0'] #'vel_init_norot','peak_abs_mag','begin_height','end_height','F','acceleration','duration'
-    
     # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','vel_avg_norot','begin_height','end_height','beg_abs_mag','end_abs_mag','F','Dynamic_pressure_peak_abs_mag']
     # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','Dynamic_pressure_peak_abs_mag'] # perfect!
     # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','Dynamic_pressure_peak_abs_mag','kurtosis','skew','trail_len']
@@ -1166,82 +917,6 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
             for var in No_var_PCA:
                 variable_PCA.remove(var)
 
-    scaled_sim=df_sim_shower[variable_PCA].copy()
-    scaled_sim=scaled_sim.drop(['shower_code','solution_id'], axis=1)
-    # Standardize each column separately
-    scaler = StandardScaler()
-    df_sim_var_sel_standardized = scaler.fit_transform(scaled_sim)
-    df_sim_var_sel_standardized = pd.DataFrame(df_sim_var_sel_standardized, columns=scaled_sim.columns)
-
-    # Identify outliers using Z-score method on standardized data
-    z_scores = np.abs(zscore(df_sim_var_sel_standardized))
-    threshold = 3
-    outliers = (z_scores > threshold).any(axis=1)
-
-    # Assign df_sim_shower to the version without outliers
-    df_sim_shower = df_sim_shower[~outliers].copy()
-
-    # # scale the data so to be easily plot against each other with the same scale
-    # df_sim_var_sel = df_sim_shower[variable_PCA].copy()
-    # df_sim_var_sel = df_sim_var_sel.drop(['shower_code','solution_id'], axis=1)
-
-    # if len(df_sim_var_sel)>10000:
-    #     # pick randomly 10000 events
-    #     print('Number of events in the simulated shower:',len(df_sim_var_sel))
-    #     df_sim_var_sel=df_sim_var_sel.sample(n=10000)
-
-    # df_sim_var_sel_standardized = df_sim_var_sel
-    # # # Standardize each column separately
-    # # scaler = StandardScaler()
-    # # df_sim_var_sel_standardized = scaler.fit_transform(df_sim_var_sel)
-    # # # put in a dataframe
-    # # df_sim_var_sel_standardized = pd.DataFrame(df_sim_var_sel_standardized, columns=df_sim_var_sel.columns)
-    # print('Number of events in the simulated shower after the selection:',len(df_sim_var_sel))
-    # # sns plot of the df_sim_var_sel and df_sim_var_sel_no_outliers hue='shower_code'
-    # sns.pairplot(df_sim_var_sel_standardized)
-    # print('Pairplot of the simulated shower')
-    # # save the figure
-    # plt.savefig(OUT_PUT_PATH+os.sep+'var_sns_'+Shower[0]+'_select_PCA.png')
-    # # close the figure
-    # plt.close()
-
-    ##################################### delete var that are not in the 5 and 95 percentile of the simulated shower #####################################
-
-    No_var_PCA_perc=[]
-    # check that all the df_obs_shower for variable_PCA is within th 5 and 95 percentie of df_sim_shower of variable_PCA
-    for var in variable_PCA:
-        if var != 'shower_code' and var != 'solution_id':
-            # check if the variable is in the df_obs_shower
-            if var in df_obs_shower.columns:
-                # check if the variable is in the df_sim_shower
-                if var in df_sim_shower.columns:
-                    # check that all the values in df_obs_shower are within the 5 and 95 percentile of the df_sim_shower
-
-                    # if any(df_obs_shower[var] < np.percentile(df_sim_shower[var], 5)) or any(df_obs_shower[var] > np.percentile(df_sim_shower[var], 95)):
-                    #     print('Variable',var,'is not within the 5 and 95 percentile of the simulated meteors')
-                    #     # delete the variable from the variable_PCA
-                    #     variable_PCA.remove(var)
-                    #     # save the var deleted in a variable
-                    #     No_var_PCA_perc.append(var)
-
-                    ii_all=0
-                    for i_var in range(len(df_obs_shower[var])):
-                        # check if all the values are outside the 5 and 95 percentile of the df_sim_shower if so delete the variable from the variable_PCA
-                        if df_obs_shower[var][i_var] < np.percentile(df_sim_shower[var], 5) or df_obs_shower[var][i_var] > np.percentile(df_sim_shower[var], 95):
-                            ii_all=ii_all+1
-
-                    if ii_all==len(df_obs_shower[var]):
-                        print('All variable',var,'are not within the 5 and 95 percentile of the simulated meteors')
-                        # delete the variable from the variable_PCA
-                        variable_PCA.remove(var)
-                        # save the var deleted in a variable
-                        No_var_PCA_perc.append(var)
-                else:
-                    print('Variable ',var,' is not in the simulated shower')
-            else:
-                print('Variable ',var,' is not in the observed shower')
-
-
     # keep only the variable_PCA variables
     df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
 
@@ -1259,126 +934,9 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # performing preprocessing part so to make it readeble for PCA
     scaled_df_all = StandardScaler().fit_transform(scaled_df_all)
 
-
-    #################################
     # Applying PCA function on the data for the number of components
-    pca = PCA(PCA_percent/100) #PCA_percent
+    pca = PCA(PCA_percent/100)
     all_PCA = pca.fit_transform(scaled_df_all) # fit the data and transform it
-    
-    # # show the explained variance ratio of all th pc
-    # # check if any in the explained variance ratio is below 1%
-    # if np.any(pca.explained_variance_ratio_ < 0.01):
-    #     print(pca.explained_variance_ratio_)
-    #     # print the number of elements below 1%
-    #     print('PC below 1%:',np.sum(pca.explained_variance_ratio_ < 0.01))
-    #     print('PC above 1%:',np.sum(pca.explained_variance_ratio_ > 0.01))
-    #     # delete the np.sum(pca.explained_variance_ratio_ < 0.01) PC whith an explained variance ratio below 1%
-    #     pca = PCA(n_components=np.sum(pca.explained_variance_ratio_ > 0.01))
-    #     all_PCA = pca.fit_transform(scaled_df_all)
-    #     print(pca.explained_variance_ratio_)
-
-    # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-    if os.path.exists(OUT_PUT_PATH+os.sep+"log_"+str(len(variable_PCA))+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt"):
-        # remove the file
-        os.remove(OUT_PUT_PATH+os.sep+os.sep+"log_"+str(len(variable_PCA))+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt")
-    sys.stdout = Logger(OUT_PUT_PATH,"log_"+str(len(variable_PCA))+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt") # _30var_99%_13PC
-
-
-    ############### how Normal ########################################################################################
-    
-    # for all the variables run the gaussian test
-    for var in variable_PCA:
-        if var != 'shower_code' and var != 'solution_id':
-            # check if the variable is in the df_obs_shower
-            if var in df_obs_shower.columns:
-                # check if the variable is in the df_sim_shower
-                if var in df_sim_shower.columns:
-                    # check that all the values in df_obs_shower are within the 5 and 95 percentile of the df_sim_shower
-                    check_normality(df_sim_shower[var], var)
-                    # do the log of the variable and see the normality
-                    check_normality(np.log10(abs(df_sim_shower[var])), 'log_'+var)
-                    var_transformed_boxcox, lam = stats.boxcox(abs(df_sim_shower[var]))
-                    # use the boxcox transformation
-                    check_normality(var_transformed_boxcox, 'boxcox_'+var)
-                    # Apply the Yeo-Johnson transformation
-                    pt = PowerTransformer(method='yeo-johnson')
-                    vel_avg_norot_transformed = pt.fit_transform(df_sim_shower[var].values.reshape(-1, 1)).flatten()
-                    check_normality(vel_avg_norot_transformed, 'yeo-johnson_'+var)
-                else:
-                    print('Variable ',var,' is not in the simulated shower')
-            else:
-                print('Variable ',var,' is not in the observed shower')
-
-    ################################# Apply Varimax rotation ####################################
-    loadings = pca.components_.T
-
-    rotated_loadings = varimax(loadings)
-
-    # # chage the loadings to the rotated loadings in the pca components
-    pca.components_ = rotated_loadings.T
-
-    # Transform the original PCA scores with the rotated loadings
-    all_PCA = np.dot(all_PCA, rotated_loadings.T[:pca.n_components_, :pca.n_components_])
-
-    ############### PCR ########################################################################################
-
-
-    exclude_columns = ['shower_code', 'solution_id']
-    physical_vars = ['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max'] #, 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'
-
-    # Delete specific columns from variable_PCA
-    variable_PCA_no_info = [col for col in variable_PCA if col not in exclude_columns]
-
-    # # Scale the data
-    # scaled_sim = pd.DataFrame(scaler.fit_transform(df_sim_shower[variable_PCA_no_info + physical_vars]), columns=variable_PCA_no_info + physical_vars)
-
-    # Define X and y (now y contains only the PCA observable parameters)
-    X = df_sim_shower[variable_PCA_no_info]
-    y = df_sim_shower[physical_vars]
-
-    # Split the data into training and testing sets
-    X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.4, random_state=42)
-
-    # Loop over the number of principal components
-    print("PCR Predictions with "+str(pca.n_components_)+"PC :")
-
-    # PCR: Principal Component Regression inform that the predicted variable is always positive
-    pcr = make_pipeline(StandardScaler(), pca, LinearRegression())
-
-    pcr.fit(X_train, y_train)
-    # Predict using the models
-    y_pred_pcr = pcr.predict(df_obs_shower[variable_PCA_no_info])
-    # Evaluate the model on the validation set
-    r2_score_train = pcr.score(X_train, y_train)
-
-    print(f"PCR training r-squared: {r2_score_train:.3f}")
-    
-
-    to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','log eros. mass min [kg]','log eros. mass max [kg]']
-    # multiply y_pred_pcr that has the 'erosion_coeff'*1000000 and 'sigma'*1000000
-    y_pred_pcr[:,4]=y_pred_pcr[:,4]*1000000
-    y_pred_pcr[:,2]=y_pred_pcr[:,2]*1000000
-    # print the prediction all in the same line in {'{:.4g}'.format(y_pred_pcr)}
-    print(f'{to_plot_unit[0]}: {y_pred_pcr[0,0]:.4g}\n {to_plot_unit[1]}: {y_pred_pcr[0,1]:.4g}\n {to_plot_unit[2]}: {y_pred_pcr[0,2]:.4g}\n {to_plot_unit[3]}: {y_pred_pcr[0,3]:.4g}\n {to_plot_unit[4]}: {y_pred_pcr[0,4]:.4g}\n {to_plot_unit[5]}: {y_pred_pcr[0,5]:.4g}\n {to_plot_unit[6]}: {y_pred_pcr[0,6]:.4g}\n {to_plot_unit[7]}: {y_pred_pcr[0,7]:.4g}')
-
-    # # get the value for each physical_vars sigularly
-    # for i in range(len(physical_vars)):
-    #     physical_vars_1 = [physical_vars[i]]
-    #     # Split the data into training and testing sets
-    #     X_train, X_temp, y_train, y_temp = train_test_split(X, y[physical_vars_1], test_size=0.4, random_state=42)
-    #     # PCR: Principal Component Regression inform that the predicted variable is always positive
-    #     pcr = make_pipeline(StandardScaler(), pca, LinearRegression())
-    #     pcr.fit(X_train, y_train)
-    #     # Predict using the models
-    #     y_pred_pcr = pcr.predict(df_obs_shower[variable_PCA_no_info])
-    #     # Evaluate the model on the validation set
-    #     r2_score_train = pcr.score(X_train, y_train)
-    #     print(f"PCR training r-squared for {physical_vars_1[0]}: {r2_score_train:.3f}")
-    #     print(f'{physical_vars_1[0]}: {y_pred_pcr[0,0]:.4g}')
-
-
-    ############### PCR ########################################################################################
-
 
     # # select only the column with in columns_PC with the same number of n_components
     columns_PC = ['PC' + str(x) for x in range(1, pca.n_components_+1)]
@@ -1392,11 +950,6 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
 
     # plot the explained variance ratio of each principal componenets base on the number of column of the original dimension
     plt.bar(x= range(1,len(percent_variance)+1), height=percent_variance, tick_label=columns_PC, color='black')
-    # ad text at the top of the bar with the percentage of variance explained
-    for i in range(1,len(percent_variance)+1):
-        # reduce text size
-        plt.text(i, percent_variance[i-1], str(percent_variance[i-1])+'%', ha='center', va='bottom', fontsize=5)
-
     plt.ylabel('Percentance of Variance Explained')
     plt.xlabel('Principal Component')
     # save the figure
@@ -1411,9 +964,7 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # plt.figure(figsize=(20, 20))
 
     # Compute the correlation coefficients
-    # cov_data = pca.components_.T
-    # varimax rotation
-    cov_data = rotated_loadings
+    cov_data = pca.components_.T
 
     # Plot the correlation matrix
     img = plt.matshow(cov_data.T, cmap=plt.cm.coolwarm, vmin=-1, vmax=1)
@@ -1430,20 +981,19 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # plot the influence of each component on the original dimension
     for i in range(cov_data.shape[0]):
         for j in range(cov_data.shape[1]):
-            plt.text(i, j, "{:.1f}".format(cov_data[i, j]), size=5, color='black', ha="center", va="center")   
+            plt.text(i, j, "{:.2f}".format(cov_data[i, j]), size=5, color='black', ha="center", va="center")   
     # save the figure
     plt.savefig(OUT_PUT_PATH+os.sep+'PCAcovariance_matrix_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
     # close the figure
     plt.close()
     # plt.show()
     ###
-
-    # print the number of simulation selected
-    print('PCA run for', len(df_sim_shower),'simulations, delete ',len(df_sim_var_sel_standardized[outliers]),' outliers')
-
-    # if len(No_var_PCA_perc) > 0:
-    #     for No_var_PCA_perc in No_var_PCA_perc:
-    #         print('Observable data variable [',No_var_PCA_perc,'] is not within the 5 and 95 percentile of the simulated shower')
+    # 10PC_10ev_dist1.38-2.08
+    # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist OUT_PUT_PATH+os.sep+'Simulated_'+current_shower+'_select_PCA.csv'
+    if os.path.exists(OUT_PUT_PATH+os.sep+"logPCA"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt"):
+        # remove the file
+        os.remove(OUT_PUT_PATH+os.sep+"logPCA"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt")
+    sys.stdout = Logger(OUT_PUT_PATH, "logPCA"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt")
 
     # print the name of the variables used in PCA
     print('Variables used in PCA: ',df_all_nameless.columns)
@@ -1496,245 +1046,130 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # # close the figure
     # plt.close()
 
-    # ##########################################
-    # # define the mean position and extract the n_selected meteor closest to the mean
+    ##########################################
+    # define the mean position and extract the n_selected meteor closest to the mean
 
-    # # find the mean base on the shower_code in the PCA space
-    # meanPCA = df_all_PCA.groupby('shower_code').mean()
-    # df_all_PCA['solution_id']=df_all['solution_id']
-    # # create a list with the selected meteor properties and PCA space
-    # df_sel_shower=[]
-    # df_sel_PCA=[]
-    # # i_shower_preced=0
-    # jj=0
-
-    # for current_shower in Shower:
-    #     # find the mean of the simulated shower
-    #     meanPCA_current = meanPCA.loc[(meanPCA.index == current_shower)]
-    #     # take only the value of the mean of the first row
-    #     meanPCA_current = meanPCA_current.values
-
-    #     shower_current = df_obs_shower[df_obs_shower['shower_code']==current_shower]
-    #     shower_current_PCA = df_obs_PCA[df_obs_PCA['shower_code']==current_shower]
-    #     # trasform the dataframe in an array
-    #     shower_current_PCA = shower_current_PCA.drop(['shower_code'], axis=1)
-    #     shower_current_PCA = shower_current_PCA.values 
-
-    #     df_sim_PCA_for_now = df_sim_PCA
-    #     df_sim_PCA_for_now = df_sim_PCA_for_now.drop(['shower_code'], axis=1)
-    #     df_sim_PCA_val = df_sim_PCA_for_now.values 
-
-    #     for i_shower in range(len(shower_current)):
-    #         distance_current = []
-    #         for i_sim in range(len(df_sim_PCA_val)):
-    #             distance_current.append(scipy.spatial.distance.euclidean(df_sim_PCA_val[i_sim], shower_current_PCA[i_shower]))
-            
-
-    #         ############ Value ###############
-    #         # print the ['solution_id'] of the element [i_shower]
-    #         # print(shower_current['solution_id'][i_shower])
-    #         # create an array with lenght equal to the number of simulations and set it to shower_current_PCA['solution_id'][i_shower]
-    #         solution_id_dist = [shower_current['solution_id'][i_shower]]*len(df_sim_PCA_val)
-
-    #         # give the same solution_id of the shower_current_PCA['solution_id'] of at the i_shower row in a new column solution_id_dist of the df_sim_shower create a slice long as the simulations
-    #         df_sim_shower['solution_id_dist']=solution_id_dist
-
-    #         df_sim_shower['distance_meteor']=distance_current
-
-    #         # sort the distance and select the n_selected closest to the mean
-    #         df_sim_shower_dis = df_sim_shower.sort_values(by=['distance_meteor'])
-    #         # drop the index
-    #         df_sim_shower_dis = df_sim_shower_dis.reset_index(drop=True)
-        
-    #         # create a dataframe with the selected simulated shower characteristics
-    #         df_sim_selected = df_sim_shower_dis[:N_sho_sel]
-    #         # delete the shower code
-    #         df_sim_selected = df_sim_selected.drop(['shower_code'], axis=1)
-    #         # add the shower code
-    #         df_sim_selected['shower_code']= current_shower+'_sel'
-    #         df_sel_shower.append(df_sim_selected)
-
-    #         ################ PCA ################
-
-    #         df_sim_PCA_dist=df_sim_PCA
-    #         df_sim_PCA_dist['distance_meteor']=distance_current
-
-    #         # sort the distance and select the n_selected closest to the mean
-    #         df_sim_PCA_dist = df_sim_PCA_dist.sort_values(by=['distance_meteor'])
-    #         # drop the index
-    #         df_sim_PCA_dist = df_sim_PCA_dist.reset_index(drop=True)
-        
-    #         # create a dataframe with the selected simulated shower characteristics
-    #         df_sim_selected_PCA = df_sim_PCA_dist[:N_sho_sel]
-    #         # delete the shower code
-    #         df_sim_selected_PCA = df_sim_selected_PCA.drop(['shower_code'], axis=1)
-    #         # add the shower code
-    #         df_sim_selected_PCA['shower_code']= current_shower+'_sel'
-
-    #         df_sel_PCA.append(df_sim_selected_PCA)
-
-    #         # print the progress bar in percent that refresh every 10 iteration and delete the previous one
-    #         if i_shower%10==0:
-    #             print('Processing ',current_shower,' shower: ', round(i_shower/len(shower_current)*100,2),'%', end="\r")
-
-
-    #         # print('.', end='', flush=True)
-
-
-    #     print('Processing ',current_shower,' shower:  100  %      ', end="\r")
-
-    #     # concatenate the list of the PC components to a dataframe
-    #     df_sel_PCA = pd.concat(df_sel_PCA)
-
-    #     # delete the distace column from df_sel_PCA
-    #     df_sel_PCA = df_sel_PCA.drop(['distance_meteor'], axis=1)
-
-    #     # delete the shower code column
-    #     df_sim_PCA = df_sim_PCA.drop(['distance_meteor'], axis=1)
-
-    #     # save the dataframe to a csv file withouth the index
-    #     df_sel_PCA.to_csv(OUT_PUT_PATH+os.sep+'Simulated_'+current_shower+'_select_PCA.csv', index=False)
-
-    #     # concatenate the list of the properties to a dataframe
-    #     df_sel_shower = pd.concat(df_sel_shower)
-
-    #     df_sel_PCA_NEW = df_sel_PCA.drop(['shower_code'], axis=1)
-    #     # create a list of the selected shower
-    #     df_sel_PCA_NEW = df_sel_PCA_NEW.values
-    #     distance_current = []
-    #     # Flatten meanPCA_current to make it a 1-D array
-    #     meanPCA_current = meanPCA_current.flatten()
-    #     for i_shower in range(len(df_sel_shower)):
-    #         distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, df_sel_PCA_NEW[i_shower]))
-    #     df_sel_shower['distance']=distance_current # from the mean of the selected shower
-    #     # save the dataframe to a csv file withouth the index
-    #     df_sel_shower.to_csv(OUT_PUT_PATH+os.sep+'Simulated_'+current_shower+'_select.csv', index=False)
-
-    #     # save dist also on selected shower
-    #     distance_current = []
-    #     for i_shower in range(len(shower_current)):
-    #         distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, shower_current_PCA[i_shower]))
-    #     shower_current['distance']=distance_current # from the mean of the selected shower
-    #     shower_current.to_csv(OUT_PUT_PATH+os.sep+current_shower+'_and_dist.csv', index=False)
-
-    # # copy Simulated_PER.csv in OUT_PUT_PATH
-    # shutil.copyfile(INPUT_PATH+os.sep+'Simulated_PER.csv', OUT_PUT_PATH+os.sep+'Simulated_PER.csv')
-
-    ####################distance with mahalanobis distance############################################
-
-    # for i_shower in range(len(df_sel_shower)):
-    #     distance_current.append(mahalanobis_distance(meanPCA_current, df_sel_PCA_NEW[i_shower], cov_inv))
-    # df_sel_shower['distance'] = distance_current
-    # df_sel_shower.to_csv(os.path.join(OUT_PUT_PATH, f'Simulated_{current_shower}_select.csv'), index=False)
-    # distance_current = []
-
-    # for i_shower in range(len(shower_current)):
-    #     distance_current.append(mahalanobis_distance(meanPCA_current, shower_current_PCA[i_shower], cov_inv))
-    # shower_current['distance'] = distance_current
-    # shower_current.to_csv(os.path.join(OUT_PUT_PATH, f'{current_shower}_and_dist.csv'), index=False)
-
-    ##################################################################################################
-
-    # Calculate the mean and inverse covariance matrix for Mahalanobis distance
+    # find the mean base on the shower_code in the PCA space
     meanPCA = df_all_PCA.groupby('shower_code').mean()
-    cov_matrix = df_all_PCA.cov()
-    cov_inv = inv(cov_matrix)
-
-    df_all_PCA['solution_id'] = df_all['solution_id']
-    df_sel_shower = []
-    df_sel_PCA = []
-    jj = 0
+    df_all_PCA['solution_id']=df_all['solution_id']
+    # create a list with the selected meteor properties and PCA space
+    df_sel_shower=[]
+    df_sel_PCA=[]
+    # i_shower_preced=0
+    jj=0
 
     for current_shower in Shower:
         # find the mean of the simulated shower
-        meanPCA_current = meanPCA.loc[(meanPCA.index == current_shower)].values.flatten()
+        meanPCA_current = meanPCA.loc[(meanPCA.index == current_shower)]
         # take only the value of the mean of the first row
-        shower_current = df_obs_shower[df_obs_shower['shower_code'] == current_shower]
-        shower_current_PCA = df_obs_PCA[df_obs_PCA['shower_code'] == current_shower]
+        meanPCA_current = meanPCA_current.values
+
+        shower_current = df_obs_shower[df_obs_shower['shower_code']==current_shower]
+        shower_current_PCA = df_obs_PCA[df_obs_PCA['shower_code']==current_shower]
         # trasform the dataframe in an array
-        shower_current_PCA = shower_current_PCA.drop(['shower_code'], axis=1).values
-        df_sim_PCA_for_now = df_sim_PCA.drop(['shower_code'], axis=1).values
-        
+        shower_current_PCA = shower_current_PCA.drop(['shower_code'], axis=1)
+        shower_current_PCA = shower_current_PCA.values 
+
+        df_sim_PCA_for_now = df_sim_PCA
+        df_sim_PCA_for_now = df_sim_PCA_for_now.drop(['shower_code'], axis=1)
+        df_sim_PCA_val = df_sim_PCA_for_now.values 
+
         for i_shower in range(len(shower_current)):
             distance_current = []
-            for i_sim in range(len(df_sim_PCA_for_now)):
-                distance_current.append(mahalanobis_distance(df_sim_PCA_for_now[i_sim], shower_current_PCA[i_shower], cov_inv))
-
-            # for i_sim in range(len(df_sim_PCA_for_now)):
-            #     distance = mahalanobis_distance(df_sim_PCA_for_now[i_sim], shower_current_PCA[i_shower], cov_inv)
-            #     weighted_distance = distance * np.sqrt(explained_variance)  # Weighting by explained variance
-            #     distance_current.append(np.sum(weighted_distance))  # Sum the weighted distances
+            for i_sim in range(len(df_sim_PCA_val)):
+                distance_current.append(scipy.spatial.distance.euclidean(df_sim_PCA_val[i_sim], shower_current_PCA[i_shower]))
             
+
+            ############ Value ###############
+            # print the ['solution_id'] of the element [i_shower]
+            # print(shower_current['solution_id'][i_shower])
             # create an array with lenght equal to the number of simulations and set it to shower_current_PCA['solution_id'][i_shower]
-            solution_id_dist = [shower_current['solution_id'][i_shower]] * len(df_sim_PCA_for_now)
-            df_sim_shower['solution_id_dist'] = solution_id_dist
-            df_sim_shower['distance_meteor'] = distance_current
-            # sort the distance and select the n_selected closest to the meteor
-            df_sim_shower_dis = df_sim_shower.sort_values(by=['distance_meteor']).reset_index(drop=True)
-            df_sim_selected = df_sim_shower_dis[:N_sho_sel].drop(['shower_code'], axis=1)
-            df_sim_selected['shower_code'] = current_shower + '_sel'
-            df_sel_shower.append(df_sim_selected)
-            
+            solution_id_dist = [shower_current['solution_id'][i_shower]]*len(df_sim_PCA_val)
+
+            # give the same solution_id of the shower_current_PCA['solution_id'] of at the i_shower row in a new column solution_id_dist of the df_sim_shower create a slice long as the simulations
+            df_sim_shower['solution_id_dist']=solution_id_dist
+
+            df_sim_shower['distance_meteor']=distance_current
+
+            # sort the distance and select the n_selected closest to the mean
+            df_sim_shower_dis = df_sim_shower.sort_values(by=['distance_meteor'])
+            # drop the index
+            df_sim_shower_dis = df_sim_shower_dis.reset_index(drop=True)
+        
             # create a dataframe with the selected simulated shower characteristics
-            df_sim_PCA_dist = df_sim_PCA
-            df_sim_PCA_dist['distance_meteor'] = distance_current
-            df_sim_PCA_dist = df_sim_PCA_dist.sort_values(by=['distance_meteor']).reset_index(drop=True)
+            df_sim_selected = df_sim_shower_dis[:N_sho_sel]
             # delete the shower code
-            df_sim_selected_PCA = df_sim_PCA_dist[:N_sho_sel].drop(['shower_code'], axis=1)
+            df_sim_selected = df_sim_selected.drop(['shower_code'], axis=1)
             # add the shower code
-            df_sim_selected_PCA['shower_code'] = current_shower + '_sel'
+            df_sim_selected['shower_code']= current_shower+'_sel'
+            df_sel_shower.append(df_sim_selected)
+
+            ################ PCA ################
+
+            df_sim_PCA_dist=df_sim_PCA
+            df_sim_PCA_dist['distance_meteor']=distance_current
+
+            # sort the distance and select the n_selected closest to the mean
+            df_sim_PCA_dist = df_sim_PCA_dist.sort_values(by=['distance_meteor'])
+            # drop the index
+            df_sim_PCA_dist = df_sim_PCA_dist.reset_index(drop=True)
+        
+            # create a dataframe with the selected simulated shower characteristics
+            df_sim_selected_PCA = df_sim_PCA_dist[:N_sho_sel]
+            # delete the shower code
+            df_sim_selected_PCA = df_sim_selected_PCA.drop(['shower_code'], axis=1)
+            # add the shower code
+            df_sim_selected_PCA['shower_code']= current_shower+'_sel'
+
             df_sel_PCA.append(df_sim_selected_PCA)
-            
-            if i_shower % 10 == 0:
-                print(f'Processing {current_shower} shower: {round(i_shower/len(shower_current)*100, 2)}%', end="\r")
-        
-        print(f'Processing {current_shower} shower: 100%', end="\r")
-        
-    df_sel_PCA = pd.concat(df_sel_PCA).drop(['distance_meteor'], axis=1)
-    df_sim_PCA = df_sim_PCA.drop(['distance_meteor'], axis=1)
-    df_sel_PCA.to_csv(os.path.join(OUT_PUT_PATH, f'Simulated_{current_shower}_select_PCA.csv'), index=False)
-    df_sel_shower = pd.concat(df_sel_shower)
-    df_sel_PCA_NEW = df_sel_PCA.drop(['shower_code'], axis=1).values
-    distance_current = []
 
-    # Flatten meanPCA_current to make it a 1-D array
-    meanPCA_current = meanPCA_current.flatten()
+            # print the progress bar in percent that refresh every 10 iteration and delete the previous one
+            if i_shower%10==0:
+                print('Processing ',current_shower,' shower: ', round(i_shower/len(shower_current)*100,2),'%', end="\r")
 
-    for i_shower in range(len(df_sel_shower)):
-        distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, df_sel_PCA_NEW[i_shower]))
-    df_sel_shower['distance']=distance_current # from the mean of the selected shower
-    # for the name of observation shower check if it has ben selected one with the same name unique for the solution_id_dist ['solution_id_dist'].unique()
-    for len_shower in range(len(shower_current)):
-        sol_id_dist_search_OG = shower_current['solution_id'][0]
-        sol_id_dist_search = shower_current['solution_id'][len_shower]
-        # get all the data with the same solution_id_dist
-        all_sol_id_dist = df_sel_shower[df_sel_shower['solution_id_dist'] == sol_id_dist_search]
-        # check if among all_sol_id_dist there is one with the same solution_id as the sol_id_dist_search
-        if len(all_sol_id_dist[all_sol_id_dist['solution_id'] == sol_id_dist_search_OG]) == 0:
-            # add a row with the same solution_id_dist and the same solution_id with the values of df_sim_shower
-            df_sel_shower_real = df_sim_shower[df_sim_shower['solution_id'] == sol_id_dist_search_OG].copy()
-            # add to the df_sel_shower_real the solution_id_dist, distance_meteor, shower_code, distance
-            df_sel_shower_real.loc[:, 'solution_id_dist'] = sol_id_dist_search
-            df_sel_shower_real.loc[:, 'distance_meteor'] = 9999
-            df_sel_shower_real.loc[:, 'shower_code'] = current_shower + '_sel'
-            df_sel_shower_real.loc[:, 'distance'] = 9999
-            df_sel_shower_real.loc[:, 'solution_id'] = sol_id_dist_search
-            # add the row to the df_sel_shower
-            df_sel_shower = pd.concat([df_sel_shower, df_sel_shower_real])
-        else:
-            # change the solution_id of the selected shower to the solution_id of the observation shower
-            df_sel_shower.loc[(df_sel_shower['solution_id_dist'] == sol_id_dist_search) & (df_sel_shower['solution_id'] == sol_id_dist_search_OG), 'solution_id'] = sol_id_dist_search
-    # save the dataframe to a csv file withouth the index
-    df_sel_shower.to_csv(OUT_PUT_PATH+os.sep+'Simulated_'+current_shower+'_select.csv', index=False)
 
-    # save dist also on selected shower
-    distance_current = []
-    for i_shower in range(len(shower_current)):
-        distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, shower_current_PCA[i_shower]))
-    shower_current['distance']=distance_current # from the mean of the selected shower
-    shower_current.to_csv(OUT_PUT_PATH+os.sep+current_shower+'_and_dist.csv', index=False)
+            # print('.', end='', flush=True)
 
-    shutil.copyfile(os.path.join(INPUT_PATH, 'Simulated_PER.csv'), os.path.join(OUT_PUT_PATH, 'Simulated_PER.csv'))
+
+        print('Processing ',current_shower,' shower:  100  %      ', end="\r")
+
+        # concatenate the list of the PC components to a dataframe
+        df_sel_PCA = pd.concat(df_sel_PCA)
+
+        # delete the distace column from df_sel_PCA
+        df_sel_PCA = df_sel_PCA.drop(['distance_meteor'], axis=1)
+
+        # delete the shower code column
+        df_sim_PCA = df_sim_PCA.drop(['distance_meteor'], axis=1)
+
+        # save the dataframe to a csv file withouth the index
+        df_sel_PCA.to_csv(OUT_PUT_PATH+os.sep+'Simulated_'+current_shower+'_select_PCA.csv', index=False)
+
+        # concatenate the list of the properties to a dataframe
+        df_sel_shower = pd.concat(df_sel_shower)
+
+        df_sel_PCA_NEW = df_sel_PCA.drop(['shower_code'], axis=1)
+        # create a list of the selected shower
+        df_sel_PCA_NEW = df_sel_PCA_NEW.values
+        distance_current = []
+        # Flatten meanPCA_current to make it a 1-D array
+        meanPCA_current = meanPCA_current.flatten()
+        for i_shower in range(len(df_sel_shower)):
+            distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, df_sel_PCA_NEW[i_shower]))
+        df_sel_shower['distance']=distance_current # from the mean of the selected shower
+        # save the dataframe to a csv file withouth the index
+        df_sel_shower.to_csv(OUT_PUT_PATH+os.sep+'Simulated_'+current_shower+'_select.csv', index=False)
+
+        # save dist also on selected shower
+        distance_current = []
+        for i_shower in range(len(shower_current)):
+            distance_current.append(scipy.spatial.distance.euclidean(meanPCA_current, shower_current_PCA[i_shower]))
+        shower_current['distance']=distance_current # from the mean of the selected shower
+        shower_current.to_csv(OUT_PUT_PATH+os.sep+current_shower+'_and_dist.csv', index=False)
+
+    # copy Simulated_PER.csv in OUT_PUT_PATH
+    shutil.copyfile(INPUT_PATH+os.sep+'Simulated_PER.csv', OUT_PUT_PATH+os.sep+'Simulated_PER.csv')
+
 
     # PLOT the selected simulated shower ########################################
 
@@ -1782,8 +1217,8 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
                         ax = fig.axes[i, j]
                         sns.scatterplot(data=df_sim_sel_PCA, x=df_sim_sel_PCA.columns[j], y=df_sim_sel_PCA.columns[i], hue='shower_code', size='point_size', sizes=(5, 40), ax=ax, legend=False, edgecolor='k', palette='bright')
 
-                        # ax.set_xlim(percentiles_1[df_sim_sel_PCA.columns[j]], percentiles_99[df_sim_sel_PCA.columns[j]])
-                        # ax.set_ylim(percentiles_1[df_sim_sel_PCA.columns[i]], percentiles_99[df_sim_sel_PCA.columns[i]])
+                        ax.set_xlim(percentiles_1[df_sim_sel_PCA.columns[j]], percentiles_99[df_sim_sel_PCA.columns[j]])
+                        ax.set_ylim(percentiles_1[df_sim_sel_PCA.columns[i]], percentiles_99[df_sim_sel_PCA.columns[i]])
 
         # delete the last row of the plot
         # fig.axes[-1, -1].remove()
@@ -1821,10 +1256,32 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
 
 
 
+def find_and_extract_trajectory_files(directory):
+    trajectory_files = []
+    file_names = []
+    output_folder = []
+    
+    for root, dirs, files in os.walk(directory):
 
-# Assuming df_sim_shower and df_obs_shower are defined and populated somewhere
-# Example usage:
-# PCASim(df_sim_shower, df_obs_shower, '/path/to/output', Shower=['PER'], N_sho_sel=10000, No_var_PCA=['var1', 'var2'], INPUT_PATH='/path/to/input')
+        # go in each folder and find the file with the end _trajectory.pickle but skip the folder with the name GenSim
+        if 'GenSim' in root:
+            continue
+
+        for file in files:
+            if file.endswith("_trajectory.pickle"):
+                base_name = os.path.splitext(file)[0]  # Remove the file extension
+                variable_name = base_name.replace("_trajectory", "")  # Extract the number 20230405_010203
+                output_folder_name = base_name.replace("_trajectory", "_GenSim") # _GenSim folder whre all generated simulations are stored
+                
+                trajectory_files.append(os.path.join(root, file))
+                file_names.append(variable_name)
+                output_folder.append(os.path.join(root, output_folder_name))
+    
+    return trajectory_files, file_names, output_folder
+
+
+
+
 
 
 
@@ -1838,21 +1295,21 @@ if __name__ == "__main__":
 
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
-
-    arg_parser.add_argument('--output_dir', metavar='OUTPUT_PATH', type=str, default=r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder\TEST', \
-        help="Path to the output directory.")
-
-    arg_parser.add_argument('--shower', metavar='SHOWER', type=str, default='PER', \
-        help="Use specific shower from the given simulation.")
-    
+  
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder', \
         help="Path were are store both simulated and observed shower .csv file.")
 
-    arg_parser.add_argument('--nsel', metavar='SEL_NUM', type=int, default=100, \
+    arg_parser.add_argument('--nsel', metavar='SEL_NUM', type=int, default=10, \
         help="Number of selected simulations to consider.")
 
     arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=[], \
         help="Use specific variable not considered in PCA.")
+
+    arg_parser.add_argument('--save_plot', metavar='SAVE_PLOT', type=bool, default=True, \
+        help="save the plots.")
+    
+    arg_parser.add_argument('--save_csv', metavar='SAVE_CSV', type=bool, default=True, \
+        help="save the csv file.")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None, \
         help="Number of cores to use. All by default.")
@@ -1862,18 +1319,30 @@ if __name__ == "__main__":
 
     #########################
 
+    # check if the input_dir has a json extension
+    if cml_args.input_dir.endswith('.json'):
+        # used the json file for test of the method with the simulated data from generate simulations
+        print('Reading the json file')
+
+    elif cml_args.input_dir.endswith('.csv'):
+
+    else:
+        # walk in the cml_args.input_dir and find all the file with the end _trajectory.pickle and then read the pickle file    
+        trajectory_files, file_names, output_folder = find_and_extract_trajectory_files(cml_args.input_dir)
+
+    # print only the file name in the directory split the path and take the last element
+    print('Number of trajectory.pickle files find',len(trajectory_files))
+    for file in trajectory_files:
+        print('processing file: ',os.path.split(file)[1])
+
+        # 
+        
+
     # Make the output directory
     mkdirP(cml_args.output_dir)
 
-    # make only one shower
-    Shower=[cml_args.shower]
-
-    # # Init simulation parameters with the given class name
-    # erosion_sim_params = SIM_CLASSES[SIM_CLASSES_NAMES.index(cml_args.simclass)]()
-
-    # Set the folder where are the GenerateSimulations.py output json files e.g. "Simulations_"+Shower+""
-    # the numbr of showers and folder must be the same
-    folder_GenerateSimulations_json = ["Simulations_"+f+"" for f in Shower]
+    # # Set the folder where are the GenerateSimulations.py output json files e.g. "Simulations_"+Shower+""
+    # folder_GenerateSimulations_json = ["Simulations_"+f+"" for f in Shower]
 
     # save all the simulated showers in a list
     df_sim_shower = []
@@ -1941,5 +1410,5 @@ if __name__ == "__main__":
     # concatenate all the EMCCD observed showers in a single dataframe
     df_obs_shower = pd.concat(df_obs_shower)
 
-    PCASim(df_sim_shower,df_obs_shower, cml_args.output_dir, Shower, cml_args.nsel, cml_args.NoPCA, cml_args.input_dir)
+    PCASim(cml_args.output_dir, Shower, cml_args.nsel, cml_args.NoPCA, cml_args.input_dir)
 

@@ -225,12 +225,14 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
         index_sel=index_sel[0]
         
         flag_pickl=False
-        if namefile_sel==true_file.replace('_trajectory.pickle',''):
-            # add the name of the file to the path
-            namefile_sel=namefile_sel+'_sim_fit.json'
-            # add the true path to the path
-            namefile_sel=true_path+os.sep+namefile_sel
-            flag_pickl=True
+        # if there is _trajectory.pickle in true_file
+        if '_trajectory.pickle' in true_file:
+            if namefile_sel==true_file.replace('_trajectory.pickle',''):
+                # add the name of the file to the path
+                namefile_sel=namefile_sel+'_sim_fit.json'
+                # add the true path to the path
+                namefile_sel=true_path+os.sep+namefile_sel
+                flag_pickl=True
 
         # chec if the file exist
         if not os.path.isfile(namefile_sel):
@@ -451,12 +453,14 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
         index_sel=index_sel[0]
 
         flag_pickl=False
-        if namefile_sel==true_file.replace('_trajectory.pickle',''):
-            # add the name of the file to the path
-            namefile_sel=namefile_sel+'_sim_fit.json'
-            # add the true path to the path
-            namefile_sel=true_path+os.sep+namefile_sel
-            flag_pickl=True
+        # if there is _trajectory.pickle in true_file
+        if '_trajectory.pickle' in true_file:
+            if namefile_sel==true_file.replace('_trajectory.pickle',''):
+                # add the name of the file to the path
+                namefile_sel=namefile_sel+'_sim_fit.json'
+                # add the true path to the path
+                namefile_sel=true_path+os.sep+namefile_sel
+                flag_pickl=True
 
         # check if the file exist
         if os.path.isfile(namefile_sel):

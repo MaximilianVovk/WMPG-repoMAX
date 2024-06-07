@@ -1,4 +1,4 @@
-""" Batch generate meteor simulations using an ablation model and random physical parameters, and store the 
++""" Batch generate meteor simulations using an ablation model and random physical parameters, and store the 
 simulations to disk. """
 
 

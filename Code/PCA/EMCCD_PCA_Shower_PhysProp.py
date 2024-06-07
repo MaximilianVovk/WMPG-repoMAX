@@ -867,8 +867,6 @@ def read_manual_pikle(ID,INPUT_PATH,Shower=''):
         # raise an error
         raise ValueError('No pickle file found')
         return None
-    
-
 
 
 def read_solution_table_json(Shower=''):

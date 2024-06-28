@@ -2759,7 +2759,7 @@ if __name__ == "__main__":
             np.random.randint(0, 2**31 - 1),MIN_FRAMES_VISIBLE] for _ in range(cml_args.nsims)]
         results_list = domainParallelizer(input_list, generateErosionSim, cores=cml_args.cores)
 
-        print(results_list)
+        # print(results_list)
 
         # count how many None are in the results_list
         count_none=0
@@ -2778,7 +2778,7 @@ if __name__ == "__main__":
         for res in results_list:
             if res is not None:
                 
-                if jj_plots_curve>10:
+                if jj_plots_curve>100:
                     break
                 # get the first value of res
                 abs_mag_sim, ht_sim, vel_sim, time_sim, len_sim, ht_obs=SIM_pickle_data_and_plot(res[0], plot_color='b')

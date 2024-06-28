@@ -9,7 +9,7 @@ latest update: 2021-05-25
 """
 
 import json
-# import copy
+import copy
 # import multiprocessing
 from numpy.linalg import inv
 import pandas as pd
@@ -49,11 +49,11 @@ import scipy.stats as stats
 import statsmodels.api as sm
 from sklearn.preprocessing import PowerTransformer
 
-add_json_noise = False
+add_json_noise = True
 
 PCA_percent = 99
 
-PCA_pairplot=False
+PCA_pairplot=True
 
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000 > output.txt    
@@ -1079,6 +1079,11 @@ def mahalanobis_distance(x, mean, cov_inv):
     diff = x - mean
     return np.sqrt(np.dot(np.dot(diff, cov_inv), diff.T))
 
+# # Function to compute modified Mahalanobis distance
+# def modified_mahalanobis_distance(x, y, cov_inv):
+#     diff = x - y
+#     return np.sqrt(np.dot(diff, np.dot(cov_inv, diff)))
+
 def check_normality(data, title):
     print(f"\nNormality check for {title}:")
 
@@ -1098,11 +1103,11 @@ def check_normality(data, title):
 
     # Shapiro-Wilk Test
     shapiro_test = stats.shapiro(data)
-    print("Shapiro-Wilk Test:", shapiro_test)
+    print("Shapiro-Wilk Test:", shapiro_test.statistic, shapiro_test.pvalue)
 
     # Anderson-Darling Test
-    ad_test = stats.anderson(data, dist='norm')
-    print("Anderson-Darling Test:", ad_test)
+    # ad_test = stats.anderson(data, dist='norm')
+    # print("Anderson-Darling Test:", ad_test)
 
     # # Skewness and Kurtosis
     # skewness = stats.skew(data)
@@ -1110,7 +1115,25 @@ def check_normality(data, title):
     # print("Skewness:", skewness)
     # print("Kurtosis:", kurtosis)
 
+    return shapiro_test.pvalue
 
+def transform_to_gaussian(data):
+    # Compute the ECDF of the original data
+    sorted_data = np.sort(data)
+    ecdf = np.arange(1, len(sorted_data)+1) / len(sorted_data)
+    
+    # Transform to standard normal space
+    standard_normal = np.random.normal(0, 1, size=len(data))
+    standard_normal_sorted = np.sort(standard_normal)
+    
+    # Interpolate to match the ECDF
+    resampled_data = np.interp(ecdf, np.linspace(0, 1, len(data)), standard_normal_sorted)
+    
+    # Scale and shift to match original mean and standard deviation
+    mean = np.mean(data)
+    std_dev = np.std(data)
+    resampled_data = resampled_data * std_dev + mean
+    return resampled_data
 # CODE ####################################################################################
 
 def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=10000, No_var_PCA=[], INPUT_PATH=os.getcwd()):
@@ -1122,8 +1145,8 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # the variable used in PCA are all = 'vel_init_norot','vel_avg_norot','duration','mass','begin_height','end_height','peak_abs_mag','beg_abs_mag','end_abs_mag','F','trail_len','acceleration','zenith_angle'
     # vel_init_norot	vel_avg_norot	duration	mass	peak_mag_height	begin_height	end_height	height_knee_vel	peak_abs_mag	beg_abs_mag	end_abs_mag	F	trail_len	acceleration	decel_after_knee_vel	zenith_angle	kurtosis	skew	kc	Dynamic_pressure_peak_abs_mag
     variable_PCA=[] #'vel_init_norot','peak_abs_mag','begin_height','end_height','F','acceleration','duration'
-    variable_PCA=['vel_init_norot','vel_avg_norot','duration','begin_height','peak_mag_height','end_height','beg_abs_mag','peak_abs_mag','end_abs_mag','F','zenith_angle','decel_parab_t0'] #'vel_init_norot','peak_abs_mag','begin_height','end_height','F','acceleration','duration'
-    
+    # variable_PCA=['vel_init_norot','vel_avg_norot','duration','begin_height','peak_mag_height','end_height','beg_abs_mag','peak_abs_mag','end_abs_mag','F','zenith_angle','t0'] #'vel_init_norot','peak_abs_mag','begin_height','end_height','F','acceleration','duration'
+    # variable_PCA=['vel_init_norot','vel_avg_norot','peak_abs_mag','begin_height','peak_mag_height','F','duration','decel_parab_t0'] # perfect!
     # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','vel_avg_norot','begin_height','end_height','beg_abs_mag','end_abs_mag','F','Dynamic_pressure_peak_abs_mag']
     # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','Dynamic_pressure_peak_abs_mag'] # perfect!
     # variable_PCA=['vel_init_norot','peak_abs_mag','zenith_angle','peak_mag_height','acceleration','duration','Dynamic_pressure_peak_abs_mag','kurtosis','skew','trail_len']
@@ -1138,7 +1161,7 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
 #     'erosion_mass_min','erosion_mass_max','erosion_range',\
 #     'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
     No_var_PCA=[]
-    # No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0', 'decel_t0'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
+    No_var_PCA=['skew','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
     # No_var_PCA=['t0','deceleration_lin','kc','decel_jacchia','deceleration_parab','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','a_t0', 'b_t0', 'c_t0', 'kurtosis','skew','beg_abs_mag', 'a_mag_init','b_mag_init','c_mag_init','a_mag_end','b_mag_end','c_mag_end'] #,deceleration_lin','deceleration_parab','decel_jacchia','decel_t0' decel_parab_t0
 
     # # if PC below 7 wrong
@@ -1179,32 +1202,91 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # Assign df_sim_shower to the version without outliers
     df_sim_shower = df_sim_shower[~outliers].copy()
 
-    # # scale the data so to be easily plot against each other with the same scale
-    # df_sim_var_sel = df_sim_shower[variable_PCA].copy()
-    # df_sim_var_sel = df_sim_var_sel.drop(['shower_code','solution_id'], axis=1)
+    if PCA_pairplot:
+        # scale the data so to be easily plot against each other with the same scale
+        df_sim_var_sel = df_sim_shower[variable_PCA].copy()
+        df_sim_var_sel = df_sim_var_sel.drop(['shower_code','solution_id'], axis=1)
 
-    # if len(df_sim_var_sel)>10000:
-    #     # pick randomly 10000 events
-    #     print('Number of events in the simulated shower:',len(df_sim_var_sel))
-    #     df_sim_var_sel=df_sim_var_sel.sample(n=10000)
+        if len(df_sim_var_sel)>10000:
+            # pick randomly 10000 events
+            print('Number of events in the simulated shower:',len(df_sim_var_sel))
+            df_sim_var_sel=df_sim_var_sel.sample(n=10000)
 
-    # df_sim_var_sel_standardized = df_sim_var_sel
-    # # # Standardize each column separately
-    # # scaler = StandardScaler()
-    # # df_sim_var_sel_standardized = scaler.fit_transform(df_sim_var_sel)
-    # # # put in a dataframe
-    # # df_sim_var_sel_standardized = pd.DataFrame(df_sim_var_sel_standardized, columns=df_sim_var_sel.columns)
-    # print('Number of events in the simulated shower after the selection:',len(df_sim_var_sel))
-    # # sns plot of the df_sim_var_sel and df_sim_var_sel_no_outliers hue='shower_code'
-    # sns.pairplot(df_sim_var_sel_standardized)
-    # print('Pairplot of the simulated shower')
-    # # save the figure
-    # plt.savefig(OUT_PUT_PATH+os.sep+'var_sns_'+Shower[0]+'_select_PCA.png')
-    # # close the figure
-    # plt.close()
+        df_sim_var_sel_standardized = df_sim_var_sel
+        # # # Standardize each column separately
+        # # scaler = StandardScaler()
+        # # df_sim_var_sel_standardized = scaler.fit_transform(df_sim_var_sel)
+        # # # put in a dataframe
+        # # df_sim_var_sel_standardized = pd.DataFrame(df_sim_var_sel_standardized, columns=df_sim_var_sel.columns)
+        # print('Number of events in the simulated shower after the selection:',len(df_sim_var_sel))
+        # # sns plot of the df_sim_var_sel and df_sim_var_sel_no_outliers hue='shower_code'
+        # sns.pairplot(df_sim_var_sel_standardized)
+        # print('Pairplot of the simulated shower')
+        # # save the figure
+        # plt.savefig(OUT_PUT_PATH+os.sep+'var_sns_'+Shower[0]+'_select_PCA.png')
+        # # close the figure
+        # plt.close()
+
+
+
+
+        # # loop all pphysical variables
+        # physical_vars = ['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
+        # for var_phys in physical_vars:
+        #     # make a subplot of the rho againist each variable_PCA as a scatter plot
+        #     fig, axs = plt.subplots(3, 4, figsize=(20, 15))
+        #     # flatten the axs array
+        #     axs = axs.flatten()
+        #     for i, var in enumerate(variable_PCA[2:]):
+        #         # plot the rho againist the variable with black borders
+        #         axs[i].scatter(df_sim_shower[var], df_sim_shower[var_phys], c='b') #, edgecolors='k', alpha=0.5
+        #         # put a green vertical line for the df_obs_shower[var] value
+        #         axs[i].axvline(df_obs_shower[var].values[0], color='limegreen', linestyle='--', linewidth=5)
+        #         # put a horizontal line for the rho of the first df_sim_shower
+        #         axs[i].axhline(df_sim_shower[var_phys].values[0], color='k', linestyle='-', linewidth=2)
+        #         axs[i].set_title(var)
+        #         # as a suptitle put the variable_PCA
+        #         fig.suptitle(var_phys)
+        #         # grid
+        #         axs[i].grid()
+        #         # make y axis log if the variable is 'erosion_mass_min' 'erosion_mass_max'
+        #         if var_phys == 'erosion_mass_min' or var_phys == 'erosion_mass_max':
+        #             axs[i].set_yscale('log')
+
+        #     # save the figure
+        #     plt.savefig(OUT_PUT_PATH+os.sep+var_phys+'_vs_var_'+Shower[0]+'_select_PCA.png')
+        #     # close the figure
+        #     plt.close()
+
+
+        # # make a subplot of the distribution of the variables
+        # fig, axs = plt.subplots(3, 4, figsize=(20, 15))
+        # for i, var in enumerate(variable_PCA[2:]):
+        #     # plot the distribution of the variable
+        #     sns.histplot(df_sim_var_sel[var], kde=True, ax=axs[i//4, i%4], color='b', alpha=0.5)
+        #     # axs[i//4, i%4].set_title('Distribution of '+var)
+        #     # put a vertical line for the df_obs_shower[var] value
+        #     axs[i//4, i%4].axvline(df_obs_shower[var].values[0], color='limegreen', linestyle='--', linewidth=5)
+        #     # grid
+        #     axs[i//4, i%4].grid()
+            
+        # # save the figure
+        # plt.savefig(OUT_PUT_PATH+os.sep+'var_hist_'+Shower[0]+'_select_PCA.png')
+        # # close the figure
+        # plt.close()
+        
+
+
 
     ##################################### delete var that are not in the 5 and 95 percentile of the simulated shower #####################################
 
+    df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
+    # delete nan
+    df_all = df_all.dropna()
+
+    # create a copy of df_sim_shower for the resampling
+    df_sim_shower_resample=df_sim_shower.copy()
+    df_obs_shower_resample=df_obs_shower.copy()
     No_var_PCA_perc=[]
     # check that all the df_obs_shower for variable_PCA is within th 5 and 95 percentie of df_sim_shower of variable_PCA
     for var in variable_PCA:
@@ -1213,41 +1295,222 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
             if var in df_obs_shower.columns:
                 # check if the variable is in the df_sim_shower
                 if var in df_sim_shower.columns:
-                    # check that all the values in df_obs_shower are within the 5 and 95 percentile of the df_sim_shower
-
-                    # if any(df_obs_shower[var] < np.percentile(df_sim_shower[var], 5)) or any(df_obs_shower[var] > np.percentile(df_sim_shower[var], 95)):
-                    #     print('Variable',var,'is not within the 5 and 95 percentile of the simulated meteors')
-                    #     # delete the variable from the variable_PCA
-                    #     variable_PCA.remove(var)
-                    #     # save the var deleted in a variable
-                    #     No_var_PCA_perc.append(var)
 
                     ii_all=0
                     for i_var in range(len(df_obs_shower[var])):
-                        # check if all the values are outside the 5 and 95 percentile of the df_sim_shower if so delete the variable from the variable_PCA
-                        if df_obs_shower[var][i_var] < np.percentile(df_sim_shower[var], 5) or df_obs_shower[var][i_var] > np.percentile(df_sim_shower[var], 95):
-                            ii_all=ii_all+1
+                        # # check if all the values are outside the 5 and 95 percentile of the df_sim_shower if so delete the variable from the variable_PCA
+                        # if df_obs_shower[var][i_var] < np.percentile(df_sim_shower[var], 1) or df_obs_shower[var][i_var] > np.percentile(df_sim_shower[var], 99):
+                        #     ii_all=ii_all+
+                        print(var)
 
                     if ii_all==len(df_obs_shower[var]):
-                        print('All variable',var,'are not within the 5 and 95 percentile of the simulated meteors')
+                        print('All variable',var,'are not within the 1 and 99 percentile of the simulated meteors')
                         # delete the variable from the variable_PCA
                         variable_PCA.remove(var)
                         # save the var deleted in a variable
                         No_var_PCA_perc.append(var)
+
+                        df_all = df_all.drop(var, axis=1)
+                    else:
+                        shapiro_test = stats.shapiro(df_all[var])
+                        print("Initial Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
+
+                        if var=='zenith_angle':
+                            # # do the cosine of the zenith angle
+                            # df_all[var]=np.cos(np.radians(df_all[var]))
+                            # # df_all[var]=transform_to_gaussian(df_all[var])
+                            # df_sim_shower_resample[var]=np.cos(np.radians(df_sim_shower_resample[var]))
+                            print('Variable ',var,' is not transformed')
+
+                        elif var=='vel_init_norot':
+                            # do the cosine of the zenith angle
+                            # df_all[var]=transform_to_gaussian(df_all[var])
+                            print('Variable ',var,' is not transformed')
+
+                        # elif var=='decel_parab_t0':
+                        #     # do the cosine of the zenith angle
+                        #     df_all[var]=np.log10(abs(df_all[var]))
+                        #     # df_all[var]=transform_to_gaussian(df_all[var])
+                        #     df_sim_shower_resample[var]=np.log10(abs(df_sim_shower_resample[var]))
+
+                        else:
+                            # if var=='vel_avg_norot':
+                            # do the log10 of the variable
+                            # df_all[var]=np.log10(abs(df_all[var]))
+
+                            # var_transformed_boxcox, lam = stats.boxcox(abs(df_all[var]))
+                            # df_all[var]=var_transformed_boxcox
+                            # var_transformed_boxcox_sim, lam = stats.boxcox(abs(df_sim_shower_resample[var]))
+                            # df_sim_shower_resample[var]=var_transformed_boxcox_sim
+
+                            pt = PowerTransformer(method='yeo-johnson')
+                            df_all[var]=pt.fit_transform(df_all[[var]])
+                            df_sim_shower_resample[var]=pt.fit_transform(df_sim_shower_resample[[var]])
+
+                            # pt = PowerTransformer(method='yeo-johnson')
+                            # df_all[var] = pt.fit_transform(df_all[[var]])
+
+                        shapiro_test = stats.shapiro(df_all[var])
+                        print("NEW Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
+                        
+                        
+                        # # 
+                        # check_normality(df_sim_shower[var], var)
+                        # # do the log of the variable and see the normality
+                        # check_normality(np.log10(abs(df_sim_shower[var])), 'log_'+var)
+                        # var_transformed_boxcox, lam = stats.boxcox(abs(df_sim_shower[var]))
+                        # # use the boxcox transformation
+                        # check_normality(var_transformed_boxcox, 'boxcox_'+var)
+                        # df_sim_shower_resample[var]=var_transformed_boxcox
                 else:
                     print('Variable ',var,' is not in the simulated shower')
             else:
                 print('Variable ',var,' is not in the observed shower')
 
+    #### PCR test #######################################################################################################
+
+    # exclude_columns = ['shower_code', 'solution_id']
+    # physical_vars = ['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max'] #, 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'
+
+    # # Define the observable variables for PCA
+    # variable_PCA_no_info = [col for col in variable_PCA if col not in exclude_columns]
+
+    # # Define X (observable variables) and y (physical variables)
+    # X = df_sim_shower_resample[variable_PCA_no_info]
+    # y = df_sim_shower_resample[physical_vars]
+
+    # # Split the data into training and testing sets
+    # X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.4, random_state=42)
+    # X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.4, random_state=42)
+
+    # # Save the n_pc and the r-squared in a variable
+    # n_pc_r2 = []
+    # n_pc_r2_err = []
+    # n_pc_r2_val_err = []
+    # n_pc_r2_plot = []
+    # n_pc_r2_val = []
+    # n_pc_r2_val_plot = []
+
+    # # Loop over the number of principal components
+    # for n_pc in range(1, len(variable_PCA_no_info) + 1):
+    #     print("PCR Predictions with ", n_pc, "PC :")
+
+    #     # PCR: Principal Component Regression
+    #     pcr = make_pipeline(StandardScaler(), PCA(n_components=n_pc), LinearRegression())
+
+    #     pcr.fit(X_train, y_train)
+    #     # Predict using the models
+    #     y_pred_train = pcr.predict(X_train)
+    #     y_pred_val = pcr.predict(X_val)
+
+    #     # Evaluate the model on the training and validation set
+    #     r2_score_train = pcr.score(X_train, y_train)
+    #     r2_score_val = pcr.score(X_val, y_val)
+    #     mse_train = mean_squared_error(y_train, y_pred_train)
+    #     mse_val = mean_squared_error(y_val, y_pred_val)
+
+    #     # print(f"PCR training r-squared: {r2_score_train:.3f}")
+    #     # print(f"PCR validation r-squared: {r2_score_val:.3f}")
+    #     # print(f"PCR training MSE: {mse_train:.3f}")
+    #     # print(f"PCR validation MSE: {mse_val:.3f}")
+    #     # real vs predicted
+    #     y_pred_pcr = pcr.predict(df_sim_shower_resample[variable_PCA_no_info])
+    #     to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','eros. mass min [kg]','eros. mass max [kg]']
+    #     # multiply y_pred_pcr that has the 'erosion_coeff'*1000000 and 'sigma'*1000000
+    #     y_pred_pcr[:,4]=y_pred_pcr[:,4]*1000000
+    #     y_pred_pcr[:,2]=y_pred_pcr[:,2]*1000000
+    #     # Get the real values
+    #     real_values = df_sim_shower_resample[physical_vars].iloc[0].values
+    #     # multiply the real_values
+    #     real_values[4]=real_values[4]*1000000
+    #     real_values[2]=real_values[2]*1000000
+
+
+    #     # Print the predictions alongside the real values
+    #     print("Predicted vs Real Values:")
+    #     for i, unit in enumerate(to_plot_unit):
+    #         print(f'{unit}: Predicted: {y_pred_pcr[0, i]:.4g}, Real: {real_values[i]:.4g}')
+    #     print('--------------------------')
+
+
+    #     # Save the results for plotting and analysis
+    #     n_pc_r2.append((n_pc, r2_score_train, r2_score_val))
+    #     n_pc_r2_plot.append((n_pc, r2_score_train))
+    #     n_pc_r2_val_plot.append((n_pc, r2_score_val))
+    #     if r2_score_val < 0 or np.isnan(r2_score_val):
+    #         n_pc_r2_err.append((n_pc, r2_score_train))
+    #         n_pc_r2_val_err.append((n_pc, r2_score_val))
+
+    # # Convert lists to arrays for plotting
+    # n_pc_r2_plot = np.array(n_pc_r2_plot)
+    # n_pc_r2_val_plot = np.array(n_pc_r2_val_plot)
+
+    # plt.figure(figsize=(10, 6))
+    # # put the values of different variance explained by PCA
+    # plt.plot(n_pc_r2_plot[:, 0], n_pc_r2_plot[:, 1], label='Training R-squared',color='k')
+    # plt.plot(n_pc_r2_val_plot[:, 0], n_pc_r2_val_plot[:, 1], label='Validation R-squared', linestyle='--',color='k')
+    # plt.xlabel('Number of Principal Components')
+    # plt.ylabel('R-squared')
+    # plt.title('PCR R-squared vs. Number of Principal Components')
+    # plt.legend()
+    # num_components = len(n_pc_r2_val_plot[:, 1])
+    # plt.xticks(ticks=np.arange(1, num_components + 1))
+    # plt.grid()
+    # plt.savefig(OUT_PUT_PATH+os.sep+'R-sq_'+Shower[0]+'_PCR.png')
+    # plt.close()
+
+    # # Find the best number of PCs based on the highest validation R-squared
+    # n_pc_r2_plot = np.array(n_pc_r2_plot)
+    # best_n_pc = int(n_pc_r2_plot[np.argmax(n_pc_r2_plot[:, 1]), 0])
+    # print(f'The best number of PCs is: {best_n_pc}')
+
+    ####################################################################################################################
 
     # keep only the variable_PCA variables
-    df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
+    # df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
+    # df_all = pd.concat([df_sim_shower_resample[variable_PCA],df_obs_shower_resample[variable_PCA]], axis=0, ignore_index=True)
 
-    # delete nan
-    df_all = df_all.dropna()
+    # # delete nan
+    # df_all = df_all.dropna()
 
     # Now we have all the data and we apply PCA to the dataframe
     df_all_nameless=df_all.drop(['shower_code','solution_id'], axis=1)
+
+    if PCA_pairplot:
+        df_all_nameless_plot=df_all_nameless.copy()
+
+        if len(df_all_nameless_plot)>10000:
+            # pick randomly 10000 events
+            print('Number of events in the simulated shower:',len(df_all_nameless_plot))
+            df_all_nameless_plot=df_all_nameless_plot.sample(n=10000)
+
+        # # sns plot of the df_sim_var_sel and df_sim_var_sel_no_outliers hue='shower_code'
+        # sns.pairplot(df_all_nameless_plot)
+        # print('Pairplot of the all shower to go to PCA:')
+        # # save the figure
+        # plt.savefig(OUT_PUT_PATH+os.sep+'var_sns_after_norm_'+Shower[0]+'_select_PCA.png')
+        # # close the figure
+        # plt.close()
+
+
+
+
+
+        # # make a subplot of the distribution of the variables
+        # fig, axs = plt.subplots(3, 4, figsize=(20, 15))
+        # for i, var in enumerate(variable_PCA[2:]):
+        #     # plot the distribution of the variable
+        #     sns.histplot(df_all_nameless_plot[var], kde=True, ax=axs[i//4, i%4], color='b', alpha=0.5)
+        #     # axs[i//4, i%4].set_title('Distribution of '+var)
+        #     # put a vertical line for the df_obs_shower[var] value
+        #     axs[i//4, i%4].axvline(df_all_nameless_plot[var].values[0], color='limegreen', linestyle='--', linewidth=5)
+        #     # grid
+        #     axs[i//4, i%4].grid()
+        # # save the figure
+        # plt.savefig(OUT_PUT_PATH+os.sep+'var_hist_after_norm_'+Shower[0]+'_select_PCA.png')
+        # # close the figure
+        # plt.close()
+
     # print the data columns names
     df_all_columns_names=(df_all_nameless.columns)
 
@@ -1261,7 +1524,11 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     #################################
     # Applying PCA function on the data for the number of components
     pca = PCA(PCA_percent/100) #PCA_percent
+    # pca = PCA() #PCA_percent
     all_PCA = pca.fit_transform(scaled_df_all) # fit the data and transform it
+
+    #count the number of PC
+    print('Number of PC:',pca.n_components_)
     
     # # show the explained variance ratio of all th pc
     # # check if any in the explained variance ratio is below 1%
@@ -1281,32 +1548,6 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
         os.remove(OUT_PUT_PATH+os.sep+os.sep+"log_"+str(len(variable_PCA))+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt")
     sys.stdout = Logger(OUT_PUT_PATH,"log_"+str(len(variable_PCA))+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt") # _30var_99%_13PC
 
-
-    ############### how Normal ########################################################################################
-    
-    # for all the variables run the gaussian test
-    for var in variable_PCA:
-        if var != 'shower_code' and var != 'solution_id':
-            # check if the variable is in the df_obs_shower
-            if var in df_obs_shower.columns:
-                # check if the variable is in the df_sim_shower
-                if var in df_sim_shower.columns:
-                    # check that all the values in df_obs_shower are within the 5 and 95 percentile of the df_sim_shower
-                    check_normality(df_sim_shower[var], var)
-                    # do the log of the variable and see the normality
-                    check_normality(np.log10(abs(df_sim_shower[var])), 'log_'+var)
-                    var_transformed_boxcox, lam = stats.boxcox(abs(df_sim_shower[var]))
-                    # use the boxcox transformation
-                    check_normality(var_transformed_boxcox, 'boxcox_'+var)
-                    # Apply the Yeo-Johnson transformation
-                    pt = PowerTransformer(method='yeo-johnson')
-                    vel_avg_norot_transformed = pt.fit_transform(df_sim_shower[var].values.reshape(-1, 1)).flatten()
-                    check_normality(vel_avg_norot_transformed, 'yeo-johnson_'+var)
-                else:
-                    print('Variable ',var,' is not in the simulated shower')
-            else:
-                print('Variable ',var,' is not in the observed shower')
-
     ################################# Apply Varimax rotation ####################################
     loadings = pca.components_.T
 
@@ -1315,8 +1556,8 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # # chage the loadings to the rotated loadings in the pca components
     pca.components_ = rotated_loadings.T
 
-    # Transform the original PCA scores with the rotated loadings
-    all_PCA = np.dot(all_PCA, rotated_loadings.T[:pca.n_components_, :pca.n_components_])
+    # Transform the original PCA scores with the rotated loadings ugly PC space but same results
+    # all_PCA = np.dot(all_PCA, rotated_loadings.T[:pca.n_components_, :pca.n_components_])
 
     ############### PCR ########################################################################################
 
@@ -1331,8 +1572,8 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # scaled_sim = pd.DataFrame(scaler.fit_transform(df_sim_shower[variable_PCA_no_info + physical_vars]), columns=variable_PCA_no_info + physical_vars)
 
     # Define X and y (now y contains only the PCA observable parameters)
-    X = df_sim_shower[variable_PCA_no_info]
-    y = df_sim_shower[physical_vars]
+    X = df_sim_shower_resample[variable_PCA_no_info]
+    y = df_sim_shower_resample[physical_vars]
 
     # Split the data into training and testing sets
     X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.4, random_state=42)
@@ -1340,40 +1581,29 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # Loop over the number of principal components
     print("PCR Predictions with "+str(pca.n_components_)+"PC :")
 
+    pca_copy=copy.deepcopy(pca)
     # PCR: Principal Component Regression inform that the predicted variable is always positive
-    pcr = make_pipeline(StandardScaler(), pca, LinearRegression())
+    pcr = make_pipeline(StandardScaler(), pca_copy, LinearRegression())
 
     pcr.fit(X_train, y_train)
     # Predict using the models
-    y_pred_pcr = pcr.predict(df_obs_shower[variable_PCA_no_info])
-    # Evaluate the model on the validation set
-    r2_score_train = pcr.score(X_train, y_train)
-
-    print(f"PCR training r-squared: {r2_score_train:.3f}")
-    
-
-    to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','log eros. mass min [kg]','log eros. mass max [kg]']
+    y_pred_pcr = pcr.predict(df_sim_shower_resample[variable_PCA_no_info])
+    to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','eros. mass min [kg]','eros. mass max [kg]']
     # multiply y_pred_pcr that has the 'erosion_coeff'*1000000 and 'sigma'*1000000
     y_pred_pcr[:,4]=y_pred_pcr[:,4]*1000000
     y_pred_pcr[:,2]=y_pred_pcr[:,2]*1000000
-    # print the prediction all in the same line in {'{:.4g}'.format(y_pred_pcr)}
-    print(f'{to_plot_unit[0]}: {y_pred_pcr[0,0]:.4g}\n {to_plot_unit[1]}: {y_pred_pcr[0,1]:.4g}\n {to_plot_unit[2]}: {y_pred_pcr[0,2]:.4g}\n {to_plot_unit[3]}: {y_pred_pcr[0,3]:.4g}\n {to_plot_unit[4]}: {y_pred_pcr[0,4]:.4g}\n {to_plot_unit[5]}: {y_pred_pcr[0,5]:.4g}\n {to_plot_unit[6]}: {y_pred_pcr[0,6]:.4g}\n {to_plot_unit[7]}: {y_pred_pcr[0,7]:.4g}')
+    # Get the real values
+    real_values = df_sim_shower_resample[physical_vars].iloc[0].values
+    # multiply the real_values
+    real_values[4]=real_values[4]*1000000
+    real_values[2]=real_values[2]*1000000
 
-    # # get the value for each physical_vars sigularly
-    # for i in range(len(physical_vars)):
-    #     physical_vars_1 = [physical_vars[i]]
-    #     # Split the data into training and testing sets
-    #     X_train, X_temp, y_train, y_temp = train_test_split(X, y[physical_vars_1], test_size=0.4, random_state=42)
-    #     # PCR: Principal Component Regression inform that the predicted variable is always positive
-    #     pcr = make_pipeline(StandardScaler(), pca, LinearRegression())
-    #     pcr.fit(X_train, y_train)
-    #     # Predict using the models
-    #     y_pred_pcr = pcr.predict(df_obs_shower[variable_PCA_no_info])
-    #     # Evaluate the model on the validation set
-    #     r2_score_train = pcr.score(X_train, y_train)
-    #     print(f"PCR training r-squared for {physical_vars_1[0]}: {r2_score_train:.3f}")
-    #     print(f'{physical_vars_1[0]}: {y_pred_pcr[0,0]:.4g}')
 
+    # Print the predictions alongside the real values
+    print("Predicted vs Real Values:")
+    for i, unit in enumerate(to_plot_unit):
+        print(f'{unit}: Predicted: {y_pred_pcr[0, i]:.4g}, Real: {real_values[i]:.4g}')
+    print('--------------------------')
 
     ############### PCR ########################################################################################
 
@@ -1437,7 +1667,7 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     ###
 
     # print the number of simulation selected
-    print('PCA run for', len(df_sim_shower),'simulations, delete ',len(df_sim_var_sel_standardized[outliers]),' outliers')
+    print('PCA run for', len(df_sim_shower),'simulations, delete ',len(outliers)-len(df_sim_shower),' outliers')
 
     # if len(No_var_PCA_perc) > 0:
     #     for No_var_PCA_perc in No_var_PCA_perc:
@@ -1635,13 +1865,30 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
 
     # Calculate the mean and inverse covariance matrix for Mahalanobis distance
     meanPCA = df_all_PCA.groupby('shower_code').mean()
-    cov_matrix = df_all_PCA.cov()
-    cov_inv = inv(cov_matrix)
+
+    # cov_matrix = df_all_PCA.cov()
+    # cov_inv = inv(cov_matrix)
 
     df_all_PCA['solution_id'] = df_all['solution_id']
     df_sel_shower = []
     df_sel_PCA = []
     jj = 0
+
+    # Get explained variances of principal components
+    explained_variance = pca.explained_variance_ratio_
+
+    # Calculate mean and inverse covariance matrix for Mahalanobis distance
+    cov_matrix = df_all_PCA.drop(['shower_code'], axis=1).cov()
+
+    # Modify covariance matrix based on explained variances
+    for i in range(len(explained_variance)):
+        cov_matrix.iloc[i, :] /= explained_variance[i]
+
+    # # Modify covariance matrix to positively reflect variance explained
+    # for i in range(len(explained_variance)):
+    #     cov_matrix.iloc[i, :] *= explained_variance[i]
+
+    cov_inv = inv(cov_matrix)
 
     for current_shower in Shower:
         # find the mean of the simulated shower
@@ -1655,9 +1902,14 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
         
         for i_shower in range(len(shower_current)):
             distance_current = []
+
             for i_sim in range(len(df_sim_PCA_for_now)):
                 distance_current.append(mahalanobis_distance(df_sim_PCA_for_now[i_sim], shower_current_PCA[i_shower], cov_inv))
-
+        
+            # # Calculate distances between current observed shower and all simulated showers
+            # for i_sim in range(len(df_sim_PCA)):
+            #     distance_current.append(modified_mahalanobis_distance(df_sim_PCA_for_now[i_sim], shower_current_PCA[i_shower], cov_inv))
+            
             # for i_sim in range(len(df_sim_PCA_for_now)):
             #     distance = mahalanobis_distance(df_sim_PCA_for_now[i_sim], shower_current_PCA[i_shower], cov_inv)
             #     weighted_distance = distance * np.sqrt(explained_variance)  # Weighting by explained variance
@@ -1739,7 +1991,7 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # dataframe with the simulated and the selected meteors in the PCA space
     # df_sim_sel_PCA = pd.concat([df_sim_PCA,df_sel_PCA], axis=0)
 
-    if PCA_pairplot==True:
+    if PCA_pairplot:
         if len(df_sim_PCA)>10000:
             # pick randomly 10000 events
             df_sim_PCA=df_sim_PCA.sample(n=10000)
@@ -1798,6 +2050,68 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
         # close the figure
         plt.close()
 
+        # # df_sim_PCA,df_sel_PCA,df_obs_PCA
+        # # print(df_sim_shower)
+        # # loop all pphysical variables
+        # physical_vars = ['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
+        # for var_phys in physical_vars:
+        #     # make a subplot of the rho againist each variable_PCA as a scatter plot
+        #     fig, axs = plt.subplots(4, 5, figsize=(20, 15))
+        #     # flatten the axs array
+        #     axs = axs.flatten()
+        #     for i, var in enumerate(variable_PCA[2:]):
+        #         # plot the rho againist the variable with black borders
+        #         axs[i].scatter(df_sim_shower[var], df_sim_shower[var_phys], c='b') #, edgecolors='k', alpha=0.5
+
+        #         axs[i].scatter(df_sel_shower[var], df_sel_shower[var_phys], c='orange') #, edgecolors='k', alpha=0.5
+        #         # put a green vertical line for the df_obs_shower[var] value
+        #         axs[i].axvline(shower_current[var].values[0], color='limegreen', linestyle='--', linewidth=5)
+        #         # put a horizontal line for the rho of the first df_sim_shower
+        #         axs[i].axhline(df_sim_shower[var_phys].values[0], color='k', linestyle='-', linewidth=2)
+        #         axs[i].set_title(var)
+        #         # as a suptitle put the variable_PCA
+        #         fig.suptitle(var_phys)
+        #         # grid
+        #         axs[i].grid()
+        #         # make y axis log if the variable is 'erosion_mass_min' 'erosion_mass_max'
+        #         if var_phys == 'erosion_mass_min' or var_phys == 'erosion_mass_max':
+        #             axs[i].set_yscale('log')
+
+        #     # save the figure
+        #     plt.savefig(OUT_PUT_PATH+os.sep+var_phys+'_vs_var_'+Shower[0]+'_select_PCA.png')
+        #     # close the figure
+        #     plt.close()
+
+
+        # loop all pphysical variables
+        physical_vars = ['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
+        for var_phys in physical_vars:
+            # make a subplot of the rho againist each variable_PCA as a scatter plot
+            fig, axs = plt.subplots(3, 4, figsize=(20, 15))
+            # flatten the axs array
+            axs = axs.flatten()
+            for i, var in enumerate(columns_PC):
+                # plot the rho againist the variable with black borders
+                axs[i].scatter(df_sim_PCA[var], df_sim_shower[var_phys], c='b') #, edgecolors='k', alpha=0.5
+
+                axs[i].scatter(df_sel_PCA[var], df_sel_shower[var_phys], c='orange') #, edgecolors='k', alpha=0.5
+                # put a green vertical line for the df_obs_shower[var] value
+                axs[i].axvline(df_obs_PCA[var].values[0], color='limegreen', linestyle='--', linewidth=5)
+                # put a horizontal line for the rho of the first df_sim_shower
+                axs[i].axhline(df_sim_shower[var_phys].values[0], color='k', linestyle='-', linewidth=2)
+                axs[i].set_title(var)
+                # as a suptitle put the variable_PCA
+                fig.suptitle(var_phys)
+                # grid
+                axs[i].grid()
+                # make y axis log if the variable is 'erosion_mass_min' 'erosion_mass_max'
+                if var_phys == 'erosion_mass_min' or var_phys == 'erosion_mass_max':
+                    axs[i].set_yscale('log')
+
+            # save the figure
+            plt.savefig(OUT_PUT_PATH+os.sep+var_phys+'_vs_var_'+Shower[0]+'_select_PC_space.png')
+            # close the figure
+            plt.close()
 
     # sns.pairplot(df_sel_PCA, hue='shower_code', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
     # plt.show()
@@ -1846,7 +2160,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reproces_2cam\SimFolder', \
         help="Path were are store both simulated and observed shower .csv file.")
 
-    arg_parser.add_argument('--nsel', metavar='SEL_NUM', type=int, default=100, \
+    arg_parser.add_argument('--nsel', metavar='SEL_NUM', type=int, default=1000, \
         help="Number of selected simulations to consider.")
 
     arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=[], \
@@ -1941,3 +2255,46 @@ if __name__ == "__main__":
 
     PCASim(df_sim_shower,df_obs_shower, cml_args.output_dir, Shower, cml_args.nsel, cml_args.NoPCA, cml_args.input_dir)
 
+    # @cython.cdivision(True) 
+    # cpdef double decelerationRK4(double dt, double K, double m, double rho_atm, double v):
+    #     """ Computes the deceleration using the 4th order Runge-Kutta method. """
+
+    #     cdef double vk1, vk2, vk3, vk4
+
+    #     # Compute change in velocity
+    #     vk1 = dt*deceleration(K, m, rho_atm, v)
+    #     vk2 = dt*deceleration(K, m, rho_atm, v + vk1/2.0)
+    #     vk3 = dt*deceleration(K, m, rho_atm, v + vk2/2.0)
+    #     vk4 = dt*deceleration(K, m, rho_atm, v + vk3)
+        
+    #     return (vk1/6.0 + vk2/3.0 + vk3/3.0 + vk4/6.0)/dt
+
+    # cdef double deceleration(double K, double m, double rho_atm, double v):
+    # """ Computes the deceleration derivative.     
+
+    # Arguments:
+    #     K: [double] Shape-density coefficient (m^2/kg^(2/3)).
+    #     m: [double] Mass (kg).
+    #     rho_atm: [double] Atmosphere density (kg/m^3).
+    #     v: [double] Velocity (m/S).
+
+    # Return:
+    #     dv/dt: [double] Deceleration.
+    # """
+
+    # return -K*m**(-1/3.0)*rho_atm*v**2
+
+    #    # Compute change in velocity
+    #     deceleration_total = decelerationRK4(const.dt, frag.K, frag.m, rho_atm, frag.v)
+
+
+            #     # Vertical component of a
+            # av = -deceleration_total*frag.vv/frag.v + frag.vh*frag.v/(const.r_earth + frag.h)
+
+            # # Horizontal component of a
+            # ah = -deceleration_total*frag.vh/frag.v - frag.vv*frag.v/(const.r_earth + frag.h)
+
+            # # Update the velocity
+            # frag.vv -= av*const.dt
+            # frag.vh -= ah*const.dt
+            # frag.v = math.sqrt(frag.vh**2 + frag.vv**2)

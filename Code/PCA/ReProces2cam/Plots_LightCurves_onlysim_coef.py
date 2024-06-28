@@ -26,7 +26,7 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
 
     # number to confront
     n_confront_obs=1
-    n_confront_sel=4
+    n_confront_sel=10
 
     if true_file.endswith('.pickle'):
         # delete the extension
@@ -54,7 +54,9 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
     # activate parabolic fit
     parabolic_fit=False
 
-    t0_fit=True
+    t0_fit=False
+
+    mag_fit=False
 
     # 5 sigma confidence interval
     # five_sigma=False
@@ -403,30 +405,31 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
 
 
     #############ADD COEF#############################################
+                if mag_fit==True:
 
-                ax[0].plot(curr_sel.iloc[ii]['a_mag_init']*np.array(height_pickl[:index_ht_peak])**2+curr_sel.iloc[ii]['b_mag_init']*np.array(height_pickl[:index_ht_peak])+curr_sel.iloc[ii]['c_mag_init'],height_pickl[:index_ht_peak], color=ax[0].lines[-1].get_color(), linestyle='None', marker='<')# , markersize=5
+                    ax[0].plot(curr_sel.iloc[ii]['a_mag_init']*np.array(height_pickl[:index_ht_peak])**2+curr_sel.iloc[ii]['b_mag_init']*np.array(height_pickl[:index_ht_peak])+curr_sel.iloc[ii]['c_mag_init'],height_pickl[:index_ht_peak], color=ax[0].lines[-1].get_color(), linestyle='None', marker='<')# , markersize=5
 
-                ax[0].plot(curr_sel.iloc[ii]['a_mag_end']*np.array(height_pickl[index_ht_peak:])**2+curr_sel.iloc[ii]['b_mag_end']*np.array(height_pickl[index_ht_peak:])+curr_sel.iloc[ii]['c_mag_end'],height_pickl[index_ht_peak:], color=ax[0].lines[-1].get_color(), linestyle='None', marker='>')# , markersize=5
-                
-                # a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:index_ht_peak], abs_mag_sim[:index_ht_peak], 2)
-                # # plot the parabolic curve before the peak_mag_height with the same color of the line
-                # ax[0].plot(a3_Inabs*np.array(height_pickl[:index_ht_peak])**2+b3_Inabs*np.array(height_pickl[:index_ht_peak])+c3_Inabs,height_pickl[:index_ht_peak], color=ax[0].lines[-1].get_color(), linestyle='None', marker='<')# , markersize=5
-                
-                # if ii==0:
-                #     print(str(curr_sel.iloc[ii]['solution_id']))
-                #     print('Abs.Mag before peak')
-                #     print('a:',a3_Inabs)
-                #     print('b:',b3_Inabs)
+                    ax[0].plot(curr_sel.iloc[ii]['a_mag_end']*np.array(height_pickl[index_ht_peak:])**2+curr_sel.iloc[ii]['b_mag_end']*np.array(height_pickl[index_ht_peak:])+curr_sel.iloc[ii]['c_mag_end'],height_pickl[index_ht_peak:], color=ax[0].lines[-1].get_color(), linestyle='None', marker='>')# , markersize=5
+                    
+                    # a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[:index_ht_peak], abs_mag_sim[:index_ht_peak], 2)
+                    # # plot the parabolic curve before the peak_mag_height with the same color of the line
+                    # ax[0].plot(a3_Inabs*np.array(height_pickl[:index_ht_peak])**2+b3_Inabs*np.array(height_pickl[:index_ht_peak])+c3_Inabs,height_pickl[:index_ht_peak], color=ax[0].lines[-1].get_color(), linestyle='None', marker='<')# , markersize=5
+                    
+                    # if ii==0:
+                    #     print(str(curr_sel.iloc[ii]['solution_id']))
+                    #     print('Abs.Mag before peak')
+                    #     print('a:',a3_Inabs)
+                    #     print('b:',b3_Inabs)
 
-                # # the other side of the peak
-                # a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[index_ht_peak:], abs_mag_sim[index_ht_peak:], 2)
-                # # plot the parabolic curve before the peak_mag_height with the same color of the line
-                # ax[0].plot(a3_Inabs*np.array(height_pickl[index_ht_peak:])**2+b3_Inabs*np.array(height_pickl[index_ht_peak:])+c3_Inabs,height_pickl[index_ht_peak:], color=ax[0].lines[-1].get_color(), linestyle='None', marker='>')# , markersize=5
-                
-                # if ii==0:
-                #     print('Abs.Mag after peak')
-                #     print('a:',a3_Inabs)
-                #     print('b:',b3_Inabs)
+                    # # the other side of the peak
+                    # a3_Inabs, b3_Inabs, c3_Inabs = np.polyfit(height_pickl[index_ht_peak:], abs_mag_sim[index_ht_peak:], 2)
+                    # # plot the parabolic curve before the peak_mag_height with the same color of the line
+                    # ax[0].plot(a3_Inabs*np.array(height_pickl[index_ht_peak:])**2+b3_Inabs*np.array(height_pickl[index_ht_peak:])+c3_Inabs,height_pickl[index_ht_peak:], color=ax[0].lines[-1].get_color(), linestyle='None', marker='>')# , markersize=5
+                    
+                    # if ii==0:
+                    #     print('Abs.Mag after peak')
+                    #     print('a:',a3_Inabs)
+                    #     print('b:',b3_Inabs)
 
             else:
                 ax[0].plot(abs_mag_sim,height_km,label='sel_'+current_shower+'('+str(index_sel)+') MEANdist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2)),color='coral')
@@ -714,8 +717,9 @@ def PCA_LightCurveCoefPLOT(output_dir, Shower, input_dir, true_file='', true_pat
 
 
     # change dot line color
-    ax[0].lines[1].set_color('black')
-    ax[0].lines[2].set_color('black')
+    if mag_fit==True:
+        ax[0].lines[1].set_color('black')
+        ax[0].lines[2].set_color('black')
 
 
 # check how many of the jacchia_fit and parabolic_fit and t0_fit are set to true

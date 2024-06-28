@@ -7,6 +7,7 @@ by selecting the most similar simulated events in the PC space using:
 """
 
 import json
+import copy
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -44,6 +45,7 @@ from wmpl.Utils.AtmosphereDensity import fitAtmPoly
 import scipy.stats as stats
 import statsmodels.api as sm
 from sklearn.preprocessing import PowerTransformer
+from wmpl.MetSim.ML.GenerateSimulations import generateErosionSim,saveProcessedList,MetParam
 
 
 add_json_noise = False
@@ -316,30 +318,31 @@ def lag_residual(params, t_time, l_data):
 
 #### Reader #############################################################################
 
-def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None):
+def read_GenerateSimulations_folder_output(shower_folder, data_id=None):
     ''' 
     It reads the GenerateSimulations.py output json files from the shower_folder and extract the observable and physical property
     The values are given in a dataframe format and if requestd are saved in a .csv file called Shower+".csv"
     Keyword arguments:
     shower_folder:  folder of the simulated meteors.
-    Shower:         Shower name, by default there is no name.
     save_it:        Boolean - save the extracted dataframe in a .csv, by default it is not saved.
     '''
-
-
-    if data_id is None:
-        # open the folder and extract all the json files
-        os.chdir(shower_folder)
-        directory=os.getcwd()
-        extension = 'json'
-        all_jsonfiles = [i for i in glob.glob('*.{}'.format(extension))]
+    # check if is a folder
+    if os.path.isdir(shower_folder):
+        if data_id is None:
+            # open the folder and extract all the json files
+            os.chdir(shower_folder)
+            directory=os.getcwd()
+            extension = 'json'
+            all_jsonfiles = [i for i in glob.glob('*.{}'.format(extension))]
+        else:
+            os.chdir(shower_folder)
+            directory=os.getcwd()
+            all_jsonfiles=data_id
     else:
-        os.chdir(shower_folder)
-        directory=os.getcwd()
-        all_jsonfiles=data_id
+        all_jsonfiles=[shower_folder]
 
     # save all the variables in a list ths is used to initialized the values of the dataframe
-    dataList = [['','', 0, 0, 0,\
+    dataList = [['', 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0,\
         0, 0,\
@@ -349,7 +352,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
         0, 0]]
 
     # create a dataframe to store the data
-    df_json = pd.DataFrame(dataList, columns=['solution_id','shower_code','vel_init_norot','vel_avg_norot','duration',\
+    df_json = pd.DataFrame(dataList, columns=['solution_id','vel_init_norot','vel_avg_norot','duration',\
     'mass','peak_mag_height','begin_height','end_height','t0','peak_abs_mag','beg_abs_mag','end_abs_mag',\
     'F','trail_len','deceleration_lin','deceleration_parab','decel_parab_t0','decel_t0','decel_jacchia','zenith_angle', 'kurtosis','skew',\
     'kc','Dynamic_pressure_peak_abs_mag',\
@@ -373,14 +376,13 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
         # check if the json file name has _sim_fit.json
         if '_sim_fit.json' in all_jsonfiles[i]:
             # from 'params' extract the observable parameters and save them in a list
-            pickle_df=read_manual_pikle(all_jsonfiles[i],directory,Shower)
+            pickle_df=read_manual_pikle(all_jsonfiles[i],directory)
             pickle_flag=True
 
         elif data['ht_sampled']!= None: 
             # from 'params' extract the observable parameters and save them in a list
             # get only the .json file name
             name=all_jsonfiles[i]
-            shower_code = 'sim_'+Shower
 
             zenith_angle= data['params']['zenith_angle']['val']*180/np.pi
 
@@ -662,7 +664,7 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
 
             # add a new line in dataframe
-            df_json.loc[len(df_json)] = [name,shower_code, v0, vel_avg_norot, duration,\
+            df_json.loc[len(df_json)] = [name, v0, vel_avg_norot, duration,\
             mass, peak_mag_height,begin_height, end_height, t0, peak_abs_mag, beg_abs_mag, end_abs_mag,\
             F, trail_len, acceleration_lin, acceleration_parab, acceleration_parab_t0, decel_t0, acc_jacchia, zenith_angle, kurtosyness,skewness,\
             kc_par, Dynamic_pressure_peak_abs_mag,\
@@ -695,10 +697,19 @@ def read_GenerateSimulations_folder_output(shower_folder,Shower='', data_id=None
 
 def read_manual_pikle(ID,INPUT_PATH):
 
-    # keep the first 14 characters of the ID
-    name=ID[:15]
-    name_file_json=ID
-    name_file=name+'_trajectory.pickle'
+    # check if ID has a .pickle extension
+    if '.pickle' in ID:
+        name=ID[:15]
+        name_file=ID
+        # check if name_file_json exist
+        name_file_json=name+'_sim_fit_latest.json'
+
+    elif '.json' in ID:
+        # keep the first 14 characters of the ID
+        name=ID[:15]
+        name_file_json=ID
+        name_file=name+'_trajectory.pickle'
+
     print('Loading pickle file: ', INPUT_PATH+name)
     # check if there are any pickle files in the 
     find_flag=False
@@ -937,7 +948,6 @@ def read_manual_pikle(ID,INPUT_PATH):
 
 
 
-        shower_code_sim=('sim_'+Shower)
         
 
         ########################################## SKEWNESS AND kurtosyness ##########################################
@@ -998,7 +1008,6 @@ def read_manual_pikle(ID,INPUT_PATH):
         # Data to populate the dataframe
         data_picklefile_pd = {
             'solution_id': [name],
-            'shower_code': [shower_code_sim],
             'vel_init_norot': [vel_init_norot],
             'vel_avg_norot': [vel_avg_norot],
             'duration': [duration],
@@ -1080,10 +1089,12 @@ def varimax(Phi, gamma=1.0, q=20, tol=1e-6):
             break
     return np.dot(Phi, R)
 
+# Function to perform mahalanobis distance
 def mahalanobis_distance(x, mean, cov_inv):
     diff = x - mean
     return np.sqrt(np.dot(np.dot(diff, cov_inv), diff.T))
 
+# Function to perform normality of the data
 def check_normality(data, title):
     print(f"\nNormality check for {title}:")
 
@@ -1115,11 +1126,13 @@ def check_normality(data, title):
     # print("Skewness:", skewness)
     # print("Kurtosis:", kurtosis)
 
+# Function to get trajectory data folder
 def find_and_extract_trajectory_files(directory):
     trajectory_files = []
     file_names = []
-    output_folder = []
-    
+    output_folders = []
+    input_folders = []
+
     for root, dirs, files in os.walk(directory):
 
         # go in each folder and find the file with the end _trajectory.pickle but skip the folder with the name GenSim
@@ -1132,13 +1145,33 @@ def find_and_extract_trajectory_files(directory):
                 variable_name = base_name.replace("_trajectory", "")  # Extract the number 20230405_010203
                 output_folder_name = base_name.replace("_trajectory", "_GenSim") # _GenSim folder whre all generated simulations are stored
                 
+                input_folders.append(root)
                 trajectory_files.append(os.path.join(root, file))
                 file_names.append(variable_name)
-                output_folder.append(os.path.join(root, output_folder_name))
+                output_folders.append(os.path.join(root, output_folder_name))
     
-    return trajectory_files, file_names, output_folder
+    input_list = [[trajectory_files[ii], file_names[ii], input_folders[ii],output_folders[ii]] for ii in range(len(trajectory_files))]
 
+    return input_list
 
+def read_real_file(input_dir):
+    # check the extension of the file
+    if file.endswith('.csv'):
+        # read the csv file
+        real_data = pd.read_csv(input_dir)
+    elif file.endswith('.pickle'):
+        # read the pickle file
+        file, directory =os.path.split(input_dir)
+        real_data = read_manual_pikle(file,directory)
+    # json file
+    elif file.endswith('.json'): 
+        # read the json file
+        real_data = read_GenerateSimulations_folder_output(input_dir)
+    else:
+        # raise an error if the file is not a csv, pickle or json file
+        raise ValueError('File format not supported. Please provide a csv, pickle or json file.')
+
+    return real_data
 
 # PCA ####################################################################################
 
@@ -1202,38 +1235,46 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
 
     # Identify outliers using Z-score method on standardized data
     z_scores = np.abs(zscore(df_sim_var_sel_standardized))
-    threshold = 3
+    threshold = 2
     outliers = (z_scores > threshold).any(axis=1)
 
     # Assign df_sim_shower to the version without outliers
     df_sim_shower = df_sim_shower[~outliers].copy()
 
-    # # scale the data so to be easily plot against each other with the same scale
-    # df_sim_var_sel = df_sim_shower[variable_PCA].copy()
-    # df_sim_var_sel = df_sim_var_sel.drop(['shower_code','solution_id'], axis=1)
+    if PCA_pairplot:
+        # scale the data so to be easily plot against each other with the same scale
+        df_sim_var_sel = df_sim_shower[variable_PCA].copy()
+        df_sim_var_sel = df_sim_var_sel.drop(['shower_code','solution_id'], axis=1)
 
-    # if len(df_sim_var_sel)>10000:
-    #     # pick randomly 10000 events
-    #     print('Number of events in the simulated shower:',len(df_sim_var_sel))
-    #     df_sim_var_sel=df_sim_var_sel.sample(n=10000)
+        if len(df_sim_var_sel)>10000:
+            # pick randomly 10000 events
+            print('Number of events in the simulated shower:',len(df_sim_var_sel))
+            df_sim_var_sel=df_sim_var_sel.sample(n=10000)
 
-    # df_sim_var_sel_standardized = df_sim_var_sel
-    # # # Standardize each column separately
-    # # scaler = StandardScaler()
-    # # df_sim_var_sel_standardized = scaler.fit_transform(df_sim_var_sel)
-    # # # put in a dataframe
-    # # df_sim_var_sel_standardized = pd.DataFrame(df_sim_var_sel_standardized, columns=df_sim_var_sel.columns)
-    # print('Number of events in the simulated shower after the selection:',len(df_sim_var_sel))
-    # # sns plot of the df_sim_var_sel and df_sim_var_sel_no_outliers hue='shower_code'
-    # sns.pairplot(df_sim_var_sel_standardized)
-    # print('Pairplot of the simulated shower')
-    # # save the figure
-    # plt.savefig(OUT_PUT_PATH+os.sep+'var_sns_'+Shower[0]+'_select_PCA.png')
-    # # close the figure
-    # plt.close()
+        df_sim_var_sel_standardized = df_sim_var_sel
+        # # Standardize each column separately
+        # scaler = StandardScaler()
+        # df_sim_var_sel_standardized = scaler.fit_transform(df_sim_var_sel)
+        # # put in a dataframe
+        # df_sim_var_sel_standardized = pd.DataFrame(df_sim_var_sel_standardized, columns=df_sim_var_sel.columns)
+        print('Number of events in the simulated shower after the selection:',len(df_sim_var_sel))
+        # sns plot of the df_sim_var_sel and df_sim_var_sel_no_outliers hue='shower_code'
+        sns.pairplot(df_sim_var_sel_standardized)
+        print('Pairplot of the simulated shower')
+        # save the figure
+        plt.savefig(OUT_PUT_PATH+os.sep+'var_sns_'+Shower[0]+'_select_PCA.png')
+        # close the figure
+        plt.close()
 
     ##################################### delete var that are not in the 5 and 95 percentile of the simulated shower #####################################
 
+    df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
+    # delete nan
+    df_all = df_all.dropna()
+
+    # create a copy of df_sim_shower for the resampling
+    df_sim_shower_resample=df_sim_shower.copy()
+    df_obs_shower_resample=df_obs_shower.copy()
     No_var_PCA_perc=[]
     # check that all the df_obs_shower for variable_PCA is within th 5 and 95 percentie of df_sim_shower of variable_PCA
     for var in variable_PCA:
@@ -1242,14 +1283,6 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
             if var in df_obs_shower.columns:
                 # check if the variable is in the df_sim_shower
                 if var in df_sim_shower.columns:
-                    # check that all the values in df_obs_shower are within the 5 and 95 percentile of the df_sim_shower
-
-                    # if any(df_obs_shower[var] < np.percentile(df_sim_shower[var], 5)) or any(df_obs_shower[var] > np.percentile(df_sim_shower[var], 95)):
-                    #     print('Variable',var,'is not within the 5 and 95 percentile of the simulated meteors')
-                    #     # delete the variable from the variable_PCA
-                    #     variable_PCA.remove(var)
-                    #     # save the var deleted in a variable
-                    #     No_var_PCA_perc.append(var)
 
                     ii_all=0
                     for i_var in range(len(df_obs_shower[var])):
@@ -1263,20 +1296,182 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
                         variable_PCA.remove(var)
                         # save the var deleted in a variable
                         No_var_PCA_perc.append(var)
+
+                        df_all = df_all.drop(var, axis=1)
+                    else:
+                        if var=='zenith_angle':
+                            # do the cosine of the zenith angle
+                            df_all[var]=np.cos(np.radians(df_all[var]))
+                            # df_all[var]=transform_to_gaussian(df_all[var])
+                            df_sim_shower_resample[var]=np.cos(np.radians(df_sim_shower_resample[var]))
+
+                        elif var=='vel_init_norot':
+                            # do the cosine of the zenith angle
+                            # df_all[var]=transform_to_gaussian(df_all[var])
+                            print('Variable ',var,' is not transformed')
+
+                        elif var=='decel_parab_t0':
+                            # do the cosine of the zenith angle
+                            df_all[var]=np.log10(abs(df_all[var]))
+                            # df_all[var]=transform_to_gaussian(df_all[var])
+                            df_sim_shower_resample[var]=np.log10(abs(df_sim_shower_resample[var]))
+
+                        else:
+                                                    # if var=='vel_avg_norot':
+                            # do the log10 of the variable
+                            df_all[var]=np.log10(abs(df_all[var]))
+
+                            var_transformed_boxcox, lam = stats.boxcox(abs(df_all[var]))
+                            df_all[var]=var_transformed_boxcox
+
+                            # df_sim_shower_resample[var]=np.log10(abs(df_sim_shower_resample[var]))
+                            # var_transformed_boxcox_sim, lam = stats.boxcox(abs(df_sim_shower_resample[var]))
+                            # df_sim_shower_resample[var]=var_transformed_boxcox_sim
+                            
+
+                            # pt = PowerTransformer(method='yeo-johnson')
+                            # df_all[var] = pt.fit_transform(df_all[[var]])
+
+                        
+                        
+                        # # 
+                        # check_normality(df_sim_shower[var], var)
+                        # # do the log of the variable and see the normality
+                        # check_normality(np.log10(abs(df_sim_shower[var])), 'log_'+var)
+                        # var_transformed_boxcox, lam = stats.boxcox(abs(df_sim_shower[var]))
+                        # # use the boxcox transformation
+                        # check_normality(var_transformed_boxcox, 'boxcox_'+var)
+                        # df_sim_shower_resample[var]=var_transformed_boxcox
                 else:
                     print('Variable ',var,' is not in the simulated shower')
             else:
                 print('Variable ',var,' is not in the observed shower')
 
+    #### PCR test #######################################################################################################
+
+    # exclude_columns = ['shower_code', 'solution_id']
+    # physical_vars = ['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max'] #, 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'
+
+    # # Define the observable variables for PCA
+    # variable_PCA_no_info = [col for col in variable_PCA if col not in exclude_columns]
+
+    # # Define X (observable variables) and y (physical variables)
+    # X = df_sim_shower_resample[variable_PCA_no_info]
+    # y = df_sim_shower_resample[physical_vars]
+
+    # # Split the data into training and testing sets
+    # X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.4, random_state=42)
+    # X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.4, random_state=42)
+
+    # # Save the n_pc and the r-squared in a variable
+    # n_pc_r2 = []
+    # n_pc_r2_err = []
+    # n_pc_r2_val_err = []
+    # n_pc_r2_plot = []
+    # n_pc_r2_val = []
+    # n_pc_r2_val_plot = []
+
+    # # Loop over the number of principal components
+    # for n_pc in range(1, len(variable_PCA_no_info) + 1):
+    #     print("PCR Predictions with ", n_pc, "PC :")
+
+    #     # PCR: Principal Component Regression
+    #     pcr = make_pipeline(StandardScaler(), PCA(n_components=n_pc), LinearRegression())
+
+    #     pcr.fit(X_train, y_train)
+    #     # Predict using the models
+    #     y_pred_train = pcr.predict(X_train)
+    #     y_pred_val = pcr.predict(X_val)
+
+    #     # Evaluate the model on the training and validation set
+    #     r2_score_train = pcr.score(X_train, y_train)
+    #     r2_score_val = pcr.score(X_val, y_val)
+    #     mse_train = mean_squared_error(y_train, y_pred_train)
+    #     mse_val = mean_squared_error(y_val, y_pred_val)
+
+    #     # print(f"PCR training r-squared: {r2_score_train:.3f}")
+    #     # print(f"PCR validation r-squared: {r2_score_val:.3f}")
+    #     # print(f"PCR training MSE: {mse_train:.3f}")
+    #     # print(f"PCR validation MSE: {mse_val:.3f}")
+    #     # real vs predicted
+    #     y_pred_pcr = pcr.predict(df_sim_shower_resample[variable_PCA_no_info])
+    #     to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','eros. mass min [kg]','eros. mass max [kg]']
+    #     # multiply y_pred_pcr that has the 'erosion_coeff'*1000000 and 'sigma'*1000000
+    #     y_pred_pcr[:,4]=y_pred_pcr[:,4]*1000000
+    #     y_pred_pcr[:,2]=y_pred_pcr[:,2]*1000000
+    #     # Get the real values
+    #     real_values = df_sim_shower_resample[physical_vars].iloc[0].values
+    #     # multiply the real_values
+    #     real_values[4]=real_values[4]*1000000
+    #     real_values[2]=real_values[2]*1000000
+
+
+    #     # Print the predictions alongside the real values
+    #     print("Predicted vs Real Values:")
+    #     for i, unit in enumerate(to_plot_unit):
+    #         print(f'{unit}: Predicted: {y_pred_pcr[0, i]:.4g}, Real: {real_values[i]:.4g}')
+    #     print('--------------------------')
+
+
+    #     # Save the results for plotting and analysis
+    #     n_pc_r2.append((n_pc, r2_score_train, r2_score_val))
+    #     n_pc_r2_plot.append((n_pc, r2_score_train))
+    #     n_pc_r2_val_plot.append((n_pc, r2_score_val))
+    #     if r2_score_val < 0 or np.isnan(r2_score_val):
+    #         n_pc_r2_err.append((n_pc, r2_score_train))
+    #         n_pc_r2_val_err.append((n_pc, r2_score_val))
+
+    # # Convert lists to arrays for plotting
+    # n_pc_r2_plot = np.array(n_pc_r2_plot)
+    # n_pc_r2_val_plot = np.array(n_pc_r2_val_plot)
+
+    # plt.figure(figsize=(10, 6))
+    # # put the values of different variance explained by PCA
+    # plt.plot(n_pc_r2_plot[:, 0], n_pc_r2_plot[:, 1], label='Training R-squared',color='k')
+    # plt.plot(n_pc_r2_val_plot[:, 0], n_pc_r2_val_plot[:, 1], label='Validation R-squared', linestyle='--',color='k')
+    # plt.xlabel('Number of Principal Components')
+    # plt.ylabel('R-squared')
+    # plt.title('PCR R-squared vs. Number of Principal Components')
+    # plt.legend()
+    # num_components = len(n_pc_r2_val_plot[:, 1])
+    # plt.xticks(ticks=np.arange(1, num_components + 1))
+    # plt.grid()
+    # plt.savefig(OUT_PUT_PATH+os.sep+'R-sq_'+Shower[0]+'_PCR.png')
+    # plt.close()
+
+    # # Find the best number of PCs based on the highest validation R-squared
+    # n_pc_r2_plot = np.array(n_pc_r2_plot)
+    # best_n_pc = int(n_pc_r2_plot[np.argmax(n_pc_r2_plot[:, 1]), 0])
+    # print(f'The best number of PCs is: {best_n_pc}')
+
+    ####################################################################################################################
 
     # keep only the variable_PCA variables
-    df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
+    # df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
+    # df_all = pd.concat([df_sim_shower_resample[variable_PCA],df_obs_shower_resample[variable_PCA]], axis=0, ignore_index=True)
 
-    # delete nan
-    df_all = df_all.dropna()
+    # # delete nan
+    # df_all = df_all.dropna()
 
     # Now we have all the data and we apply PCA to the dataframe
     df_all_nameless=df_all.drop(['shower_code','solution_id'], axis=1)
+
+    if PCA_pairplot:
+        df_all_nameless_plot=df_all_nameless.copy()
+
+        if len(df_all_nameless_plot)>10000:
+            # pick randomly 10000 events
+            print('Number of events in the simulated shower:',len(df_all_nameless_plot))
+            df_all_nameless_plot=df_all_nameless_plot.sample(n=10000)
+
+        # sns plot of the df_sim_var_sel and df_sim_var_sel_no_outliers hue='shower_code'
+        sns.pairplot(df_all_nameless_plot)
+        print('Pairplot of the all shower to go to PCA:')
+        # save the figure
+        plt.savefig(OUT_PUT_PATH+os.sep+'var_sns_after_norm_'+Shower[0]+'_select_PCA.png')
+        # close the figure
+        plt.close()
+
     # print the data columns names
     df_all_columns_names=(df_all_nameless.columns)
 
@@ -1290,7 +1485,11 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     #################################
     # Applying PCA function on the data for the number of components
     pca = PCA(PCA_percent/100) #PCA_percent
+    # pca = PCA() #PCA_percent
     all_PCA = pca.fit_transform(scaled_df_all) # fit the data and transform it
+
+    #count the number of PC
+    print('Number of PC:',pca.n_components_)
     
     # # show the explained variance ratio of all th pc
     # # check if any in the explained variance ratio is below 1%
@@ -1309,32 +1508,6 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
         # remove the file
         os.remove(OUT_PUT_PATH+os.sep+os.sep+"log_"+str(len(variable_PCA))+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt")
     sys.stdout = Logger(OUT_PUT_PATH,"log_"+str(len(variable_PCA))+"var_"+str(PCA_percent)+"%_"+str(pca.n_components_)+"PC.txt") # _30var_99%_13PC
-
-
-    ############### how Normal ########################################################################################
-    
-    # for all the variables run the gaussian test
-    for var in variable_PCA:
-        if var != 'shower_code' and var != 'solution_id':
-            # check if the variable is in the df_obs_shower
-            if var in df_obs_shower.columns:
-                # check if the variable is in the df_sim_shower
-                if var in df_sim_shower.columns:
-                    # check that all the values in df_obs_shower are within the 5 and 95 percentile of the df_sim_shower
-                    check_normality(df_sim_shower[var], var)
-                    # do the log of the variable and see the normality
-                    check_normality(np.log10(abs(df_sim_shower[var])), 'log_'+var)
-                    var_transformed_boxcox, lam = stats.boxcox(abs(df_sim_shower[var]))
-                    # use the boxcox transformation
-                    check_normality(var_transformed_boxcox, 'boxcox_'+var)
-                    # Apply the Yeo-Johnson transformation
-                    pt = PowerTransformer(method='yeo-johnson')
-                    vel_avg_norot_transformed = pt.fit_transform(df_sim_shower[var].values.reshape(-1, 1)).flatten()
-                    check_normality(vel_avg_norot_transformed, 'yeo-johnson_'+var)
-                else:
-                    print('Variable ',var,' is not in the simulated shower')
-            else:
-                print('Variable ',var,' is not in the observed shower')
 
     ################################# Apply Varimax rotation ####################################
     loadings = pca.components_.T
@@ -1360,8 +1533,8 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # scaled_sim = pd.DataFrame(scaler.fit_transform(df_sim_shower[variable_PCA_no_info + physical_vars]), columns=variable_PCA_no_info + physical_vars)
 
     # Define X and y (now y contains only the PCA observable parameters)
-    X = df_sim_shower[variable_PCA_no_info]
-    y = df_sim_shower[physical_vars]
+    X = df_sim_shower_resample[variable_PCA_no_info]
+    y = df_sim_shower_resample[physical_vars]
 
     # Split the data into training and testing sets
     X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.4, random_state=42)
@@ -1369,40 +1542,29 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     # Loop over the number of principal components
     print("PCR Predictions with "+str(pca.n_components_)+"PC :")
 
+    pca_copy=copy.deepcopy(pca)
     # PCR: Principal Component Regression inform that the predicted variable is always positive
-    pcr = make_pipeline(StandardScaler(), pca, LinearRegression())
+    pcr = make_pipeline(StandardScaler(), pca_copy, LinearRegression())
 
     pcr.fit(X_train, y_train)
     # Predict using the models
-    y_pred_pcr = pcr.predict(df_obs_shower[variable_PCA_no_info])
-    # Evaluate the model on the validation set
-    r2_score_train = pcr.score(X_train, y_train)
-
-    print(f"PCR training r-squared: {r2_score_train:.3f}")
-    
-
-    to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','log eros. mass min [kg]','log eros. mass max [kg]']
+    y_pred_pcr = pcr.predict(df_sim_shower_resample[variable_PCA_no_info])
+    to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','eros. mass min [kg]','eros. mass max [kg]']
     # multiply y_pred_pcr that has the 'erosion_coeff'*1000000 and 'sigma'*1000000
     y_pred_pcr[:,4]=y_pred_pcr[:,4]*1000000
     y_pred_pcr[:,2]=y_pred_pcr[:,2]*1000000
-    # print the prediction all in the same line in {'{:.4g}'.format(y_pred_pcr)}
-    print(f'{to_plot_unit[0]}: {y_pred_pcr[0,0]:.4g}\n {to_plot_unit[1]}: {y_pred_pcr[0,1]:.4g}\n {to_plot_unit[2]}: {y_pred_pcr[0,2]:.4g}\n {to_plot_unit[3]}: {y_pred_pcr[0,3]:.4g}\n {to_plot_unit[4]}: {y_pred_pcr[0,4]:.4g}\n {to_plot_unit[5]}: {y_pred_pcr[0,5]:.4g}\n {to_plot_unit[6]}: {y_pred_pcr[0,6]:.4g}\n {to_plot_unit[7]}: {y_pred_pcr[0,7]:.4g}')
+    # Get the real values
+    real_values = df_sim_shower_resample[physical_vars].iloc[0].values
+    # multiply the real_values
+    real_values[4]=real_values[4]*1000000
+    real_values[2]=real_values[2]*1000000
 
-    # # get the value for each physical_vars sigularly
-    # for i in range(len(physical_vars)):
-    #     physical_vars_1 = [physical_vars[i]]
-    #     # Split the data into training and testing sets
-    #     X_train, X_temp, y_train, y_temp = train_test_split(X, y[physical_vars_1], test_size=0.4, random_state=42)
-    #     # PCR: Principal Component Regression inform that the predicted variable is always positive
-    #     pcr = make_pipeline(StandardScaler(), pca, LinearRegression())
-    #     pcr.fit(X_train, y_train)
-    #     # Predict using the models
-    #     y_pred_pcr = pcr.predict(df_obs_shower[variable_PCA_no_info])
-    #     # Evaluate the model on the validation set
-    #     r2_score_train = pcr.score(X_train, y_train)
-    #     print(f"PCR training r-squared for {physical_vars_1[0]}: {r2_score_train:.3f}")
-    #     print(f'{physical_vars_1[0]}: {y_pred_pcr[0,0]:.4g}')
 
+    # Print the predictions alongside the real values
+    print("Predicted vs Real Values:")
+    for i, unit in enumerate(to_plot_unit):
+        print(f'{unit}: Predicted: {y_pred_pcr[0, i]:.4g}, Real: {real_values[i]:.4g}')
+    print('--------------------------')
 
     ############### PCR ########################################################################################
 
@@ -1847,6 +2009,116 @@ def PCASim(df_sim_shower,df_obs_shower, OUT_PUT_PATH, Shower=['PER'], N_sho_sel=
     sys.stdout = sys.__stdout__
 
 
+def specificErosionSimParameters(erosion_sim_params):
+
+    # check if cml_args.real_data is a path to a file
+    if os.path.isfile(cml_args.real_data):
+        print("Real data file exists")
+        # if is a csv file then read it
+        if cml_args.real_data.endswith('.csv'):
+            real_data = pd.read_csv(cml_args.real_data)
+            # delete any row that do not have 20230811_082648 in the solution_id column 
+            real_data = real_data[real_data['solution_id'].str.contains(cml_args.real_event)]
+            fig, axs = plt.subplots(1, 2)
+
+            axs[0].set_xlabel('abs.mag [-]')
+            axs[0].set_ylabel('height [km]')
+            # invert the x axis
+            axs[0].invert_xaxis()
+            axs[0].grid(True)
+            
+            axs[1].set_xlabel('time [s]')
+            axs[1].set_ylabel('velocity [km/s]')
+            axs[1].grid(True)
+            # plot the data
+            name_file = real_data['solution_id'][0]
+            fig.suptitle(real_data['solution_id'][0])
+        elif cml_args.real_data.endswith('.pickle'):
+            # use the pickle file to extract the data
+            real_data, fig, axs = real_pickle_data_and_plot(cml_args.real_data)
+            # fig.suptitle(name_file.split('_trajectory')[0]+'A')
+            name_file = real_data['solution_id'][0]
+            fig.suptitle(real_data['solution_id'][0])
+            
+        # get from real_data the beg_abs_mag value of the first row and set it as the lim_mag_faintest value
+        erosion_sim_params.lim_mag_faintest = real_data['beg_abs_mag'][0]+0.01
+        erosion_sim_params.lim_mag_brightest = real_data['beg_abs_mag'][0]-0.01
+        erosion_sim_params.lim_mag_len_end_faintest = real_data['end_abs_mag'][0]+0.01
+        erosion_sim_params.lim_mag_len_end_brightest = real_data['end_abs_mag'][0]-0.01
+
+        # # Simulation height range (m) that will be used to map the output to a grid
+        # erosion_sim_params.sim_height = MetParam(70000, 130000)
+
+        ## Physical parameters
+
+        # find the at what is the order of magnitude of the real_data['mass'][0]
+        order = int(np.floor(np.log10(real_data['mass'][0])))
+        # create a MetParam object with the mass range that is above and below the real_data['mass'][0] by 2 orders of magnitude
+        erosion_sim_params.m_init = MetParam(real_data['mass'][0]-10**order, real_data['mass'][0]+10**order)
+
+        # Initial velocity range (m/s) 
+        erosion_sim_params.v_init = MetParam(real_data['vel_init_norot'][0]*1000-50, real_data['vel_init_norot'][0]*1000+150) # 60091.41691
+
+        # Zenith angle range
+        erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'][0]-0.01), np.radians(real_data['zenith_angle'][0]+0.01)) # 43.466538
+
+        # print all the modfiend values
+        print('min initial mag:',erosion_sim_params.lim_mag_faintest)
+        print('max initial mag:',erosion_sim_params.lim_mag_brightest)
+        print('min final mag:',erosion_sim_params.lim_mag_len_end_faintest)
+        print('max final mag:',erosion_sim_params.lim_mag_len_end_brightest)
+        print('min mass:',erosion_sim_params.m_init.min)
+        print('max mass:',erosion_sim_params.m_init.max)
+        print('min velocity:',erosion_sim_params.v_init.min)
+        print('max velocity:',erosion_sim_params.v_init.max)
+        print('min zenith angle:',np.degrees(erosion_sim_params.zenith_angle.min))
+        print('max zenith angle:',np.degrees(erosion_sim_params.zenith_angle.max))
+
+
+        # add the real data of duration	peak_mag_height	begin_height	end_height
+        erosion_sim_params.real_duration = real_data['duration'][0]
+        # erosion_sim_params.param_list.append("real_duration")
+
+        erosion_sim_params.real_peak_abs_mag = real_data['peak_abs_mag'][0]
+        # erosion_sim_params.param_list.append("real_peak_abs_mag")
+
+        erosion_sim_params.real_peak_mag_height = real_data['peak_mag_height'][0]*1000
+        # erosion_sim_params.param_list.append("real_peak_mag_height")
+
+        erosion_sim_params.real_begin_height = real_data['begin_height'][0]*1000
+        # erosion_sim_params.param_list.append("real_begin_height")
+
+        erosion_sim_params.real_end_height = real_data['end_height'][0]*1000
+        # erosion_sim_params.param_list.append("real_end_height")
+
+
+        # # Density range (kg/m^3)
+        # erosion_sim_params.rho = MetParam(100, 1000)
+
+        # # Intrinsic ablation coeff range (s^2/m^2)
+        # erosion_sim_params.sigma = MetParam(0.008/1e6, 0.03/1e6) 
+
+        # # Erosion height range
+        # erosion_sim_params.erosion_height_start = MetParam(115000, 119000)
+
+        # # Erosion coefficient (s^2/m^2)
+        # erosion_sim_params.erosion_coeff = MetParam(0.0, 1/1e6)
+
+        # # Mass index
+        # erosion_sim_params.erosion_mass_index = MetParam(1.5, 2.5)
+
+        # # Minimum mass for erosion
+        # erosion_sim_params.erosion_mass_min = MetParam(5e-12, 1e-10)
+
+        # # Maximum mass for erosion
+        # erosion_sim_params.erosion_mass_max = MetParam(1e-10, 5e-8)
+
+    else:
+        print("Real data file does not exist")
+        real_data = None
+        
+
+
 
 
 
@@ -1877,9 +2149,6 @@ if __name__ == "__main__":
     arg_parser.add_argument('--save_csv', metavar='SAVE_CSV', type=bool, default=True, \
         help="save the csv file.")
 
-    arg_parser.add_argument('--test', metavar='TEST', type=bool, default=True, \
-        help="Read GenerateSimulations json files.")
-
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None, \
         help="Number of cores to use. All by default.")
 
@@ -1888,14 +2157,60 @@ if __name__ == "__main__":
 
     #########################
 
-    trajectory_files, file_names, output_folder = (cml_args.input_dir)
+    # check if is a file or a directory
+    if os.path.isdir(cml_args.input_dir):
+        # pack the 3 lists in a tuple
+        input_folder_file = find_and_extract_trajectory_files(cml_args.input_dir)
+        
+    else:
+        # split the dir and file
+        trajectory_files = [cml_args.input_dir]
+        # for the output folder delete the extension of the file and add _GenSim
+        output_folders = [os.path.splitext(cml_args.input_dir)[0]+'_GenSim']
+        file_names = [os.path.splitext(os.path.split(cml_args.input_dir)[1])[0]]
+        input_folders = [os.path.split(cml_args.input_dir)[0]]
 
+        input_folder_file = [trajectory_files[0], file_names[0], input_folders[0],output_folders[0]]
+    
     # print only the file name in the directory split the path and take the last element
-    print('Number of trajectory.pickle files find',len(trajectory_files))
-    for file in trajectory_files:
-        print('processing file: ',os.path.split(file)[1])
-        # current outprut directory
-        current_output_dir = output_folder[trajectory_files.index(file)]
+    print('Number of trajectory.pickle files find',len(input_folder_file))
+    for trajectory_file, file_name, input_folder, output_folder in input_folder_file:
+        print('processing file: ',file_name)
+
+        real_data = read_real_file(trajectory_file)
+        # save as a csv file
+        real_data.to_csv(+os.sep+file_name+'.csv', index=False)
+
+        # check if the output directory exists
+        if os.path.isdir(output_folder):
+
+            # open the folder and extract all the json files
+            os.chdir(output_folder)
+            # print the current directory in
+            directory=cml_args.input_dir
+            extension = 'json'
+            # walk thorought the directories and find all the json files inside each folder inside the directory
+            all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
+
+            print('Number of simulated files: ',len(all_jsonfiles))
+
+            input_list = [[output_folder, [all_jsonfiles[ii]]] for ii in range(len(all_jsonfiles))]
+            results_list = domainParallelizer(input_list, read_GenerateSimulations_folder_output, cores=cml_args.cores)
+
+            # if no read the json files in the folder and create a new csv file
+            df_sim = pd.concat(results_list)
+
+            # print(df_sim_shower)
+            # reindex the dataframe
+            df_sim.reset_index(drop=True, inplace=True)
+
+
+            df_sim.to_csv(cml_args.input_dir+os.sep+'Simulated_'+current_shower+'.csv', index=False)
+
+        else:
+            # Make the output directory
+            mkdirP(current_output_dir)
+
         # Make the output directory
         mkdirP(current_output_dir)
 
@@ -1904,6 +2219,10 @@ if __name__ == "__main__":
         erosion_sim_params = SIM_CLASSES[SIM_CLASSES_NAMES.index(cml_args.simclass)]()
 
         erosion_sim_params = specificErosionSimParameters(cml_args.real_data, erosion_sim_params)
+
+        input_list = [[cml_args.input_dir, copy.deepcopy(erosion_sim_params), \
+            np.random.randint(0, 2**31 - 1),MIN_FRAMES_VISIBLE] for _ in range(cml_args.nsims)]
+        results_list = domainParallelizer(input_list, generateErosionSim, cores=cml_args.cores)
 
 
     # # Set the folder where are the GenerateSimulations.py output json files e.g. "Simulations_"+Shower+""

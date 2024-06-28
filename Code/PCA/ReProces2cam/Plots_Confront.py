@@ -26,6 +26,7 @@ from wmpl.Utils.Pickling import loadPickle
 from wmpl.Utils.OSTools import mkdirP
 from sklearn.cluster import KMeans
 from matplotlib.colors import Normalize
+from matplotlib.ticker import ScalarFormatter,MaxNLocator
 import copy
 import sys
 from scipy.integrate import simps  # For numerical integration
@@ -42,7 +43,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
     # Shower=['PER']#['CAP']
 
     # number of selected events selected
-    n_select=20
+    n_select=10
     dist_select=np.array([10000000000000])
     # dist_select=np.ones(9)*10000000000000
 
@@ -61,9 +62,9 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
 
     Sim_data_distribution=True
 
-    curvature_selection_diff=False
-    num_10percdist=5
-    num_repeat=2
+    curvature_selection_diff=True
+    window_of_smothing_avg=3
+    std_multip_threshold=1
 
     plot_dist=True
 
@@ -167,7 +168,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                     df_sel_save_dist=df_sel_save_dist[df_sel_save_dist['solution_id_dist']==only_select_meteors_from]
                 #     print('selected events for : '+only_select_meteors_from)
                 # print(len(df_sel))
-                dist_to_cut=diff_dist_index(df_sel,num_10percdist,num_repeat)
+                dist_to_cut=diff_dist_index(df_sel,window_of_smothing_avg,std_multip_threshold)
 
                 # change of curvature print  
                 # print('Change of curvature at:'+str(dist_to_cut))
@@ -181,7 +182,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 for around_meteor in df_sel['solution_id_dist'].unique():
                     # select the data with distance less than dist_select and check if there are more than n_select
                     df_curr_sel_curv = df_sel[df_sel['solution_id_dist']==around_meteor]
-                    dist_to_cut=diff_dist_index(df_curr_sel_curv,num_10percdist,num_repeat)
+                    dist_to_cut=diff_dist_index(df_curr_sel_curv,window_of_smothing_avg,std_multip_threshold)
                     # # change of curvature print
                     # print(around_meteor)
                     # print('- Curvature change in the first '+str(dist_to_cut)+' at a distance of: '+str(df_curr_sel_curv['distance_meteor'].iloc[dist_to_cut]))
@@ -387,6 +388,12 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 if plotvar in ['beg_abs_mag','peak_abs_mag','end_abs_mag']:
                     axs[ii].invert_xaxis()
 
+                # Set the x-axis formatter to ScalarFormatter
+                axs[ii].xaxis.set_major_formatter(ScalarFormatter())
+                axs[ii].ticklabel_format(useOffset=False, style='plain', axis='x')
+                # Set the number of x-axis ticks to 3
+                # axs[ii].xaxis.set_major_locator(MaxNLocator(nbins=3))
+
                 axs[ii].set_ylabel('probability')
                 axs[ii].set_xlabel(to_plot_unit[ii])
                 axs[ii].get_legend().remove()
@@ -395,6 +402,7 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 # put y axis in log scale
                 axs[ii].set_yscale('log')
                 axs[ii].set_ylim(0.01,1)
+
                 
 
                     
@@ -487,24 +495,86 @@ def PCA_confrontPLOT(output_dir, Shower, input_dir, true_file='', true_path=''):
                 distance_meteor_sel=curr_sel['distance_meteor']
                 # delete the index
                 distance_meteor_sel_save=distance_meteor_sel_save.reset_index(drop=True)
-                # check if distance_meteor_sel_save index is bigger than the index distance_meteor_sel+50
+
+                ###################################################
+                # # check if distance_meteor_sel_save index is bigger than the index distance_meteor_sel+50
+                # sns.histplot(distance_meteor_sel_save, kde=True, cumulative=True, bins=len(distance_meteor_sel_save)) # , stat='density' to have probability
+                # # plt.ylim(0,len(distance_meteor_sel_save))
+                # if len(distance_meteor_sel)<100:
+                #     plt.ylim(0,100) 
+                # # axis label
+                # plt.xlabel('Distance in PCA space')
+                # plt.ylabel('Number of events')
+
+                # colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+                # # plot a dasced line with the max distance_meteor_sel
+                # plt.axvline(x=np.max(distance_meteor_sel), color=colors[0], linestyle='--')
+
+                # # make the y axis logarithmic
+                # # plt.xscale('log')
+                
+                # # show
+                # # plt.show()
+                ####################################################
+
+                #make subtraction of the next element and the previous element of distance_meteor_sel_save
+                diff_distance_meteor = np.diff(distance_meteor_sel_save)
+                # histogram plot of the difference with the count on the x axis and diff_distance_meteor on the y axis 
+                indices = np.arange(len(diff_distance_meteor))
+                # create the cumulative sum of the diff_distance_meteor
+                cumsum_diff_distance_meteor = np.cumsum(diff_distance_meteor)
+                # normalize the diff_distance_meteor xnormalized = (x - xminimum) / range of x
+                diff_distance_meteor_normalized = (diff_distance_meteor - np.min(diff_distance_meteor)) / (np.max(diff_distance_meteor) - np.min(diff_distance_meteor))
+
+                # find the index equal to 1 in diff_distance_meteor_normalized
+                # index1 = np.where(diff_distance_meteor_normalized == 1)[0]
+                # check when the diff_distance_meteor is two nxt to eac other are smaller than 0.1 starting from the first element
+            
+                # dimension of the plot 15,5
+                plt.figure(figsize=(15,5))
+
+                plt.subplot(1,2,2)
                 sns.histplot(distance_meteor_sel_save, kde=True, cumulative=True, bins=len(distance_meteor_sel_save)) # , stat='density' to have probability
-                # plt.ylim(0,len(distance_meteor_sel_save))
-                if len(distance_meteor_sel)<100:
-                    plt.ylim(0,100) 
-                # axis label
+                colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
                 plt.xlabel('Distance in PCA space')
                 plt.ylabel('Number of events')
-
-                colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-
-                # plot a dasced line with the max distance_meteor_sel
+                plt.title('Cumulative distance in PCA space')
                 plt.axvline(x=np.max(distance_meteor_sel), color=colors[0], linestyle='--')
-
-                # make the y axis logarithmic
-                # plt.xscale('log')
+                if len(distance_meteor_sel)<100:
+                    plt.ylim(0,100) 
                 
-                # show
+
+                plt.subplot(1,2,1)
+                # sns.histplot(diff_distance_meteor_normalized, kde=True, bins=len(distance_meteor_sel_save))
+                #make the bar plot 0.5 transparency
+                
+                plt.bar(indices, diff_distance_meteor_normalized,color=colors[0], alpha=0.5, edgecolor='black')
+                plt.xlabel('Number of events')
+                plt.ylabel('Normalized difference')
+                plt.title('Distance difference Normalized')
+                # put a horizontal line at len(curr_sel['distance_meteor'])
+                plt.axvline(x=len(distance_meteor_sel)-1, color=colors[0], linestyle='--') 
+                if len(distance_meteor_sel)<100:
+                    plt.xlim(-1,100) 
+
+                # find the mean of the first 100 elements of diff_distance_meteor_normalized and put a horizontal line
+                # plt.axhline(y=np.std(moving_average_smoothing(diff_distance_meteor_normalized, window_size=3)), color=colors[0], linestyle='--')
+
+
+                # plt.subplot(1,3,3)
+                # # sns.histplot(diff_distance_meteor_normalized, kde=True, cumulative=True, bins=len(distance_meteor_sel_save))
+                # plt.bar(indices, cumsum_diff_distance_meteor,color=colors[0], alpha=0.5, edgecolor='black')
+                # # sns.histplot(data_for_meteor, x=data_for_meteor["distance_meteor"][:100], kde=True, cumulative=True, bins=len(data_for_meteor["distance_meteor"]))
+                # plt.ylabel('Cumulative sum')
+                # plt.xlabel('Number of events')
+                # plt.title('Cumulative sum diff Normalized') 
+                # # put a horizontal line at len(curr_sel['distance_meteor'])
+                # plt.axvline(x=len(distance_meteor_sel), color=colors[0], linestyle='--')  
+                # if len(distance_meteor_sel)<100:
+                #     plt.xlim(-1,101) 
+                # give more space
+                plt.tight_layout()  
                 # plt.show()
 
                 # save the figure maximized and with the right name
@@ -1491,7 +1561,7 @@ def find_closest_index(time_arr, time_sampled):
     return closest_indices
 
 
-def diff_dist_index(data_for_meteor, numbr_10=10, numbr_10percent=2):
+def diff_dist_index(data_for_meteor, window_of_smothing_avg=3, std_multip_threshold=1):
     #make subtraction of the next element and the previous element of data_for_meteor["distance_meteor"]
     diff_distance_meteor = np.diff(data_for_meteor["distance_meteor"][:int(len(data_for_meteor["distance_meteor"])/10)])
     # histogram plot of the difference with the count on the x axis and diff_distance_meteor on the y axis 
@@ -1501,24 +1571,37 @@ def diff_dist_index(data_for_meteor, numbr_10=10, numbr_10percent=2):
     # normalize the diff_distance_meteor xnormalized = (x - xminimum) / range of x
     diff_distance_meteor_normalized = (diff_distance_meteor - np.min(diff_distance_meteor)) / (np.max(diff_distance_meteor) - np.min(diff_distance_meteor))
 
-    # find the index equal to 1 in diff_distance_meteor_normalized
-    index1 = np.where(diff_distance_meteor_normalized == 1)[0]
-    # check when the diff_distance_meteor is two nxt to eac other are smaller than 0.1 starting from the first element
-    select=0
-    for ii in range(len(diff_distance_meteor_normalized)):
-        if index1<numbr_10:
-            ii+=index1[0]
-        if diff_distance_meteor_normalized[ii] < 0.1:
-            index10percent = ii-1
-            select+=1
-            if ii<numbr_10:
-                if select==numbr_10percent:
-                    break
-            else:
-                if select==1:
-                    break
-        else:
-            select=0
+    # # find the index equal to 1 in diff_distance_meteor_normalized
+    # index1 = np.where(diff_distance_meteor_normalized == 1)[0]
+    # # check when the diff_distance_meteor is two nxt to eac other are smaller than 0.1 starting from the first element
+    # select=0
+    # for ii in range(len(diff_distance_meteor_normalized)):
+    #     if index1<numbr_10:
+    #         ii+=index1[0]
+    #     if diff_distance_meteor_normalized[ii] < 0.1:
+    #         index10percent = ii-1
+    #         select+=1
+    #         if ii<numbr_10:
+    #             if select==numbr_10percent:
+    #                 break
+    #         else:
+    #             if select==1:
+    #                 break
+    #     else:
+    #         select=0
+
+    def moving_average_smoothing(data, window_size):
+        smoothed_data = np.convolve(data, np.ones(window_size)/window_size, mode='same')
+        return smoothed_data
+
+    # apply the smoothing finction
+    smoothed_diff_distance_meteor = moving_average_smoothing(diff_distance_meteor_normalized, window_of_smothing_avg)
+    
+    # fid the first value of the smoothed_diff_distance_meteor that is smaller than the std of the smoothed_diff_distance_meteor
+    index10percent = np.where(smoothed_diff_distance_meteor < np.std(smoothed_diff_distance_meteor)*std_multip_threshold)[0][0]-2
+    if index10percent<0:
+        index10percent=0
+
    
     # # dimension of the plot 15,5
     # plt.figure(figsize=(15,5))
@@ -1567,7 +1650,7 @@ if __name__ == "__main__":
         help="Path were are store both simulated and observed shower .csv file.")
 
     # arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json', \ TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
-    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_9_noisy.json', \
+    arg_parser.add_argument('--true_file', metavar='TRUE_FILE', type=str, default='TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \
         help="The real json file the ground truth for the PCA simulation results.") 
 
     # arg_parser.add_argument('--input_dir_true', metavar='INPUT_PATH_TRUE', type=str, default=r"C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\Simulations_PER", \
@@ -1605,29 +1688,29 @@ if __name__ == "__main__":
 
     # #########################
 
-    file_handler = ['TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json',
-        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_2_noisy.json',
-        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_3_noisy.json',
-        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_4_noisy.json',
-        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_5_noisy.json',
-        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_6_noisy.json',
-        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_7_noisy.json',
-        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_8_noisy.json',
-        'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_9_noisy.json']
+    # file_handler = ['TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json',
+    #     'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_2_noisy.json',
+    #     'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_3_noisy.json',
+    #     'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_4_noisy.json',
+    #     'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_5_noisy.json',
+    #     'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_6_noisy.json',
+    #     'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_7_noisy.json',
+    #     'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_8_noisy.json',
+    #     'TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61_9_noisy.json']
      
-    # create an output directory 1_noise, 2_noise, 3_noise, 4_noise, 5_noise, 6_noise, 7_noise, 8_noise, 9_noise
-    for ii in range(len(file_handler)):
-        mkdirP(cml_args.output_dir+os.sep+str(ii+1)+'_noise')
-        folder_output=cml_args.output_dir+os.sep+str(ii+1)+'_noise'
-        print(folder_output)
-        print(file_handler)
+    # # create an output directory 1_noise, 2_noise, 3_noise, 4_noise, 5_noise, 6_noise, 7_noise, 8_noise, 9_noise
+    # for ii in range(len(file_handler)):
+    #     mkdirP(cml_args.output_dir+os.sep+str(ii+1)+'_noise')
+    #     folder_output=cml_args.output_dir+os.sep+str(ii+1)+'_noise'
+    #     print(folder_output)
+    #     print(file_handler)
 
-        PCA_confrontPLOT(folder_output, Shower, cml_args.input_dir, file_handler[ii], cml_args.input_dir_true)
+    #     PCA_confrontPLOT(folder_output, Shower, cml_args.input_dir, file_handler[ii], cml_args.input_dir_true)
 
-        PCA_LightCurveCoefPLOT(folder_output, Shower, cml_args.input_dir, file_handler[ii], cml_args.input_dir_true)
+    #     PCA_LightCurveCoefPLOT(folder_output, Shower, cml_args.input_dir, file_handler[ii], cml_args.input_dir_true)
 
     #########################
 
-    # PCA_confrontPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)
+    PCA_confrontPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)
 
-    # PCA_LightCurveCoefPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)
+    PCA_LightCurveCoefPLOT(cml_args.output_dir, Shower, cml_args.input_dir, cml_args.true_file, cml_args.input_dir_true)

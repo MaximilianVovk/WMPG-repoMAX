@@ -144,14 +144,14 @@ def lag_residual(params, t_time, l_data):
     return np.sum((l_data - jacchia_Lag(t_time, *params))**2)
 
 def fit_lag(lag_data,time_data):
-    # Initial guess for the parameters
-    initial_guess = [0.005,	10]
-    result = minimize(lag_residual, initial_guess, args=(time_data, lag_data))
-    fitted_params = result.x
-    fitted_lag = jacchia_Lag(time_data, *fitted_params)
-    residuals = lag_data - fitted_lag
-    # avg_residual = np.mean(abs(residuals)) #RMSD
-    rmsd = np.sqrt(np.mean(residuals**2))
+    # # Initial guess for the parameters
+    # initial_guess = [0.005,	10]
+    # result = minimize(lag_residual, initial_guess, args=(time_data, lag_data))
+    # fitted_params = result.x
+    # fitted_lag = jacchia_Lag(time_data, *fitted_params)
+    # residuals = lag_data - fitted_lag
+    # # avg_residual = np.mean(abs(residuals)) #RMSD
+    # rmsd = np.sqrt(np.mean(residuals**2))
 
     # initial guess of deceleration decel equal to linear fit of velocity
     p0 = [np.mean(lag_data), 0, 0, np.mean(time_data)]
@@ -161,9 +161,9 @@ def fit_lag(lag_data,time_data):
     # sample the fit for the velocity and acceleration
     a_t0, b_t0, c_t0, t0 = opt_res.x
     fitted_lag_t0 = cubic_lag(time_data, a_t0, b_t0, c_t0, t0)
-    residuals_t0 = lag_data - fitted_lag
+    residuals_t0 = lag_data - fitted_lag_t0
     # avg_residual = np.mean(abs(residuals))
-    rmsd_t0 = np.sqrt(np.mean(residuals**2))
+    rmsd_t0 = np.sqrt(np.mean(residuals_t0**2))
     # if rmsd_t0<rmsd:
     #     return fitted_lag_t0, residuals_t0, rmsd_t0,'Polin t0'
     # else:

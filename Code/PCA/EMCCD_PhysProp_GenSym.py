@@ -71,7 +71,7 @@ NAME_SUFX_CSV_PHYSICAL_FIT_RESULTS = "_physical_prop.csv"
 SAVE_SELECTION_FOLDER='Selection'
 VAR_SEL_DIR_SUFX = '_sel_var_vs_physProp'
 PCA_SEL_DIR_SUFX = '_sel_PCA_vs_physProp'
-SAVE_RESULT_FOLDER='Results'
+SAVE_RESULTS_FOLDER='Results'
 
 # Length of data that will be used as an input during training
 DATA_LENGTH = 256
@@ -2677,7 +2677,7 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, n_PC_in_PCA='',output_dir=''
     # Adjust layout
     plt.tight_layout()
 
-    fig_name = (output_dir+os.sep+'MixPhysicPropPairPlot'+str(n_PC_in_PCA)+'PC_'+str(len(curr_sel))+'ev_dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'.png')
+    fig_name = (output_dir+os.sep+'MixPhysicPropPairPlot_'+str(n_PC_in_PCA)+'PC_'+str(len(curr_sel))+'ev.png')
     plt.savefig(fig_name, dpi=300)
 
     # Close the figure
@@ -2690,7 +2690,7 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, n_PC_in_PCA='',output_dir=''
 
 
 
-def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_funct, mag_noise_real, len_noise_real, Metsim_folderfile_json='', file_name_obs='', output_dir='', total_distribution=False, save_log=False):
+def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_funct, mag_noise_real, len_noise_real, Metsim_folderfile_json='', file_name_obs='', folder_file_name_real='', output_dir='', total_distribution=False, save_log=False):
 
     output_dir_OG=output_dir
 
@@ -2709,7 +2709,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
     # velocity noise 1 sigma km/s
     vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
 
-    data_file_real = read_pickle_reduction_file(df_obs.iloc[0]['solution_id'])
+    data_file_real = read_pickle_reduction_file(folder_file_name_real)
 
     _, _, _, residuals_mag_real, residuals_vel_real, _, residual_time_pos_real, residual_height_pos_real = RMSD_calc_diff(data_file_real, fit_funct)
 
@@ -2801,7 +2801,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                         best_grid_point = point
 
                 if best_grid_point is not None:
-                    densest_point = best_grid_point
+                    densest_point = np.array(best_grid_point)
                     print("Densest point found using Grid Search:\n", densest_point)
                     
                 else:
@@ -2936,6 +2936,23 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
             print('below 5 sigma noise, SAVED')
             pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
 
+            if total_distribution:
+                shutil.copy(output_dir+os.sep+around_meteor+'_mode_TOT.json', output_dir_OG+os.sep+SAVE_RESULTS_FOLDER+os.sep+around_meteor+'_mode_TOT.json')
+            else:
+                shutil.copy(output_dir+os.sep+around_meteor+'_mode.json', output_dir_OG+os.sep+SAVE_RESULTS_FOLDER+os.sep+around_meteor+'_mode.json')
+            fig.suptitle(around_meteor+' '+select_mode_print+' mode selected') # , fontsize=16
+            # pu the leggend putside the plot and adjust the plot base on the screen size
+            ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+            # the legend do not fit in the plot, so adjust the plot
+            plt.subplots_adjust(right=.7)
+            plt.subplots_adjust(wspace=0.2)
+            # make more space
+            plt.tight_layout()
+            if is_real:
+                plt.savefig(output_dir_OG+os.sep+SAVE_RESULTS_FOLDER+os.sep+around_meteor+'_MODE_minKDE_Heigh_MagVelCoef.png')
+            else:
+                plt.savefig(output_dir_OG+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name_obs+'_'+around_meteor+'_MODE_minKDE_Heigh_MagVelCoef.png')
+
         fig.suptitle(around_meteor+' '+select_mode_print+' mode selected') # , fontsize=16
 
         if densest_point!='':
@@ -2977,6 +2994,24 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                 print('below 5 sigma noise, SAVED')
                 pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
 
+                if total_distribution:
+                    # shuty copy the file
+                    shutil.copy(output_dir+os.sep+around_meteor+'_minKDE_TOT.json', output_dir_OG+os.sep+SAVE_RESULTS_FOLDER+os.sep+around_meteor+'_minKDE_TOT.json')
+                else:
+                    shutil.copy(output_dir+os.sep+around_meteor+'_minKDE.json', output_dir_OG+os.sep+SAVE_RESULTS_FOLDER+os.sep+around_meteor+'_minKDE.json')
+                fig.suptitle(around_meteor+' '+select_mode_print+' mode selected and '+select_kde_print+' minKDE selected') # , fontsize=16
+                # pu the leggend putside the plot and adjust the plot base on the screen size
+                ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+                # the legend do not fit in the plot, so adjust the plot
+                plt.subplots_adjust(right=.7)
+                plt.subplots_adjust(wspace=0.2)
+                # make more space
+                plt.tight_layout()
+                if is_real:
+                    plt.savefig(output_dir_OG+os.sep+SAVE_RESULTS_FOLDER+os.sep+around_meteor+'_MODE_minKDE_Heigh_MagVelCoef.png')
+                else:
+                    plt.savefig(output_dir_OG+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name_obs+'_'+around_meteor+'_MODE_minKDE_Heigh_MagVelCoef.png')
+
             # put a sup title
             fig.suptitle(around_meteor+' '+select_mode_print+' mode selected and '+select_kde_print+' minKDE selected') # , fontsize=16
         # pu the leggend putside the plot and adjust the plot base on the screen size
@@ -2999,7 +3034,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
         curr_sel['erosion_coeff']=curr_sel['erosion_coeff']/1000000
         curr_sel['sigma']=curr_sel['sigma']/1000000
 
-        PCA_PhysicalPropPLOT(curr_sel, df_sim, n_PC_in_PCA, output_dir, file_name, densest_point, save_log)
+        PCA_PhysicalPropPLOT(curr_sel, df_sim, n_PC_in_PCA, output_dir, file_name_obs, densest_point, save_log)
 
     return pd_datafram_PCA_selected_mode_min_KDE
             
@@ -3189,11 +3224,13 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
 
         if Metsim_flag:
-            file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+str(ii+1)+'n_'+file_name_title[:23]+'_fitted.json'
+            file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_fitted.json'
+            file_json_save_results=output_dir+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name_title[:23]+'_fitted.json'
             const_nominal, _ = loadConstants(namefile_sel)
             saveConstants(const_nominal,output_dir,file_name_obs+'_sim_fit.json')
         else:
-            file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+str(ii+1)+'n_'+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
+            file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
+            file_json_save_results=output_dir+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
             # from namefile_sel json file open the json file and save the namefile_sel.const part as file_name_obs+'_sim_fit.json'
             with open(namefile_sel) as json_file:
                 data = json.load(json_file)
@@ -3214,7 +3251,17 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
                 # suptitle of the plot
                 fig.suptitle(file_name_title+' PERFECT below sigma noise')
 
-                plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+str(ii+1)+'n_'+file_name_title[:23]+'_'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'dist_Heigh_MagVelCoef.png')
+                # pu the leggend putside the plot and adjust the plot base on the screen size
+                ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+                # the legend do not fit in the plot, so adjust the plot
+                plt.subplots_adjust(right=.7)
+                plt.subplots_adjust(wspace=0.2)
+                # make more space
+                plt.tight_layout()
+                plt.savefig(output_dir+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name_title[:23]+'_'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'dist_Heigh_MagVelCoef.png')
+                shutil.copy(output_dir+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_results)
+
+                plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'dist_Heigh_MagVelCoef.png')
 
                 # close the plot
                 plt.close()
@@ -3237,7 +3284,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
                 fig.suptitle(file_name_title+' BAD no optimization and no save')
 
-                plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+str(ii+1)+'n_'+file_name_title[:23]+'_'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'dist_Heigh_MagVelCoef.png')
+                plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'dist_Heigh_MagVelCoef.png')
 
                 # close the plot
                 plt.close()
@@ -3319,7 +3366,19 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
         if rmsd_mag<mag_noise_real*5 and rmsd_lag<len_noise_real*5/1000:
             print('below 5 sigma noise, OPTIMIZED and SAVED')
+
+            # output_folder+os.sep+SAVE_RESULTS_FOLDER
             fig.suptitle(file_name_title+' optimized SELECTED')
+            # pu the leggend putside the plot and adjust the plot base on the screen size
+            ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+            # the legend do not fit in the plot, so adjust the plot
+            plt.subplots_adjust(right=.7)
+            plt.subplots_adjust(wspace=0.2)
+            # make more space
+            plt.tight_layout()
+            plt.savefig(output_dir+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name_title[:23]+'_'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'dist_Heigh_MagVelCoef.png')
+            shutil.copy(output_dir+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_results)
+
             pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_sim_optimized], axis=0)
         else:
             print('above 5 sigma noise, OPTIMIZATION NOT SAVED')
@@ -3334,7 +3393,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
         # make more space
         plt.tight_layout()
 
-        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+str(ii+1)+'n_'+file_name_title[:23]+'_'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'dist_Heigh_MagVelCoef.png')
+        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'dist_Heigh_MagVelCoef.png')
 
         # close the plot
         plt.close()
@@ -3893,7 +3952,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--save_plot', metavar='SAVE_PLOT', type=bool, default=False, \
         help="save the plots.")
     
-    arg_parser.add_argument('--optimize', metavar='OPTIMIZE', type=bool, default=False, \
+    arg_parser.add_argument('--optimize', metavar='OPTIMIZE', type=bool, default=True, \
         help="Run optimization step to have more precise results but increase the computation time.")
     
     arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'C:\Users\maxiv\WesternMeteorPyLib\wmpl\MetSim\AutoRefineFit_options.txt', \
@@ -3956,10 +4015,10 @@ if __name__ == "__main__":
     print('Number of trajectory.pickle files find',len(input_folder_file))
     for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file:
         print('processing file:',file_name)
-        # print(trajectory_file)
-        # print(input_folder)
-        # print(output_folder)
-        # print(trajectory_Metsim_file)
+        print(trajectory_file)
+        print(input_folder)
+        print(output_folder)
+        print(trajectory_Metsim_file)
 
         # chek if input_folder+os.sep+file_name+NAME_SUFX_CSV_OBS exist
         if os.path.isfile(output_folder+os.sep+file_name+NAME_SUFX_CSV_OBS):
@@ -4160,16 +4219,28 @@ if __name__ == "__main__":
 
         print('PLOT: the physical characteristics of the selected simulations Mode and KDE')
         PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
-        pd_datafram_PCA_selected_mode_min_KDE = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, output_folder)
-        print(pd_datafram_PCA_selected_mode_min_KDE)
-        # input_list_obs = [[pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real.iloc[ii], pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real.iloc[ii]['solution_id']],\
-        #                     pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, output_folder] for ii in range(len(pd_dataframe_PCA_obs_real))]
-        # results_list = domainParallelizer(input_list_obs, PCA_physicalProp_KDE_MODE_PLOT, cores=cml_args.cores)
+
+        if cml_args.save_plot:
+            print('PLOT: correlation of the selected simulations')
+            # plot correlation function of the selected simulations
+            PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition, pca_N_comp, output_folder)
+
+
+        mkdirP(output_folder+os.sep+SAVE_RESULTS_FOLDER)
+
+        # pd_datafram_PCA_selected_mode_min_KDE = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder)
+        
+        # for ii in range(len(pd_dataframe_PCA_obs_real)):
+        #     print(pd_dataframe_PCA_obs_real.iloc[[ii]].reset_index(drop=True))
+        #     print(pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real['solution_id'].iloc[ii]])
+
+        input_list_obs = [[pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real.iloc[[ii]].reset_index(drop=True), pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real['solution_id'].iloc[ii]], pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder] for ii in range(len(pd_dataframe_PCA_obs_real))]
+        results_list = domainParallelizer(input_list_obs, PCA_physicalProp_KDE_MODE_PLOT, cores=cml_args.cores)
     
+        # if no read the json files in the folder and create a new csv file
+        pd_datafram_PCA_selected_mode_min_KDE = pd.concat(results_list)
 
-        pd_datafram_PCA_selected_mode_min_KDE_TOT = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, output_folder,True, True)
-
-        print(pd_datafram_PCA_selected_mode_min_KDE_TOT)
+        pd_datafram_PCA_selected_mode_min_KDE_TOT = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder,True, True)
 
         # concatenate the two dataframes
         pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_mode_min_KDE_TOT, pd_datafram_PCA_selected_mode_min_KDE])
@@ -4180,25 +4251,21 @@ if __name__ == "__main__":
         pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
         
         # save df_sel_shower_real to disk add the RMSD
-        pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+file_name+'_sim_sel_optimized.csv', index=False)
-
-        print(pd_datafram_PCA_selected_lowRMSD)
+        pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+file_name+'_sim_sel_results.csv', index=False)
 
 
         # print('PLOT: the physical characteristics of the selected simulations with no repetitions')
         # PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
         
-        if cml_args.save_plot:
-            print('PLOT: correlation of the selected simulations')
-            # plot correlation function of the selected simulations
-            PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee, pca_N_comp, output_folder)
-
         print()
 
 
         if cml_args.optimize == False and len(pd_datafram_PCA_selected_lowRMSD)>1:
             print('PLOT: the physical characteristics closest simulations')
-            PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
+            PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER, file_name)
+            PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_lowRMSD, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER)
+            pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv', index=False)
+            print()
             print('SUCCES: the physical characteristics range is in the output folder')
         else:
             print('FAIL: Not enought good selected simulations')
@@ -4219,12 +4286,14 @@ if __name__ == "__main__":
             pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
 
             # save and update the disk 
-            pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+file_name+'_sim_sel_optimized.csv', index=False)
+            pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+file_name+'_sim_sel_results.csv', index=False)
 
             if len(pd_datafram_PCA_selected_lowRMSD)>1:
                 print('PLOT: the physical characteristics closest simulations')
-                PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
-
+                PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER, file_name)
+                PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_lowRMSD, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER)
+                pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv', index=False)
+                print()
                 print('SUCCES: the physical characteristics range is in the output folder')
             else:
                 print('FAIL: Not enought good selected simulations')

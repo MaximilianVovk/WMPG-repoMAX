@@ -4266,7 +4266,7 @@ if __name__ == "__main__":
             PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_lowRMSD, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER)
             pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv', index=False)
             print()
-            print('SUCCES: the physical characteristics range is in the output folder')
+            print('SUCCES: the physical characteristics range is in the results folder')
         else:
             print('FAIL: Not enought good selected simulations')
 
@@ -4294,7 +4294,7 @@ if __name__ == "__main__":
                 PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_lowRMSD, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER)
                 pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv', index=False)
                 print()
-                print('SUCCES: the physical characteristics range is in the output folder')
+                print('SUCCES: the physical characteristics range is in the results folder')
             else:
                 print('FAIL: Not enought good selected simulations')
 

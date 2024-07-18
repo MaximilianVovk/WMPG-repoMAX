@@ -1652,11 +1652,12 @@ def find_knee_dist_index(data_meteor_pd, window_of_smothing_avg=3, std_multip_th
     
     # fid the first value of the smoothed_diff_distance_meteor that is smaller than the std of the smoothed_diff_distance_meteor
     index10percent = np.where(smoothed_diff_distance_meteor < np.std(smoothed_diff_distance_meteor)*std_multip_threshold)[0][0]-2
-    if index10percent<0:
-        index10percent=0
     
     if N_sim_sel_force!=0:
         index10percent = N_sim_sel_force
+
+    if index10percent<1: # below does not work problem with finding the mode on KDE later on
+        index10percent=1
 
     if output_path!='':
 
@@ -3960,7 +3961,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   
 
-    arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=9, \
+    arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
     arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
@@ -3978,8 +3979,8 @@ if __name__ == "__main__":
     arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=['kurtosis','skew','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], \
         help="Use specific variable NOT considered in PCA.")
 
-    arg_parser.add_argument('--save_all_plot', metavar='SAVE_ALL_PLOT', type=bool, default=True, \
-        help="save the plot of the realization and the simulations and more plots in PCA control plots.")
+    arg_parser.add_argument('--save_test_plot', metavar='SAVE_TEST_PLOT', type=bool, default=False, \
+        help="save test plots of the realization and the simulations and more plots in PCA control plots.")
     
     arg_parser.add_argument('--optimize', metavar='OPTIMIZE', type=bool, default=False, \
         help="Run optimization step to have more precise results but increase the computation time.")
@@ -4113,13 +4114,13 @@ if __name__ == "__main__":
             
             pd_dataframe_PCA_obs_real = array_to_pd_dataframe_PCA(gensim_data_obs)
 
-            if cml_args.save_all_plot:
+            if cml_args.save_test_plot:
                 # run generate_observation_realization with the gensim_data_obs
-                rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs,cml_args.save_all_plot)
+                rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs,cml_args.save_test_plot)
                 # make the results_list to incorporate all rows of pd_dataframe_PCA_obs_real
                 results_list = []
                 for ii in range(cml_args.nobs):
-                    results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag,'realization_'+str(ii+1), fig, ax, cml_args.save_all_plot) 
+                    results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag,'realization_'+str(ii+1), fig, ax, cml_args.save_test_plot) 
                     results_list.append(results_pd)
 
                 # Save the figure as file with instead of _trajectory.pickle it has file+std_dev.png on the desktop
@@ -4184,8 +4185,8 @@ if __name__ == "__main__":
                 number_sim_to_run_and_simulation_in_folder = cml_args.nsim - len(all_jsonfiles_check)
                 
                 # run the new simulations
-                if cml_args.save_all_plot:
-                    fig, ax = generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_all_plot)
+                if cml_args.save_test_plot:
+                    fig, ax = generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_test_plot)
                     # plot gensim_data_Metsim
                     plot_side_by_side(gensim_data_Metsim,fig, ax,'k-','MetSim')
 
@@ -4196,7 +4197,7 @@ if __name__ == "__main__":
                     # print saved csv file
                     print('saved image '+output_folder+os.sep+file_name+'_obs_sim.png')
                 else:
-                    generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_all_plot)
+                    generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_test_plot)
                     
             print('start reading the json files')
 
@@ -4243,7 +4244,7 @@ if __name__ == "__main__":
 
         print('--- SELECTION ---')
         
-        pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_selected_all, pcr_results_physical_param, pca_N_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_all_plot)
+        pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_selected_all, pcr_results_physical_param, pca_N_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_test_plot)
 
         print('PLOT: best 7 simulations selected and add the RMSD value to csv selected')
         # plot of the best 7 selected simulations and add the RMSD value to csv selected
@@ -4285,11 +4286,11 @@ if __name__ == "__main__":
 
         # split in directory and filename
         filename_list = []
-        print(pd_datafram_PCA_selected_lowRMSD['solution_id'].values)
+        # print(pd_datafram_PCA_selected_lowRMSD['solution_id'].values)
         for solution_id in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
             directory, filename = os.path.split(solution_id)
             filename_list.append(filename)
-        print(filename_list)
+        # print(filename_list)
         json_files = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FOLDER) if f.endswith('.json')]
         for json_file in json_files:
             folder_and_jsonfile_result = output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+json_file

@@ -75,7 +75,7 @@ PCA_SEL_DIR_SUFX = '_sel_PCA_vs_physProp'
 SAVE_RESULTS_FOLDER='Results'
 
 # sigma value of the RMSD that is considered to select a good fit
-SIGMA=5
+SIGMA_ERR=5
 
 # Length of data that will be used as an input during training
 DATA_LENGTH = 256
@@ -2335,7 +2335,7 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
     df_sel_shower_no_repetitions.drop_duplicates(subset='solution_id', keep='first', inplace=True)            
 
     # save df_sel_shower_real to disk
-    df_sel_shower_no_repetitions.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_sel_to_optimize.csv', index=False)
+    df_sel_shower_no_repetitions.to_csv(OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs+'_sim_sel_to_optimize.csv', index=False)
 
 
 
@@ -2723,8 +2723,8 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
 
     # 5 sigma confidence interval
     # five_sigma=False
-    mag_noise = mag_noise_real.copy()*SIGMA
-    len_noise = len_noise_real.copy()*SIGMA
+    mag_noise = mag_noise_real.copy()*SIGMA_ERR
+    len_noise = len_noise_real.copy()*SIGMA_ERR
 
     # Standard deviation of the magnitude Gaussian noise 1 sigma
     # SD of noise in length (m) 1 sigma in km
@@ -2944,17 +2944,17 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
         rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(gensim_data_sim, fit_funct)
 
         plot_side_by_side(gensim_data_sim, fig, ax, 'r-', 'MODE : RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
-                m:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim.iloc[0]['F'],2))+'\n\
-                rho:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+' sigma:'+str(round(pd_datafram_PCA_sim.iloc[0]['sigma']*1000000,4))+'\n\
-                er.height:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_height_start'],2))+' er.log:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_range'],1))+'\n\
-                er.coeff:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_coeff']*1000000,3))+' er.index:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
+    m:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim.iloc[0]['F'],2))+'\n\
+    rho:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+' sigma:'+str(round(pd_datafram_PCA_sim.iloc[0]['sigma']*1000000,4))+'\n\
+    er.height:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_height_start'],2))+' er.log:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_coeff']*1000000,3))+' er.index:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
 
         # pd_datafram_PCA_sim['erosion_coeff']=pd_datafram_PCA_sim['erosion_coeff']/1000000
         # pd_datafram_PCA_sim['sigma']=pd_datafram_PCA_sim['sigma']/1000000
 
-        print('real noise mag', round(mag_noise_real,3),'5sig',round(mag_noise_real*5,3),'10sig',round(mag_noise_real*10,3),'|| MODE noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),'5sig',round(len_noise_real*5/1000,3),'10sig',round(len_noise_real*10/1000,3),'|| MODE noise len', round(rmsd_lag,3))
+        print('real noise mag', round(mag_noise_real,3),'5sig',round(mag_noise_real*SIGMA_ERR,3),'10sig',round(mag_noise_real*SIGMA_ERR*2,3),'|| MODE noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),'5sig',round(len_noise_real*SIGMA_ERR/1000,3),'10sig',round(len_noise_real*SIGMA_ERR*2/1000,3),'|| MODE noise len', round(rmsd_lag,3))
         select_mode_print='No'
-        if rmsd_mag<mag_noise_real*SIGMA and rmsd_lag<len_noise_real*SIGMA/1000:
+        if rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR/1000:
             select_mode_print='Yes'
             print('below 5 sigma noise, SAVED')
             pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
@@ -3001,20 +3001,20 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
             # _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir_OG+os.sep+file_name_obs+'_sim_fit.json', data_file_real)
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(gensim_data_sim, fit_funct)
-            print('real noise mag', round(mag_noise_real,3),'5sig',round(mag_noise_real*5,3),'10sig',round(mag_noise_real*10,3),'|| MinKDE noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),'5sig',round(len_noise_real*5/1000,3),'10sig',round(len_noise_real*10/1000,3),'|| MinKDE noise len', round(rmsd_lag,3))
+            print('real noise mag', round(mag_noise_real,3),'5sig',round(mag_noise_real*SIGMA_ERR,3),'10sig',round(mag_noise_real*SIGMA_ERR*2,3),'|| MinKDE noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),'5sig',round(len_noise_real*SIGMA_ERR/1000,3),'10sig',round(len_noise_real*SIGMA_ERR*2/1000,3),'|| MinKDE noise len', round(rmsd_lag,3))
         
             plot_side_by_side(gensim_data_sim, fig, ax, 'b-', 'MinKDE : RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
-                    m:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim.iloc[0]['F'],2))+'\n\
-                    rho:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+' sigma:'+str(round(pd_datafram_PCA_sim.iloc[0]['sigma']*1000000,4))+'\n\
-                    er.height:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_height_start'],2))+' er.log:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_range'],1))+'\n\
-                    er.coeff:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_coeff']*1000000,3))+' er.index:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
+    m:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim.iloc[0]['F'],2))+'\n\
+    rho:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+' sigma:'+str(round(pd_datafram_PCA_sim.iloc[0]['sigma']*1000000,4))+'\n\
+    er.height:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_height_start'],2))+' er.log:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_coeff']*1000000,3))+' er.index:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
 
             # pd_datafram_PCA_sim['erosion_coeff']=pd_datafram_PCA_sim['erosion_coeff']/1000000
             # pd_datafram_PCA_sim['sigma']=pd_datafram_PCA_sim['sigma']/1000000
             select_kde_print='No'
-            if rmsd_mag<mag_noise_real*SIGMA and rmsd_lag<len_noise_real*SIGMA/1000:
+            if rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR/1000:
                 select_kde_print='Yes'
-                print('below',SIGMA,'sigma noise, SAVED')
+                print('below',SIGMA_ERR,'sigma noise, SAVED')
                 pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
 
                 if total_distribution:
@@ -3117,8 +3117,8 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
     # 5 sigma confidence interval
     # five_sigma=False
-    mag_noise = mag_noise_real.copy()*SIGMA
-    len_noise = len_noise_real.copy()*SIGMA
+    mag_noise = mag_noise_real.copy()*SIGMA_ERR
+    len_noise = len_noise_real.copy()*SIGMA_ERR
 
     # Standard deviation of the magnitude Gaussian noise 1 sigma
     # SD of noise in length (m) 1 sigma in km
@@ -3130,10 +3130,13 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
     # fig, ax = plt.subplots(1, 2, figsize=(17, 5))
 
     # # group by solution_id_dist and keep only n_confront_sel from each group
-    curr_sel = curr_sel.groupby('solution_id_dist').head(len(number_event_to_optimize))
+    # curr_sel = curr_sel.groupby('solution_id_dist').head(len(number_event_to_optimize))
 
     # order by distance_meteor
     curr_sel = curr_sel.sort_values('distance_meteor')
+
+    # pick from the first n_confront_sel
+    curr_sel = curr_sel.head(number_event_to_optimize)
 
     # # count duplicates and add a column for the number of duplicates
     # curr_sel['num_duplicates'] = curr_sel.groupby('solution_id')['solution_id'].transform('size')
@@ -3192,7 +3195,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(data_file, fit_funct)
 
-        print('real noise mag', round(mag_noise_real,3),'5sig',round(mag_noise_real*5,3),'10sig',round(mag_noise_real*10,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),'5sig',round(len_noise_real*5/1000,3),'10sig',round(len_noise_real*10/1000,3),'|| Event noise len', round(rmsd_lag,3))
+        print('real noise mag', round(mag_noise_real,3),'5sig',round(mag_noise_real*SIGMA_ERR,3),'10sig',round(mag_noise_real*SIGMA_ERR*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),'5sig',round(len_noise_real*SIGMA_ERR/1000,3),'10sig',round(len_noise_real*SIGMA_ERR*2/1000,3),'|| Event noise len', round(rmsd_lag,3))
         plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15], residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, fit_funct, mag_noise, vel_noise, '5$\sigma$ confidence interval')
         
         color_line=next(infinite_color_cycle)
@@ -3202,12 +3205,12 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
             # plot_side_by_side(data_file, fig, ax, '-k', ii, residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
             
             plot_side_by_side(data_file, fig, ax, '-k', 'Manual MetSim event\n\
-            RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
-            N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
-            m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-            rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-            er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-            er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
+RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
+    N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
+    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
+    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
+    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
         
            
                                                                         
@@ -3219,11 +3222,11 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
             # plot_side_by_side(data_file, fig, ax, '-', ii, residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
 
             plot_side_by_side(data_file, fig, ax, '-', 'RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
-            N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
-            m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-            rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-            er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-            er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
+    N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
+    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
+    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
+    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
 
             # change first line color
             ax[0].lines[1].set_color(color_line)
@@ -3290,18 +3293,18 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
                 plt.close()
                 continue
 
-            elif rmsd_mag<mag_noise_real*SIGMA and rmsd_lag<len_noise_real*SIGMA/1000:
-                print('below',SIGMA,'sigma noise, OPTIMIZED')
+            elif rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR/1000:
+                print('below',SIGMA_ERR,'sigma noise, OPTIMIZED')
 
                 update_sigma_values(output_dir+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, False, False) # More_complex_fit=False, Custom_refinement=False
 
-            elif rmsd_mag<mag_noise_real*SIGMA and rmsd_lag<len_noise_real*SIGMA*2/1000:
+            elif rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR*2/1000:
                 print('between 5-10 sigma noise, try major OPTIMIZATION and SAVE')
 
                 update_sigma_values(output_dir+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, True, True) # More_complex_fit=False, Custom_refinement=False
 
             else:
-                print('above',SIGMA*2,'sigma noise, NO OPTIMIZATION and NOT SAVED')
+                print('above',SIGMA_ERR*2,'sigma noise, NO OPTIMIZATION and NOT SAVED')
                 
                 shutil.copy(output_dir+os.sep+file_name_obs+'_sim_fit.json', file_json_save_phys)
 
@@ -3335,22 +3338,22 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
         rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(gensim_data_optimized, fit_funct)
 
-        print('real noise mag', round(mag_noise_real,3),'5sig',round(mag_noise_real*5,3),'10sig',round(mag_noise_real*10,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),'5sig',round(len_noise_real*5/1000,3),'10sig',round(len_noise_real*10/1000,3),'|| Event noise len', round(rmsd_lag,3))
+        print('real noise mag', round(mag_noise_real,3),'5sig',round(mag_noise_real*SIGMA_ERR,3),'10sig',round(mag_noise_real*SIGMA_ERR*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),'5sig',round(len_noise_real*SIGMA_ERR/1000,3),'10sig',round(len_noise_real*SIGMA_ERR*2/1000,3),'|| Event noise len', round(rmsd_lag,3))
 
         if Metsim_flag:
             
             plot_side_by_side(gensim_data_optimized, fig, ax, 'k--', 'Optimized MetSim RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
-            m:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['F'],2))+'\n\
-            rho:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['rho']))+' sigma:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['sigma']*1000000,4))+'\n\
-            er.height:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_height_start'],2))+' er.log:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_range'],1))+'\n\
-            er.coeff:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff']*1000000,3))+' er.index:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
+    m:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['F'],2))+'\n\
+    rho:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['rho']))+' sigma:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['sigma']*1000000,4))+'\n\
+    er.height:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_height_start'],2))+' er.log:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff']*1000000,3))+' er.index:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
 
         else:
             plot_side_by_side(gensim_data_optimized, fig, ax, '--', 'Optimized RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
-            m:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['F'],2))+'\n\
-            rho:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['rho']))+' sigma:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['sigma']*1000000,4))+'\n\
-            er.height:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_height_start'],2))+' er.log:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_range'],1))+'\n\
-            er.coeff:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff']*1000000,3))+' er.index:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
+    m:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['F'],2))+'\n\
+    rho:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['rho']))+' sigma:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['sigma']*1000000,4))+'\n\
+    er.height:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_height_start'],2))+' er.log:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff']*1000000,3))+' er.index:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
 
             # change first line color
             ax[0].lines[-1].set_color(color_line)
@@ -3363,8 +3366,8 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
         ax[5].lines[-1].set_marker("x")
 
 
-        if rmsd_mag<mag_noise_real*SIGMA and rmsd_lag<len_noise_real*SIGMA/1000:
-            print('below',SIGMA,'sigma noise, OPTIMIZED and SAVED')
+        if rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR/1000:
+            print('below',SIGMA_ERR,'sigma noise, OPTIMIZED and SAVED')
 
             # output_folder+os.sep+SAVE_RESULTS_FOLDER
             fig.suptitle(file_name_title+' optimized SELECTED')
@@ -3380,7 +3383,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
             pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_sim_optimized], axis=0)
         else:
-            print('above',SIGMA,'sigma noise, OPTIMIZATION NOT SAVED')
+            print('above',SIGMA_ERR,'sigma noise, OPTIMIZATION NOT SAVED')
             fig.suptitle(file_name_title+' BAD optimization was not good enough')
 
         # pu the leggend putside the plot and adjust the plot base on the screen size
@@ -3635,11 +3638,14 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, n_PC_in_PCA, output_
 
 
 
-def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct='', gen_Metsim='', mag_noise = 0.1, len_noise = 20.0, file_name_obs=''):
+def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct='', gensim_data_obs='', mag_noise = 0.1, len_noise = 20.0, file_name_obs='', trajectory_Metsim_file='', output_folder_of_csv=''):
 
     # number to confront
     n_confront_obs=1
-    n_confront_sel=8
+    if output_folder_of_csv=='':
+        n_confront_sel=7
+    else:
+        n_confront_sel=9
 
     # number of PC in PCA
     with_noise=True
@@ -3659,8 +3665,8 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
     # 5 sigma confidence interval
     # five_sigma=False
-    mag_noise = mag_noise.copy()*5
-    len_noise = len_noise.copy()*5
+    mag_noise = mag_noise.copy()*SIGMA_ERR
+    len_noise = len_noise.copy()*SIGMA_ERR
 
     # Standard deviation of the magnitude Gaussian noise 1 sigma
     # SD of noise in length (m) 1 sigma in km
@@ -3676,8 +3682,10 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     # # group by solution_id_dist and keep only n_confront_sel from each group
     # df_sel_shower = df_sel_shower.groupby('solution_id_dist').head(len(df_sel_shower))
 
-    # order by distance_meteor
-    df_sel_shower = df_sel_shower.sort_values('distance_meteor')
+    # check if distance_meteor is in the columns
+    if 'distance_meteor' in df_sel_shower.columns:
+        # order by distance_meteor
+        df_sel_shower = df_sel_shower.sort_values('distance_meteor')
 
     # # count duplicates and add a column for the number of duplicates
     # df_sel_shower['num_duplicates'] = df_sel_shower.groupby('solution_id')['solution_id'].transform('size')
@@ -3720,15 +3728,17 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
                     elif noise_data_input == True:
                         data_file = read_with_noise_GenerateSimulations_output(namefile_sel)
                 else:
-                    if gen_Metsim == '':
+                    if trajectory_Metsim_file == '':
                         print('no data for the Metsim file')
                         continue
+                    elif trajectory_Metsim_file == namefile_sel:
+                        _, data_file, _ = run_simulation(trajectory_Metsim_file, gensim_data_obs)
+                        # file metsim
+                        Metsim_flag=True
 
                     else:
                         # make a copy of gen_Metsim
-                        data_file = gen_Metsim.copy()
-                        # file metsim
-                        Metsim_flag=True
+                        _, data_file, _ = run_simulation(namefile_sel, gensim_data_obs)
 
             height_km=np.array(data_file['height'])/1000
             abs_mag_sim=np.array(data_file['absolute_magnitudes'])
@@ -3765,14 +3775,21 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
             if Metsim_flag:
                 metsim_numbs=ii
                 ax[0].plot(abs_mag_sim,height_km, 'k')
-
-                ax[1].plot(obs_time, vel_kms, 'k', label='Manual MetSim reduction\n\
-                RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
-                N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
-                m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-                rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-                er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-                er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))                                                                           
+                if 'distance_meteor' in df_sel_shower.columns:
+                    ax[1].plot(obs_time, vel_kms, 'k', label='Manual MetSim reduction\n\
+RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
+    N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
+    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
+    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
+    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))        
+                else:
+                    ax[1].plot(obs_time, vel_kms, 'k', label='Manual MetSim reduction\n\
+RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
+    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
+    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
+    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))                                                                         
             else:
 
                 ax[0].plot(abs_mag_sim,height_km)
@@ -3782,13 +3799,20 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
                 if line_color == '#2ca02c':
                     line_color='m'
                     ax[0].plot(abs_mag_sim,height_km, color='m')
-                    
-                ax[1].plot(obs_time, vel_kms, color=line_color ,label='RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
-                N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
-                m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-                rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-                er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-                er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))
+                
+                if 'distance_meteor' in df_sel_shower.columns:
+                    ax[1].plot(obs_time, vel_kms, color=line_color ,label='RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
+    N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
+    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
+    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
+    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))
+                else:
+                    ax[1].plot(obs_time, vel_kms, color=line_color ,label='RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
+    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
+    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
+    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
+    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))
 
         rmsd_mag, rmsd_vel, rmsd_lag, _, _, _, _, _ = RMSD_calc_diff(data_file, fit_funct)
 
@@ -3908,9 +3932,12 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     # close the plot
     plt.close()
 
-    # save df_sel_shower_real to disk add the RMSD
-    df_sel_shower_real.to_csv(output_dir+os.sep+file_name_obs+'_sim_sel_to_optimize.csv', index=False)
-
+    if output_folder_of_csv=='':
+        # save df_sel_shower_real to disk add the RMSD
+        df_sel_shower_real.to_csv(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs+'_sim_sel_to_optimize.csv', index=False)
+    else:
+        # save df_sel_shower_real to disk add the RMSD
+        df_sel_shower_real.to_csv(output_folder_of_csv, index=False)
 
 
 
@@ -3925,7 +3952,8 @@ if __name__ == "__main__":
 
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
-  
+    #C:\Users\maxiv\Desktop\RunTest
+    #C:\Users\maxiv\Desktop\20230811-082648.931419
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\20230811-082648.931419', \
         help="Path were are store both simulated and observed shower .csv file.")
     
@@ -3950,14 +3978,14 @@ if __name__ == "__main__":
     arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=['kurtosis','skew','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], \
         help="Use specific variable NOT considered in PCA.")
 
-    arg_parser.add_argument('--save_plot', metavar='SAVE_PLOT', type=bool, default=True, \
-        help="save the plots.")
+    arg_parser.add_argument('--save_all_plot', metavar='SAVE_ALL_PLOT', type=bool, default=True, \
+        help="save the plot of the realization and the simulations and more plots in PCA control plots.")
     
-    arg_parser.add_argument('--optimize', metavar='OPTIMIZE', type=bool, default=True, \
+    arg_parser.add_argument('--optimize', metavar='OPTIMIZE', type=bool, default=False, \
         help="Run optimization step to have more precise results but increase the computation time.")
     
-    arg_parser.add_argument('--min_number_results', metavar='MIN_NUMBER_RESULTS', type=int, default=0, \
-        help="Minimum number of results from the simulations that can be accepted meaning.")
+    arg_parser.add_argument('--number_optimized', metavar='NUMBER_OPTIMZED', type=int, default=0, \
+        help="Number of optimized simulations that have been selected starting from the best.")
     
     arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'C:\Users\maxiv\WesternMeteorPyLib\wmpl\MetSim\AutoRefineFit_options.txt', \
         help="path and name of like C: path + AutoRefineFit_options.txt")
@@ -4085,13 +4113,13 @@ if __name__ == "__main__":
             
             pd_dataframe_PCA_obs_real = array_to_pd_dataframe_PCA(gensim_data_obs)
 
-            if cml_args.save_plot:
+            if cml_args.save_all_plot:
                 # run generate_observation_realization with the gensim_data_obs
-                rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs,cml_args.save_plot)
+                rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs,cml_args.save_all_plot)
                 # make the results_list to incorporate all rows of pd_dataframe_PCA_obs_real
                 results_list = []
                 for ii in range(cml_args.nobs):
-                    results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag,'realization_'+str(ii+1), fig, ax, cml_args.save_plot) 
+                    results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag,'realization_'+str(ii+1), fig, ax, cml_args.save_all_plot) 
                     results_list.append(results_pd)
 
                 # Save the figure as file with instead of _trajectory.pickle it has file+std_dev.png on the desktop
@@ -4156,8 +4184,8 @@ if __name__ == "__main__":
                 number_sim_to_run_and_simulation_in_folder = cml_args.nsim - len(all_jsonfiles_check)
                 
                 # run the new simulations
-                if cml_args.save_plot:
-                    fig, ax = generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_plot)
+                if cml_args.save_all_plot:
+                    fig, ax = generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_all_plot)
                     # plot gensim_data_Metsim
                     plot_side_by_side(gensim_data_Metsim,fig, ax,'k-','MetSim')
 
@@ -4168,7 +4196,7 @@ if __name__ == "__main__":
                     # print saved csv file
                     print('saved image '+output_folder+os.sep+file_name+'_obs_sim.png')
                 else:
-                    generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_plot)
+                    generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_all_plot)
                     
             print('start reading the json files')
 
@@ -4215,11 +4243,11 @@ if __name__ == "__main__":
 
         print('--- SELECTION ---')
         
-        pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_selected_all, pcr_results_physical_param, pca_N_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_plot)
+        pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_selected_all, pcr_results_physical_param, pca_N_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_all_plot)
 
-        print('PLOT: best 8 simulations selected and add the RMSD value to csv selected')
-        # plot of the best 9 selected simulations
-        PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name)
+        print('PLOT: best 7 simulations selected and add the RMSD value to csv selected')
+        # plot of the best 7 selected simulations and add the RMSD value to csv selected
+        PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, file_name, trajectory_Metsim_file)
 
         print('PLOT: the physical characteristics of the selected simulations Mode and KDE')
         PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
@@ -4250,18 +4278,26 @@ if __name__ == "__main__":
         pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
         
         # save df_sel_shower_real to disk add the RMSD
-        pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+file_name+'_sim_sel_results.csv', index=False)
+        pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv', index=False)
 
         # print('PLOT: the physical characteristics of the selected simulations with no repetitions')
         # PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
-        
+
+        # split in directory and filename
+        filename_list = []
+        print(pd_datafram_PCA_selected_lowRMSD['solution_id'].values)
+        for solution_id in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
+            directory, filename = os.path.split(solution_id)
+            filename_list.append(filename)
+        print(filename_list)
         json_files = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FOLDER) if f.endswith('.json')]
         for json_file in json_files:
-            if json_file not in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
+            folder_and_jsonfile_result = output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+json_file
+            if json_file not in filename_list:
                 # print that is found a json file that is not in the selected simulations
-                print(json_file,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
+                print(folder_and_jsonfile_result,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
                 # Run simulation for json_file
-                _, gensim_data_json_resulsts, pd_datafram_PCA_sim_resulsts = run_simulation(json_file, gensim_data_obs)
+                _, _, pd_datafram_PCA_sim_resulsts = run_simulation(folder_and_jsonfile_result, gensim_data_obs)
                 # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
                 pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
         pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
@@ -4273,12 +4309,12 @@ if __name__ == "__main__":
 
         if cml_args.optimize:
             print('--- OPTIMIZATION ---')
-            if cml_args.min_number_results == 0:
-                cml_args.min_number_results = len(pd_datafram_PCA_selected_before_knee_NO_repetition)
+            if cml_args.number_optimized == 0:
+                cml_args.number_optimized = len(pd_datafram_PCA_selected_before_knee_NO_repetition)
 
-            print('Number of selected simulations to optimize:',cml_args.min_number_results)
+            print('Number of selected simulations to optimize:',cml_args.number_optimized)
             # plot the values and find the RMSD of each of them
-            pd_datafram_PCA_selected_optimized = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, cml_args.min_number_results) # file_name, trajectory_Metsim_file, 
+            pd_datafram_PCA_selected_optimized = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, cml_args.number_optimized) # file_name, trajectory_Metsim_file, 
             
             # concatenate the two dataframes
             pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_selected_lowRMSD])
@@ -4289,7 +4325,7 @@ if __name__ == "__main__":
             pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
 
             # save and update the disk 
-            pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+file_name+'_sim_sel_results.csv', index=False)
+            pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv', index=False)
         
         print()
 
@@ -4298,10 +4334,12 @@ if __name__ == "__main__":
         print('--- RESULTS ---')
 
         if len(pd_datafram_PCA_selected_lowRMSD)>1:
-            print('PLOT: the physical characteristics closest simulations')
+            print('PLOT: the physical characteristics results')
             PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER, file_name)
+            print('PLOT: correlation matrix of the results')
             PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_lowRMSD, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER)
-            pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv', index=False)
+            print('PLOT: best 9 results and add the RMSD value to csv selected')
+            PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_lowRMSD, pd_dataframe_PCA_obs_real, output_folder+os.sep+SAVE_RESULTS_FOLDER, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, file_name, trajectory_Metsim_file,output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv')
             print()
             print('SUCCES: the physical characteristics range is in the results folder')
         else:
@@ -4314,6 +4352,6 @@ if __name__ == "__main__":
         elapsed_time = end_time - start_time
         hours, rem = divmod(elapsed_time, 3600)
         minutes, seconds = divmod(rem, 60)
-        print('elapsed_time in seconds:',elapsed_time)
+        # print('Elapsed time in seconds:',elapsed_time)
         print(f"Elapsed time: {int(hours):02}:{int(minutes):02}:{int(seconds):02}")
 

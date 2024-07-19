@@ -503,11 +503,16 @@ def run_simulation(path_and_file_MetSim, real_event):
     # # Initial meteoroid height (m)
     # const_nominal.h_init = 180000
 
-    # Run the simulation
-    frag_main, results_list, wake_results = runSimulation(const_nominal, \
-        compute_wake=False)
-
-    simulation_MetSim_object = SimulationResults(const_nominal, frag_main, results_list, wake_results)
+    try:
+        # Run the simulation
+        frag_main, results_list, wake_results = runSimulation(const_nominal, compute_wake=False)
+        simulation_MetSim_object = SimulationResults(const_nominal, frag_main, results_list, wake_results)
+    except ZeroDivisionError as e:
+        print(f"Error during simulation: {e}")
+        const_nominal = Constants()
+        # Run the simulation
+        frag_main, results_list, wake_results = runSimulation(const_nominal, compute_wake=False)
+        simulation_MetSim_object = SimulationResults(const_nominal, frag_main, results_list, wake_results)
 
     # # print the column of simulation_MetSim_object to see what is inside
     # print(simulation_MetSim_object.__dict__.keys())
@@ -1691,8 +1696,8 @@ def find_knee_dist_index(data_meteor_pd, window_of_smothing_avg=3, std_multip_th
     if N_sim_sel_force!=0:
         index10percent = N_sim_sel_force
 
-    if index10percent<1: # below does not work problem with finding the mode on KDE later on
-        index10percent=1
+    if index10percent<2: # below does not work problem with finding the mode on KDE later on
+        index10percent=2
 
     if output_path!='':
 
@@ -4385,7 +4390,7 @@ if __name__ == "__main__":
 
         print('--- RESULTS ---')
         if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
-            if len(pd_datafram_PCA_selected_lowRMSD)>1:
+            if len(pd_datafram_PCA_selected_lowRMSD)>2:
                 print('PLOT: the physical characteristics results')
                 PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER, file_name)
                 print('PLOT: correlation matrix of the results')
@@ -4395,7 +4400,7 @@ if __name__ == "__main__":
                 print()
                 print('SUCCES: the physical characteristics range is in the results folder')
             else:
-                print('FAIL: No statistics from 1 good selected result')
+                print('FAIL: No statistics from 2 good selected results')
         else:
             print('FAIL: Not found any result below magRMSD',rmsd_pol_mag*SIGMA_ERR,'and lenRMSD',rmsd_t0_lag*SIGMA_ERR/1000)
         # Timing end

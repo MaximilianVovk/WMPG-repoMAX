@@ -76,7 +76,7 @@ PCA_SEL_DIR_SUFX = '_sel_PCA_vs_physProp'
 SAVE_RESULTS_FOLDER='Results'
 
 # sigma value of the RMSD that is considered to select a good fit
-SIGMA_ERR=2
+SIGMA_ERR=5
 
 # Length of data that will be used as an input during training
 DATA_LENGTH = 256
@@ -562,44 +562,81 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     # Zenith angle range
     erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'].iloc[0]-0.01), np.radians(real_data['zenith_angle'].iloc[0]+0.01)) # 43.466538
 
-    erosion_sim_params.erosion_height_start = MetParam(real_data['begin_height'].iloc[0]*1000-7000, real_data['begin_height'].iloc[0]*1000+3000) # 43.466538
+    erosion_sim_params.erosion_height_start = MetParam(real_data['peak_mag_height'].iloc[0]*1000+1000, real_data['begin_height'].iloc[0]*1000+3000) # 43.466538
 
     # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-    if os.path.exists(output_folder+os.sep+"log_"+file_name+"_GenereateSimulations_range.txt"):
+    if os.path.exists(output_folder+os.sep+"log_"+file_name[:15]+"_GenereateSimulations_range.txt"):
         # remove the file
-        os.remove(output_folder+os.sep+"log_"+file_name+"GenereateSimulations_range.txt")
-    sys.stdout = Logger(output_folder,"log_"+file_name+"GenereateSimulations_range.txt") # _30var_99%_13PC
+        os.remove(output_folder+os.sep+"log_"+file_name[:15]+"GenereateSimulations_range.txt")
+    sys.stdout = Logger(output_folder,"log_"+file_name[:15]+"GenereateSimulations_range.txt") # _30var_99%_13PC
 
 
     print('Run',numb_sim,'simulations with :')
-    # print all the modfiend values
-    print('- velocity: min',erosion_sim_params.v_init.min,'- MAX',erosion_sim_params.v_init.max)
+    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s^2/km^2]','erosion height start [km]','erosion coeff [s^2/km^2]','erosion mass index [-]','eros. mass min [kg]','eros. mass max [kg]']
+    print('\\hline') #df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]
+    print('Variables & min.val. & MAX.val. \\\\')
 
-    print('- zenith angle: min',np.degrees(erosion_sim_params.zenith_angle.min),'- MAX',np.degrees(erosion_sim_params.zenith_angle.max))
+    print('\\hline')
+    # - velocity: min 58992.19459103218 - MAX 60992.19459103218
+    # print('- velocity: min',erosion_sim_params.v_init.min,'- MAX',erosion_sim_params.v_init.max)
+    print(f"Velocity [km/s] & {'{:.4g}'.format(erosion_sim_params.v_init.min/1000)} & {'{:.4g}'.format(erosion_sim_params.v_init.max/1000)} \\\\")
+    
+    print('\\hline')
+    # - zenith angle: min 28.736969960110045 - MAX 28.75696996011005
+    # print('- zenith angle: min',np.degrees(erosion_sim_params.zenith_angle.min),'- MAX',np.degrees(erosion_sim_params.zenith_angle.max))
+    print(f"Zenith ang. [deg] & {'{:.4g}'.format(np.degrees(erosion_sim_params.zenith_angle.min))} & {'{:.4g}'.format(np.degrees(erosion_sim_params.zenith_angle.max))} \\\\")
 
-    print('- Initial mag: min',erosion_sim_params.lim_mag_faintest,'- MAX',erosion_sim_params.lim_mag_brightest)
+    print('\\hline') 
+    # - Initial mag: min 5.45949291900601 - MAX 5.43949291900601
+    # print('- Initial mag: min',erosion_sim_params.lim_mag_faintest,'- MAX',erosion_sim_params.lim_mag_brightest)
+    print(f"Init. mag [-] & {'{:.4g}'.format(erosion_sim_params.lim_mag_faintest)} & {'{:.4g}'.format(erosion_sim_params.lim_mag_brightest)} \\\\")
 
-    print('- Final mag: min',erosion_sim_params.lim_mag_len_end_faintest,'- MAX',erosion_sim_params.lim_mag_len_end_brightest)
- 
-    print('- Mass: min',erosion_sim_params.m_init.min,'- MAX',erosion_sim_params.m_init.max)
+    print('\\hline')
+    # - Final mag: min 6.0268141526507435 - MAX 6.006814152650744
+    # print('- Final mag: min',erosion_sim_params.lim_mag_len_end_faintest,'- MAX',erosion_sim_params.lim_mag_len_end_brightest)
+    print(f"Fin. mag [-] & {'{:.4g}'.format(erosion_sim_params.lim_mag_len_end_faintest)} & {'{:.4g}'.format(erosion_sim_params.lim_mag_len_end_brightest)} \\\\")
 
-    print('- rho : min',erosion_sim_params.rho.min,'- MAX',erosion_sim_params.rho.max)
+    print('\\hline')
+    # - Mass: min 5.509633400654068e-07 - MAX 1.5509633400654067e-06
+    # print('- Mass: min',erosion_sim_params.m_init.min,'- MAX',erosion_sim_params.m_init.max)
+    print(f"Mass [kg] & {'{:.4g}'.format(erosion_sim_params.m_init.min)} & {'{:.4g}'.format(erosion_sim_params.m_init.max)} \\\\")
 
-    print('- sigma : min',erosion_sim_params.sigma.min,'- MAX',erosion_sim_params.sigma.max)
+    print('\\hline')
+    # - rho : min 100 - MAX 1000
+    # print('- rho : min',erosion_sim_params.rho.min,'- MAX',erosion_sim_params.rho.max)
+    print(f"Rho [kg/m^3] & {'{:.4g}'.format(erosion_sim_params.rho.min)} & {'{:.4g}'.format(erosion_sim_params.rho.max)} \\\\")
 
-    print('- erosion_height_start : min',erosion_sim_params.erosion_height_start.min,'- MAX',erosion_sim_params.erosion_height_start.max)
+    print('\\hline')
+    # - sigma : min 8e-09 - MAX 3e-08
+    # print('- sigma : min',erosion_sim_params.sigma.min,'- MAX',erosion_sim_params.sigma.max)
+    print(f"sigma [s^2/km^2] & {'{:.4g}'.format(erosion_sim_params.sigma.min*1000000)} & {'{:.4g}'.format(erosion_sim_params.sigma.max*1000000)} \\\\")
 
-    print('- erosion_coeff : min',erosion_sim_params.erosion_coeff.min,'- MAX',erosion_sim_params.erosion_coeff.max)
+    print('\\hline')
+    # - erosion_height_start : min 107622.04437691614 - MAX 117622.04437691614
+    # print('- erosion_height_start : min',erosion_sim_params.erosion_height_start.min,'- MAX',erosion_sim_params.erosion_height_start.max)
+    print(f"Eros.height [km] & {'{:.4g}'.format(erosion_sim_params.erosion_height_start.min/1000)} & {'{:.4g}'.format(erosion_sim_params.erosion_height_start.max/1000)} \\\\")
 
-    print('- erosion_mass_index : min',erosion_sim_params.erosion_mass_index.min,'- MAX',erosion_sim_params.erosion_mass_index.max)
+    print('\\hline')
+    # - erosion_coeff : min 0.0 - MAX 1e-06
+    # print('- erosion_coeff : min',erosion_sim_params.erosion_coeff.min,'- MAX',erosion_sim_params.erosion_coeff.max)
+    print(f"Eros.coeff. [s^2/km^2] & {'{:.4g}'.format(erosion_sim_params.erosion_coeff.min*1000000)} & {'{:.4g}'.format(erosion_sim_params.erosion_coeff.max*1000000)} \\\\")
 
-    print('- erosion_mass_min : min',erosion_sim_params.erosion_mass_min.min,'- MAX',erosion_sim_params.erosion_mass_min.max)
+    print('\\hline')
+    # - erosion_mass_index : min 1.5 - MAX 2.5
+    # print('- erosion_mass_index : min',erosion_sim_params.erosion_mass_index.min,'- MAX',erosion_sim_params.erosion_mass_index.max)
+    print(f"Eros.mass index [-] & {'{:.4g}'.format(erosion_sim_params.erosion_mass_index.min)} & {'{:.4g}'.format(erosion_sim_params.erosion_mass_index.max)} \\\\")
 
-    print('- erosion_mass_max : min',erosion_sim_params.erosion_mass_max.min,'- MAX',erosion_sim_params.erosion_mass_max.max)
+    print('\\hline')
+    # - erosion_mass_min : min 5e-12 - MAX 1e-10
+    # print('- erosion_mass_min : min',erosion_sim_params.erosion_mass_min.min,'- MAX',erosion_sim_params.erosion_mass_min.max)
+    print(f"Eros.mass min [kg] & {'{:.4g}'.format(erosion_sim_params.erosion_mass_min.min)} & {'{:.4g}'.format(erosion_sim_params.erosion_mass_min.max)} \\\\")
 
-    # print('\\hline') #df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]
-    # print(f"{to_plot_unit[i]} & {'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(densest_point[i])} & {'{:.4g}'.format(sigma_2)} & {'{:.4g}'.format(sigma_97)} \\\\")
-    # ii_densest=ii_densest+1
+    print('\\hline')
+    # - erosion_mass_max : min 1e-10 - MAX 5e-08
+    # print('- erosion_mass_max : min',erosion_sim_params.erosion_mass_max.min,'- MAX',erosion_sim_params.erosion_mass_max.max)
+    print(f"Eros.mass max [kg] & {'{:.4g}'.format(erosion_sim_params.erosion_mass_max.min)} & {'{:.4g}'.format(erosion_sim_params.erosion_mass_max.max)} \\\\")
+
+    print('\\hline')
 
 
     # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
@@ -867,6 +904,7 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
 
 #### Reader #############################################################################
 
+
 def read_GenerateSimulations_output_to_PCA(file_path, name=''):
     if name!='':   
         print(name) 
@@ -984,6 +1022,36 @@ def read_GenerateSimulations_output(file_path):
         return None
 
 
+def Old_GenSym_json_get_vel_lag(data):
+
+    ht_sim=data['simulation_results']['leading_frag_height_arr'][:-1]#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
+    ht_obs=data['ht_sampled']
+    time_sampled = np.array(data['time_sampled'])
+    len_sampled = np.array(data['len_sampled'])
+
+    closest_indices = find_closest_index(ht_sim, ht_obs)
+
+    vel_sim=data['simulation_results']['leading_frag_vel_arr'][:-1]#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+    vel_sim=[vel_sim[jj_index_cut] for jj_index_cut in closest_indices]
+
+    # get the new velocity with noise
+    for vel_ii in range(1,len(time_sampled)):
+        if time_sampled[vel_ii]-time_sampled[vel_ii-1]<1.0/FPS:
+        # if time_sampled[vel_ii] % 0.03125 < 0.000000001:
+            if vel_ii+1<len(len_sampled):
+                vel_sim[vel_ii+1]=(len_sampled[vel_ii+1]-len_sampled[vel_ii-1])/(time_sampled[vel_ii+1]-time_sampled[vel_ii-1])
+        else:
+            vel_sim[vel_ii]=(len_sampled[vel_ii]-len_sampled[vel_ii-1])/(time_sampled[vel_ii]-time_sampled[vel_ii-1])
+
+    data['vel_sampled']=vel_sim
+    
+    lag_sim=len_sampled-(vel_sim[0]*time_sampled+len_sampled[0])
+
+    data['lag_sampled']=lag_sim
+
+    return data
+
+
 def read_with_noise_GenerateSimulations_output(file_path):
 
     f = open(file_path,"r")
@@ -1006,6 +1074,10 @@ def read_with_noise_GenerateSimulations_output(file_path):
 
         # Compute the erosion energies
         erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass = wmpl.MetSim.MetSimErosion.energyReceivedBeforeErosion(const)
+
+        # if is not present the vel_sampled in the data
+        if 'vel_sampled' not in data:
+            data = Old_GenSym_json_get_vel_lag(data)
 
         gensim_data = {
         'name': file_path,
@@ -1520,6 +1592,7 @@ def array_to_pd_dataframe_PCA(data):
     return panda_dataframe_PCA
 
 
+
 ########## Utils ##########################
 
 # Function to get trajectory data folder
@@ -1666,6 +1739,7 @@ def update_sigma_values(file_path, mag_sigma, len_sigma, More_complex_fit=False,
         file.write(content)
     
     print('modified options file:', file_path)
+
 
 
 ########## Distance ##########################
@@ -1960,10 +2034,10 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
     ##################################### delete var that are not in the 5 and 95 percentile of the simulated shower #####################################
 
     # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-    if os.path.exists(OUT_PUT_PATH+os.sep+"log_"+file_name_obs+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt"):
+    if os.path.exists(OUT_PUT_PATH+os.sep+"log_"+file_name_obs[:15]+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt"):
         # remove the file
-        os.remove(OUT_PUT_PATH+os.sep+"log_"+file_name_obs+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt")
-    sys.stdout = Logger(OUT_PUT_PATH,"log_"+file_name_obs+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt") # _30var_99%_13PC
+        os.remove(OUT_PUT_PATH+os.sep+"log_"+file_name_obs[:15]+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt")
+    sys.stdout = Logger(OUT_PUT_PATH,"log_"+file_name_obs[:15]+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt") # _30var_99%_13PC
 
     df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
     # delete nan
@@ -3259,6 +3333,14 @@ def RMSD_calc_diff(data_file, fit_funct):
     residual_time_pos = common_times
     residual_height_pos = common_heights
 
+    # if rmsd_mag is nan give 9999
+    if np.isnan(rmsd_mag):
+        rmsd_mag = 9999
+    if np.isnan(rmsd_vel):
+        rmsd_vel = 9999
+    if np.isnan(rmsd_lag):
+        rmsd_lag = 9999
+
     return rmsd_mag, rmsd_vel, rmsd_lag, magnitude_differences, velocity_differences, lag_differences, residual_time_pos, residual_height_pos
 
 
@@ -3417,7 +3499,7 @@ RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
             const_nominal, _ = loadConstants(namefile_sel)
             saveConstants(const_nominal,output_dir,file_name_obs+'_sim_fit.json')
         else:
-            file_json_save_phys_NOoptimized=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'.json'
+            file_json_save_phys_NOoptimized=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title
             file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
             file_json_save_results=output_dir+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
             # from namefile_sel json file open the json file and save the namefile_sel.const part as file_name_obs+'_sim_fit.json'
@@ -3427,9 +3509,7 @@ RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
                 with open(output_dir+os.sep+file_name_obs+'_sim_fit.json', 'w') as outfile:
                     json.dump(const_part, outfile, indent=4)
 
-        if not run_optimization:
-            # copy output_dir+os.sep+file_name_obs+'_sim_fit.json' to file_json_save_phys_NOoptimized
-            shutil.copy(output_dir+os.sep+file_name_obs+'_sim_fit.json', file_json_save_phys_NOoptimized)
+        shutil.copy(namefile_sel, file_json_save_phys_NOoptimized)
 
         if run_optimization:
 
@@ -3557,7 +3637,7 @@ RMSDlen '+str(round(rmsd_lag,2))+' RMSDmag '+str(round(rmsd_mag,2))+'\n\
                 shutil.copy(output_dir+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_results)
                 pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_sim_optimized], axis=0)
             else:
-                _, _, pd_datafram_PCA_sim = run_simulation(file_json_save_phys_NOoptimized, data_file_real)
+                pd_datafram_PCA_sim = array_to_pd_dataframe_PCA(data_file)
                 shutil.copy(file_json_save_phys_NOoptimized, file_json_save_results)
                 # remove curr_sel.iloc[[ii]].drop(columns=['rmsd_mag', 'rmsd_len', 'solution_id_dist', 'distance_meteor', 'distance_mean']) rmsd_mag	rmsd_len solution_id_dist	distance_meteor	distance_mean
                 pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_sim], axis=0)
@@ -3607,10 +3687,10 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, n_PC_in_PCA, output_
         
     if save_log:
         # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-        if os.path.exists(output_dir+os.sep+"log_"+file_name+"_CI"+str(n_PC_in_PCA)+"PC.txt"):
+        if os.path.exists(output_dir+os.sep+"log_"+file_name[:15]+"_CI"+str(n_PC_in_PCA)+"PC.txt"):
             # remove the file
-            os.remove(output_dir+os.sep+"log_"+file_name+"_CI"+str(n_PC_in_PCA)+"PC.txt")
-        sys.stdout = Logger(output_dir,"log_"+file_name+"_CI"+str(n_PC_in_PCA)+"PC.txt") # _30var_99%_13PC
+            os.remove(output_dir+os.sep+"log_"+file_name[:15]+"_CI"+str(n_PC_in_PCA)+"PC.txt")
+        sys.stdout = Logger(output_dir,"log_"+file_name[:15]+"_CI"+str(n_PC_in_PCA)+"PC.txt") # _30var_99%_13PC
 
 
 
@@ -3681,7 +3761,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, n_PC_in_PCA, output_
             # get the value of the observed event
             axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='MetSim'][plotvar].values[0], color='k', linewidth=2)
         elif 'Real' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='Real'][plotvar].values[0], color='g', linewidth=2)
+            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
 
         if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
             # put it back as it was
@@ -3793,7 +3873,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, n_PC_in_PCA, output_
                         # get the value of the observed event
                         axs[i].axvline(x=np.log10(curr_df_sim_sel[curr_df_sim_sel['type']=='MetSim'][plotvar].values[0]), color='k', linewidth=2)
                     elif 'Real' in curr_df_sim_sel['type'].values:
-                        axs[i].axvline(x=np.log10(curr_df_sim_sel[curr_df_sim_sel['type']=='Real'][plotvar].values[0]), color='g', linewidth=2)
+                        axs[i].axvline(x=np.log10(curr_df_sim_sel[curr_df_sim_sel['type']=='Real'][plotvar].values[0]), color='g', linewidth=2, linestyle='--')
 
                     # if len(Min_KDE_point) > 0:
                     #     Min_KDE_point[ii_densest]=np.log10(Min_KDE_point[ii_densest])
@@ -3814,7 +3894,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, n_PC_in_PCA, output_
                         # get the value of the observed event
                         axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='MetSim'][plotvar].values[0], color='k', linewidth=2)
                     elif 'Real' in curr_df_sim_sel['type'].values:
-                        axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='Real'][plotvar].values[0], color='g', linewidth=2)
+                        axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
                     # put the value of diff_percent_1d at th upper left of the line
 
                 axs[i].set_ylabel('probability')
@@ -4166,7 +4246,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
     #C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     #C:\Users\maxiv\Desktop\20230811-082648.931419
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\RunTest\erosion_sim_v61.00_m1.07e-02g_rho0213_z61.9_abl0.025_eh113.3_er0.952_s2.24.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v59_heavy\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
@@ -4374,9 +4454,6 @@ if __name__ == "__main__":
 
         # use Metsim_file in 
         simulation_MetSim_object, gensim_data_Metsim, pd_datafram_PCA_sim_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs)
-        if trajectory_file.endswith('.json'): 
-            # change the type column to Real
-            pd_datafram_PCA_sim_Metsim['type'] = 'Real'
 
         # open the folder and extract all the json files
         os.chdir(input_folder)
@@ -4437,13 +4514,23 @@ if __name__ == "__main__":
             
             # concatenate the two dataframes
             pd_datafram_PCA_sim = pd.concat([pd_datafram_PCA_sim_Metsim, pd_datafram_PCA_sim])
-            
             # print(df_sim_shower)
             pd_datafram_PCA_sim.reset_index(drop=True, inplace=True)
+            
+            if pd_dataframe_PCA_obs_real['solution_id'].iloc[0].endswith('.json'): 
+                print('REAL json file:',trajectory_Metsim_file)
+                # change the type column to Real
+                pd_datafram_PCA_sim['type'].iloc[0] = 'Real'
 
             pd_datafram_PCA_sim.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM, index=False)
             # print saved csv file
             print('saved sim csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM)
+
+            
+        if pd_dataframe_PCA_obs_real['solution_id'].iloc[0].endswith('.json'): 
+            print('REAL json file:',trajectory_Metsim_file)
+            # change the type column to Real
+            pd_datafram_PCA_sim['type'].iloc[0] = 'Real'
 
 
         # save the trajectory_file in the output_folder
@@ -4518,8 +4605,13 @@ if __name__ == "__main__":
                 if json_file not in filename_list:
                     # print that is found a json file that is not in the selected simulations
                     print(folder_and_jsonfile_result,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
-                    # Run simulation for json_file
-                    _, _, pd_datafram_PCA_sim_resulsts = run_simulation(folder_and_jsonfile_result, gensim_data_obs)
+                    f = open(folder_and_jsonfile_result,"r")
+                    data = json.loads(f.read())
+                    if 'ht_sampled' in data:
+                        data_file = read_GenerateSimulations_output(folder_and_jsonfile_result)
+                        pd_datafram_PCA_sim_resulsts=array_to_pd_dataframe_PCA(data_file)
+                    else:
+                        _, _, pd_datafram_PCA_sim_resulsts = run_simulation(folder_and_jsonfile_result, gensim_data_obs)
                     # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
                     pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
             pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'

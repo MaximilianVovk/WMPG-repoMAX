@@ -4,7 +4,8 @@ Use the LCAM detection times to create a folder for each detection in the detect
 for every frame between the start and end time (plus a small buffer) in the corresponding EMCCD vid file with Vidchop. 
 1.	Create the detection file parsing script first. RMS codebase called readFTPdetectinfo in the file RMS/Formats/FTPdetectinfo.py. 
 2.	For each detection, write the detection_num, filename, time of first measurement, and time of last measurement to disk 
-latest update: 2024-03-12
+evcs ra,dec,azimuth,altitude || DAVE code RA, Dec, Az, Alt
+latest update: 2024-03-12 
 """
 
 import pandas as pd
@@ -66,7 +67,7 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
         # delete the index
         df_EMCCD = df_EMCCD.reset_index(drop=True)
         # change the column Satellite to datetime and Alt to altitude and Az to azimuth
-        df_EMCCD = df_EMCCD.rename(columns={'Date':'datetime', 'Alt':'altitude', 'Az':'azimuth'})
+        df_EMCCD = df_EMCCD.rename(columns={'Date':'datetime', 'Alt':'altitude', 'Az':'azimuth', 'RA':'ra', 'Dec':'dec'})
         # in the column datetime convert the string to datetime 10/06/2024  06:48:56
         df_EMCCD['datetime'] = pd.to_datetime(df_EMCCD['datetime'], format='%Y-%m-%d %H:%M:%S.%f')
         # add a column mag_data with the value 0
@@ -108,7 +109,7 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
         # delete the index
         df_LCAM = df_LCAM.reset_index(drop=True)
         # change the column Satellite to datetime and Alt to altitude and Az to azimuth
-        df_LCAM = df_LCAM.rename(columns={'Date':'datetime', 'Alt':'altitude', 'Az':'azimuth'})
+        df_LCAM = df_LCAM.rename(columns={'Date':'datetime', 'Alt':'altitude', 'Az':'azimuth', 'RA':'ra', 'Dec':'dec'})
         # in the column datetime convert the string to datetime 10/06/2024  06:48:56
         df_LCAM['datetime'] = pd.to_datetime(df_LCAM['datetime'], format='%Y-%m-%d %H:%M:%S.%f')
         # add a column mag_data with the value 0
@@ -169,11 +170,11 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     # print(df_LCAM)
 
     # use np.unwrap(alpha_rad) to get the angle in the range -pi to pi and make it back to degrees
-    df_LCAM['azimuth'] = np.rad2deg(np.unwrap(np.deg2rad(df_LCAM['azimuth'])))
-    df_LCAM['altitude'] = np.rad2deg(np.unwrap(np.deg2rad(df_LCAM['altitude'])))
+    df_LCAM['ra'] = np.rad2deg(np.unwrap(np.deg2rad(df_LCAM['ra'])))
+    df_LCAM['dec'] = np.rad2deg(np.unwrap(np.deg2rad(df_LCAM['dec'])))
     # use np.unwrap(alpha_rad) to get the angle in the range -pi to pi and make it back to degrees
-    df_EMCCD['azimuth'] = np.rad2deg(np.unwrap(np.deg2rad(df_EMCCD['azimuth'])))
-    df_EMCCD['altitude'] = np.rad2deg(np.unwrap(np.deg2rad(df_EMCCD['altitude'])))
+    df_EMCCD['ra'] = np.rad2deg(np.unwrap(np.deg2rad(df_EMCCD['ra'])))
+    df_EMCCD['dec'] = np.rad2deg(np.unwrap(np.deg2rad(df_EMCCD['dec'])))
              
     # find the highest and lowest value of the mag_data
     max_mag = df_LCAM['mag_data'].max()
@@ -202,12 +203,12 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
 
 
 ###############################################################
-    # plot the azimuth  altitude wit mag_data as color
+    # plot the RA  Dec wit mag_data as color
     fig, ax = plt.subplots(1,2,gridspec_kw={'width_ratios': [1, 1.2]})
 
-    cbar = ax[0].scatter(df_LCAM['azimuth'], df_LCAM['altitude'], c=df_LCAM['mag_data'], cmap='viridis_r')
-    ax[0].set_xlabel('azimuth [deg]')
-    ax[0].set_ylabel('altitude [deg]')
+    cbar = ax[0].scatter(df_LCAM['ra'], df_LCAM['dec'], c=df_LCAM['mag_data'], cmap='viridis_r')
+    ax[0].set_xlabel('RA [deg]')
+    ax[0].set_ylabel('Dec [deg]')
     ax[0].set_title(camera_name+' data')
     # plot the colorbar
     plt.colorbar(cbar, label='Apparent Magnitude [-]')
@@ -218,9 +219,9 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     ax[0].set_facecolor('xkcd:black')
 
     # plot the EMCCD data with the same color as the LCAM data
-    cbar2=ax[1].scatter(df_EMCCD['azimuth'], df_EMCCD['altitude'], c=df_EMCCD['mag_data'], cmap='viridis_r')
-    ax[1].set_xlabel('azimuth [deg]')
-    ax[1].set_ylabel('altitude [deg]')
+    cbar2=ax[1].scatter(df_EMCCD['ra'], df_EMCCD['dec'], c=df_EMCCD['mag_data'], cmap='viridis_r')
+    ax[1].set_xlabel('RA [deg]')
+    ax[1].set_ylabel('Dec [deg]')
     ax[1].set_title(EMCCD_name+' data')
     cbar2.set_clim(min_mag_all, max_mag_all)
     # put the grid on
@@ -246,7 +247,7 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     mng.full_screen_toggle()
 
     # save the plot
-    plt.savefig(output_dir+'\\'+'azimuth_altitude_'+camera_name+'_'+EMCCD_name+'.png', dpi=300)
+    plt.savefig(output_dir+'\\'+'RA_Dec_'+camera_name+'_'+EMCCD_name+'.png', dpi=300)
     
     # close the plot
     plt.close()
@@ -266,7 +267,7 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
 
             
 
-    # find the closest df_EMCCD['azimuth'] to df_LCAM['azimuth'] and df_EMCCD['altitude'] to df_LCAM['altitude']
+    # find the closest df_EMCCD['ra'] to df_LCAM['ra'] and df_EMCCD['dec'] to df_LCAM['dec']
     # for every detection in df_LCAM
     
     if EMCCD_name == "Dave's Ephemeris":
@@ -274,54 +275,54 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
         interpolated_alt, interpolated_az = interp_data_min([0], df_LCAM, df_EMCCD)
         for ii_LCAM in range(len(df_LCAM)):
 
-            # find use the index with the same datetime to find the closest azimuth and altitude 
+            # find use the index with the same datetime to find the closest RA and Dec 
             # Extract the time series for interpolation
             # interpolated_alt, interpolated_az = interp_data_min(offset, df_source, df_ephemeris)
-            idx_azimuth = df_EMCCD['datetime'].sub(df_LCAM['datetime'][ii_LCAM]).abs().idxmin()
-            idx_altitude = df_EMCCD['datetime'].sub(df_LCAM['datetime'][ii_LCAM]).abs().idxmin()
+            idx_RA = df_EMCCD['datetime'].sub(df_LCAM['datetime'][ii_LCAM]).abs().idxmin()
+            idx_Dec = df_EMCCD['datetime'].sub(df_LCAM['datetime'][ii_LCAM]).abs().idxmin()
 
-            # print(f"azimuth and altitude are the same for detection {ii_LCAM} in the EMCCD data")
-            # save the closest azimuth and altitude in the dataframe as a new column azimuth_error and altitude_error and the difference in magnitude and time  
-            df_LCAM.loc[ii_LCAM, 'azimuth_error'] = df_LCAM['azimuth'][ii_LCAM]-interpolated_az[ii_LCAM]
-            df_LCAM.loc[ii_LCAM, 'altitude_error'] = df_LCAM['altitude'][ii_LCAM]-interpolated_alt[ii_LCAM]
+            # print(f"RA and Dec are the same for detection {ii_LCAM} in the EMCCD data")
+            # save the closest RA and Dec in the dataframe as a new column RA_error and Dec_error and the difference in magnitude and time  
+            df_LCAM.loc[ii_LCAM, 'RA_error'] = df_LCAM['ra'][ii_LCAM]-interpolated_az[ii_LCAM]
+            df_LCAM.loc[ii_LCAM, 'Dec_error'] = df_LCAM['dec'][ii_LCAM]-interpolated_alt[ii_LCAM]
 
-            df_LCAM_opt.loc[ii_LCAM, 'azimuth_error'] = df_LCAM['azimuth'][ii_LCAM]-df_LCAM_opt['azimuth'][ii_LCAM]
-            df_LCAM_opt.loc[ii_LCAM, 'altitude_error'] = df_LCAM['altitude'][ii_LCAM]-df_LCAM_opt['altitude'][ii_LCAM]
+            df_LCAM_opt.loc[ii_LCAM, 'RA_error'] = df_LCAM['ra'][ii_LCAM]-df_LCAM_opt['ra'][ii_LCAM]
+            df_LCAM_opt.loc[ii_LCAM, 'Dec_error'] = df_LCAM['dec'][ii_LCAM]-df_LCAM_opt['dec'][ii_LCAM]
 
-            df_LCAM.loc[ii_LCAM, 'mag_error'] = df_LCAM['mag_data'][ii_LCAM]-df_EMCCD['mag_data'][idx_azimuth]
+            df_LCAM.loc[ii_LCAM, 'mag_error'] = df_LCAM['mag_data'][ii_LCAM]-df_EMCCD['mag_data'][idx_RA]
             # time_error in seconds.milliseconds
-            df_LCAM.loc[ii_LCAM, 'time_error'] = (df_LCAM['datetime'][ii_LCAM]-df_EMCCD['datetime'][idx_azimuth]).total_seconds()
+            df_LCAM.loc[ii_LCAM, 'time_error'] = (df_LCAM['datetime'][ii_LCAM]-df_EMCCD['datetime'][idx_RA]).total_seconds()
 
     
     else:
         for ii_LCAM in range(len(df_LCAM)):
 
             if method_diff == 'time':
-                # find the closest azimuth and altitude
+                # find the closest RA and Dec
                 idx_time = df_EMCCD['datetime'].sub(df_LCAM['datetime'][ii_LCAM]).abs().idxmin()
 
-                # print(f"azimuth and altitude are the same for detection {ii_LCAM} in the EMCCD data")
-                # save the closest azimuth and altitude in the dataframe as a new column azimuth_error and altitude_error and the difference in magnitude and time  
-                df_LCAM.loc[ii_LCAM, 'azimuth_error'] = df_LCAM['azimuth'][ii_LCAM]-df_EMCCD['azimuth'][idx_time]
-                df_LCAM.loc[ii_LCAM, 'altitude_error'] = df_LCAM['altitude'][ii_LCAM]-df_EMCCD['altitude'][idx_time]
+                # print(f"RA and Dec are the same for detection {ii_LCAM} in the EMCCD data")
+                # save the closest RA and Dec in the dataframe as a new column RA_error and Dec_error and the difference in magnitude and time  
+                df_LCAM.loc[ii_LCAM, 'RA_error'] = df_LCAM['ra'][ii_LCAM]-df_EMCCD['ra'][idx_time]
+                df_LCAM.loc[ii_LCAM, 'Dec_error'] = df_LCAM['dec'][ii_LCAM]-df_EMCCD['dec'][idx_time]
 
                 df_LCAM.loc[ii_LCAM, 'mag_error'] = df_LCAM['mag_data'][ii_LCAM]-df_EMCCD['mag_data'][idx_time]
                 # time_error in seconds.milliseconds
                 df_LCAM.loc[ii_LCAM, 'time_error'] = (df_LCAM['datetime'][ii_LCAM]-df_EMCCD['datetime'][idx_time]).total_seconds()
 
             elif method_diff == 'angle':
-                # find the closest azimuth and altitude
-                idx_azimuth = df_EMCCD['azimuth'].sub(df_LCAM['azimuth'][ii_LCAM]).abs().idxmin()
-                idx_altitude = df_EMCCD['altitude'].sub(df_LCAM['altitude'][ii_LCAM]).abs().idxmin()
+                # find the closest RA and Dec
+                idx_RA = df_EMCCD['ra'].sub(df_LCAM['ra'][ii_LCAM]).abs().idxmin()
+                idx_Dec = df_EMCCD['dec'].sub(df_LCAM['dec'][ii_LCAM]).abs().idxmin()
 
-                # print(f"azimuth and altitude are the same for detection {ii_LCAM} in the EMCCD data")
-                # save the closest azimuth and altitude in the dataframe as a new column azimuth_error and altitude_error and the difference in magnitude and time  
-                df_LCAM.loc[ii_LCAM, 'azimuth_error'] = df_LCAM['azimuth'][ii_LCAM]-df_EMCCD['azimuth'][idx_azimuth]
-                df_LCAM.loc[ii_LCAM, 'altitude_error'] = df_LCAM['altitude'][ii_LCAM]-df_EMCCD['altitude'][idx_altitude]
+                # print(f"RA and Dec are the same for detection {ii_LCAM} in the EMCCD data")
+                # save the closest RA and Dec in the dataframe as a new column RA_error and Dec_error and the difference in magnitude and time  
+                df_LCAM.loc[ii_LCAM, 'RA_error'] = df_LCAM['ra'][ii_LCAM]-df_EMCCD['ra'][idx_RA]
+                df_LCAM.loc[ii_LCAM, 'Dec_error'] = df_LCAM['dec'][ii_LCAM]-df_EMCCD['dec'][idx_Dec]
 
-                df_LCAM.loc[ii_LCAM, 'mag_error'] = df_LCAM['mag_data'][ii_LCAM]-df_EMCCD['mag_data'][idx_azimuth]
+                df_LCAM.loc[ii_LCAM, 'mag_error'] = df_LCAM['mag_data'][ii_LCAM]-df_EMCCD['mag_data'][idx_RA]
                 # time_error in seconds.milliseconds
-                df_LCAM.loc[ii_LCAM, 'time_error'] = (df_LCAM['datetime'][ii_LCAM]-df_EMCCD['datetime'][idx_azimuth]).total_seconds()
+                df_LCAM.loc[ii_LCAM, 'time_error'] = (df_LCAM['datetime'][ii_LCAM]-df_EMCCD['datetime'][idx_RA]).total_seconds()
             else:
                 # raise a warning ask to define the method_diff
                 raise ValueError("Error: Please define the method_diff as 'time' or 'angle'")
@@ -330,7 +331,7 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     # print the error in the time with non nan
     # print(df_LCAM['time_error'][df_LCAM['time_error'].notna()])
     
-    # plot the lcam data with the error in the azimuth and altitude
+    # plot the lcam data with the error in the RA and Dec
     fig, ax = plt.subplots(3,3,gridspec_kw={'width_ratios': [0.5, 3, 0.5],'height_ratios': [1, 3, 1]})
     # delete the first plot
     ax[0,2].axis('off')
@@ -338,10 +339,10 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     ax[2,2].axis('off')
     ax[0,0].axis('off')
 
-    deg_az = np.sqrt(np.mean(df_LCAM['azimuth_error'][df_LCAM['azimuth_error'].notna()]**2))
-    deg_alt = np.sqrt(np.mean(df_LCAM['altitude_error'][df_LCAM['altitude_error'].notna()]**2))
-    deg_az_mean = np.mean(df_LCAM['azimuth_error'][df_LCAM['azimuth_error'].notna()])
-    deg_alt_mean = np.mean(df_LCAM['altitude_error'][df_LCAM['altitude_error'].notna()])
+    deg_az = np.sqrt(np.mean(df_LCAM['RA_error'][df_LCAM['RA_error'].notna()]**2))
+    deg_alt = np.sqrt(np.mean(df_LCAM['Dec_error'][df_LCAM['Dec_error'].notna()]**2))
+    deg_az_mean = np.mean(df_LCAM['RA_error'][df_LCAM['RA_error'].notna()])
+    deg_alt_mean = np.mean(df_LCAM['Dec_error'][df_LCAM['Dec_error'].notna()])
 
     degrees_az, minutes_az, seconds_az = deg_to_dms(deg_az)
     degrees_alt, minutes_alt, seconds_alt = deg_to_dms(deg_alt)
@@ -351,25 +352,25 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     # create a a title for the plot
     if EMCCD_name == "Dave's Ephemeris" or camera_name == "Dave's Ephemeris":
 
-        deg_az_opt=np.sqrt(np.mean(df_LCAM_opt['azimuth_error']**2))
-        deg_alt_opt=np.sqrt(np.mean(df_LCAM_opt['altitude_error']**2))
-        deg_az_opt_mean=np.mean(df_LCAM_opt['azimuth_error'])
-        deg_alt_opt_mean=np.mean(df_LCAM_opt['altitude_error'])
+        deg_az_opt=np.sqrt(np.mean(df_LCAM_opt['RA_error']**2))
+        deg_alt_opt=np.sqrt(np.mean(df_LCAM_opt['Dec_error']**2))
+        deg_az_opt_mean=np.mean(df_LCAM_opt['RA_error'])
+        deg_alt_opt_mean=np.mean(df_LCAM_opt['Dec_error'])
         degrees_az_opt, minutes_az_opt, seconds_az_opt = deg_to_dms(deg_az_opt)
         degrees_alt_opt, minutes_alt_opt, seconds_alt_opt = deg_to_dms(deg_alt_opt)
 
         # put also the best time offset
         fig.suptitle("error values base on time = "+camera_name+" data minus data intepolated base on "+EMCCD_name+" data\n \
         Best time offset: "+str(np.round(time_offset,5))+" s\n\
-        RMSD azimuth err. "+str(degrees_az)+"° "+str(minutes_az)+"' "+str(np.round(seconds_az,2))+"'' \
-        RMSD altitude err. "+str(degrees_alt)+"° "+str(minutes_alt)+"' "+str(np.round(seconds_alt,2))+"''\n\
-        RMSD opt azimuth err. "+str(degrees_az_opt)+"° "+str(minutes_az_opt)+"' "+str(np.round(seconds_az_opt,2))+"'' \
-        RMSD opt altitude err. "+str(degrees_alt_opt)+"° "+str(minutes_alt_opt)+"' "+str(np.round(seconds_alt_opt,2))+"''")
+        RMSD RA err. "+str(degrees_az)+"° "+str(minutes_az)+"' "+str(np.round(seconds_az,2))+"'' \
+        RMSD Dec err. "+str(degrees_alt)+"° "+str(minutes_alt)+"' "+str(np.round(seconds_alt,2))+"''\n\
+        RMSD opt RA err. "+str(degrees_az_opt)+"° "+str(minutes_az_opt)+"' "+str(np.round(seconds_az_opt,2))+"'' \
+        RMSD opt Dec err. "+str(degrees_alt_opt)+"° "+str(minutes_alt_opt)+"' "+str(np.round(seconds_alt_opt,2))+"''")
 
-        ax[1,1].plot(df_EMCCD['azimuth'], df_EMCCD['altitude'],'-' ,color='r', label=EMCCD_name)
+        ax[1,1].plot(df_EMCCD['ra'], df_EMCCD['dec'],'-' ,color='r', label=EMCCD_name)
         ax[1,1].plot(interpolated_az, interpolated_alt, '.',color='C0', label='Camera data')
-        ax[1,1].plot(df_LCAM_opt['azimuth'], df_LCAM_opt['altitude'], '.',color='C1', label='Best time Offset data')
-        ax[1,1].plot(df_LCAM['azimuth'], df_LCAM['altitude'], 'x',color='C0', label='Camera data interp')
+        ax[1,1].plot(df_LCAM_opt['ra'], df_LCAM_opt['dec'], '.',color='C1', label='Best time Offset data')
+        ax[1,1].plot(df_LCAM['ra'], df_LCAM['dec'], 'x',color='C0', label='Camera data interp')
         # x for 
         # mpthy circle
         # lines
@@ -387,15 +388,15 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
         fig.suptitle("error values base on alt & az = "+camera_name+" data minus "+EMCCD_name+" data\n \
         RMSD time err. "+str(np.round(np.sqrt(np.mean(df_LCAM['time_error'][df_LCAM['time_error'].notna()]**2)),4))+" s \
         RMSD magnitude err. "+str(np.round(np.sqrt(np.mean(df_LCAM['mag_error'][df_LCAM['mag_error'].notna()]**2)),4))+" mag\n\
-        RMSD azimuth err. "+str(degrees_az)+"° "+str(minutes_az)+"' "+str(np.round(seconds_az,2))+"'' \
-        RMSD altitude err. "+str(degrees_alt)+"° "+str(minutes_alt)+"' "+str(np.round(seconds_alt,2))+"''")
+        RMSD RA err. "+str(degrees_az)+"° "+str(minutes_az)+"' "+str(np.round(seconds_az,2))+"'' \
+        RMSD Dec err. "+str(degrees_alt)+"° "+str(minutes_alt)+"' "+str(np.round(seconds_alt,2))+"''")
 
-        # plot the azimuth  altitude wit mag_data as color
-        ax[1,1].plot(df_EMCCD['azimuth'], df_EMCCD['altitude'], '.',color='r')  
-        ax[1,1].plot(df_LCAM['azimuth'], df_LCAM['altitude'], '.',color='b')           
+        # plot the RA  Dec wit mag_data as color
+        ax[1,1].plot(df_EMCCD['ra'], df_EMCCD['dec'], '.',color='r')  
+        ax[1,1].plot(df_LCAM['ra'], df_LCAM['dec'], '.',color='b')           
 
-    ax[1,1].set_xlabel('azimuth [deg]')
-    ax[1,1].set_ylabel('altitude [deg]')
+    ax[1,1].set_xlabel('RA [deg]')
+    ax[1,1].set_ylabel('Dec [deg]')
     
     # ax[1,1].set_title('LCAM data')
     # plot the colorbar
@@ -410,10 +411,10 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
 
 ###############################################################
 
-    # on ax[1,1] the sides of the plot put the error in the azimuth and altitude as a value with one axis
-    ax[2,1].bar(df_LCAM['azimuth'], df_LCAM['azimuth_error'], width=abs(ax[1,1].get_xlim()[1]-ax[1,1].get_xlim()[0])/200)
-    # ax[2,1].scater(df_LCAM['azimuth'], df_LCAM['azimuth_error'])
-    ax[2,1].set_ylabel('az.err.[deg]')
+    # on ax[1,1] the sides of the plot put the error in the RA and Dec as a value with one axis
+    ax[2,1].bar(df_LCAM['ra'], df_LCAM['RA_error'], width=abs(ax[1,1].get_xlim()[1]-ax[1,1].get_xlim()[0])/200)
+    # ax[2,1].scater(df_LCAM['ra'], df_LCAM['RA_error'])
+    ax[2,1].set_ylabel('RA.err.[deg]')
     # set the same x axis as the plot above
     ax[2,1].set_xlim(ax[1,1].get_xlim())
     # place the x axis along the zero
@@ -426,7 +427,7 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     ax[2,1].spines['right'].set_color('none')
     ax[2,1].spines['top'].set_color('none')
     # make the same y axis positive and negative
-    ax[2,1].set_ylim(np.max(abs(df_LCAM['azimuth_error']))*-1,np.max(abs(df_LCAM['azimuth_error'])))
+    ax[2,1].set_ylim(np.max(abs(df_LCAM['RA_error']))*-1,np.max(abs(df_LCAM['RA_error'])))
     # ticks = ax[2,1].get_yticks()
     # ticks = [tick for tick in ticks if tick != 0]
     # ax[2,1].set_yticks(ticks)
@@ -435,9 +436,9 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     ax[2,1].text(ax[1,1].get_xlim()[-1], deg_az_mean, str(np.round(deg_az_mean,4)), color='C0')
     
 
-    # on ax[1,1] the sides of the plot put the error in the altitude as a value with one axis, with the same number of column as the data 
-    ax[1,0].barh(df_LCAM['altitude'],df_LCAM['altitude_error'], height=abs(ax[1,1].get_ylim()[1]-ax[1,1].get_ylim()[0])/100)
-    ax[1,0].set_xlabel('alt.err.[deg]')
+    # on ax[1,1] the sides of the plot put the error in the Dec as a value with one axis, with the same number of column as the data 
+    ax[1,0].barh(df_LCAM['dec'],df_LCAM['Dec_error'], height=abs(ax[1,1].get_ylim()[1]-ax[1,1].get_ylim()[0])/100)
+    ax[1,0].set_xlabel('Dec.err.[deg]')
     # set the same y axis as the plot above
     ax[1,0].set_ylim(ax[1,1].get_ylim())
     # place the ticks along the zero
@@ -449,10 +450,10 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     ax[1,0].spines['top'].set_color('none')
     ax[1,0].spines['left'].set_position(('data', 0))
     # make the same y axis positive and negative
-    ax[1,0].set_xlim(np.max(abs(df_LCAM['altitude_error']))*-1,np.max(abs(df_LCAM['altitude_error'])))
+    ax[1,0].set_xlim(np.max(abs(df_LCAM['Dec_error']))*-1,np.max(abs(df_LCAM['Dec_error'])))
     # roatate the x axis ticks 45 degrees
     ax[1,0].tick_params(axis='x', rotation=45)
-    # do a vertical line with np.mean(df_LCAM['altitude_error'][df_LCAM['altitude_error'].notna()])
+    # do a vertical line with np.mean(df_LCAM['Dec_error'][df_LCAM['Dec_error'].notna()])
     ax[1,0].axvline(x=deg_alt_mean, color='C0', linestyle='--')
     ax[1,0].text(deg_alt_mean,ax[1,1].get_ylim()[-1], str(np.round(deg_alt_mean,4)), color='C0')
     
@@ -461,9 +462,9 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     # ticks = [tick for tick in ticks if tick != 0]
     # ax[1,0].set_xticks(ticks)
     if EMCCD_name == "Dave's Ephemeris" or camera_name == "Dave's Ephemeris":
-        # plot in ax[1,2] the df_LCAM_opt['altitude_error']
-        ax[1,2].barh(df_LCAM_opt['altitude'],df_LCAM_opt['altitude_error'], height=abs(ax[1,1].get_ylim()[1]-ax[1,1].get_ylim()[0])/100, color='C1')
-        ax[1,2].set_xlabel('alt.opt.err.[deg]')
+        # plot in ax[1,2] the df_LCAM_opt['Dec_error']
+        ax[1,2].barh(df_LCAM_opt['dec'],df_LCAM_opt['Dec_error'], height=abs(ax[1,1].get_ylim()[1]-ax[1,1].get_ylim()[0])/100, color='C1')
+        ax[1,2].set_xlabel('Dec.opt.err.[deg]')
         # set the same y axis as the plot above
         ax[1,2].set_ylim(ax[1,1].get_ylim())
         # place the y axis along the zero
@@ -477,14 +478,14 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
         ax[1,2].spines['left'].set_position(('data', 0))
         # roatate the x axis ticks 45 degrees
         ax[1,2].tick_params(axis='x', rotation=45)
-        ax[1,2].set_xlim(np.max(abs(df_LCAM_opt['altitude_error']))*-1,np.max(abs(df_LCAM_opt['altitude_error'])))
+        ax[1,2].set_xlim(np.max(abs(df_LCAM_opt['Dec_error']))*-1,np.max(abs(df_LCAM_opt['Dec_error'])))
         ax[1,2].axvline(x=deg_alt_opt_mean, color='C1', linestyle='--')
         ax[1,2].text(deg_alt_opt_mean, ax[1,1].get_ylim()[-1], str(np.round(deg_alt_opt_mean,4)), color='C1')
         
 
     else:
         # on ax[1,2] the sides of the plot put the error in the magnitude as a value with one axis
-        ax[1,2].scatter(df_LCAM['mag_error'],df_LCAM['altitude'], color='turquoise')
+        ax[1,2].scatter(df_LCAM['mag_error'],df_LCAM['dec'], color='turquoise')
         ax[1,2].set_xlabel('mag.err.[deg]')
         # set the same y axis as the plot above
         ax[1,2].set_ylim(ax[1,1].get_ylim())
@@ -503,9 +504,9 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
         ax[1,2].text(np.mean(df_LCAM['mag_error'][df_LCAM['mag_error'].notna()]), ax[1,1].get_ylim()[-1], str(np.round(np.mean(df_LCAM['mag_error'][df_LCAM['mag_error'].notna()]),4)), color='turquoise')
         
     if EMCCD_name == "Dave's Ephemeris" or camera_name == "Dave's Ephemeris":
-        # plot in ax[0,1] the df_LCAM_opt['azimuth_error']
-        ax[0,1].bar(df_LCAM_opt['azimuth'], df_LCAM_opt['azimuth_error'], color='C1', width=abs(ax[1,1].get_xlim()[1]-ax[1,1].get_xlim()[0])/200)
-        ax[0,1].set_ylabel('az.opt.err.[deg]')
+        # plot in ax[0,1] the df_LCAM_opt['RA_error']
+        ax[0,1].bar(df_LCAM_opt['ra'], df_LCAM_opt['RA_error'], color='C1', width=abs(ax[1,1].get_xlim()[1]-ax[1,1].get_xlim()[0])/200)
+        ax[0,1].set_ylabel('RA.opt.err.[deg]')
         # set the same x axis as the plot above
         ax[0,1].set_xlim(ax[1,1].get_xlim())
         # place the x axis along the zero
@@ -518,12 +519,12 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
         ax[0,1].spines['right'].set_color('none')
         ax[0,1].spines['top'].set_color('none')
         # make the same y axis positive and negative
-        ax[0,1].set_ylim(np.max(abs(df_LCAM_opt['azimuth_error']))*-1,np.max(abs(df_LCAM_opt['azimuth_error'])))
+        ax[0,1].set_ylim(np.max(abs(df_LCAM_opt['RA_error']))*-1,np.max(abs(df_LCAM_opt['RA_error'])))
         ax[0,1].axhline(y=deg_az_opt_mean, color='C1', linestyle='--')
         ax[0,1].text(ax[1,1].get_xlim()[-1], deg_az_opt_mean, str(np.round(deg_az_opt_mean,4)), color='C1')
 
     else:
-        ax[0,1].scatter(df_LCAM['azimuth'], df_LCAM['time_error'], color='teal')
+        ax[0,1].scatter(df_LCAM['ra'], df_LCAM['time_error'], color='teal')
         ax[0,1].set_ylabel('time.err.[s]')
         # set the same x axis as the plot above
         ax[0,1].set_xlim(ax[1,1].get_xlim())
@@ -544,15 +545,15 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
         # ticks = [tick for tick in ticks if tick != 0]
         # ax[0,1].set_yticks(ticks)                 
 
-    df_LCAM['opt.azimuth_error']=df_LCAM_opt['azimuth_error']
-    df_LCAM['opt.altitude_error']=df_LCAM_opt['altitude_error']
+    df_LCAM['opt.RA_error']=df_LCAM_opt['RA_error']
+    df_LCAM['opt.Dec_error']=df_LCAM_opt['Dec_error']
     # save the csv of df_LCAM as a AltAzerr_manual.csv file
-    df_LCAM.to_csv(output_dir+os.sep+camera_name+'_AltAzerr_manual.csv', index=False)
+    df_LCAM.to_csv(output_dir+os.sep+camera_name+'_RADecerr_manual.csv', index=False)
 
 ###############################################################
 
-    # create a list called alt_az_positions_LCAM that is a list of tuples (altitude, azimuth)
-    alt_az_positions_LCAM = [(df_LCAM['altitude'][i], df_LCAM['azimuth'][i]) for i in range(len(df_LCAM))]
+    # create a list called alt_az_positions_LCAM that is a list of tuples (Dec, RA)
+    alt_az_positions_LCAM = [(df_LCAM['dec'][i], df_LCAM['ra'][i]) for i in range(len(df_LCAM))]
     # take only the first and last value of the alt_az_positions_LCAM
     alt_az_positions_LCAM = [alt_az_positions_LCAM[0], alt_az_positions_LCAM[-1]]
 
@@ -578,8 +579,8 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
         print(f"Average pixel displacement per frame ({camera_name}): {avg_displacement_LCAM} pixels")
 
 
-    # create a list called alt_az_positions_EMCCD that is a list of tuples (altitude, azimuth)
-    alt_az_positions_EMCCD = [(df_EMCCD['altitude'][i], df_EMCCD['azimuth'][i]) for i in range(len(df_EMCCD))]
+    # create a list called alt_az_positions_EMCCD that is a list of tuples (Dec, RA)
+    alt_az_positions_EMCCD = [(df_EMCCD['dec'][i], df_EMCCD['ra'][i]) for i in range(len(df_EMCCD))]
     # take only the first and last value of the alt_az_positions_EMCCD
     alt_az_positions_EMCCD = [alt_az_positions_EMCCD[0], alt_az_positions_EMCCD[-1]]
 
@@ -619,7 +620,7 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     mng.full_screen_toggle()
 
     # save the plot
-    plt.savefig(output_dir+'\\'+'error_'+camera_name+'_'+EMCCD_name+'.png', dpi=300)
+    plt.savefig(output_dir+'\\'+'RADec_error_'+camera_name+'_'+EMCCD_name+'.png', dpi=300)
 
     plt.close()
 
@@ -627,7 +628,7 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     # subplot for the mag and time of EMCCD and LCAM
     # fig, ax = plt.subplots(2,2,gridspec_kw={'width_ratios': [1, 1],'height_ratios': [1, 1]})
     # create a a title for the plot
-    # fig.suptitle(f"EMCCD data minus LCAM data, errors plot only when azimuth and altitude are the same")
+    # fig.suptitle(f"EMCCD data minus LCAM data, errors plot only when RA and Dec are the same")
 
     # add a subplot for the mag difference
     fig, ax = plt.subplots(2,1,gridspec_kw={'height_ratios': [3, 1]})
@@ -720,7 +721,7 @@ def parse_LCAM(LCAM_name, input_dir_LCAM, input_dir_EMCCD, output_dir, camera_na
     mng.full_screen_toggle()
 
     # save the plot
-    plt.savefig(output_dir+'\\'+'mag_'+camera_name+'_'+EMCCD_name+'.png', dpi=300)
+    plt.savefig(output_dir+'\\'+'RADec_mag_'+camera_name+'_'+EMCCD_name+'.png', dpi=300)
     
     plt.close()
 
@@ -738,7 +739,7 @@ def time_offset_to_match(df_source, df_ephemeris):
     # Initial guess for the time offset
     initial_guess = 0
 
-    print(df_source, df_ephemeris)
+    # print(df_source, df_ephemeris)
 
     # Use scipy's minimize function to find the optimal time offset
     result = minimize(compute_difference, [initial_guess], args=(df_source, df_ephemeris), method='Nelder-Mead',tol=1e-8)
@@ -752,8 +753,8 @@ def time_offset_to_match(df_source, df_ephemeris):
     # Create the interpolated dataframe
     df_source_shifted = pd.DataFrame({
         'datetime': df_source['datetime'] + pd.to_timedelta(optimal_offset, unit='s'),  # Convert back to datetime
-        'altitude': interpolated_alt,
-        'azimuth': interpolated_az,
+        'dec': interpolated_alt,
+        'ra': interpolated_az,
         'mag_data': 0  # Set magnitude to zero
     })
     
@@ -767,7 +768,7 @@ def compute_difference(offset, df_source, df_ephemeris):
     # create a loop to calculate the ang_dist for each value of the df_source
     ang_dist_list=[]
     for i in range(len(df_source)):
-        ang_dist=angular_distance(df_source['altitude'][i], df_source['azimuth'][i], interpolated_alt[i], interpolated_az[i])
+        ang_dist=angular_distance(df_source['dec'][i], df_source['ra'][i], interpolated_alt[i], interpolated_az[i])
         ang_dist_list.append(ang_dist)
 
     ssr = np.sum(np.array(ang_dist_list)**2)
@@ -792,8 +793,8 @@ def compute_difference(offset, df_source, df_ephemeris):
 #     closest_indices = find_closest_index(ephemeris_times, ephemeris_times_limited)
 
 #     # Interpolation functions for ephemeris data
-#     alt_interp = interp1d(ephemeris_times_limited, df_ephemeris['altitude'][closest_indices], kind='cubic', fill_value="extrapolate")
-#     az_interp = interp1d(ephemeris_times_limited, df_ephemeris['azimuth'][closest_indices], kind='cubic', fill_value="extrapolate")
+#     alt_interp = interp1d(ephemeris_times_limited, df_ephemeris['dec'][closest_indices], kind='cubic', fill_value="extrapolate")
+#     az_interp = interp1d(ephemeris_times_limited, df_ephemeris['ra'][closest_indices], kind='cubic', fill_value="extrapolate")
 #     # Calculate SSR for each time offset
 #     interpolated_alt = alt_interp(source_times_shifted)
 #     interpolated_az = az_interp(source_times_shifted)
@@ -820,8 +821,8 @@ def interp_data_min(offset, df_source, df_ephemeris):
 
     else:
         # Interpolation functions for ephemeris data using cubic method
-        alt_interp = interp1d(ephemeris_times_limited, df_ephemeris['altitude'][closest_indices], kind='cubic', fill_value="extrapolate")
-        az_interp = interp1d(ephemeris_times_limited, df_ephemeris['azimuth'][closest_indices], kind='cubic', fill_value="extrapolate")
+        alt_interp = interp1d(ephemeris_times_limited, df_ephemeris['dec'][closest_indices], kind='cubic', fill_value="extrapolate")
+        az_interp = interp1d(ephemeris_times_limited, df_ephemeris['ra'][closest_indices], kind='cubic', fill_value="extrapolate")
 
     # Calculate SSR for each time offset
     interpolated_alt = alt_interp(source_times_shifted)
@@ -849,26 +850,26 @@ def interpolate_to_ephemeris_change_number_ephemeris_data(df_source, df_ephemeri
     # print differece between 0 and 1 of time
     print(f"Time difference between Dave's frames: {df_ephemeris['datetime'].iloc[1] - df_ephemeris['datetime'].iloc[0]}")
 
-    # Interpolate altitude
-    alt_interp_func_ephem = interp1d(ephemeris_times_limited, df_ephemeris['altitude'][closest_indices], kind='linear', fill_value="extrapolate")
+    # Interpolate Dec
+    alt_interp_func_ephem = interp1d(ephemeris_times_limited, df_ephemeris['dec'][closest_indices], kind='linear', fill_value="extrapolate")
 
-    # Interpolate azimuth
-    az_interp_func_ephem = interp1d(ephemeris_times_limited, df_ephemeris['azimuth'][closest_indices], kind='linear', fill_value="extrapolate")
+    # Interpolate RA
+    az_interp_func_ephem = interp1d(ephemeris_times_limited, df_ephemeris['ra'][closest_indices], kind='linear', fill_value="extrapolate")
 
-    # now get new values for the altitude and azimuth every every 0.00001 seconds
+    # now get new values for the Dec and RA every every 0.00001 seconds
     ephemeris_times_new = np.arange(ephemeris_times_limited.iloc[0], ephemeris_times_limited.iloc[-1], 0.5)
 
-    # Interpolate altitude
+    # Interpolate Dec
     alt_interp_ephemeris = alt_interp_func_ephem(ephemeris_times_new)
 
-    # Interpolate azimuth
+    # Interpolate RA
     az_interp_ephemeris = az_interp_func_ephem(ephemeris_times_new)
 
     # Create the interpolated dataframe
     df_ephemeris_interpolated = pd.DataFrame({
         'datetime': pd.to_datetime(ephemeris_times_new * 1e9),  # Convert back to datetime
-        'altitude': alt_interp_ephemeris,
-        'azimuth': az_interp_ephemeris,
+        'dec': alt_interp_ephemeris,
+        'ra': az_interp_ephemeris,
         'mag_data': 0  # Set magnitude to zero
     })
 
@@ -883,22 +884,22 @@ def interpolate_to_ephemeris_change_number_ephemeris_data(df_source, df_ephemeri
     closest_indices_ephemeris = find_closest_index(ephemeris_times, ephemeris_times_new)
 #################### CUBIC SPLINE INTERPOLATION ####################
     if method == 'cubicSpline':
-        # Create cubic spline interpolators for altitude and azimuth
-        # spline_alt = CubicSpline(source_times, df_source['altitude'])
-        # spline_az = CubicSpline(source_times, df_source['azimuth'])
+        # Create cubic spline interpolators for Dec and RA
+        # spline_alt = CubicSpline(source_times, df_source['dec'])
+        # spline_az = CubicSpline(source_times, df_source['ra'])
 
-        spline_alt = UnivariateSpline(ephemeris_times_new, df_ephemeris['altitude'][closest_indices_ephemeris], s=100)
-        spline_az = UnivariateSpline(ephemeris_times_new, df_ephemeris['azimuth'][closest_indices_ephemeris], s=100)
+        spline_alt = UnivariateSpline(ephemeris_times_new, df_ephemeris['dec'][closest_indices_ephemeris], s=100)
+        spline_az = UnivariateSpline(ephemeris_times_new, df_ephemeris['ra'][closest_indices_ephemeris], s=100)
         
-        # Interpolate the altitude and azimuth at the limited ephemeris times
+        # Interpolate the Dec and RA at the limited ephemeris times
         alt_interp = spline_alt(source_times)
         az_interp = spline_az(source_times)
 
 #################### POLYNOMIAL INTERPOLATION ###################
     elif method == 'polynomial':
-        # Fit polynomial to altitude and azimuth
-        poly_alt = np.polyfit(source_times, df_source['altitude'], 4)
-        poly_az = np.polyfit(source_times, df_source['azimuth'], 4)
+        # Fit polynomial to Dec and RA
+        poly_alt = np.polyfit(source_times, df_source['dec'], 4)
+        poly_az = np.polyfit(source_times, df_source['ra'], 4)
 
         # Evaluate polynomial at the limited ephemeris times
         alt_interp = np.polyval(poly_alt, ephemeris_times_new)
@@ -906,9 +907,9 @@ def interpolate_to_ephemeris_change_number_ephemeris_data(df_source, df_ephemeri
 
 #################### LINEAR REGRESSION ####################
     elif method == 'linear':
-        # Fit linear regression to altitude and azimuth
-        slope_alt, intercept_alt, _, _, _ = linregress(source_times, df_source['altitude'])
-        slope_az, intercept_az, _, _, _ = linregress(source_times, df_source['azimuth'])
+        # Fit linear regression to Dec and RA
+        slope_alt, intercept_alt, _, _, _ = linregress(source_times, df_source['dec'])
+        slope_az, intercept_az, _, _, _ = linregress(source_times, df_source['ra'])
 
         # Evaluate linear regression at the limited ephemeris times
         alt_interp = intercept_alt + slope_alt * ephemeris_times_new
@@ -917,31 +918,31 @@ def interpolate_to_ephemeris_change_number_ephemeris_data(df_source, df_ephemeri
 #################### INTERPOLATION ####################
     elif method == 'interpolation':
 
-        # Interpolate altitude
-        alt_interp_func = interp1d(source_times, df_source['altitude'], kind='linear', fill_value="extrapolate")
+        # Interpolate Dec
+        alt_interp_func = interp1d(source_times, df_source['dec'], kind='linear', fill_value="extrapolate")
         alt_interp = alt_interp_func(ephemeris_times_new)
 
-        # Interpolate azimuth
-        az_interp_func = interp1d(source_times, df_source['azimuth'], kind='linear', fill_value="extrapolate")
+        # Interpolate RA
+        az_interp_func = interp1d(source_times, df_source['ra'], kind='linear', fill_value="extrapolate")
         az_interp = az_interp_func(ephemeris_times_new)
 
-        # # Interpolate altitude
-        # alt_interp_func = interp1d(ephemeris_times, df_ephemeris['altitude'], kind='linear', fill_value="extrapolate")
+        # # Interpolate Dec
+        # alt_interp_func = interp1d(ephemeris_times, df_ephemeris['dec'], kind='linear', fill_value="extrapolate")
         # alt_interp = alt_interp_func(source_times)
 
-        # # Interpolate azimuth
-        # az_interp_func = interp1d(ephemeris_times, df_ephemeris['azimuth'], kind='linear', fill_value="extrapolate")
+        # # Interpolate RA
+        # az_interp_func = interp1d(ephemeris_times, df_ephemeris['ra'], kind='linear', fill_value="extrapolate")
         # az_interp = az_interp_func(source_times)
 
 # #################### INTERPOLATION 3D ####################
     elif method == '3Dlinear':
         # Prepare data for 3D interpolation
-        points = np.vstack((source_times, df_source['altitude'], df_source['azimuth'])).T
+        points = np.vstack((source_times, df_source['dec'], df_source['ra'])).T
 
-        # Create RBF interpolator for altitude and azimuth
+        # Create RBF interpolator for Dec and RA
         rbf_interpolator = RBFInterpolator(points[:, 0:1], points[:, 1:], kernel='linear', epsilon=1)
 
-        # Interpolate the altitude and azimuth at the limited ephemeris times
+        # Interpolate the Dec and RA at the limited ephemeris times
         interp_points = rbf_interpolator(ephemeris_times_new[:, np.newaxis])
         alt_interp, az_interp = interp_points[:, 0], interp_points[:, 1]
 
@@ -950,8 +951,8 @@ def interpolate_to_ephemeris_change_number_ephemeris_data(df_source, df_ephemeri
     # Create the interpolated dataframe
     df_source_interpolated = pd.DataFrame({
         'datetime': pd.to_datetime(source_times * 1e9),  # Convert back to datetime
-        'altitude': alt_interp,
-        'azimuth': az_interp,
+        'dec': alt_interp,
+        'ra': az_interp,
         'mag_data': 0  # Set magnitude to zero
     })
 
@@ -965,8 +966,8 @@ def interpolate_to_ephemeris_change_number_ephemeris_data(df_source, df_ephemeri
     print(f"Interpolation successful using {method} method")
 
     # save_deg_per_second=[]
-    # alt_az_positions = [(df_source_interpolated['altitude'][i], df_source_interpolated['azimuth'][i]) for i in range(len(df_source_interpolated))]
-    # # for loop to def calculate_deg_per_second for all altitudes and azimuths giving the time in seconds of and i+1 and i
+    # alt_az_positions = [(df_source_interpolated['dec'][i], df_source_interpolated['ra'][i]) for i in range(len(df_source_interpolated))]
+    # # for loop to def calculate_deg_per_second for all Decs and RAs giving the time in seconds of and i+1 and i
     # for i in range(len(alt_az_positions) - 1):
     #     alt1, az1 = alt_az_positions[i]
     #     alt2, az2 = alt_az_positions[i + 1]
@@ -979,8 +980,8 @@ def interpolate_to_ephemeris_change_number_ephemeris_data(df_source, df_ephemeri
 
     # save_deg_per_second_ephem=[]
     # # print the average angular velocity and average pixel displacement per frame
-    # alt_az_positions = [(df_ephemeris_interpolated['altitude'][i], df_ephemeris_interpolated['azimuth'][i]) for i in range(len(df_ephemeris_interpolated))]
-    # # for loop to def calculate_deg_per_second for all altitudes and azimuths giving the time in seconds of and i+1 and i
+    # alt_az_positions = [(df_ephemeris_interpolated['dec'][i], df_ephemeris_interpolated['ra'][i]) for i in range(len(df_ephemeris_interpolated))]
+    # # for loop to def calculate_deg_per_second for all Decs and RAs giving the time in seconds of and i+1 and i
     # for i in range(len(alt_az_positions) - 1):
     #     alt1, az1 = alt_az_positions[i]
     #     alt2, az2 = alt_az_positions[i + 1]
@@ -1015,8 +1016,8 @@ def shorter_ephemeris(df_source, df_ephemeris):
     # Create the interpolated dataframe
     df_ephemeris_interpolated = pd.DataFrame({
         'datetime': pd.to_datetime(ephemeris_times_limited * 1e9),  # Convert back to datetime
-        'altitude': df_ephemeris['altitude'][closest_indices],
-        'azimuth': df_ephemeris['azimuth'][closest_indices],
+        'dec': df_ephemeris['dec'][closest_indices],
+        'ra': df_ephemeris['ra'][closest_indices],
         'mag_data': 0  # Set magnitude to zero
     })
 
@@ -1036,31 +1037,31 @@ def skyplot_alt_az(df_LCAM, df_EMCCD, camera_name, EMCCD_name, sat_name, output_
 
     if camera_name == "Dave's Ephemeris":
         # plot the Alt	Az data
-        ax.plot(df_LCAM['azimuth']*np.pi/180, 90-df_LCAM['altitude'], 'b.', label=camera_name)
-        ax.plot(df_EMCCD['azimuth']*np.pi/180, 90-df_EMCCD['altitude'], 'r.', label=EMCCD_name)
+        ax.plot(df_LCAM['ra']*np.pi/180, 90-df_LCAM['dec'], 'b.', label=camera_name)
+        ax.plot(df_EMCCD['ra']*np.pi/180, 90-df_EMCCD['dec'], 'r.', label=EMCCD_name)
     else:
         # plot the Alt	Az data
-        ax.plot(df_EMCCD['azimuth']*np.pi/180, 90-df_EMCCD['altitude'], 'r.', label=EMCCD_name)
-        ax.plot(df_LCAM['azimuth']*np.pi/180, 90-df_LCAM['altitude'], 'b.', label=camera_name)
+        ax.plot(df_EMCCD['ra']*np.pi/180, 90-df_EMCCD['dec'], 'r.', label=EMCCD_name)
+        ax.plot(df_LCAM['ra']*np.pi/180, 90-df_LCAM['dec'], 'b.', label=camera_name)
 
     # check which the two index whos datetime difference in df_EMCCD is bigger than a minute
     # if the difference is bigger than a minute plot the line between the two points
 
-    # put the time value txt only on the first and last value like text(azimuth, altitude, time.strftime('%H:%M:%S'), fontsize=9, ha='right')
-    ax.text(df_EMCCD['azimuth'][0]*np.pi/180, 90-df_EMCCD['altitude'][0], df_EMCCD['datetime'][0].strftime('%H:%M:%S'), fontsize=9, ha='right')
-    ax.text(df_EMCCD['azimuth'][len(df_EMCCD)-1]*np.pi/180, 90-df_EMCCD['altitude'][len(df_EMCCD)-1], df_EMCCD['datetime'][len(df_EMCCD)-1].strftime('%H:%M:%S'), fontsize=9, ha='left')
-    ax.text(df_LCAM['azimuth'][0]*np.pi/180, 90-df_LCAM['altitude'][0], df_LCAM['datetime'][0].strftime('%H:%M:%S'), fontsize=9, ha='right')
-    ax.text(df_LCAM['azimuth'][len(df_LCAM)-1]*np.pi/180, 90-df_LCAM['altitude'][len(df_LCAM)-1], df_LCAM['datetime'][len(df_LCAM)-1].strftime('%H:%M:%S'), fontsize=9, ha='left')
+    # put the time value txt only on the first and last value like text(RA, Dec, time.strftime('%H:%M:%S'), fontsize=9, ha='right')
+    ax.text(df_EMCCD['ra'][0]*np.pi/180, 90-df_EMCCD['dec'][0], df_EMCCD['datetime'][0].strftime('%H:%M:%S'), fontsize=9, ha='right')
+    ax.text(df_EMCCD['ra'][len(df_EMCCD)-1]*np.pi/180, 90-df_EMCCD['dec'][len(df_EMCCD)-1], df_EMCCD['datetime'][len(df_EMCCD)-1].strftime('%H:%M:%S'), fontsize=9, ha='left')
+    ax.text(df_LCAM['ra'][0]*np.pi/180, 90-df_LCAM['dec'][0], df_LCAM['datetime'][0].strftime('%H:%M:%S'), fontsize=9, ha='right')
+    ax.text(df_LCAM['ra'][len(df_LCAM)-1]*np.pi/180, 90-df_LCAM['dec'][len(df_LCAM)-1], df_LCAM['datetime'][len(df_LCAM)-1].strftime('%H:%M:%S'), fontsize=9, ha='left')
 
     for ii in range(len(df_EMCCD)-1):
         if (df_EMCCD['datetime'][ii+1]-df_EMCCD['datetime'][ii]).total_seconds()>60:
-            ax.text(df_EMCCD['azimuth'][ii]*np.pi/180, 90-df_EMCCD['altitude'][ii], df_EMCCD['datetime'][ii].strftime('%H:%M:%S'), fontsize=9, ha='left')
-            ax.text(df_EMCCD['azimuth'][ii+1]*np.pi/180, 90-df_EMCCD['altitude'][ii+1], df_EMCCD['datetime'][ii+1].strftime('%H:%M:%S'), fontsize=9, ha='left')
+            ax.text(df_EMCCD['ra'][ii]*np.pi/180, 90-df_EMCCD['dec'][ii], df_EMCCD['datetime'][ii].strftime('%H:%M:%S'), fontsize=9, ha='left')
+            ax.text(df_EMCCD['ra'][ii+1]*np.pi/180, 90-df_EMCCD['dec'][ii+1], df_EMCCD['datetime'][ii+1].strftime('%H:%M:%S'), fontsize=9, ha='left')
 
     for ii in range(len(df_LCAM)-1):
         if (df_LCAM['datetime'][ii+1]-df_LCAM['datetime'][ii]).total_seconds()>60:
-            ax.text(df_LCAM['azimuth'][ii]*np.pi/180, 90-df_LCAM['altitude'][ii], df_LCAM['datetime'][ii].strftime('%H:%M:%S'), fontsize=9, ha='left')
-            ax.text(df_LCAM['azimuth'][ii+1]*np.pi/180, 90-df_LCAM['altitude'][ii+1], df_LCAM['datetime'][ii+1].strftime('%H:%M:%S'), fontsize=9, ha='left')
+            ax.text(df_LCAM['ra'][ii]*np.pi/180, 90-df_LCAM['dec'][ii], df_LCAM['datetime'][ii].strftime('%H:%M:%S'), fontsize=9, ha='left')
+            ax.text(df_LCAM['ra'][ii+1]*np.pi/180, 90-df_LCAM['dec'][ii+1], df_LCAM['datetime'][ii+1].strftime('%H:%M:%S'), fontsize=9, ha='left')
 
     # Setting labels
     ax.set_ylim(0, 90)
@@ -1073,7 +1074,7 @@ def skyplot_alt_az(df_LCAM, df_EMCCD, camera_name, EMCCD_name, sat_name, output_
     plt.legend()
     plt.grid(True)
     # save the plot in the same folder as the script
-    plt.savefig(output_dir+'\\'+'skysphere_'+camera_name+'_'+EMCCD_name+'.png')
+    plt.savefig(output_dir+'\\'+'RADec_skysphere_'+camera_name+'_'+EMCCD_name+'.png')
     plt.close()
     # plt.show()    
 
@@ -1100,7 +1101,7 @@ def angular_distance(alt1, az1, alt2, az2):
     return math.degrees(c)
 
 def calculate_deg_per_second(alt_az_positions, times):
-    # alt_az_positions is a list of tuples (altitude, azimuth)
+    # alt_az_positions is a list of tuples (Dec, RA)
     # times is a list of corresponding timestamps in seconds
     
     total_angle = 0
@@ -1178,7 +1179,7 @@ if __name__ == "__main__":
         help="Path to the output directory.")
     # C:\Users\maxiv\Documents\UWO\Space Situational Awareness DRDC\8mm\20240613\CAWE07-EGS_20240613_065326
     # C:\Users\maxiv\Documents\UWO\Space Situational Awareness DRDC\8mm\20240612\CAWE07-EGS_20240612_064700
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Space Situational Awareness DRDC\25mm\20240713\CAEUA4-EGS_040724.01",\
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r"C:\Users\maxiv\Documents\UWO\Space Situational Awareness DRDC\25mm\20240714\CAWEA6-EGS_031737.34",\
         help="Path were is stored and the LCAM .txt file with the detections.")
 
     # Parse the command line arguments

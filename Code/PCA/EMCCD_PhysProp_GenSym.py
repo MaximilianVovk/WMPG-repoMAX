@@ -78,7 +78,9 @@ PCA_SEL_DIR_SUFX = '_sel_PCA_vs_physProp'
 SAVE_RESULTS_FOLDER='Results'
 
 # sigma value of the RMSD that is considered to select a good fit
-SIGMA_ERR=1.96 # 95CI
+SIGMA_ERR = 1.96 # 95CI
+LEN_RMSD = 0.02
+MAG_RMSD =0.2
 
 # Calculate the cumulative probability for the z-value, the confidence level is the percentage of the area within ±z_value
 CONFIDENCE_LEVEL = (2 * stats.norm.cdf(SIGMA_ERR) - 1)*100
@@ -229,7 +231,7 @@ def fit_mag_polin2_RMSD(data_mag, time_data):
     return fit1, residuals_pol, rmsd_pol,'Polinomial Fit'
 
 
-def fit_lag_t0_RMSD(lag_data,time_data,velocity_data):
+def fit_lag_t0_RMSD_old(lag_data,time_data,velocity_data):
     v_init=velocity_data[0]
     # initial guess of deceleration decel equal to linear fit of velocity
     p0 = [np.mean(lag_data), 0, 0, np.mean(time_data)]
@@ -238,7 +240,7 @@ def fit_lag_t0_RMSD(lag_data,time_data,velocity_data):
     fitted_lag_t0 = cubic_lag(np.array(time_data), a_t0, b_t0, c_t0, t0)
     
     opt_res_vel = opt.minimize(vel_residual, [a_t0, b_t0, v_init, t0], args=(np.array(time_data), np.array(velocity_data)), method='Nelder-Mead')
-    a_t0, b_t0, v_init_new, t0 = opt_res_vel.x
+    a_t0, b_t0, v_init_new, t0 = opt_res_vel.x # problem with the small time
     fitted_vel_t0 = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init, t0)
 
     fitted_acc_t0 = cubic_acceleration(np.array(time_data), a_t0, b_t0, t0)
@@ -246,6 +248,43 @@ def fit_lag_t0_RMSD(lag_data,time_data,velocity_data):
     rmsd_t0 = np.sqrt(np.mean(residuals_t0 ** 2))
 
     return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', fitted_vel_t0, fitted_acc_t0
+
+def fit_lag_t0_RMSD(lag_data, time_data, velocity_data):
+    v_init = velocity_data[0]
+    # initial guess of deceleration decel equal to linear fit of velocity
+    p0 = [np.mean(lag_data), 0, 0, np.mean(time_data)]
+    opt_res = opt.minimize(lag_residual, p0, args=(np.array(time_data), np.array(lag_data)), method='Nelder-Mead')
+    a_t0, b_t0, c_t0, t0 = opt_res.x
+    fitted_lag_t0 = cubic_lag(np.array(time_data), a_t0, b_t0, c_t0, t0)
+    
+    # Optimize velocity residual based on initial guess from lag residual
+    opt_res_vel = opt.minimize(vel_residual, [a_t0, b_t0, v_init, t0], args=(np.array(time_data), np.array(velocity_data)), method='Nelder-Mead')
+    a_t0_vel, b_t0_vel, v_init_vel, t0_vel = opt_res_vel.x
+    fitted_vel_t0_vel = cubic_velocity(np.array(time_data), a_t0_vel, b_t0_vel, v_init_vel, t0_vel)
+    
+    # Compute fitted velocity from original lag optimization
+    fitted_vel_t0_lag = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init, t0)
+    
+    # Calculate residuals
+    residuals_vel_vel = velocity_data - fitted_vel_t0_vel
+    residuals_vel_lag = velocity_data - fitted_vel_t0_lag
+    
+    rmsd_vel_vel = np.sqrt(np.mean(residuals_vel_vel ** 2))
+    rmsd_vel_lag = np.sqrt(np.mean(residuals_vel_lag ** 2))
+    
+    # Choose the best fitted velocity based on RMSD
+    if rmsd_vel_vel < rmsd_vel_lag:
+        best_fitted_vel_t0 = fitted_vel_t0_vel
+        best_a_t0, best_b_t0, best_t0 = a_t0_vel, b_t0_vel, t0_vel
+    else:
+        best_fitted_vel_t0 = fitted_vel_t0_lag
+        best_a_t0, best_b_t0, best_t0 = a_t0, b_t0, t0
+    
+    fitted_acc_t0 = cubic_acceleration(np.array(time_data), best_a_t0, best_b_t0, best_t0)
+    residuals_t0 = lag_data - fitted_lag_t0
+    rmsd_t0 = np.sqrt(np.mean(residuals_t0 ** 2))
+
+    return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', best_fitted_vel_t0, fitted_acc_t0
 
 
 def find_noise_of_data(data, plot_case=False):
@@ -563,12 +602,13 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     erosion_sim_params.lim_mag_len_end_brightest = real_data['end_abs_mag'].iloc[0]-0.01
 
     # find the at what is the order of magnitude of the real_data['mass'][0]
-    order = int(np.floor(np.log10(mass_sim)))
-    # create a MetParam object with the mass range that is above and below the real_data['mass'][0] by 2 orders of magnitude
-    erosion_sim_params.m_init = MetParam(mass_sim-(10**order)/2, mass_sim+(10**order)/2)
+    # order = int(np.floor(np.log10(mass_sim)))
+    # # create a MetParam object with the mass range that is above and below the real_data['mass'][0] by 2 orders of magnitude
+    # erosion_sim_params.m_init = MetParam(mass_sim-(10**order)/2, mass_sim+(10**order)/2)
+    erosion_sim_params.m_init = MetParam(mass_sim/2, mass_sim*2)
 
     # Initial velocity range (m/s) 
-    erosion_sim_params.v_init = MetParam(v_init_180km-1000, v_init_180km+1000) # 60091.41691
+    erosion_sim_params.v_init = MetParam(v_init_180km-500, v_init_180km+500) # 60091.41691
 
     # Zenith angle range
     erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'].iloc[0]-0.01), np.radians(real_data['zenith_angle'].iloc[0]+0.01)) # 43.466538
@@ -732,6 +772,18 @@ def check_axis_inversion(ax):
 
 
 def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals_mag='', residuals_vel='', residual_time_pos='', residual_height_pos='', fit_funct='', mag_noise='', vel_noise='', label_fit=''):
+
+    # check if data1 is None
+    if data1 is None:
+        print("Warning: data1 is None. Skipping plot.")
+        return
+    
+    # check if it is in km/s or in m/s
+    obs1 = copy.deepcopy(data1)
+    if 'velocities' not in obs1 or 'height' not in obs1:
+        print("Warning: Required keys missing in obs1. Skipping plot.")
+        return
+
     # check if it is in km/s or in m/s
     obs1= copy.deepcopy(data1)
     if np.mean(obs1['velocities'])>1000:
@@ -2919,12 +2971,12 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
 
     # 5 sigma confidence interval
     # five_sigma=False
-    mag_noise = mag_noise_real.copy()*SIGMA_ERR
-    len_noise = len_noise_real.copy()*SIGMA_ERR
+    mag_noise = MAG_RMSD*SIGMA_ERR
+    len_noise = LEN_RMSD*SIGMA_ERR
 
-    # Standard deviation of the magnitude Gaussian noise 1 sigma
-    # SD of noise in length (m) 1 sigma in km
-    len_noise= len_noise/1000
+    # # Standard deviation of the magnitude Gaussian noise 1 sigma
+    # # SD of noise in length (m) 1 sigma in km
+    # len_noise= len_noise/1000
     # velocity noise 1 sigma km/s
     vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
 
@@ -3044,7 +3096,7 @@ RMSDmag '+str(round(rmsd_mag,2))+' RMSDlen '+str(round(rmsd_lag,2))+'\n\
 
             # split in file and directory
             _, name_file = os.path.split(curr_sel['solution_id'].iloc[ii])
-            if rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR/1000:
+            if rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR:
                 shutil.copy(curr_sel['solution_id'].iloc[ii], output_dir_OG+os.sep+SAVE_RESULTS_FOLDER+os.sep+name_file)
                 fig.suptitle(name_file+' SELECTED')
                 # delete the extension of the file
@@ -3074,85 +3126,85 @@ RMSDmag '+str(round(rmsd_mag,2))+' RMSDlen '+str(round(rmsd_lag,2))+'\n\
             if len(curr_sel) > 8:
                 try:
 
-                    def density_function(x):
-                        # Insert the logic of your objective function here
-                        # This example uses a simple sum of squares of x
-                        # Replace it with the actual function you want to minimize
-                        return np.sum(np.square(x))
+                    # def density_function(x):
+                    #     # Insert the logic of your objective function here
+                    #     # This example uses a simple sum of squares of x
+                    #     # Replace it with the actual function you want to minimize
+                    #     return np.sum(np.square(x))
                     
-                    # Objective function for maximization (negative density for minimization)
-                    def objective_function(x):
-                        return -density_function(x)
+                    # # Objective function for maximization (negative density for minimization)
+                    # def objective_function(x):
+                    #     return -density_function(x)
                     
-                    # Bounds for optimization within all the sim space
-                    bounds = [(np.min(curr_sel_data[:, i]), np.max(curr_sel_data[:, i])) for i in range(curr_sel_data.shape[1])]
-
-                    # Perform global optimization using differential evolution
-                    print('Starting global optimization using differential evolution.')
-                    result = differential_evolution(objective_function, bounds)
-
-                    if result.success:
-                        densest_point = result.x
-                        print(f"Densest point found using differential evolution:\n {densest_point}")
-                    else:
-                        print('Optimization was unsuccessful.')
-                        densest_point = ''
-
-                    # kde = gaussian_kde(dataset=curr_sel_data.T)  # Note the transpose to match the expected input shape
-
-                    # # Negative of the KDE function for optimization
-                    # def neg_density(x):
-                    #     return -kde(x)
-
                     # # Bounds for optimization within all the sim space
-                    # # data_sim = df_sim[var_kde].values
                     # bounds = [(np.min(curr_sel_data[:, i]), np.max(curr_sel_data[:, i])) for i in range(curr_sel_data.shape[1])]
 
-                    # # Initial guesses: curr_sel_data mean, curr_sel_data median, and KMeans centroids
-                    # mean_guess = np.mean(curr_sel_data, axis=0)
-                    # median_guess = np.median(curr_sel_data, axis=0)
+                    # # Perform global optimization using differential evolution
+                    # print('Starting global optimization using differential evolution.')
+                    # result = differential_evolution(objective_function, bounds)
 
-                    # # KMeans centroids as additional guesses
-                    # kmeans = KMeans(n_clusters=5, n_init='auto').fit(curr_sel_data)  # Adjust n_clusters based on your understanding of the curr_sel_data
-                    # centroids = kmeans.cluster_centers_
-
-                    # # Combine all initial guesses
-                    # initial_guesses = [mean_guess, median_guess] + centroids.tolist()
-
-                    # # Perform optimization from each initial guess
-                    # results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
-
-                    # # Filter out unsuccessful optimizations and find the best result
-                    # successful_results = [res for res in results if res.success]
-
-                    # if successful_results:
-                    #     best_result = min(successful_results, key=lambda x: x.fun)
-                    #     densest_point = best_result.x
-                    #     print("Densest point using KMeans centroid:\n", densest_point)
+                    # if result.success:
+                    #     densest_point = result.x
+                    #     print(f"Densest point found using differential evolution:\n {densest_point}")
                     # else:
-                    #     # raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
-                    #     print('Optimization was unsuccessful. Consider revising the strategy.')
-                    #     # revise the optimization strategy
-                    #     print('Primary optimization strategies were unsuccessful. Trying fallback strategy (Grid Search).')
-                    #     # Fallback strategy: Grid Search
-                    #     grid_size = 5  # Define the grid size for the search
-                    #     grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
-                    #     grid_combinations = list(itertools.product(*grid_points))
+                    #     print('Optimization was unsuccessful.')
+                    #     densest_point = ''
 
-                    #     best_grid_point = None
-                    #     best_grid_density = -np.inf
+                    kde = gaussian_kde(dataset=curr_sel_data.T)  # Note the transpose to match the expected input shape
 
-                    #     for point in grid_combinations:
-                    #         density = kde(point)
-                    #         if density > best_grid_density:
-                    #             best_grid_density = density
-                    #             best_grid_point = point
+                    # Negative of the KDE function for optimization
+                    def neg_density(x):
+                        return -kde(x)
 
-                    #     if best_grid_point is not None:
-                    #         densest_point = np.array(best_grid_point)
-                    #         print("Densest point found using Grid Search:\n", densest_point)
-                    #     else:
-                    #         print("None of the strategy worked no KDE result, change the selected simulations")
+                    # Bounds for optimization within all the sim space
+                    # data_sim = df_sim[var_kde].values
+                    bounds = [(np.min(curr_sel_data[:, i]), np.max(curr_sel_data[:, i])) for i in range(curr_sel_data.shape[1])]
+
+                    # Initial guesses: curr_sel_data mean, curr_sel_data median, and KMeans centroids
+                    mean_guess = np.mean(curr_sel_data, axis=0)
+                    median_guess = np.median(curr_sel_data, axis=0)
+
+                    # KMeans centroids as additional guesses
+                    kmeans = KMeans(n_clusters=5, n_init='auto').fit(curr_sel_data)  # Adjust n_clusters based on your understanding of the curr_sel_data
+                    centroids = kmeans.cluster_centers_
+
+                    # Combine all initial guesses
+                    initial_guesses = [mean_guess, median_guess] + centroids.tolist()
+
+                    # Perform optimization from each initial guess
+                    results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
+
+                    # Filter out unsuccessful optimizations and find the best result
+                    successful_results = [res for res in results if res.success]
+
+                    if successful_results:
+                        best_result = min(successful_results, key=lambda x: x.fun)
+                        densest_point = best_result.x
+                        print("Densest point using KMeans centroid:\n", densest_point)
+                    else:
+                        # raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
+                        print('Optimization was unsuccessful. Consider revising the strategy.')
+                        # revise the optimization strategy
+                        print('Primary optimization strategies were unsuccessful. Trying fallback strategy (Grid Search).')
+                        # Fallback strategy: Grid Search
+                        grid_size = 5  # Define the grid size for the search
+                        grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
+                        grid_combinations = list(itertools.product(*grid_points))
+
+                        best_grid_point = None
+                        best_grid_density = -np.inf
+
+                        for point in grid_combinations:
+                            density = kde(point)
+                            if density > best_grid_density:
+                                best_grid_density = density
+                                best_grid_point = point
+
+                        if best_grid_point is not None:
+                            densest_point = np.array(best_grid_point)
+                            print("Densest point found using Grid Search:\n", densest_point)
+                        else:
+                            print("None of the strategy worked no KDE result, change the selected simulations")
                 except np.linalg.LinAlgError as e:
                     print(f"LinAlgError: {str(e)}")
             else:
@@ -3285,9 +3337,9 @@ RMSDmag '+str(round(rmsd_mag,2))+' RMSDlen '+str(round(rmsd_lag,2))+'\n\
             # pd_datafram_PCA_sim['erosion_coeff']=pd_datafram_PCA_sim['erosion_coeff']/1000000
             # pd_datafram_PCA_sim['sigma']=pd_datafram_PCA_sim['sigma']/1000000
 
-            print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_noise_real*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(mag_noise_real*SIGMA_ERR*2,3),'|| MODE noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_noise_real*SIGMA_ERR/1000,3),''+str(SIGMA_ERR*2)+'sig',round(len_noise_real*SIGMA_ERR*2/1000,3),'|| MODE noise len', round(rmsd_lag,3))
+            print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(MAG_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(MAG_RMSD*SIGMA_ERR*2,3),'|| MODE noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(LEN_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(LEN_RMSD*SIGMA_ERR*2,3),'|| MODE noise len', round(rmsd_lag,3))
             select_mode_print='No'
-            if rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR/1000:
+            if rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR:
                 select_mode_print='Yes'
                 print('below 5 sigma noise, SAVED')
                 pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
@@ -3334,7 +3386,7 @@ RMSDmag '+str(round(rmsd_mag,2))+' RMSDlen '+str(round(rmsd_lag,2))+'\n\
                 # _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir_OG+os.sep+file_name_obs+'_sim_fit.json', data_file_real)
 
                 rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(gensim_data_sim, fit_funct)
-                print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_noise_real*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(mag_noise_real*SIGMA_ERR*2,3),'|| 8Dpeak noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_noise_real*SIGMA_ERR/1000,3),''+str(SIGMA_ERR*2)+'sig',round(len_noise_real*SIGMA_ERR*2/1000,3),'|| 8Dpeak noise len', round(rmsd_lag,3))
+                print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(MAG_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(MAG_RMSD*SIGMA_ERR*2,3),'|| 8Dpeak noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(LEN_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(LEN_RMSD*MAG_RMSD*2,3),'|| 8Dpeak noise len', round(rmsd_lag,3))
             
                 plot_side_by_side(gensim_data_sim, fig, ax, 'b-', '8Dpeak : RMSDmag '+str(round(rmsd_mag,2))+' RMSDlen '+str(round(rmsd_lag,2))+'\n\
         m:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim.iloc[0]['F'],2))+'\n\
@@ -3345,7 +3397,7 @@ RMSDmag '+str(round(rmsd_mag,2))+' RMSDlen '+str(round(rmsd_lag,2))+'\n\
                 # pd_datafram_PCA_sim['erosion_coeff']=pd_datafram_PCA_sim['erosion_coeff']/1000000
                 # pd_datafram_PCA_sim['sigma']=pd_datafram_PCA_sim['sigma']/1000000
                 select_kde_print='No'
-                if rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR/1000:
+                if rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR:
                     select_kde_print='Yes'
                     print('below',SIGMA_ERR,'sigma noise, SAVED')
                     pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
@@ -3563,12 +3615,12 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
     # 5 sigma confidence interval
     # five_sigma=False
-    mag_noise = mag_noise_real.copy()*SIGMA_ERR
-    len_noise = len_noise_real.copy()*SIGMA_ERR
+    mag_noise = MAG_RMSD*SIGMA_ERR
+    len_noise = LEN_RMSD*SIGMA_ERR
 
-    # Standard deviation of the magnitude Gaussian noise 1 sigma
-    # SD of noise in length (m) 1 sigma in km
-    len_noise= len_noise/1000
+    # # Standard deviation of the magnitude Gaussian noise 1 sigma
+    # # SD of noise in length (m) 1 sigma in km
+    # len_noise= len_noise/1000
     # velocity noise 1 sigma km/s
     vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
 
@@ -3645,7 +3697,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(data_file, fit_funct)
 
-        print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_noise_real*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(mag_noise_real*SIGMA_ERR*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_noise_real*SIGMA_ERR/1000,3),''+str(SIGMA_ERR*2)+'sig',round(len_noise_real*SIGMA_ERR*2/1000,3),'|| Event noise len', round(rmsd_lag,3))
+        print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(MAG_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(MAG_RMSD*SIGMA_ERR*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(LEN_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(LEN_RMSD*MAG_RMSD*2,3),'|| Event noise len', round(rmsd_lag,3))
         plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real/1000,3)), residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, fit_funct, mag_noise, vel_noise, str(round(CONFIDENCE_LEVEL,1))+'% confidence interval')
         
         color_line=next(infinite_color_cycle)
@@ -3747,12 +3799,12 @@ RMSDmag '+str(round(rmsd_mag,2))+' RMSDlen '+str(round(rmsd_lag,2))+'\n\
                     plt.close()
                     continue
 
-                elif rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR/1000:
+                elif rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR:
                     print('below',SIGMA_ERR,'sigma noise, OPTIMIZED')
 
                     update_sigma_values(output_dir+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, False, False) # More_complex_fit=False, Custom_refinement=False
 
-                elif rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR*2/1000:
+                elif rmsd_mag<MAG_RMSD*SIGMA_ERR*2 and rmsd_lag<LEN_RMSD*SIGMA_ERR*2:
                     print('between 5-10 sigma noise, try major OPTIMIZATION and SAVE')
 
                     update_sigma_values(output_dir+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, True, True) # More_complex_fit=False, Custom_refinement=False
@@ -3792,7 +3844,7 @@ RMSDmag '+str(round(rmsd_mag,2))+' RMSDlen '+str(round(rmsd_lag,2))+'\n\
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(gensim_data_optimized, fit_funct)
 
-            print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_noise_real*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(mag_noise_real*SIGMA_ERR*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_noise_real*SIGMA_ERR/1000,3),''+str(SIGMA_ERR*2)+'sig',round(len_noise_real*SIGMA_ERR*2/1000,3),'|| Event noise len', round(rmsd_lag,3))
+            print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_noise_real*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(MAG_RMSD*SIGMA_ERR*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(LEN_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(LEN_RMSD*SIGMA_ERR*2,3),'|| Event noise len', round(rmsd_lag,3))
 
             if Metsim_flag:
                 
@@ -3820,7 +3872,7 @@ RMSDmag '+str(round(rmsd_mag,2))+' RMSDlen '+str(round(rmsd_lag,2))+'\n\
             ax[5].lines[-1].set_marker("x")
 
 
-        if rmsd_mag<mag_noise_real*SIGMA_ERR and rmsd_lag<len_noise_real*SIGMA_ERR/1000:
+        if rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR/1000:
             print('below',SIGMA_ERR,'sigma noise, OPTIMIZED and SAVED')
 
             # output_folder+os.sep+SAVE_RESULTS_FOLDER
@@ -4172,12 +4224,12 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
     # 5 sigma confidence interval
     # five_sigma=False
-    mag_noise = mag_noise_real.copy()*SIGMA_ERR
-    len_noise = len_noise_real.copy()*SIGMA_ERR
+    mag_noise = MAG_RMSD*SIGMA_ERR
+    len_noise = LEN_RMSD*SIGMA_ERR
 
-    # Standard deviation of the magnitude Gaussian noise 1 sigma
-    # SD of noise in length (m) 1 sigma in km
-    len_noise= len_noise/1000
+    # # Standard deviation of the magnitude Gaussian noise 1 sigma
+    # # SD of noise in length (m) 1 sigma in km
+    # len_noise= len_noise/1000
     # velocity noise 1 sigma km/s
     vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
 
@@ -4462,7 +4514,7 @@ if __name__ == "__main__":
     #C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # 
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\RunTest_sol', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v60_light\TRUEerosion_sim_v60.05_m1.05e-04g_rho0588_z39.3_abl0.009_eh108.3_er0.763_s2.08.json', \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
@@ -4890,7 +4942,8 @@ if __name__ == "__main__":
             print()
             print('SUCCES: the physical characteristics range is in the results folder')
         else:
-            print('FAIL: Not found any result below magRMSD',rmsd_pol_mag*SIGMA_ERR,'and lenRMSD',rmsd_t0_lag*SIGMA_ERR/1000)
+            # print('FAIL: Not found any result below magRMSD',rmsd_pol_mag*SIGMA_ERR,'and lenRMSD',rmsd_t0_lag*SIGMA_ERR/1000)
+            print('FAIL: Not found any result below magRMSD',MAG_RMSD*SIGMA_ERR,'and lenRMSD',LEN_RMSD*SIGMA_ERR)
         # Timing end
         end_time = time.time()
         

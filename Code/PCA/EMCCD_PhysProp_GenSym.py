@@ -81,7 +81,7 @@ SAVE_RESULTS_FOLDER_EVENTS_PLOTS='Results'+os.sep+'events_plots'
 
 # sigma value of the RMSD that is considered to select a good fit
 SIGMA_ERR = 1 # 1.96 # 95CI
-MAG_RMSD = 0.2
+MAG_RMSD = 0.2 # for manual 0.23
 LEN_RMSD = 0.04 # 0.025
 # MAG_RMSD = 0.08
 # LEN_RMSD = 0.04 # 0.025
@@ -606,13 +606,13 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     erosion_sim_params.lim_mag_len_end_brightest = real_data['end_abs_mag'].iloc[0]-0.01
 
     # find the at what is the order of magnitude of the real_data['mass'][0]
-    # order = int(np.floor(np.log10(mass_sim)))
-    # # create a MetParam object with the mass range that is above and below the real_data['mass'][0] by 2 orders of magnitude
-    # erosion_sim_params.m_init = MetParam(mass_sim-(10**order)/2, mass_sim+(10**order)/2)
-    erosion_sim_params.m_init = MetParam(mass_sim/2, mass_sim*2)
+    order = int(np.floor(np.log10(mass_sim)))
+    # create a MetParam object with the mass range that is above and below the real_data['mass'][0] by 2 orders of magnitude
+    erosion_sim_params.m_init = MetParam(mass_sim-(10**order)/2, mass_sim+(10**order)/2)
+    # erosion_sim_params.m_init = MetParam(mass_sim/2, mass_sim*2)
 
     # Initial velocity range (m/s) 
-    erosion_sim_params.v_init = MetParam(v_init_180km-500, v_init_180km+500) # 60091.41691
+    erosion_sim_params.v_init = MetParam(v_init_180km-1000, v_init_180km+1000) # 60091.41691
 
     # Zenith angle range
     erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'].iloc[0]-0.01), np.radians(real_data['zenith_angle'].iloc[0]+0.01)) # 43.466538
@@ -620,6 +620,8 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     erosion_sim_params.erosion_height_start = MetParam(real_data['peak_mag_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2, real_data['begin_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2) # 43.466538
 
     if CI_physical_param!='':
+        erosion_sim_params.v_init = MetParam(CI_physical_param['v_init_180km'][0], CI_physical_param['v_init_180km'][1]) # 60091.41691
+        erosion_sim_params.zenith_angle = MetParam(np.radians(CI_physical_param['zenith_angle'][0]), np.radians(CI_physical_param['zenith_angle'][1])) # 43.466538
         erosion_sim_params.m_init = MetParam(CI_physical_param['mass'][0], CI_physical_param['mass'][1])
         erosion_sim_params.rho = MetParam(CI_physical_param['rho'][0], CI_physical_param['rho'][1])
         erosion_sim_params.sigma = MetParam(CI_physical_param['sigma'][0], CI_physical_param['sigma'][1])
@@ -1048,7 +1050,7 @@ def read_GenerateSimulations_output(file_path):
         try:
             # find the index of the first element of abs_mag_sim that is smaller than the first element of mag_obs
             index_abs_mag_sim_start = next(i for i, val in enumerate(abs_mag_sim) if val <= mag_obs[0])
-            index_abs_mag_sim_start = index_abs_mag_sim_start +1
+            index_abs_mag_sim_start = index_abs_mag_sim_start + np.random.randint(2)
         except StopIteration:
             print("The first observation height is not within the simulation data range.")
             return None
@@ -1194,7 +1196,7 @@ def read_with_noise_GenerateSimulations_output(file_path):
         gensim_data = {
         'name': file_path,
         'type': 'Observation_sim',
-        # 'vel_180km': data['params']['v_init']['val'], # m/s
+        'v_init_180km': data['params']['v_init']['val'], # m/s
         'v_init': data['vel_sampled'][0], # m/s
         'velocities': data['vel_sampled'], # m/s
         'height': data['ht_sampled'], # m
@@ -1259,7 +1261,7 @@ def read_RunSim_output(simulation_MetSim_object, real_event, MetSim_phys_file_pa
     try:
         # find the index of the first element of abs_mag_sim that is smaller than the first element of mag_obs
         index_abs_mag_sim_start = next(i for i, val in enumerate(abs_mag_sim) if val < mag_obs[0])
-        index_abs_mag_sim_start = index_abs_mag_sim_start +1
+        index_abs_mag_sim_start = index_abs_mag_sim_start # + np.random.randint(2)
     except StopIteration:
         print("The first observation height is not within the simulation data range.")
         return None
@@ -1425,6 +1427,7 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
     # add to combined_obs the avg velocity and the peak dynamic pressure and all the physical parameters
     combined_obs['name'] = file_path    
     combined_obs['v_init'] = combined_obs['velocities'][0]
+    combined_obs['v_init_180km'] = combined_obs['velocities'][0]+100
     combined_obs['type'] = type_sim
     combined_obs['v_avg'] = v_avg
     combined_obs['Dynamic_pressure_peak_abs_mag'] = Dynamic_pressure_peak_abs_mag
@@ -1667,6 +1670,7 @@ def array_to_pd_dataframe_PCA(data):
         'type': [data_array['type']],
         'vel_init_norot': [data_array['v_init']],
         'vel_avg_norot': [data_array['v_avg']],
+        'v_init_180km': [data_array['v_init_180km']],
         'duration': [duration],
         'peak_mag_height': [peak_mag_height],
         'begin_height': [begin_height],
@@ -2095,7 +2099,9 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
         if No_var_PCA != []:
             # remove from variable_PCA the variables in No_var_PCA
             for var in No_var_PCA:
-                variable_PCA.remove(var)
+                # check if the variable is in the variable_PCA
+                if var in variable_PCA:
+                    variable_PCA.remove(var)
 
     scaled_sim=df_sim_shower[variable_PCA].copy()
     scaled_sim=scaled_sim.drop(['type','solution_id'], axis=1)
@@ -3345,7 +3351,8 @@ RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'\n\
                     print('already optimized')
                     _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_mode.json', data_file_real)
 
-
+            if pd_datafram_PCA_sim is None:
+                return pd_datafram_PCA_selected_mode_min_KDE
             if gensim_data_sim is None:
                 return pd_datafram_PCA_selected_mode_min_KDE
 
@@ -3405,6 +3412,11 @@ RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'\n\
 
                 # save the const_nominal as a json file saveConstants(const, dir_path, file_name):
                 # saveConstants(const_nominal_allD_KDE,output_dir_OG,file_name_obs+'_sim_fit.json')
+                # check if pd_datafram_PCA_sim is empty
+                if pd_datafram_PCA_sim is None:
+                    return pd_datafram_PCA_selected_mode_min_KDE
+                if gensim_data_sim is None:
+                    return pd_datafram_PCA_selected_mode_min_KDE
 
                 # _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir_OG+os.sep+file_name_obs+'_sim_fit.json', data_file_real)
 
@@ -3513,6 +3525,18 @@ def RMSD_calc_diff_old(data_file, fit_funct):
 
 
 def RMSD_calc_diff(data_file, fit_funct):
+
+    # Check if data_file and fit_funct are not None
+    if data_file is None or fit_funct is None:
+        print('Error: data_file or fit_funct is None')
+        return 9999,9999,9999,9999,9999,9999,0, 100
+
+    # Check if required keys are present in data_file and fit_funct
+    required_keys = ['height', 'absolute_magnitudes', 'time', 'velocities', 'lag']
+    for key in required_keys:
+        if key not in data_file or key not in fit_funct:
+            print(f'Error: Missing key {key} in data_file or fit_funct')
+            return 9999,9999,9999,9999,9999,9999,0, 100
 
     # from list to array
     height_km_err = np.array(fit_funct['height']) / 1000
@@ -4587,7 +4611,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--YesPCA', metavar='YESPCA', type=str, default=[], \
         help="Use specific variable to considered in PCA.")
 
-    arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=['kurtosis','skew','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], \
+    arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=['v_init_180km','kurtosis','skew','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], \
         help="Use specific variable NOT considered in PCA.")
 
     arg_parser.add_argument('--save_test_plot', metavar='SAVE_TEST_PLOT', type=bool, default=False, \
@@ -4976,6 +5000,30 @@ if __name__ == "__main__":
         # concatenate the two dataframes
         pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_selected_lowRMSD])
 
+        print('Check the manual reduction')
+        # check also the manual reduction
+        pd_datafram_PCA_selected_optimized_Metsim = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_PCA_sim_Metsim, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, cml_args.number_optimized, cml_args.optimize) # file_name, trajectory_Metsim_file, 
+        
+        # concatenate the two dataframes
+        pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized_Metsim, pd_datafram_PCA_selected_lowRMSD])
+
+        # get all the json file in output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS
+        json_files_results = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS) if f.endswith('.json')]
+        # check if any json_files_results is in pd_datafram_PCA_selected_lowRMSD['solution_id'].values
+        for json_file in json_files_results:
+            if json_file not in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
+                # print that is found a json file that is not in the selected simulations
+                print(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
+                f = open(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file,"r")
+                data = json.loads(f.read())
+                if 'ht_sampled' in data:
+                    data_file = read_GenerateSimulations_output(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file)
+                    pd_datafram_PCA_sim_resulsts=array_to_pd_dataframe_PCA(data_file)
+                else:
+                    _, _, pd_datafram_PCA_sim_resulsts = run_simulation(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file, gensim_data_obs)
+                # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
+                pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
+                
         print()
 
         ######################## RESULTS ###############################
@@ -4983,7 +5031,8 @@ if __name__ == "__main__":
         print('--- RESULTS ---')
 
         old_results_number = 0
-        result_number=0
+        result_number = 0
+        ii_repeat = 0
         pd_results = pd.DataFrame()
         while cml_args.min_nres > result_number:
 
@@ -5023,13 +5072,56 @@ if __name__ == "__main__":
                 print('FAIL: Not found any result below magRMSD',MAG_RMSD*SIGMA_ERR,'and lenRMSD',LEN_RMSD*SIGMA_ERR)
                 break
 
-            # Calculate the quantiles
-            columns_physpar = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
-                    'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
-            quantiles = pd_results[columns_physpar].quantile([0.05, 0.95])
 
-            # Convert the quantiles to a dictionary
-            CI_physical_param = {col: quantiles[col].tolist() for col in columns_physpar}
+            # check if only 1 in len break
+            if len(pd_results) == 1:
+                print('Only one result found')
+                # create a dictionary with the physical parameters
+                CI_physical_param = {
+                    'v_init_180km': [pd_results['v_init_180km'].values[0], pd_results['v_init_180km'].values[0]],
+                    'zenith_angle': [pd_results['zenith_angle'].values[0], pd_results['zenith_angle'].values[0]],
+                    'mass': [pd_results['mass'].values[0], pd_results['mass'].values[0]],
+                    'rho': [pd_results['rho'].values[0], pd_results['rho'].values[0]],
+                    'sigma': [pd_results['sigma'].values[0], pd_results['sigma'].values[0]],
+                    'erosion_height_start': [pd_results['erosion_height_start'].values[0], pd_results['erosion_height_start'].values[0]],
+                    'erosion_coeff': [pd_results['erosion_coeff'].values[0], pd_results['erosion_coeff'].values[0]],
+                    'erosion_mass_index': [pd_results['erosion_mass_index'].values[0], pd_results['erosion_mass_index'].values[0]],
+                    'erosion_mass_min': [pd_results['erosion_mass_min'].values[0], pd_results['erosion_mass_min'].values[0]],
+                    'erosion_mass_max': [pd_results['erosion_mass_max'].values[0], pd_results['erosion_mass_max'].values[0]]
+                }
+
+            else:
+                print('Number of results found:',len(pd_results))
+                columns_physpar = ['v_init_180km','zenith_angle','mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
+                    'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
+                # Calculate the quantiles
+                quantiles = pd_results[columns_physpar].quantile([0.05, 0.95])
+
+                # Convert the quantiles to a dictionary
+                CI_physical_param = {col: quantiles[col].tolist() for col in columns_physpar}
+
+            # check if v_init_180km are the same value
+            if CI_physical_param['v_init_180km'][0] == CI_physical_param['v_init_180km'][1]:
+                CI_physical_param['v_init_180km'] = [CI_physical_param['v_init_180km'][0] - CI_physical_param['v_init_180km'][0]/100, CI_physical_param['v_init_180km'][1] + CI_physical_param['v_init_180km'][1]/100]
+            if CI_physical_param['zenith_angle'][0] == CI_physical_param['zenith_angle'][1]:
+                CI_physical_param['zenith_angle'] = [CI_physical_param['zenith_angle'][0] - CI_physical_param['zenith_angle'][0]/10000, CI_physical_param['zenith_angle'][1] + CI_physical_param['zenith_angle'][1]/10000]
+            if CI_physical_param['mass'][0] == CI_physical_param['mass'][1]:
+                CI_physical_param['mass'] = [CI_physical_param['mass'][0] - CI_physical_param['mass'][0]/10, CI_physical_param['mass'][1] + CI_physical_param['mass'][1]/10]
+            if CI_physical_param['rho'][0] == CI_physical_param['rho'][1]:
+                CI_physical_param['rho'] = [CI_physical_param['rho'][0] - CI_physical_param['rho'][0]/5, CI_physical_param['rho'][1] + CI_physical_param['rho'][1]/5]
+            if CI_physical_param['sigma'][0] == CI_physical_param['sigma'][1]:
+                CI_physical_param['sigma'] = [CI_physical_param['sigma'][0] - CI_physical_param['sigma'][0]/10, CI_physical_param['sigma'][1] + CI_physical_param['sigma'][1]/10]
+            if CI_physical_param['erosion_height_start'][0] == CI_physical_param['erosion_height_start'][1]:
+                CI_physical_param['erosion_height_start'] = [CI_physical_param['erosion_height_start'][0] - CI_physical_param['erosion_height_start'][0]/10, CI_physical_param['erosion_height_start'][1] + CI_physical_param['erosion_height_start'][1]/10]
+            if CI_physical_param['erosion_coeff'][0] == CI_physical_param['erosion_coeff'][1]:
+                CI_physical_param['erosion_coeff'] = [CI_physical_param['erosion_coeff'][0] - CI_physical_param['erosion_coeff'][0]/10, CI_physical_param['erosion_coeff'][1] + CI_physical_param['erosion_coeff'][1]/10]
+            if CI_physical_param['erosion_mass_index'][0] == CI_physical_param['erosion_mass_index'][1]:
+                CI_physical_param['erosion_mass_index'] = [CI_physical_param['erosion_mass_index'][0] - CI_physical_param['erosion_mass_index'][0]/10, CI_physical_param['erosion_mass_index'][1] + CI_physical_param['erosion_mass_index'][1]/10]
+            if CI_physical_param['erosion_mass_min'][0] == CI_physical_param['erosion_mass_min'][1]:
+                CI_physical_param['erosion_mass_min'] = [CI_physical_param['erosion_mass_min'][0] - CI_physical_param['erosion_mass_min'][0]/10, CI_physical_param['erosion_mass_min'][1] + CI_physical_param['erosion_mass_min'][1]/10]
+            if CI_physical_param['erosion_mass_max'][0] == CI_physical_param['erosion_mass_max'][1]:
+                CI_physical_param['erosion_mass_max'] = [CI_physical_param['erosion_mass_max'][0] - CI_physical_param['erosion_mass_max'][0]/10, CI_physical_param['erosion_mass_max'][1] + CI_physical_param['erosion_mass_max'][1]/10]
+                
 
             # Multiply the 'erosion_height_start' values by 1000
             CI_physical_param['erosion_height_start'] = [x * 1000 for x in CI_physical_param['erosion_height_start']]
@@ -5044,6 +5136,10 @@ if __name__ == "__main__":
                 break
             else:
                 if old_results_number == result_number:
+                    print('Same number of results found:',result_number)
+                    ii_repeat+=1
+                if ii_repeat==3:
+                    print('STOP: After 3 times the same number of results found')
                     print('STOP: After new simulation within 95%CI no new simulation below magRMSD',MAG_RMSD*SIGMA_ERR,'and lenRMSD',LEN_RMSD*SIGMA_ERR)
                     print('STOP: Number of results found:',result_number)
                     break

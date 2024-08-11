@@ -235,7 +235,7 @@ def fit_mag_polin2_RMSD(data_mag, time_data):
     return fit1, residuals_pol, rmsd_pol,'Polinomial Fit'
 
 
-def fit_lag_t0_RMSD(lag_data,time_data,velocity_data):
+def fit_lag_t0_RMSD_old(lag_data,time_data,velocity_data):
     v_init=velocity_data[0]
     # initial guess of deceleration decel equal to linear fit of velocity
     p0 = [np.mean(lag_data), 0, 0, np.mean(time_data)]
@@ -253,7 +253,7 @@ def fit_lag_t0_RMSD(lag_data,time_data,velocity_data):
 
     return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', fitted_vel_t0, fitted_acc_t0
 
-def fit_lag_t0_RMSD_NEW(lag_data, time_data, velocity_data):
+def fit_lag_t0_RMSD(lag_data, time_data, velocity_data):
     v_init = velocity_data[0]
     # initial guess of deceleration decel equal to linear fit of velocity
     p0 = [np.mean(lag_data), 0, 0, np.mean(time_data)]
@@ -264,7 +264,7 @@ def fit_lag_t0_RMSD_NEW(lag_data, time_data, velocity_data):
     # Optimize velocity residual based on initial guess from lag residual
     opt_res_vel = opt.minimize(vel_residual, [a_t0, b_t0, v_init, t0], args=(np.array(time_data), np.array(velocity_data)), method='Nelder-Mead')
     a_t0_vel, b_t0_vel, v_init_vel, t0_vel = opt_res_vel.x
-    fitted_vel_t0_vel = cubic_velocity(np.array(time_data), a_t0_vel, b_t0_vel, v_init, t0_vel)
+    fitted_vel_t0_vel = cubic_velocity(np.array(time_data), a_t0_vel, b_t0_vel, v_init_vel, t0_vel)
     
     # Compute fitted velocity from original lag optimization
     fitted_vel_t0_lag = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init, t0)
@@ -1267,7 +1267,7 @@ def read_RunSim_output(simulation_MetSim_object, real_event, MetSim_phys_file_pa
         return None
     try:   
         index_abs_mag_sim_end = next(i for i, val in enumerate(abs_mag_sim[::-1]) if val < mag_obs[-1])
-        index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end - 1           
+        index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end # - 1           
     except StopIteration:
         print("The first observation height is not within the simulation data range.")
         return None

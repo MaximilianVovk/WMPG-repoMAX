@@ -67,7 +67,7 @@ def save_as_json(output_dir,pickle_file):
 
 # Main script execution
 if __name__ == "__main__":
-    curr_dir = 'C:\\Users\\maxiv\\Desktop\\test_pickl'
+    curr_dir = r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reductions\CAMO\20230811_082649\20230811_082649_mir'
 
     # Find all the pickle files in the current directory
     pickle_files = find_all_pickle_files(curr_dir)

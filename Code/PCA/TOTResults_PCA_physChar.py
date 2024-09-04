@@ -4,9 +4,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
+import matplotlib.artist as Artist
 
 # Usage
-directory = r'C:\Users\maxiv\Desktop\RunTest_sol'  # Change this to the directory you want to process
+directory = r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Real_event_results\1good'  # Change this to the directory you want to process
 shower = 'PER'
 
 # create a txt file where you save averithing that has been printed
@@ -105,32 +106,33 @@ group_mapping = {'Simulation_sel': 'selected', 'MetSim': 'simulated', 'Simulatio
 curr_df_sim_sel['group'] = curr_df_sim_sel['type'].map(group_mapping)
 
 curr_df_sim_sel['num_group'] = curr_df_sim_sel.groupby('meteor')['meteor'].transform('size')
-curr_df_sim_sel['weight'] = 1 / curr_df_sim_sel['num_group']
+curr_df_sim_sel['weight_type'] = 1 / curr_df_sim_sel['num_group']
 
 curr_df_sim_sel['num_type'] = curr_df_sim_sel.groupby('type')['type'].transform('size')
-curr_df_sim_sel['weight_type'] = 1 / curr_df_sim_sel['num_type']
+curr_df_sim_sel['weight'] = 1 / curr_df_sim_sel['num_type']
 
 curr_sel = curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'].copy()
 
-to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_mass', 'erosion_energy_per_unit_cross_section']
-to_plot_unit = ['mass [kg]', 'rho [kg/m^3]', 'sigma [s^2/km^2]', 'erosion height start [km]', 'erosion coeff [s^2/km^2]', 'erosion mass index [-]', 'log eros. mass min [kg]', 'log eros. mass max [kg]', 'log eros. mass range [-]', 'erosion energy per unit mass [MJ/kg]', 'erosion energy per unit cross section [MJ/m^2]', 'erosion energy per unit cross section [MJ/m^2]']
+to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_mass', 'erosion_energy_per_unit_cross_section','vel_init_norot']
+# to_plot_unit = ['mass [kg]', 'rho [kg/m^3]', 'sigma [s^2/km^2]', 'erosion height start [km]', 'erosion coeff [s^2/km^2]', 'erosion mass index [-]', 'log eros. mass min [kg]', 'log eros. mass max [kg]', 'log eros. mass range [-]', 'erosion energy per unit mass [MJ/kg]', 'erosion energy per unit cross section [MJ/m^2]', 'erosion energy per unit cross section [MJ/m^2]']
+to_plot_unit = [r'log($m_0$) [-]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]',r'log($m_{u}$)-log($m_{l}$) [-]', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]','']
 
 
 print(shower,'distribution of',len(df_sel_shower['meteor'].unique()),'mteors\n')
 
 print('\\hline')
-print('Variables & Mode & 95\\%CIlow & 95\\%CIup \\\\')
+print('Variables & 95\\%CIlow & Mode & 95\\%CIup \\\\')
 
-fig, axs = plt.subplots(3, 3, figsize=(15, 15)) 
+fig, axs = plt.subplots(4, 3, figsize=(15, 15)) 
 # from 2 numbers to one numbr for the subplot axs
 axs = axs.flatten()
 
 # ii_densest=0        
-for i in range(9):
+for i in range(12):
     # put legendoutside north
     plotvar=to_plot[i]
 
-    if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+    if plotvar == 'mass' or plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
 
         # sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
         # # add the kde to the plot as a probability density function
@@ -140,7 +142,17 @@ for i in range(9):
         sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'],hue='meteor', ax=axs[i], multiple="stack", bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
 
         kde_line = axs[i].lines[-1]
-    
+        # activate the grid
+        axs[i].grid(True)
+
+    elif plotvar == 'vel_init_norot':
+
+        # axs[i].get_legend().remove()
+        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='group', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
+        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar]*0, weights=curr_df_sim_sel['weight'], hue='meteor', ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
+        # delete the axis
+        axs[i].set_axis_off()        
+        
     else:
 
         # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
@@ -151,6 +163,11 @@ for i in range(9):
         sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='meteor', ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
         
         kde_line = axs[i].lines[-1]
+        # activate the grid
+        axs[i].grid(True)
+
+    # # delete from the plot the axs[i].lines[-1]
+    # axs[i].lines[-1].remove()
 
     axs[i].set_ylabel('probability')
     axs[i].set_xlabel(to_plot_unit[i])
@@ -167,24 +184,38 @@ for i in range(9):
     kde_line_Xval = kde_line.get_xdata()
     kde_line_Yval = kde_line.get_ydata()
 
-    # activate the grid
-    axs[i].grid(True)
-
     max_index = np.argmax(kde_line_Yval)
 
-    if i != 0:
-        axs[i].get_legend().remove()
+    # if i != 8:
+    #     # axs[i].plot(kde_line_Xval[max_index], kde_line_Yval[max_index], 'ro')
+    #     # put a vertical line at the kde_line_Xval[max_index]
+    #     axs[i].axvline(x=kde_line_Xval[max_index], color='red', linestyle='-.')
+    # size of the line 2
+    # axs[i].axvline(x=kde_line_Xval[max_index], color='g', linestyle='--', linewidth=2, label='Real')
+    axs[i].axvline(x=kde_line_Xval[max_index], color='red', linestyle='-.', linewidth=2, label='Mode')
 
-    if i != 8:
-        axs[i].plot(kde_line_Xval[max_index], kde_line_Yval[max_index], 'ro')
 
     x_10mode = kde_line_Xval[max_index]
-    if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+    if plotvar == 'mass' or plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
         x_10mode = 10**kde_line_Xval[max_index]
+    if plotvar == 'mass':
+        to_plot_unit[i] = r'$m_0$ [kg]'
+    if plotvar == 'erosion_mass_min':
+        to_plot_unit[i] = r'$m_{l}$ [kg]'
+    if plotvar == 'erosion_mass_max':
+        to_plot_unit[i] = r'$m_{u}$ [kg]'
+    
 
-    if i < 9:
+    if i != 11:
+        axs[i].get_legend().remove()
+    else:
+        # add to the legend the -. line as mode
+        # axs[i].legend(['Real','Mode'], loc='upper right')
+        axs[i].lines[-1].remove()
+
+    if i < 11:
         print('\\hline')
-        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(sigma_95)} \\\\")
+        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
 
 print('\\hline')
 
@@ -193,6 +224,9 @@ sys.stdout.close()
 
 # Reset sys.stdout to its original value if needed
 sys.stdout = sys.__stdout__
+
+# # make backgound of the legend is white
+# axs[i].legend().get_frame().set_facecolor('white')
 
 fig.tight_layout()
 plt.savefig(os.path.join(output_dir, f"{shower}_CI_PCA.png"), dpi=300)

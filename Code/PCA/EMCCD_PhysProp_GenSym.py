@@ -80,16 +80,18 @@ SAVE_RESULTS_FOLDER_EVENTS_PLOTS='Results'+os.sep+'events_plots'
 
 # sigma value of the RMSD that is considered to select a good fit
 SIGMA_ERR = 1 # 1.96 # 95CI
-MAG_RMSD = 0.15
+MAG_RMSD = 0.25
 # MAG_RMSD = 0.25 # for heavy
 # MAG_RMSD = 0.20 # for steep fast
 # MAG_RMSD = 0.15 # for shallow slow 
 # MAG_RMSD = 0.05 # for small
 
-LEN_RMSD = 0.02 # 0.02
+LEN_RMSD = 0.04 # 0.02
 # LEN_RMSD = 0.04
 # MAG_RMSD = 0.08
 # LEN_RMSD = 0.04 # 0.025
+
+# Use the IF function, one of the logical functions, to return one value if a condition is true and another value if it's false. For example: =IF(A2>B2,"Over Budget","OK") =IF(A2=B2,B4-A4,"")
 
 # # Calculate the cumulative probability for the z-value, the confidence level is the percentage of the area within ±z_value
 # CONFIDENCE_LEVEL = (2 * stats.norm.cdf(SIGMA_ERR) - 1)*100
@@ -450,7 +452,7 @@ class ErosionSimParametersEMCCD_Comet(object):
         self.param_list.append("zenith_angle") # change
 
         # Density range (kg/m^3)
-        self.rho = MetParam(100, 1000)
+        self.rho = MetParam(100, 2000)
         self.param_list.append("rho")
 
         # Intrinsic ablation coeff range (s^2/m^2)
@@ -630,8 +632,8 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     # Zenith angle range
     erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'].iloc[0]-0.01), np.radians(real_data['zenith_angle'].iloc[0]+0.01)) # 43.466538
 
-    erosion_sim_params.erosion_height_start = MetParam(real_data['peak_mag_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2, real_data['begin_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2) # 43.466538
-    # erosion_sim_params.erosion_height_start = MetParam(real_data['begin_height'].iloc[0]*1000-1000, real_data['begin_height'].iloc[0]*1000+4000) # 43.466538
+    # erosion_sim_params.erosion_height_start = MetParam(real_data['peak_mag_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2, real_data['begin_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2) # 43.466538
+    erosion_sim_params.erosion_height_start = MetParam(real_data['begin_height'].iloc[0]*1000-1000, real_data['begin_height'].iloc[0]*1000+4000) # 43.466538
 
     if CI_physical_param!='':
         erosion_sim_params.v_init = MetParam(CI_physical_param['v_init_180km'][0], CI_physical_param['v_init_180km'][1]) # 60091.41691
@@ -1413,6 +1415,13 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
     sorted_indices = np.argsort(combined_obs['time'])
     for key in ['time', 'velocities', 'height', 'absolute_magnitudes', 'lag', 'length', 'elev_data']:
         combined_obs[key] = combined_obs[key][sorted_indices]
+
+    # check if any value is below 10 absolute_magnitudes and print find values below 10 absolute_magnitudes
+    if np.any(combined_obs['absolute_magnitudes'] > 14):
+        print('Found values below 14 absolute magnitudes:', combined_obs['absolute_magnitudes'][combined_obs['absolute_magnitudes'] > 14])
+    
+    # delete any values above 10 absolute_magnitudes and delete the corresponding values in the other arrays
+    combined_obs = {key: combined_obs[key][combined_obs['absolute_magnitudes'] < 14] for key in combined_obs.keys()}
 
     Dynamic_pressure_peak_abs_mag=(wmpl.Utils.Physics.dynamicPressure(lat_dat, lon_dat, combined_obs['height'][np.argmin(combined_obs['absolute_magnitudes'])], jd_dat, combined_obs['velocities'][np.argmin(combined_obs['absolute_magnitudes'])]))
     const=Constants()
@@ -4672,7 +4681,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\RunSim\json\TRUEerosion_sim_v60.05_m1.05e-04g_rho0588_z39.3_abl0.009_eh108.3_er0.763_s2.08.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\New', \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
@@ -4699,7 +4708,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=['v_init_180km','kurtosis','skew','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], \
         help="Use specific variable NOT considered in PCA.")
 
-    arg_parser.add_argument('--save_test_plot', metavar='SAVE_TEST_PLOT', type=bool, default=False, \
+    arg_parser.add_argument('--save_test_plot', metavar='SAVE_TEST_PLOT', type=bool, default=True, \
         help="save test plots of the realization and the simulations and more plots in PCA control plots.")
     
     arg_parser.add_argument('--optimize', metavar='OPTIMIZE', type=bool, default=False, \
@@ -5128,6 +5137,8 @@ if __name__ == "__main__":
         result_number = 0
         ii_repeat = 0
         pd_results = pd.DataFrame()
+        # while cml_args.min_nres > result_number:
+        print(cml_args.min_nres,'simulatd to found')
         while cml_args.min_nres > result_number:
 
             # reset index
@@ -5227,7 +5238,7 @@ if __name__ == "__main__":
                 CI_physical_param['zenith_angle'] = [CI_physical_param['zenith_angle'][0] - CI_physical_param['zenith_angle'][0]/10000, CI_physical_param['zenith_angle'][1] + CI_physical_param['zenith_angle'][1]/10000]
             if CI_physical_param['mass'][0] == CI_physical_param['mass'][1]:
                 CI_physical_param['mass'] = [CI_physical_param['mass'][0] - CI_physical_param['mass'][0]/10, CI_physical_param['mass'][1] + CI_physical_param['mass'][1]/10]
-            if CI_physical_param['rho'][0] == CI_physical_param['rho'][1]:
+            if np.round(CI_physical_param['rho'][0]/100) == np.round(CI_physical_param['rho'][1]/100):
                 CI_physical_param['rho'] = [CI_physical_param['rho'][0] - CI_physical_param['rho'][0]/5, CI_physical_param['rho'][1] + CI_physical_param['rho'][1]/5]
             if CI_physical_param['sigma'][0] == CI_physical_param['sigma'][1]:
                 CI_physical_param['sigma'] = [CI_physical_param['sigma'][0] - CI_physical_param['sigma'][0]/10, CI_physical_param['sigma'][1] + CI_physical_param['sigma'][1]/10]

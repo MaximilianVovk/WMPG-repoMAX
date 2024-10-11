@@ -48,6 +48,6 @@ def copy_folders_with_numbered_subfolders(source_folder, target_folder):
                 print(f"Subfolder '{subfolder}' already exists in '{target_folder}'")
 
 # Usage example
-source_folder = r'N:\eharmos\reduction\Skyfit2\ORI'  # Replace with your source directory path
-target_folder = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER\Reductions\ORI'  # Replace with your target directory path
+source_folder = r'N:\eharmos\reduction\Skyfit2\Sporadics'  # Replace with your source directory path
+target_folder = r'C:\Users\maxiv\Documents\UWO\Papers\3)Montecarlo\Slow_sporadics\EMCCD'  # Replace with your target directory path
 copy_folders_with_numbered_subfolders(source_folder, target_folder)

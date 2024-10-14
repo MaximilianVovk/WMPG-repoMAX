@@ -336,14 +336,15 @@ def find_noise_of_data(data, plot_case=False):
 
 #### Generate Observation #########################################################################
 
-def generate_observation_realization(data, rmsd_lag, rmsd_mag, fit_pol_mag_real, fitted_lag_t0_lag_real,name='', fig='', ax='', plot_case=False):
+def generate_observation_realization(data, rmsd_lag, rmsd_mag, fit_funct, name='', fig='', ax='', plot_case=False):
 
     # print a . so that the next will be on the same line
     print('.', end='')
     # make a copy of data_obs
     data_obs = copy.deepcopy(data)
-    fit_pol_mag = copy.deepcopy(fit_pol_mag_real)
-    fitted_lag_t0_lag = copy.deepcopy(fitted_lag_t0_lag_real)
+    fit_pol_mag = copy.deepcopy(fit_funct['absolute_magnitudes'])
+    fitted_lag_t0_lag = copy.deepcopy(fit_funct['lag'])
+    fitted_lag_t0_vel = copy.deepcopy(fit_funct['velocities'])
 
     if name!='':
         # print(name)
@@ -359,25 +360,31 @@ def generate_observation_realization(data, rmsd_lag, rmsd_mag, fit_pol_mag_real,
     # Add noise to length data (Gaussian noise) for each realization
     fitted_lag_t0_lag += np.random.normal(loc=0.0, scale=rmsd_lag, size=len(data_obs['length']))
     data_obs['lag']=fitted_lag_t0_lag
+    # add noise to velocity data considering the noise as rmsd_lag/(1.0/FPS)
+    fitted_lag_t0_vel += np.random.normal(loc=0.0, scale=rmsd_lag/(1.0/FPS), size=len(data_obs['velocities']))
+    # fitted_lag_t0_vel += np.random.normal(loc=0.0, scale=rmsd_lag*np.sqrt(2)/(1.0/FPS), size=len(data_obs['velocities']))
+    data_obs['velocities']=fitted_lag_t0_vel
 
     ### ###
 
     # data_obs['lag']=np.array(data_obs['length'])-(data_obs['v_init']*np.array(data_obs['time'])+data_obs['length'][0])
     data_obs['length']= np.array(data_obs['lag'])+(data_obs['v_init']*np.array(data_obs['time'])+data_obs['length'][0])
 
-    # get the new velocity with noise
-    for vel_ii in range(1,len(data_obs['time'])-1):
-        diff_1=abs((data_obs['time'][vel_ii]-data_obs['time'][vel_ii-1])-1.0/FPS)
-        diff_2=abs((data_obs['time'][vel_ii+1]-data_obs['time'][vel_ii-1])-1.0/FPS)
+    # # get the new velocity with noise
+    # for vel_ii in range(1,len(data_obs['time'])-1):
+    #     diff_1=abs((data_obs['time'][vel_ii]-data_obs['time'][vel_ii-1])-1.0/FPS)
+    #     diff_2=abs((data_obs['time'][vel_ii+1]-data_obs['time'][vel_ii-1])-1.0/FPS)
 
-        if diff_1<diff_2:
-            data_obs['velocities'][vel_ii]=(data_obs['length'][vel_ii]-data_obs['length'][vel_ii-1])/(data_obs['time'][vel_ii]-data_obs['time'][vel_ii-1])
-        else:
-            data_obs['velocities'][vel_ii+1]=(data_obs['length'][vel_ii+1]-data_obs['length'][vel_ii-1])/(data_obs['time'][vel_ii+1]-data_obs['time'][vel_ii-1])
-    
+    #     if diff_1<diff_2:
+    #         data_obs['velocities'][vel_ii]=(data_obs['length'][vel_ii]-data_obs['length'][vel_ii-1])/(data_obs['time'][vel_ii]-data_obs['time'][vel_ii-1])
+    #     else:
+    #         data_obs['velocities'][vel_ii+1]=(data_obs['length'][vel_ii+1]-data_obs['length'][vel_ii-1])/(data_obs['time'][vel_ii+1]-data_obs['time'][vel_ii-1])
+
     if plot_case:
         plot_side_by_side(data_obs,fig, ax)
 
+    # compute the initial velocity
+    data_obs['v_init']=data_obs['velocities'][0] # m/s
     # compute the average velocity
     data_obs['v_avg']=np.mean(data_obs['velocities']) # m/s
 
@@ -3073,7 +3080,8 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
     # # SD of noise in length (m) 1 sigma in km
     len_noise= len_noise/1000
     # velocity noise 1 sigma km/s
-    vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
+    # vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
+    vel_noise = (len_noise/(1/FPS))
 
     # check if end with pickle
     if folder_file_name_real.endswith('.pickle'):
@@ -3744,7 +3752,8 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
     # # SD of noise in length (m) 1 sigma in km
     len_noise= len_noise/1000
     # velocity noise 1 sigma km/s
-    vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
+    # vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
+    vel_noise = (len_noise/(1/FPS))
 
     # # put the first plot in 2 sublots
     # fig, ax = plt.subplots(1, 2, figsize=(17, 5))
@@ -4396,7 +4405,8 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     # # SD of noise in length (m) 1 sigma in km
     len_noise= len_noise/1000
     # velocity noise 1 sigma km/s
-    vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
+    # vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
+    vel_noise = (len_noise/(1/FPS))
 
     # put the first plot in 2 sublots
     fig, ax = plt.subplots(1, 2, figsize=(17, 5))
@@ -4681,7 +4691,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\New', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\RunSim', \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
@@ -4850,20 +4860,20 @@ if __name__ == "__main__":
             pd_dataframe_PCA_obs_real['type'] = 'Observation'
 
             if cml_args.save_test_plot:
-                # run generate_observation_realization with the gensim_data_obs
+                # run generate observation realization with the gensim_data_obs
                 rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs,cml_args.save_test_plot)
                 # make the results_list to incorporate all rows of pd_dataframe_PCA_obs_real
                 results_list = []
                 for ii in range(cml_args.nobs):
-                    results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag,'realization_'+str(ii+1), fig, ax, cml_args.save_test_plot) 
+                    results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fig, ax, cml_args.save_test_plot) 
                     results_list.append(results_pd)
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
                 ax[0].fill_betweenx(np.array(fit_funct['height'])/1000, np.array(fit_funct['absolute_magnitudes'])-rmsd_pol_mag, np.array(fit_funct['absolute_magnitudes'])+rmsd_pol_mag, color='lightgray', alpha=0.5)
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
-
+                ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
+                # ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
                 # Save the figure as file with instead of _trajectory.pickle it has file+std_dev.png on the desktop
                 plt.savefig(output_folder+os.sep+file_name+'obs_realizations.png', dpi=300)
 
@@ -4871,7 +4881,7 @@ if __name__ == "__main__":
 
             else:      
                 rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs)       
-                input_list_obs = [[gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag,'realization_'+str(ii+1)] for ii in range(cml_args.nobs)]
+                input_list_obs = [[gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1)] for ii in range(cml_args.nobs)]
                 results_list = domainParallelizer(input_list_obs, generate_observation_realization, cores=cml_args.cores)
             
             df_obs_realiz = pd.concat(results_list)
@@ -4936,7 +4946,8 @@ if __name__ == "__main__":
                     ax[0].fill_betweenx(np.array(fit_funct['height'])/1000, np.array(fit_funct['absolute_magnitudes'])-rmsd_pol_mag, np.array(fit_funct['absolute_magnitudes'])+rmsd_pol_mag, color='lightgray', alpha=0.5)
 
                     # plot noisy area around vel_kms for vel_noise for the fix height_km
-                    ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
+                    ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
+                    # ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
 
                     # save the plot
                     plt.savefig(output_folder+os.sep+file_name+'_obs_sim.png', dpi=300)

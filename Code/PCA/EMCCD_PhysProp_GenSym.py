@@ -22,37 +22,29 @@ import scipy.spatial.distance
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import wmpl
-from scipy.optimize import differential_evolution
 import shutil
 from scipy.stats import kurtosis, skew
 from wmpl.Utils.OSTools import mkdirP
-from matplotlib.ticker import ScalarFormatter,MaxNLocator
+from matplotlib.ticker import ScalarFormatter
 import math
 from scipy.stats import gaussian_kde
 from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 from scipy.linalg import svd
 from wmpl.MetSim.GUI import loadConstants, saveConstants,SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
-# from scipy.optimize import curve_fit # faster 
-# from scipy.optimize import basinhopping # slower but more accurate
 from scipy.interpolate import interp1d
 from matplotlib.colors import Normalize
 from scipy.optimize import minimize
 import scipy.optimize as opt
 import sys
-from scipy.interpolate import UnivariateSpline
 from scipy.stats import zscore
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import mean_squared_error
 import scipy.spatial
-from sklearn.cross_decomposition import PLSRegression
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from wmpl.Utils.AtmosphereDensity import fitAtmPoly
 from sklearn.cluster import KMeans
 import scipy.stats as stats
-import statsmodels.api as sm
 from sklearn.preprocessing import PowerTransformer
 from wmpl.MetSim.ML.GenerateSimulations import generateErosionSim,saveProcessedList,MetParam
 from wmpl.Utils.TrajConversions import J2000_JD, date2JD
@@ -4691,19 +4683,19 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\RunSim', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/20210813_061453_emccd_skyfit2_CAMO_TEST', \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   
 
-    arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
+    arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=5, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=100, \
         help="Number of simulations to generate.")
     
-    arg_parser.add_argument('--min_nres', metavar='SIM_RES', type=int, default=30, \
+    arg_parser.add_argument('--min_nres', metavar='SIM_RES', type=int, default=2, \
         help="Minimum number of results that are in the CI that have to be found.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \

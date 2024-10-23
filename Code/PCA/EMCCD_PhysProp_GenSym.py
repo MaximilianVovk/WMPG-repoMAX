@@ -3973,8 +3973,8 @@ RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'\n\
                 print('runing the optimization...')
                 # this creates a ew file called output_dir+os.sep+file_name_obs+'_sim_fit_fitted.json'
                 subprocess.run(
-                    ['python', r'C:\Users\maxiv\WesternMeteorPyLib\wmpl\MetSim\AutoRefineFit.py', 
-                    output_dir, 'AutoRefineFit_options.txt'], 
+                    ['python', '-m', 'wmpl.MetSim.AutoRefineFit', 
+                    output_dir, 'AutoRefineFit_options.txt', '-x'], 
                     # stdout=subprocess.PIPE, 
                     # stderr=subprocess.PIPE, 
                     text=True
@@ -4683,19 +4683,19 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/20210813_061453_emccd_skyfit2_CAMO_TEST', \
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   
 
-    arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=5, \
+    arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=100, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
         help="Number of simulations to generate.")
     
-    arg_parser.add_argument('--min_nres', metavar='SIM_RES', type=int, default=2, \
+    arg_parser.add_argument('--min_nres', metavar='SIM_RES', type=int, default=30, \
         help="Minimum number of results that are in the CI that have to be found.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \
@@ -4710,7 +4710,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=['v_init_180km','kurtosis','skew','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], \
         help="Use specific variable NOT considered in PCA.")
 
-    arg_parser.add_argument('--save_test_plot', metavar='SAVE_TEST_PLOT', type=bool, default=True, \
+    arg_parser.add_argument('--save_test_plot', metavar='SAVE_TEST_PLOT', type=bool, default=False, \
         help="save test plots of the realization and the simulations and more plots in PCA control plots.")
     
     arg_parser.add_argument('--optimize', metavar='OPTIMIZE', type=bool, default=False, \
@@ -4722,7 +4722,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--number_optimized', metavar='NUMBER_OPTIMZED', type=int, default=0, \
         help="Number of optimized simulations that have to be optimized starting from the best, 0 means all.")
     
-    arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'C:\Users\maxiv\WesternMeteorPyLib\wmpl\MetSim\AutoRefineFit_options.txt', \
+    arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'/home/mvovk/WesternMeteorPyLib/wmpl/MetSim/AutoRefineFit_options.txt', \
         help="path and name of like C: path + AutoRefineFit_options.txt")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None, \
@@ -4733,6 +4733,17 @@ if __name__ == "__main__":
 
     #########################
     warnings.filterwarnings('ignore')
+
+    if cml_args.optimize:
+        # check if the file exist
+        if not os.path.isfile(cml_args.ref_opt_path):
+            # If the file is not found, check in the parent directory
+            parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            cml_args.ref_opt_path = os.path.join(parent_directory, 'AutoRefineFit_options.txt')
+            if not os.path.isfile(cml_args.ref_opt_path):
+                print('file '+cml_args.ref_opt_path+' not found')
+                print("You need to specify the correct path and name of the AutoRefineFit_options.txt file in --ref_opt_path, like: C:\\path\\AutoRefineFit_options.txt")
+                sys.exit()
 
     # check if is a file or a directory
     if os.path.isdir(cml_args.input_dir):

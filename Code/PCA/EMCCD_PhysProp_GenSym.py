@@ -393,6 +393,7 @@ class ErosionSimParametersEMCCD_Comet(object):
     def __init__(self):
         """ Range of physical parameters for the erosion model, EMCCD system for Perseids. """
 
+        self.dt = 0.01
 
         # Define the reference time for the atmosphere density model as J2000
         self.jdt_ref = date2JD(2020, 8, 10, 10, 0, 0)
@@ -1759,6 +1760,35 @@ def array_to_pd_dataframe_PCA(data):
 
 
 ########## Utils ##########################
+
+# update solution_id directory saved in CSV files
+def update_solution_ids(base_dir, new_base_dir):
+    # Iterate through all subdirectories
+    for root, dirs, files in os.walk(new_base_dir):
+        for file in files:
+            # Only process CSV files
+            if file.endswith('.csv'):
+                file_path = os.path.join(root, file)
+                print(f"Processing file: {file_path}")
+                
+                try:
+                    # Load the CSV file as DataFrame
+                    df = pd.read_csv(file_path)
+
+                    # Check if 'solution_id' column exists
+                    if 'solution_id' in df.columns:
+                        # Update each value in 'solution_id'
+                        df['solution_id'] = df['solution_id'].apply(
+                            lambda x: x.replace(base_dir, new_base_dir) if isinstance(x, str) else x
+                        )
+                        
+                        # Write updated DataFrame back to CSV
+                        df.to_csv(file_path, index=False)
+                        print(f"Updated solution_id in: {file_path}")
+
+                except Exception as e:
+                    print(f"Failed to process file {file_path} due to: {e}")
+
 
 # Function to get trajectory data folder
 def find_and_extract_trajectory_files(directory, MetSim_extention):
@@ -4670,8 +4700,6 @@ RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'\n\
 
 
 
-
-
 if __name__ == "__main__":
 
     import argparse
@@ -4683,7 +4711,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\20190726-024149.928584', \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
@@ -4722,7 +4750,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--number_optimized', metavar='NUMBER_OPTIMZED', type=int, default=0, \
         help="Number of optimized simulations that have to be optimized starting from the best, 0 means all.")
     
-    arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'/home/mvovk/WesternMeteorPyLib/wmpl/MetSim/AutoRefineFit_options.txt', \
+    arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'C:\Users\maxiv\WesternMeteorPyLib\wmpl\MetSim\AutoRefineFit_options.txt', \
         help="path and name of like C: path + AutoRefineFit_options.txt")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None, \
@@ -4793,10 +4821,10 @@ if __name__ == "__main__":
     print('Number of trajectory.pickle files find',len(input_folder_file))
     for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file:
         print('processing file:',file_name)
-        # print(trajectory_file)
-        # print(input_folder)
-        # print(output_folder)
-        # print(trajectory_Metsim_file)
+        print(trajectory_file)
+        print(input_folder)
+        print(output_folder)
+        print(trajectory_Metsim_file)
 
         start_time = time.time()
 
@@ -4809,6 +4837,24 @@ if __name__ == "__main__":
         if not os.path.isdir(output_folder):
             mkdirP(output_folder)
 
+
+        if trajectory_file.endswith('.csv'):
+            # read the csv file
+            pd_dataframe_PCA_obs_real = pd.read_csv(trajectory_file)
+            # check the column name solution_id	and see if it matches a file i the folder
+            if not input_folder in pd_dataframe_PCA_obs_real['solution_id'][0]:
+                # if the solution_id is in the name of the file then the file is the real data
+                print('The folder of the csv file is different')
+                # check if the file is present in the folder
+                if not os.path.isfile(pd_dataframe_PCA_obs_real['solution_id'][0]):
+                    print()
+                    print('--- MODIFY OLD CSV FILE PATH ---')
+                    # take the first element pd_dataframe_PCA_obs_real['solution_id'][0] and take only the path
+                    old_input_folder = os.path.split(pd_dataframe_PCA_obs_real['solution_id'][0])[0]
+                    # run the update_solution_ids function
+                    print('old_input_folder',old_input_folder)
+                    update_solution_ids(old_input_folder, input_folder)
+
         print()
 
         ######################### OBSERVATION ###############################
@@ -4818,21 +4864,17 @@ if __name__ == "__main__":
         if trajectory_file.endswith('.csv'):
             # read the csv file
             pd_dataframe_PCA_obs_real = pd.read_csv(trajectory_file)
-            # check the column name solution_id	and see if it matches a file i the folder
-            if not input_folder in pd_dataframe_PCA_obs_real['solution_id'][0]:
-                # if the solution_id is in the name of the file then the file is the real data
-                print('The folder of the csv file is different')
 
             if pd_dataframe_PCA_obs_real['type'][0] != 'Observation' and pd_dataframe_PCA_obs_real['type'][0] != 'Observation_sim':
                 # raise an error saing that the type is wrong and canot be processed by PCA
                 raise ValueError('Type of the csv file is wrong and canot be processed by script.')
-
+     
             if pd_dataframe_PCA_obs_real['solution_id'][0].endswith('.pickle'):
                 # read the pickle file
                 gensim_data_obs = read_pickle_reduction_file(pd_dataframe_PCA_obs_real['solution_id'][0])
 
             # json file
-            elif pd_dataframe_PCA_obs_real['solution_id'][0].endswith('.json'): 
+            elif pd_dataframe_PCA_obs_real['solution_id'][0].endswith('.json') and pd_dataframe_PCA_obs_real['type'][0] != 'Observation_sim': 
                 # read the json file with noise
                 gensim_data_obs = read_with_noise_GenerateSimulations_output(pd_dataframe_PCA_obs_real['solution_id'][0])
 

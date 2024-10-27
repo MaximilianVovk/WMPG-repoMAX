@@ -132,6 +132,8 @@ def fit_spline(data, time_data,spli=''):
     #     return fit1, residuals_pol, rmsd_pol,'Polinomial Fit'
     # else:
     #     return spline_fit, residuals, rmsd,'Spline Fit'
+
+    # return spline_fit, residuals, rmsd,'Spline Fit'
     return fit1, residuals_pol, rmsd_pol,'Polinomial Fit'
 
 def jacchia_Lag(t, a1, a2):
@@ -143,7 +145,18 @@ def lag_residual(params, t_time, l_data):
     """
     return np.sum((l_data - jacchia_Lag(t_time, *params))**2)
 
-def fit_lag(lag_data,time_data):
+def fit_lag(lag_data,time_data,spli = ''):
+
+    if spli == '':
+        spline = UnivariateSpline(time_data, lag_data)
+    else:
+        spline = UnivariateSpline(time_data, lag_data, s=spli)
+
+    spline_fit = spline(time_data)
+    residuals = lag_data - spline_fit
+    # avg_residual = np.mean(np.abs(residuals))
+    rmsd = np.sqrt(np.mean(residuals**2))
+
     # # Initial guess for the parameters
     # initial_guess = [0.005,	10]
     # result = minimize(lag_residual, initial_guess, args=(time_data, lag_data))
@@ -168,6 +181,8 @@ def fit_lag(lag_data,time_data):
     #     return fitted_lag_t0, residuals_t0, rmsd_t0,'Polin t0'
     # else:
     #     return spline_fit, residuals, rmsd,'Jacchia Fit'
+    
+    # return spline_fit, residuals, rmsd,'Spline Fit'
     return fitted_lag_t0, residuals_t0, rmsd_t0,'Polin t0'
 
 def fit_cubic_spline(data, time_data):
@@ -195,7 +210,7 @@ def plot_side_by_side(obs1, obs2,file):
 
     ax[0].plot(obs1['time_data'], obs1['lag'], 'o', label=f'{obs1["station_id"]}')
     ax[0].plot(obs2['time_data'], obs2['lag'], 'o', label=f'{obs2["station_id"]}')
-    fitted_lag, residuals_lag, avg_residual_lag, labels = fit_lag(obs1['lag'],obs1['time_data'])
+    fitted_lag, residuals_lag, avg_residual_lag, labels = fit_lag(obs1['lag'],obs1['time_data'],spli=100000)
     ax[0].plot(time_data, fitted_lag, 'k-', label=labels)
     # spline_fit, residuals, avg_residual_lag = fit_spline(obs1['lag'] / 1000 , obs1['time_data'])
     # plt.plot(obs1['time_data'], spline_fit*1000, 'k-', label='Spline Fit')

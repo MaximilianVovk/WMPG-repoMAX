@@ -4761,6 +4761,9 @@ if __name__ == "__main__":
 
     #########################
     warnings.filterwarnings('ignore')
+    warnings.simplefilter("always")
+
+    # ORI mass -7 -4 SLOW -5 -2 
 
     if cml_args.optimize:
         # check if the file exist

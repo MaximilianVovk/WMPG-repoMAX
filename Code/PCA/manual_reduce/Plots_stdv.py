@@ -9,6 +9,7 @@ from scipy.optimize import minimize
 import numpy as np
 import numpy as np
 import scipy.optimize as opt
+from sklearn.ensemble import GradientBoostingRegressor
 
 def read_and_process_pickle(file_path):
     with open(file_path, 'rb') as f:
@@ -157,14 +158,14 @@ def fit_lag(lag_data,time_data,spli = ''):
     # avg_residual = np.mean(np.abs(residuals))
     rmsd = np.sqrt(np.mean(residuals**2))
 
-    # # Initial guess for the parameters
-    # initial_guess = [0.005,	10]
-    # result = minimize(lag_residual, initial_guess, args=(time_data, lag_data))
-    # fitted_params = result.x
-    # fitted_lag = jacchia_Lag(time_data, *fitted_params)
-    # residuals = lag_data - fitted_lag
-    # # avg_residual = np.mean(abs(residuals)) #RMSD
-    # rmsd = np.sqrt(np.mean(residuals**2))
+    # Initial guess for the parameters
+    initial_guess = [0.005,	10]
+    result = minimize(lag_residual, initial_guess, args=(time_data, lag_data))
+    fitted_params = result.x
+    fitted_lag = jacchia_Lag(time_data, *fitted_params)
+    residuals = lag_data - fitted_lag
+    # avg_residual = np.mean(abs(residuals)) #RMSD
+    rmsd = np.sqrt(np.mean(residuals**2))
 
     # initial guess of deceleration decel equal to linear fit of velocity
     p0 = [np.mean(lag_data), 0, 0, np.mean(time_data)]
@@ -181,9 +182,26 @@ def fit_lag(lag_data,time_data,spli = ''):
     #     return fitted_lag_t0, residuals_t0, rmsd_t0,'Polin t0'
     # else:
     #     return spline_fit, residuals, rmsd,'Jacchia Fit'
+
+    # # Prepare data
+    # x_train = np.array(time_data).reshape(-1, 1)
+    # y_train = np.array(lag_data/1000)
+
+    # # Instantiate and train the model
+    # reg = GradientBoostingRegressor()
+    # reg.fit(x_train, y_train)
+
+    # # Predict
+    # y_fit = reg.predict(x_train)*1000
     
-    # return spline_fit, residuals, rmsd,'Spline Fit'
-    return fitted_lag_t0, residuals_t0, rmsd_t0,'Polin t0'
+    # residuals_gradboost = y_train*1000 - y_fit
+    # # avg_residual = np.mean(abs(residuals))
+    # rmsd_gradboost = np.sqrt(np.mean(residuals_gradboost**2))
+
+    # return y_fit, residuals_gradboost, rmsd_gradboost,'Polin t0'
+
+    return spline_fit, residuals, rmsd,'jacchia Fit'
+    # return fitted_lag_t0, residuals_t0, rmsd_t0,'Polin t0'
 
 def fit_cubic_spline(data, time_data):
     spline = CubicSpline(time_data, data)

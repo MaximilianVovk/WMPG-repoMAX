@@ -75,7 +75,7 @@ SAVE_RESULTS_FOLDER=SAVE_RESULTS_FINAL_FOLDER
 
 
 # # frame per second camera
-# FPS = 32
+# fps = 32
 # Length of data that will be used as an input during training
 DATA_LENGTH = 256
 # Default number of minimum frames for simulation
@@ -292,7 +292,7 @@ def find_noise_of_data(data, plot_case=False):
 
 #### Generate Observation #########################################################################
 
-def generate_observation_realization(data, rmsd_lag, rmsd_mag, fit_funct, name='', fig='', ax='', plot_case=False):
+def generate_observation_realization(data, rmsd_lag, rmsd_mag, fit_funct, name='', fps=32, fig='', ax='', plot_case=False):
 
     # print a . so that the next will be on the same line
     print('.', end='')
@@ -316,9 +316,9 @@ def generate_observation_realization(data, rmsd_lag, rmsd_mag, fit_funct, name='
     # Add noise to length data (Gaussian noise) for each realization
     fitted_lag_t0_lag += np.random.normal(loc=0.0, scale=rmsd_lag, size=len(data_obs['length']))
     data_obs['lag']=fitted_lag_t0_lag
-    # add noise to velocity data considering the noise as rmsd_lag/(1.0/FPS)
-    fitted_lag_t0_vel += np.random.normal(loc=0.0, scale=rmsd_lag/(1.0/FPS), size=len(data_obs['velocities']))
-    # fitted_lag_t0_vel += np.random.normal(loc=0.0, scale=rmsd_lag*np.sqrt(2)/(1.0/FPS), size=len(data_obs['velocities']))
+    # add noise to velocity data considering the noise as rmsd_lag/(1.0/fps)
+    fitted_lag_t0_vel += np.random.normal(loc=0.0, scale=rmsd_lag/(1.0/fps), size=len(data_obs['velocities']))
+    # fitted_lag_t0_vel += np.random.normal(loc=0.0, scale=rmsd_lag*np.sqrt(2)/(1.0/fps), size=len(data_obs['velocities']))
     data_obs['velocities']=fitted_lag_t0_vel
 
     ### ###
@@ -328,8 +328,8 @@ def generate_observation_realization(data, rmsd_lag, rmsd_mag, fit_funct, name='
 
     # # get the new velocity with noise
     # for vel_ii in range(1,len(data_obs['time'])-1):
-    #     diff_1=abs((data_obs['time'][vel_ii]-data_obs['time'][vel_ii-1])-1.0/FPS)
-    #     diff_2=abs((data_obs['time'][vel_ii+1]-data_obs['time'][vel_ii-1])-1.0/FPS)
+    #     diff_1=abs((data_obs['time'][vel_ii]-data_obs['time'][vel_ii-1])-1.0/fps)
+    #     diff_2=abs((data_obs['time'][vel_ii+1]-data_obs['time'][vel_ii-1])-1.0/fps)
 
     #     if diff_1<diff_2:
     #         data_obs['velocities'][vel_ii]=(data_obs['length'][vel_ii]-data_obs['length'][vel_ii-1])/(data_obs['time'][vel_ii]-data_obs['time'][vel_ii-1])
@@ -476,7 +476,7 @@ class ErosionSimParametersEMCCD_Comet(object):
         # Power of a zero-magnitude meteor (Watts)
         self.P_0m = 935
 
-        # System FPS
+        # System fps
         self.fps = 32
 
         # Time lag of length measurements (range in seconds) - accomodate CAMO tracking delay of 8 frames
@@ -650,13 +650,11 @@ def safe_generate_erosion_sim(params):
         print(f"Error in generateErosionSim: {e}")
         return None
 
-def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim,output_folder,file_name,plot_case=False, flag_manual_metsim=False, CI_physical_param=''):
-
-    # if real_data['solution_id'].iloc[0].endswith('.json'):
-    #     mass_sim=gensim_data['mass']
-    #     v_init_180km =gensim_data['vel_180km']
-
-
+def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim,output_folder,file_name, fps, plot_case=False, flag_manual_metsim=True, CI_physical_param=''):
+    '''
+        Generate simulations for the given real data
+    '''
+    simulation_MetSim_object.fps = fps
 
     # Init simulation parameters with the given class name
     erosion_sim_params = SIM_CLASSES[SIM_CLASSES_NAMES.index('ErosionSimParametersEMCCD_Comet')]()
@@ -668,9 +666,9 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     erosion_sim_params.lim_mag_len_end_brightest = real_data['end_abs_mag'].iloc[0]-0.01
     print('lim_mag_faintest',erosion_sim_params.lim_mag_faintest,'lim_mag_brightest',erosion_sim_params.lim_mag_brightest)
     print('lim_mag_len_end_faintest',erosion_sim_params.lim_mag_len_end_faintest,'lim_mag_len_end_brightest',erosion_sim_params.lim_mag_len_end_brightest)
-
+    
     if flag_manual_metsim:
-        mass_sim= simulation_MetSim_object.const.m_init
+        mass_sim = simulation_MetSim_object.const.m_init
         # find the at what is the order of magnitude of the real_data['mass'][0]
         order = int(np.floor(np.log10(mass_sim)))
         # create a MetParam object with the mass range that is above and below the real_data['mass'][0] by 2 orders of magnitude
@@ -679,11 +677,14 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
         v_init_180km = simulation_MetSim_object.const.v_init # in m/s
         # Initial velocity range (m/s) 
         erosion_sim_params.v_init = MetParam(v_init_180km-1000, v_init_180km+1000) # 60091.41691
+            
     else:
+        v_init_180km = real_data['vel_init_norot']
         # Initial velocity range (m/s) 
         erosion_sim_params.v_init = MetParam(real_data['vel_init_norot']-2000, real_data['vel_init_norot']+2000)
         # Mass range (kg)
         erosion_sim_params.m_init = MetParam(10**(-7), 10**(-4))
+        
 
     if v_init_180km>60000:
         erosion_sim_params.dt = 0.005
@@ -691,6 +692,7 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
         erosion_sim_params.dt = 0.01
     else:
         erosion_sim_params.dt = (-1)*0.000000125*v_init_180km+0.0125
+
 
     # Zenith angle range
     erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'].iloc[0]-0.01), np.radians(real_data['zenith_angle'].iloc[0]+0.01)) # 43.466538
@@ -1227,7 +1229,7 @@ def read_GenerateSimulations_output(file_path, real_event=''):
         return None
 
 
-def Old_GenSym_json_get_vel_lag(data):
+def Old_GenSym_json_get_vel_lag(data, fps=32):
 
     ht_sim=data['simulation_results']['leading_frag_height_arr'][:-1]#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
     ht_obs=data['ht_sampled']
@@ -1241,7 +1243,7 @@ def Old_GenSym_json_get_vel_lag(data):
 
     # get the new velocity with noise
     for vel_ii in range(1,len(time_sampled)):
-        if time_sampled[vel_ii]-time_sampled[vel_ii-1]<1.0/FPS:
+        if time_sampled[vel_ii]-time_sampled[vel_ii-1]<1.0/fps:
         # if time_sampled[vel_ii] % 0.03125 < 0.000000001:
             if vel_ii+1<len(len_sampled):
                 vel_sim[vel_ii+1]=(len_sampled[vel_ii+1]-len_sampled[vel_ii-1])/(time_sampled[vel_ii+1]-time_sampled[vel_ii-1])
@@ -1257,7 +1259,7 @@ def Old_GenSym_json_get_vel_lag(data):
     return data
 
 
-def read_with_noise_GenerateSimulations_output(file_path):
+def read_with_noise_GenerateSimulations_output(file_path, fps=32):
 
     f = open(file_path,"r")
     data = json.loads(f.read())
@@ -1282,7 +1284,7 @@ def read_with_noise_GenerateSimulations_output(file_path):
 
         # if is not present the vel_sampled in the data
         if 'vel_sampled' not in data:
-            data = Old_GenSym_json_get_vel_lag(data)
+            data = Old_GenSym_json_get_vel_lag(data, fps)
 
         gensim_data = {
         'name': file_path,
@@ -3234,7 +3236,7 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, n_PC_in_PCA='',output_dir=''
 
 
 
-def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_funct, mag_noise_real, len_noise_real, mag_RMSD, len_RMSD, Metsim_folderfile_json='', file_name_obs='', folder_file_name_real='', output_dir='', save_results_folder_events_plots='', total_distribution=False, save_log=False):
+def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_funct, mag_noise_real, len_noise_real, mag_RMSD, len_RMSD, fps=32, Metsim_folderfile_json='', file_name_obs='', folder_file_name_real='', output_dir='', save_results_folder_events_plots='', total_distribution=False, save_log=False):
     print('PCA_physicalProp_KDE_MODE_PLOT')
     output_dir_OG=output_dir
 
@@ -3253,14 +3255,14 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
     # # SD of noise in length (m) 1 sigma in km
     len_noise= len_noise/1000
     # velocity noise 1 sigma km/s
-    # vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
-    vel_noise = (len_noise/(1/FPS))
+    # vel_noise = (len_noise*np.sqrt(2)/(1/fps))
+    vel_noise = (len_noise/(1/fps))
 
     # check if end with pickle
     if folder_file_name_real.endswith('.pickle'):
         data_file_real = read_pickle_reduction_file(folder_file_name_real)
     elif folder_file_name_real.endswith('.json'):
-        data_file_real = read_with_noise_GenerateSimulations_output(folder_file_name_real)
+        data_file_real = read_with_noise_GenerateSimulations_output(folder_file_name_real, fps)
 
     _, _, _, residuals_mag_real, residuals_vel_real, _, residual_time_pos_real, residual_height_pos_real = RMSD_calc_diff(data_file_real, fit_funct)
 
@@ -3984,13 +3986,13 @@ def RMSD_calc_diff_weight(data_file, fit_funct):
         return 9999, 9999, 9999, [], [], [], [], []
 
     # Define the adjusted observed time range
-    time_obs_min_adj = time_obs[0] - 1.0 / FPS
-    time_obs_max_adj = time_obs[-1] + 1.0 / FPS
+    time_obs_min_adj = time_obs[0] - 0.1
+    time_obs_max_adj = time_obs[-1] + 0.1
 
     # Define the adjusted observed final height range
     final_height_obs = height_km_obs[-1]
-    height_obs_min_adj = final_height_obs - 1.0  # km
-    height_obs_max_adj = final_height_obs + 1.0  # km
+    height_obs_min_adj = final_height_obs - 2.0  # km
+    height_obs_max_adj = final_height_obs + 2.0  # km
 
     # Initialize penalty factors
     penalty_factor_time = 1
@@ -4064,7 +4066,7 @@ def RMSD_calc_diff_weight(data_file, fit_funct):
 
 
 
-def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fit_funct='', gen_Metsim='', mag_noise_real = 0.1, len_noise_real = 20.0, mag_RMSD = 0.1, len_RMSD = 20.0, file_name_obs='', save_results_folder_events_plots='', run_optimization=True):
+def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fit_funct='', gen_Metsim='', mag_noise_real = 0.1, len_noise_real = 20.0, mag_RMSD = 0.1, len_RMSD = 20.0, fps=32, file_name_obs='', save_results_folder_events_plots='', run_optimization=True):
 
     # merge curr_sel and curr_obs
     curr_sel = df_sel_shower.copy()
@@ -4084,8 +4086,8 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
     # # SD of noise in length (m) 1 sigma in km
     len_noise= len_noise/1000
     # velocity noise 1 sigma km/s
-    # vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
-    vel_noise = (len_noise/(1/FPS))
+    # vel_noise = (len_noise*np.sqrt(2)/(1/fps))
+    vel_noise = (len_noise/(1/fps))
 
     # # put the first plot in 2 sublots
     # fig, ax = plt.subplots(1, 2, figsize=(17, 5))
@@ -4118,7 +4120,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
     if df_obs_shower.iloc[0]['solution_id'].endswith('.pickle'):
         data_file_real = read_pickle_reduction_file(df_obs_shower.iloc[0]['solution_id'])
     elif df_obs_shower.iloc[0]['solution_id'].endswith('.json'):
-        data_file_real = read_with_noise_GenerateSimulations_output(df_obs_shower.iloc[0]['solution_id'])
+        data_file_real = read_with_noise_GenerateSimulations_output(df_obs_shower.iloc[0]['solution_id'], fps)
 
     _, _, _, residuals_mag_real, residuals_vel_real, _, residual_time_pos_real, residual_height_pos_real = RMSD_calc_diff(data_file_real, fit_funct)
 
@@ -4193,6 +4195,10 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
     er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
     er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
             
+            # ax[0].lines[1].set_marker(None)
+            ax[1].lines[1].set_marker(None)
+            # ax[2].lines[1].set_marker(None)
+            ax[5].lines[1].set_marker(None)
            
                                                                         
         else:
@@ -4720,7 +4726,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, n_PC_in_PCA, output_
 
 
 
-def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real= 0.1, len_noise_real = 20.0, file_name_obs='', trajectory_Metsim_file='', output_folder_of_csv=''):
+def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real= 0.1, len_noise_real = 20.0, fps=32, file_name_obs='', trajectory_Metsim_file='', output_folder_of_csv=''):
 
     # number to confront
     n_confront_obs=1
@@ -4756,8 +4762,8 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     # # SD of noise in length (m) 1 sigma in km
     len_noise= len_noise/1000
     # velocity noise 1 sigma km/s
-    # vel_noise = (len_noise*np.sqrt(2)/(1/FPS))
-    vel_noise = (len_noise/(1/FPS))
+    # vel_noise = (len_noise*np.sqrt(2)/(1/fps))
+    vel_noise = (len_noise/(1/fps))
 
     # put the first plot in 2 sublots
     fig, ax = plt.subplots(1, 2, figsize=(17, 5))
@@ -4811,7 +4817,7 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
                 data = json.loads(f.read())
                 if 'ht_sampled' in data:
                     if ii==0:
-                        data_file = read_with_noise_GenerateSimulations_output(namefile_sel)
+                        data_file = read_with_noise_GenerateSimulations_output(namefile_sel, fps)
                     else:
                         data_file = read_GenerateSimulations_output(namefile_sel, gensim_data_obs)
 
@@ -5161,7 +5167,10 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=3, \
         help="Number of failed attemp allowed to generate the set number of similar simulations, by default 3.")
-    
+
+    arg_parser.add_argument('--fix_n_sim', metavar='FIX_NUM_SIM', type=bool, default=True, \
+        help="if the number of simulations in the csv file is above SIM_NUM then resample the csv file base on the simulations.")
+
     arg_parser.add_argument('--resample_sim', metavar='RESAMPLE_SIM', type=bool, default=False, \
         help="if the number of simulations in the csv file is above SIM_NUM then resample the csv file base on the simulations.")
     
@@ -5210,8 +5219,8 @@ if __name__ == "__main__":
     # Parse the command line arguments
     cml_args = arg_parser.parse_args()
 
-    # needed to avaoid modifing the entire script to add FPS when multiprocessing
-    FPS = cml_args.fps
+    # needed to add fps when multiprocessing
+    fps = cml_args.fps
 
     #########################
     warnings.filterwarnings('ignore')
@@ -5297,7 +5306,7 @@ if __name__ == "__main__":
             # json file
             elif pd_dataframe_PCA_obs_real['solution_id'][0].endswith('.json') and pd_dataframe_PCA_obs_real['type'][0] != 'Observation_sim': 
                 # read the json file with noise
-                gensim_data_obs = read_with_noise_GenerateSimulations_output(pd_dataframe_PCA_obs_real['solution_id'][0])
+                gensim_data_obs = read_with_noise_GenerateSimulations_output(pd_dataframe_PCA_obs_real['solution_id'][0], fps)
 
             else:
                 # raise an error if the file is not a csv, pickle or json file
@@ -5316,7 +5325,7 @@ if __name__ == "__main__":
             # json file
             elif trajectory_file.endswith('.json'): 
                 # read the json file with noise
-                gensim_data_obs = read_with_noise_GenerateSimulations_output(trajectory_file)
+                gensim_data_obs = read_with_noise_GenerateSimulations_output(trajectory_file, fps)
                 
             else:
                 # raise an error if the file is not a csv, pickle or json file
@@ -5328,19 +5337,19 @@ if __name__ == "__main__":
                 # make the results_list to incorporate all rows of pd_dataframe_PCA_obs_real
                 results_list = []
                 for ii in range(cml_args.nobs):
-                    results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fig, ax, cml_args.save_test_plot) 
+                    results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fps, fig, ax, cml_args.save_test_plot) 
                     results_list.append(results_pd)
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
                 ax[0].fill_betweenx(np.array(fit_funct['height'])/1000, np.array(fit_funct['absolute_magnitudes'])-rmsd_pol_mag, np.array(fit_funct['absolute_magnitudes'])+rmsd_pol_mag, color='lightgray', alpha=0.5)
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
+                ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000/(1/fps)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000/(1/fps)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
 
                 ax[0].plot(np.array(fit_funct['absolute_magnitudes']), np.array(fit_funct['height'])/1000, 'k--')
                 ax[1].plot(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000, 'k--', label='Fit')
 
-                # ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
+                # ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/fps)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/fps)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
                 # Save the figure as file with instead of _trajectory.pickle it has file+std_dev.png on the desktop
                 plt.savefig(output_folder+os.sep+file_name+'obs_realizations.png', dpi=300)
 
@@ -5348,7 +5357,7 @@ if __name__ == "__main__":
 
             else:      
                 rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs)       
-                input_list_obs = [[gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1)] for ii in range(cml_args.nobs)]
+                input_list_obs = [[gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fps] for ii in range(cml_args.nobs)]
                 results_list = domainParallelizer(input_list_obs, generate_observation_realization, cores=cml_args.cores)
             
             pd_dataframe_PCA_obs_real = array_to_pd_dataframe_PCA(gensim_data_obs, fit_funct)
@@ -5446,6 +5455,10 @@ if __name__ == "__main__":
             if len(pd_datafram_PCA_sim) < cml_args.nsim:
                 print('Add',cml_args.nsim - len(pd_datafram_PCA_sim),' json files')
                 flag_enough_sim = False
+
+            if cml_args.fix_n_sim:
+                flag_enough_sim = True
+            
             if cml_args.resample_sim:
                 print('Number of simulations in the csv file is more than the number of simulations to run')
                 print('Resample the simulations taking only', cml_args.nsim, 'simulations')
@@ -5485,7 +5498,7 @@ if __name__ == "__main__":
                 
                 # run the new simulations
                 if cml_args.save_test_plot:
-                    fig, ax = generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_test_plot,flag_manual_metsim)
+                    fig, ax = generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,fps,cml_args.save_test_plot, flag_manual_metsim)
                     
                     if flag_manual_metsim:
                         # plot gensim_data_Metsim
@@ -5495,8 +5508,8 @@ if __name__ == "__main__":
                     ax[0].fill_betweenx(np.array(fit_funct['height'])/1000, np.array(fit_funct['absolute_magnitudes'])-rmsd_pol_mag, np.array(fit_funct['absolute_magnitudes'])+rmsd_pol_mag, color='lightgray', alpha=0.5)
 
                     # plot noisy area around vel_kms for vel_noise for the fix height_km
-                    ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
-                    # ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/FPS)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
+                    ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000/(1/fps)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000/(1/fps)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
+                    # ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/fps)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/fps)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
 
                     ax[0].plot(fit_funct['absolute_magnitudes'],fit_funct['height']/1000, 'k--')
                     ax[1].plot(fit_funct['time'],fit_funct['velocities']/1000, 'k--', label='Fit')
@@ -5515,7 +5528,7 @@ if __name__ == "__main__":
                     all_jsonfiles = [file for file in all_jsonfiles if 'Selection' not in file and 'Results' not in file and 'mode' not in file and 'DensPoint' not in file]
 
                 else:
-                    generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,cml_args.save_test_plot,flag_manual_metsim)
+                    generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,fps,cml_args.save_test_plot, flag_manual_metsim)
                     # walk thorought the directories and find all the json files inside each folder inside the directory
                     all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
 
@@ -5601,7 +5614,7 @@ if __name__ == "__main__":
 
             print('PLOT: best 7 simulations selected and add the RMSD value to csv selected')
             # plot of the best 7 selected simulations and add the RMSD value to csv selected
-            PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, file_name, trajectory_Metsim_file)
+            PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file)
 
             print('PLOT: the physical characteristics of the selected simulations Mode and KDE')
             PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
@@ -5611,14 +5624,13 @@ if __name__ == "__main__":
             PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition, pca_N_comp, output_folder)
 
             print('Selected simulations and generate KDE and MODE plot')
-            # pd_datafram_PCA_selected_mode_min_KDE = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder)
-            input_list_obs = [[pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real.iloc[[ii]].reset_index(drop=True), pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real['solution_id'].iloc[ii]], pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots] for ii in range(len(pd_dataframe_PCA_obs_real))]
+            input_list_obs = [[pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real.iloc[[ii]].reset_index(drop=True), pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real['solution_id'].iloc[ii]], pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots] for ii in range(len(pd_dataframe_PCA_obs_real))]
             results_list = domainParallelizer(input_list_obs, PCA_physicalProp_KDE_MODE_PLOT, cores=cml_args.cores)
         
             # if no read the json files in the folder and create a new csv file
             pd_datafram_PCA_selected_mode_min_KDE = pd.concat(results_list)
 
-            pd_datafram_PCA_selected_mode_min_KDE_TOT = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots,True, True)
+            pd_datafram_PCA_selected_mode_min_KDE_TOT = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots,True, True)
 
             # concatenate the two dataframes
             pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_mode_min_KDE_TOT, pd_datafram_PCA_selected_mode_min_KDE])
@@ -5715,18 +5727,17 @@ if __name__ == "__main__":
             cml_args.number_optimized=5
 
         # # plot the values and find the RMSD of each of them
-        # pd_datafram_PCA_selected_optimized = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_check_below_RMSD, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, cml_args.number_optimized, cml_args.optimize) # file_name, trajectory_Metsim_file, 
         if cml_args.number_optimized == 0:
-            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, save_results_folder_events_plots, cml_args.optimize] for ii in range(len(pd_datafram_check_below_RMSD))]
+            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, cml_args.optimize] for ii in range(len(pd_datafram_check_below_RMSD))]
             results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
             pd_datafram_PCA_selected_optimized = pd.concat(results_list)
         elif cml_args.number_optimized > 0 and cml_args.optimize==True:
             # take only the first cml_args.number_optimized
-            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, save_results_folder_events_plots, True] for ii in range()]
+            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, True] for ii in range()]
             results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
             pd_datafram_PCA_selected_optimized = pd.concat(results_list)
             # repeat for the rest of the selected events but no Optimization
-            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_check_below_RMSD))]
+            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_check_below_RMSD))]
             results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
             pd_datafram_PCA_selected_NO_optimizad = pd.concat(results_list)
             pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_selected_NO_optimizad])
@@ -5739,13 +5750,18 @@ if __name__ == "__main__":
         if flag_manual_metsim:
             print('Check the manual reduction')
             # check also the manual reduction
-            pd_datafram_PCA_selected_optimized_Metsim = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_PCA_sim_Metsim, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, save_results_folder_events_plots, False) # file_name, trajectory_Metsim_file, 
+            pd_datafram_PCA_selected_optimized_Metsim = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_PCA_sim_Metsim, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, False) # file_name, trajectory_Metsim_file, 
             
         # concatenate the two dataframes
         pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized_Metsim, pd_datafram_PCA_selected_lowRMSD])
 
         # get all the json file in output_folder+os.sep+save_results_folder_events_plots
         json_files_results = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
+        # check if output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots' exist
+        if os.path.isdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots'):
+            # get all the json file in output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots'
+            json_files_results = json_files_results + [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots') if f.endswith('.json')]
+
         # check if any json_files_results is in pd_datafram_PCA_selected_lowRMSD['solution_id'].values
         if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
             for json_file in json_files_results:
@@ -5819,7 +5835,7 @@ if __name__ == "__main__":
                 print('PLOT: correlation matrix of the results')
                 PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_results, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER)
                 print('PLOT: best 9 results and add the RMSD value to csv selected')
-                PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, output_folder+os.sep+SAVE_RESULTS_FOLDER, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, file_name, trajectory_Metsim_file,output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv')
+                PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, output_folder+os.sep+SAVE_RESULTS_FOLDER, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv')
                 print()
                 print('SUCCES: the physical characteristics range is in the results folder')
             else:
@@ -5927,7 +5943,7 @@ if __name__ == "__main__":
                     break
                 old_results_number = result_number
                 print('regenerate new simulation in the CI range')
-                generate_simulations(pd_dataframe_PCA_obs_real, simulation_MetSim_object, gensim_data_obs, cml_args.nsim_refine_step, output_folder, file_name, False, False, CI_physical_param)
+                generate_simulations(pd_dataframe_PCA_obs_real, simulation_MetSim_object, gensim_data_obs, cml_args.nsim_refine_step, output_folder, file_name,fps, False, True, CI_physical_param)
                 
                 # look for the good_files = glob.glob(os.path.join(output_folder, '*_good_files.txt'))
                 good_files = [f for f in os.listdir(output_folder) if f.endswith('_good_files.txt')]                
@@ -5962,6 +5978,10 @@ if __name__ == "__main__":
                 # print saved csv file
                 print('saved sim csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM_NEW)
 
+                if ii_repeat == 0 and flag_preliminary_results==True:
+                    # concatenate the pd_datafram_PCA_selected_lowRMSD dataframes with pd_datafram_NEWsim_good
+                    pd_datafram_NEWsim_good = pd.concat([pd_datafram_NEWsim_good, pd_datafram_PCA_selected_lowRMSD])
+
                 if CONF_LEN > CONFIDENCE_LEVEL or CONF_MAG > CONFIDENCE_LEVEL:
                     MAG_RMSD_new, LEN_RMSD_new, MAG_z_score, LEN_z_score, CONF_MAG, CONF_LEN = modify_rmsd_confidence(pd_datafram_NEWsim_good, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder+os.sep+SAVE_RESULTS_FOLDER)
                     if CONF_LEN <= CONFIDENCE_LEVEL+0.001 and CONF_MAG <= CONFIDENCE_LEVEL+0.001:
@@ -5978,6 +5998,9 @@ if __name__ == "__main__":
                         ii_repeat = 0
                         pd_results = pd.DataFrame()
 
+                        mkdirP(output_folder+os.sep+SAVE_RESULTS_FOLDER)
+                        mkdirP(output_folder+os.sep+save_results_folder_events_plots)
+
                         # move the txt file starting with log_RMSD_ to the SAVE_RESULTS_FOLDER
                         files = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FOLDER) if f.startswith('log_RMSD_')]
                         for file in files:
@@ -5989,13 +6012,15 @@ if __name__ == "__main__":
                         SAVE_RESULTS_FOLDER = SAVE_RESULTS_FINAL_FOLDER
                         save_results_folder_events_plots = SAVE_RESULTS_FOLDER+os.sep+'events_plots'
 
-                        mkdirP(output_folder+os.sep+SAVE_RESULTS_FOLDER)
-                        mkdirP(output_folder+os.sep+save_results_folder_events_plots)
-
                         flag_preliminary_results=False
 
 
-                input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, False] for ii in range(len(pd_datafram_NEWsim_good))]
+                if ii_repeat == 0 and flag_preliminary_results==True:
+                    # if no simulations that was generated with PCA that have not beenn checked then there is no need to merge the two
+                    pd_datafram_NEWsim_good = pd.concat(results_list)
+
+
+                input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_NEWsim_good))]
                 results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
 
                 # base on the one selected

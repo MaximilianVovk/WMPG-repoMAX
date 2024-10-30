@@ -71,7 +71,6 @@ PCA_SEL_DIR_SUFX = '_sel_PCA_vs_physProp'
 # these may change though the script
 SAVE_PRELIMINARY_RESULTS_FOLDER='Preliminary_Results'
 SAVE_RESULTS_FINAL_FOLDER='Results'
-SAVE_RESULTS_FOLDER=SAVE_RESULTS_FINAL_FOLDER
 
 
 # # frame per second camera
@@ -4178,18 +4177,8 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
         if Metsim_flag:
             
             # plot_side_by_side(data_file, fig, ax, '-k', ii, residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
-            if no_distance_flag:
-                plot_side_by_side(data_file, fig, ax, '-k', 'Metsim data event\n\
+            plot_side_by_side(data_file, fig, ax, '-k', 'Metsim data event\n\
 RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
-    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
-            
-            else:
-                plot_side_by_side(data_file, fig, ax, '-k', 'Metsim data event\n\
-RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
-    N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
     m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
     rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
     er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
@@ -4208,16 +4197,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
 
             # plot_side_by_side(data_file, fig, ax, '-', ii, residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
 
-            if no_distance_flag:
-                plot_side_by_side(data_file, fig, ax, '-','RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
-    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
-
-            else:
-                plot_side_by_side(data_file, fig, ax, '-','RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
-    N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
+            plot_side_by_side(data_file, fig, ax, '-','RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
     m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
     rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
     er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
@@ -4873,16 +4853,7 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
             if Metsim_flag:
                 metsim_numbs=ii
                 ax[0].plot(abs_mag_sim,height_km, 'k')
-                if 'distance_meteor' in df_sel_shower.columns:
-                    ax[1].plot(obs_time, vel_kms, 'k', label='Metsim data reduction\n\
-RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
-    N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
-    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))        
-                else:
-                    ax[1].plot(obs_time, vel_kms, 'k', label='Metsim data reduction\n\
+                ax[1].plot(obs_time, vel_kms, 'k', label='Metsim data reduction\n\
 RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
     m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
     rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
@@ -4898,15 +4869,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 #     line_color='m'
                 #     ax[0].plot(abs_mag_sim,height_km, color='m')
                 
-                if 'distance_meteor' in df_sel_shower.columns:
-                    ax[1].plot(obs_time, vel_kms, color=line_color ,label='RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
-    N°duplic. '+str(round(curr_sel.iloc[ii]['num_duplicates']))+' min dist:'+str(round(curr_sel.iloc[ii]['distance_meteor'],2))+'\n\
-    m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
-    rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
-    er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
-    er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)))
-                else:
-                    ax[1].plot(obs_time, vel_kms, color=line_color ,label='RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
+                ax[1].plot(obs_time, vel_kms, color=line_color ,label='RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
     m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
     rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
     er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
@@ -5045,11 +5008,12 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, len_RMSD, rmsd_po
     MAG_RMSD_conf_old= (2 * stats.norm.cdf(mag_RMSD/rmsd_pol_mag) - 1)*100 
     LEN_RMSD_conf_old= (2 * stats.norm.cdf(len_RMSD/rmsd_t0_lag) - 1)*100
 
-    # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-    if os.path.exists(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt"):
-        # remove the file
-        os.remove(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt")
-    sys.stdout = Logger(output_path_distrib_rmsd,"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt") # _30var_99%_13PC
+    if output_path_distrib_rmsd == '':
+        # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
+        if os.path.exists(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt"):
+            # remove the file
+            os.remove(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt")
+        sys.stdout = Logger(output_path_distrib_rmsd,"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt") # _30var_99%_13PC
 
     print('mag_RMSD:'+str(np.round(mag_RMSD,3))+' Confidence interval MAG:'+str(np.round(MAG_RMSD_conf_old,3))+'%')
     print('len_RMSD:'+str(np.round(len_RMSD,3))+' Confidence interval LEN:'+str(np.round(LEN_RMSD_conf_old,3))+'%')
@@ -5123,11 +5087,13 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, len_RMSD, rmsd_po
     print('NEW mag_RMSD:'+str(np.round(MAG_RMSD_new,3))+' NEW Confidence interval MAG:'+str(np.round(CONF_MAG_new,3))+'%')
     print('NEW len_RMSD:'+str(np.round(LEN_RMSD_new,3))+' NEW Confidence interval LEN:'+str(np.round(CONF_LEN_new,3))+'%')
 
-    # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-    sys.stdout.close()
 
-    # Reset sys.stdout to its original value if needed
-    sys.stdout = sys.__stdout__
+    if output_path_distrib_rmsd == '':
+        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+        sys.stdout.close()
+
+        # Reset sys.stdout to its original value if needed
+        sys.stdout = sys.__stdout__
 
     return MAG_RMSD_new, LEN_RMSD_new, MAG_z_score_new, LEN_z_score_new, CONF_MAG_new, CONF_LEN_new
 
@@ -5583,16 +5549,16 @@ if __name__ == "__main__":
             os.remove(os.path.join(output_folder, file))
 
 
-        mag_RMSD, len_RMSD, MAG_z_score, LEN_z_score, CONF_MAG, CONF_LEN = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
+        mag_RMSD, len_RMSD, MAG_z_score, LEN_z_score, conf_mag, conf_len = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
 
         flag_preliminary_results = False
-        SAVE_RESULTS_FOLDER=SAVE_RESULTS_FINAL_FOLDER
-        save_results_folder_events_plots = SAVE_RESULTS_FOLDER+os.sep+'events_plots'
-        if CONF_MAG>CONFIDENCE_LEVEL or CONF_LEN>CONFIDENCE_LEVEL:
+        save_results_folder=SAVE_RESULTS_FINAL_FOLDER
+        save_results_folder_events_plots = save_results_folder+os.sep+'events_plots'
+        if conf_mag>CONFIDENCE_LEVEL or conf_len>CONFIDENCE_LEVEL:
             print('New RMSD above the CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
             print('save the initial results in the Preliminary_Result folder')
-            SAVE_RESULTS_FOLDER=SAVE_PRELIMINARY_RESULTS_FOLDER
-            save_results_folder_events_plots = SAVE_RESULTS_FOLDER+os.sep+'events_plots'
+            save_results_folder=SAVE_PRELIMINARY_RESULTS_FOLDER
+            save_results_folder_events_plots = save_results_folder+os.sep+'events_plots'
             flag_preliminary_results = True
         
         print()
@@ -5603,7 +5569,7 @@ if __name__ == "__main__":
 
         pd_datafram_PCA_selected_lowRMSD = pd.DataFrame()
 
-        mkdirP(output_folder+os.sep+SAVE_RESULTS_FOLDER)
+        mkdirP(output_folder+os.sep+save_results_folder)
         mkdirP(output_folder+os.sep+save_results_folder_events_plots)
 
         if cml_args.use_PCA:
@@ -5640,7 +5606,7 @@ if __name__ == "__main__":
             pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
         
             # # save df_sel_shower_real to disk add the RMSD
-            # pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv', index=False)
+            # pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+save_results_folder+os.sep+file_name+'_sim_sel_results.csv', index=False)
 
             # print('PLOT: the physical characteristics of the selected simulations with no repetitions')
             # PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
@@ -5793,10 +5759,10 @@ if __name__ == "__main__":
 
         print('--- RESULTS ---')
 
-        # move the txt file starting with log_RMSD_ to the SAVE_RESULTS_FOLDER
+        # move the txt file starting with log_RMSD_ to the save_results_folder
         files = [f for f in os.listdir(output_folder) if f.startswith('log_RMSD_')]
         for file in files:
-            shutil.move(os.path.join(output_folder, file), os.path.join(output_folder, SAVE_RESULTS_FOLDER, file))
+            shutil.move(os.path.join(output_folder, file), os.path.join(output_folder, save_results_folder, file))
 
         flag_fail = False
         old_results_number = 0
@@ -5826,16 +5792,16 @@ if __name__ == "__main__":
             pd_results = pd.concat([pd_results, pd_datafram_PCA_selected_lowRMSD])
 
             # save and update the disk 
-            pd_results.to_csv(output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv', index=False)
+            pd_results.to_csv(output_folder+os.sep+save_results_folder+os.sep+file_name+'_sim_sel_results.csv', index=False)
 
             
             if 'solution_id' in pd_results.columns:
                 print('PLOT: the physical characteristics results')
-                PCA_PhysicalPropPLOT(pd_results, pd_datafram_PCA_sim, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER, file_name)
+                PCA_PhysicalPropPLOT(pd_results, pd_datafram_PCA_sim, pca_N_comp, output_folder+os.sep+save_results_folder, file_name)
                 print('PLOT: correlation matrix of the results')
-                PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_results, pca_N_comp, output_folder+os.sep+SAVE_RESULTS_FOLDER)
+                PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_results, pca_N_comp, output_folder+os.sep+save_results_folder)
                 print('PLOT: best 9 results and add the RMSD value to csv selected')
-                PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, output_folder+os.sep+SAVE_RESULTS_FOLDER, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,output_folder+os.sep+SAVE_RESULTS_FOLDER+os.sep+file_name+'_sim_sel_results.csv')
+                PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, output_folder+os.sep+save_results_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,output_folder+os.sep+save_results_folder+os.sep+file_name+'_sim_sel_results.csv')
                 print()
                 print('SUCCES: the physical characteristics range is in the results folder')
             else:
@@ -5966,7 +5932,7 @@ if __name__ == "__main__":
                 # open the folder and extract all the json files
                 os.chdir(input_folder)
 
-                print('Number of simulated files : ',len(all_jsonfiles),' LEN confidence interval', CONF_LEN,'% MAG confidence interval', CONF_MAG,'%')
+                print('Number of simulated files : ',len(all_jsonfiles),' LEN confidence interval', conf_len,'% MAG confidence interval', conf_mag,'%')
 
                 input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct] for ii in range(len(all_jsonfiles))]
                 results_list = domainParallelizer(input_list, read_GenerateSimulations_output_to_PCA, cores=cml_args.cores)
@@ -5982,14 +5948,18 @@ if __name__ == "__main__":
                     # concatenate the pd_datafram_PCA_selected_lowRMSD dataframes with pd_datafram_NEWsim_good
                     pd_datafram_NEWsim_good = pd.concat([pd_datafram_NEWsim_good, pd_datafram_PCA_selected_lowRMSD])
 
-                if CONF_LEN > CONFIDENCE_LEVEL or CONF_MAG > CONFIDENCE_LEVEL:
-                    MAG_RMSD_new, LEN_RMSD_new, MAG_z_score, LEN_z_score, CONF_MAG, CONF_LEN = modify_rmsd_confidence(pd_datafram_NEWsim_good, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder+os.sep+SAVE_RESULTS_FOLDER)
-                    if CONF_LEN <= CONFIDENCE_LEVEL+0.001 and CONF_MAG <= CONFIDENCE_LEVEL+0.001:
+                if conf_len > CONFIDENCE_LEVEL or conf_mag > CONFIDENCE_LEVEL:
+                    MAG_RMSD_new, LEN_RMSD_new, MAG_z_score, LEN_z_score, conf_mag, conf_len = modify_rmsd_confidence(pd_datafram_NEWsim_good, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000)
+                    if conf_len <= CONFIDENCE_LEVEL+0.001 and conf_mag <= CONFIDENCE_LEVEL+0.001:
+                        
+                        save_results_folder = SAVE_RESULTS_FINAL_FOLDER
+                        save_results_folder_events_plots = save_results_folder+os.sep+'events_plots'
+
+                        mkdirP(output_folder+os.sep+save_results_folder)
+                        mkdirP(output_folder+os.sep+save_results_folder_events_plots)
 
                         # restart with a new simulation set no longer consider any previous results
-
-                        mag_RMSD=MAG_RMSD_new
-                        len_RMSD=LEN_RMSD_new
+                        mag_RMSD, len_RMSD, MAG_z_score, LEN_z_score, conf_mag, conf_len = modify_rmsd_confidence(pd_datafram_NEWsim_good, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder+os.sep+save_results_folder)
 
                         ####### RESTART WITH A NEW SIMULATION SET NO LONGER CONSIDER ANY PREVIOUS RESULTS #######
 
@@ -5998,19 +5968,8 @@ if __name__ == "__main__":
                         ii_repeat = 0
                         pd_results = pd.DataFrame()
 
-                        mkdirP(output_folder+os.sep+SAVE_RESULTS_FOLDER)
-                        mkdirP(output_folder+os.sep+save_results_folder_events_plots)
-
-                        # move the txt file starting with log_RMSD_ to the SAVE_RESULTS_FOLDER
-                        files = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FOLDER) if f.startswith('log_RMSD_')]
-                        for file in files:
-                            shutil.move(os.path.join(output_folder+os.sep+SAVE_RESULTS_FOLDER, file), os.path.join(output_folder, SAVE_RESULTS_FINAL_FOLDER, file))
-                        
                         print('RMSD below the CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
                         print('RESULTS: save results!')
-
-                        SAVE_RESULTS_FOLDER = SAVE_RESULTS_FINAL_FOLDER
-                        save_results_folder_events_plots = SAVE_RESULTS_FOLDER+os.sep+'events_plots'
 
                         flag_preliminary_results=False
 
@@ -6034,10 +5993,10 @@ if __name__ == "__main__":
         ######################## FINAL RESULTS ###############################
 
         # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist print('processing file:',file_name)
-        if os.path.exists(SAVE_RESULTS_FOLDER+os.sep+"log_"+file_name[:15]+"_results.txt"):
+        if os.path.exists(save_results_folder+os.sep+"log_"+file_name[:15]+"_results.txt"):
             # remove the file
-            os.remove(SAVE_RESULTS_FOLDER+os.sep+"log_"+file_name[:15]+"_results.txt")
-        sys.stdout = Logger(SAVE_RESULTS_FOLDER,"log_"+file_name[:15]+"_results.txt") # _30var_99%_13PC
+            os.remove(save_results_folder+os.sep+"log_"+file_name[:15]+"_results.txt")
+        sys.stdout = Logger(save_results_folder,"log_"+file_name[:15]+"_results.txt") # _30var_99%_13PC
 
         print('--- FINAL RESULTS ---')
 

@@ -57,7 +57,6 @@ from multiprocessing import Pool
 
 # CONSTANTS ###########################################################################################
 
-FPS = 32
 NAME_SUFX_GENSIM = "_GenSim"
 NAME_SUFX_CSV_OBS = "_obs.csv"
 NAME_SUFX_CSV_SIM = "_sim.csv"
@@ -68,27 +67,15 @@ NAME_SUFX_CSV_PHYSICAL_FIT_RESULTS = "_physical_prop.csv"
 SAVE_SELECTION_FOLDER='Selection'
 VAR_SEL_DIR_SUFX = '_sel_var_vs_physProp'
 PCA_SEL_DIR_SUFX = '_sel_PCA_vs_physProp'
-SAVE_RESULTS_FOLDER='Results'
-SAVE_RESULTS_FOLDER_EVENTS_PLOTS='Results'+os.sep+'events_plots'
 
-# sigma value of the RMSD that is considered to select a good fit
-SIGMA_ERR = 1 # 1.96 # 95CI #2.58 # 99CI #3.29 # 99.9CI
-MAG_RMSD = 0.25
-# MAG_RMSD = 0.25 # for heavy
-# MAG_RMSD = 0.20 # for steep fast
-# MAG_RMSD = 0.15 # for shallow slow 
-# MAG_RMSD = 0.05 # for small
+# these may change though the script
+SAVE_PRELIMINARY_RESULTS_FOLDER='Preliminary_Results'
+SAVE_RESULTS_FINAL_FOLDER='Results'
+SAVE_RESULTS_FOLDER=SAVE_RESULTS_FINAL_FOLDER
 
-LEN_RMSD = 0.04 # 0.02
-# LEN_RMSD = 0.04
-# MAG_RMSD = 0.08
-# LEN_RMSD = 0.04 # 0.025
 
-# Use the IF function, one of the logical functions, to return one value if a condition is true and another value if it's false. For example: =IF(A2>B2,"Over Budget","OK") =IF(A2=B2,B4-A4,"")
-
-# # Calculate the cumulative probability for the z-value, the confidence level is the percentage of the area within ±z_value
-# CONFIDENCE_LEVEL = (2 * stats.norm.cdf(SIGMA_ERR) - 1)*100
-
+# # frame per second camera
+# FPS = 32
 # Length of data that will be used as an input during training
 DATA_LENGTH = 256
 # Default number of minimum frames for simulation
@@ -3247,7 +3234,7 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, n_PC_in_PCA='',output_dir=''
 
 
 
-def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_funct, mag_noise_real, len_noise_real, Metsim_folderfile_json='', file_name_obs='', folder_file_name_real='', output_dir='', total_distribution=False, save_log=False):
+def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_funct, mag_noise_real, len_noise_real, mag_RMSD, len_RMSD, Metsim_folderfile_json='', file_name_obs='', folder_file_name_real='', output_dir='', save_results_folder_events_plots='', total_distribution=False, save_log=False):
     print('PCA_physicalProp_KDE_MODE_PLOT')
     output_dir_OG=output_dir
 
@@ -3257,8 +3244,8 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
 
     # 5 sigma confidence interval
     # five_sigma=False
-    # mag_noise = MAG_RMSD*SIGMA_ERR
-    # len_noise = LEN_RMSD*SIGMA_ERR
+    # mag_noise = mag_RMSD
+    # len_noise = len_RMSD
     mag_noise = mag_noise_real.copy()
     len_noise = len_noise_real.copy()
 
@@ -3393,14 +3380,14 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
 
             # split in file and directory
             _, name_file = os.path.split(curr_sel['solution_id'].iloc[ii])
-            if rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR:
-                shutil.copy(curr_sel['solution_id'].iloc[ii], output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+name_file)
+            if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
+                shutil.copy(curr_sel['solution_id'].iloc[ii], output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+name_file)
                 fig.suptitle(name_file+' SELECTED')
                 # delete the extension of the file
                 name_file = name_file.split('.')[0]
                 plt.tight_layout()
                 # put a sup title with the name of the file and write selected
-                plt.savefig(output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+name_file+'_Heigh_MagVelCoef.png')
+                plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+name_file+'_Heigh_MagVelCoef.png')
 
                 pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
             else:   
@@ -3643,17 +3630,17 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             # pd_datafram_PCA_sim['erosion_coeff']=pd_datafram_PCA_sim['erosion_coeff']/1000000
             # pd_datafram_PCA_sim['sigma']=pd_datafram_PCA_sim['sigma']/1000000
 
-            print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(MAG_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(MAG_RMSD*SIGMA_ERR*2,3),'|| MODE noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(LEN_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(LEN_RMSD*SIGMA_ERR*2,3),'|| MODE noise len', round(rmsd_lag,3))
+            # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| MODE noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*2,3),'|| MODE noise len', round(rmsd_lag,3))
             select_mode_print='No'
-            if rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR:
+            if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
                 select_mode_print='Yes'
                 print('below 5 sigma noise, SAVED')
                 pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
 
                 if total_distribution:
-                    shutil.copy(output_dir+os.sep+around_meteor+'_mode_TOT.json', output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+around_meteor+'_mode_TOT.json')
+                    shutil.copy(output_dir+os.sep+around_meteor+'_mode_TOT.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_mode_TOT.json')
                 else:
-                    shutil.copy(output_dir+os.sep+around_meteor+'_mode.json', output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+around_meteor+'_mode.json')
+                    shutil.copy(output_dir+os.sep+around_meteor+'_mode.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_mode.json')
                 fig.suptitle(around_meteor+' '+select_mode_print+' mode selected') # , fontsize=16
                 # pu the leggend putside the plot and adjust the plot base on the screen size
                 ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
@@ -3663,9 +3650,9 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 # make more space
                 plt.tight_layout()
                 if is_real:
-                    plt.savefig(output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                    plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
                 else:
-                    plt.savefig(output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                    plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
 
             fig.suptitle(around_meteor+' '+select_mode_print+' mode selected') # , fontsize=16
 
@@ -3697,7 +3684,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 # _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir_OG+os.sep+file_name_obs+'_sim_fit.json', data_file_real)
 
                 rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(gensim_data_sim, fit_funct)
-                print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(MAG_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(MAG_RMSD*SIGMA_ERR*2,3),'|| Dens.point noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(LEN_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(LEN_RMSD*MAG_RMSD*2,3),'|| Dens.point noise len', round(rmsd_lag,3))
+                # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Dens.point noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*mag_RMSD*2,3),'|| Dens.point noise len', round(rmsd_lag,3))
             
                 plot_side_by_side(gensim_data_sim, fig, ax, 'b-', 'Dens.point : RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'\n\
         m:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+' F:'+str(round(pd_datafram_PCA_sim.iloc[0]['F'],2))+'\n\
@@ -3708,16 +3695,16 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 # pd_datafram_PCA_sim['erosion_coeff']=pd_datafram_PCA_sim['erosion_coeff']/1000000
                 # pd_datafram_PCA_sim['sigma']=pd_datafram_PCA_sim['sigma']/1000000
                 select_kde_print='No'
-                if rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR:
+                if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
                     select_kde_print='Yes'
-                    print('below',SIGMA_ERR,'sigma noise, SAVED')
+                    print('below noise, SAVED')
                     pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
 
                     if total_distribution:
                         # shuty copy the file
-                        shutil.copy(output_dir+os.sep+around_meteor+'_DensPoint_TOT.json', output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+around_meteor+'_DensPoint_TOT.json')
+                        shutil.copy(output_dir+os.sep+around_meteor+'_DensPoint_TOT.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_DensPoint_TOT.json')
                     else:
-                        shutil.copy(output_dir+os.sep+around_meteor+'_DensPoint.json', output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+around_meteor+'_DensPoint.json')
+                        shutil.copy(output_dir+os.sep+around_meteor+'_DensPoint.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_DensPoint.json')
                     fig.suptitle(around_meteor+' '+select_mode_print+' mode selected and '+select_kde_print+' densest point selected') # , fontsize=16
                     # pu the leggend putside the plot and adjust the plot base on the screen size
                     ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
@@ -3727,9 +3714,9 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     # make more space
                     plt.tight_layout()
                     if is_real:
-                        plt.savefig(output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                        plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
                     else:
-                        plt.savefig(output_dir_OG+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                        plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
 
                 # put a sup title
                 fig.suptitle(around_meteor+' '+select_mode_print+' mode selected and '+select_kde_print+' densest point selected') # , fontsize=16
@@ -4077,7 +4064,7 @@ def RMSD_calc_diff_weight(data_file, fit_funct):
 
 
 
-def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fit_funct='', gen_Metsim='', mag_noise_real = 0.1, len_noise_real = 20.0, file_name_obs='', run_optimization=True):
+def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fit_funct='', gen_Metsim='', mag_noise_real = 0.1, len_noise_real = 20.0, mag_RMSD = 0.1, len_RMSD = 20.0, file_name_obs='', save_results_folder_events_plots='', run_optimization=True):
 
     # merge curr_sel and curr_obs
     curr_sel = df_sel_shower.copy()
@@ -4088,8 +4075,8 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
     # 5 sigma confidence interval
     # five_sigma=False
-    # mag_noise = MAG_RMSD*SIGMA_ERR
-    # len_noise = LEN_RMSD*SIGMA_ERR
+    # mag_noise = mag_RMSD
+    # len_noise = len_RMSD
     mag_noise = mag_noise_real.copy()
     len_noise = len_noise_real.copy()
 
@@ -4180,7 +4167,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(data_file, fit_funct)
 
-        print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(MAG_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(MAG_RMSD*SIGMA_ERR*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(LEN_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(LEN_RMSD*MAG_RMSD*2,3),'|| Event noise len', round(rmsd_lag,3))
+        # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*mag_RMSD*2,3),'|| Event noise len', round(rmsd_lag,3))
         plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real/1000,3)), residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, fit_funct, mag_noise, vel_noise, 'Std.dev. realizations')
         plot_side_by_side(fit_funct, fig, ax, 'k--','Fit', np.zeros(len(residual_height_pos_real)), np.zeros(len(residual_time_pos_real)), residual_time_pos_real, residual_height_pos_real)
         
@@ -4257,10 +4244,10 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
         file_json_save_phys_NOoptimized=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title
         if Metsim_flag:
             file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_fitted.json'
-            file_json_save_results=output_dir+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+file_name_title[:23]+'_fitted.json'
+            file_json_save_results=output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:23]+'_fitted.json'
         else:
             file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
-            file_json_save_results=output_dir+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
+            file_json_save_results=output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
 
         shutil.copy(namefile_sel, file_json_save_phys_NOoptimized)
 
@@ -4282,12 +4269,15 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                         with open(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', 'w') as outfile:
                             json.dump(const_part, outfile, indent=4)
 
-                if rmsd_mag<MAG_RMSD and rmsd_lag<LEN_RMSD:
+                if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
                     print('below sigma noise, SAVED')
 
                     shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', file_json_save_results)
+                    shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', file_json_save_phys)
+                    pd_selected_low_RMSD = curr_sel.iloc[ii].copy()
+                    pd_selected_low_RMSD['solution_id']=file_json_save_phys
 
-                    pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, curr_sel.iloc[ii]], axis=0)
+                    pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_selected_low_RMSD], axis=0)
 
                     # suptitle of the plot
                     fig.suptitle(file_name_title+' PERFECT below sigma noise')
@@ -4299,7 +4289,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     plt.subplots_adjust(wspace=0.2)
                     # make more space
                     plt.tight_layout()
-                    plt.savefig(output_dir+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+                    plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
                     shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_results)
 
                     plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
@@ -4308,18 +4298,18 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     plt.close()
                     continue
 
-                elif rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR: # 95CI 1.96 z-score
-                    print('below',SIGMA_ERR,'sigma noise, OPTIMIZED')
+                elif rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD: # 95CI 1.96 z-score
+                    print('below noise, OPTIMIZED')
                     shutil.copy(output_dir+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
                     update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, False, False) # More_complex_fit=False, Custom_refinement=False
 
-                elif rmsd_mag<MAG_RMSD*SIGMA_ERR*2 and rmsd_lag<LEN_RMSD*SIGMA_ERR*2: # 99.99CI 1.96*2 z-score
+                elif rmsd_mag<mag_RMSD*2 and rmsd_lag<len_RMSD*2: # 99.99CI 1.96*2 z-score
                     print('between sigma noise, try major OPTIMIZATION and SAVE')
                     shutil.copy(output_dir+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
                     update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, True, True) # More_complex_fit=False, Custom_refinement=False
 
                 else:
-                    print('above',SIGMA_ERR*2,'sigma noise, NO OPTIMIZATION and NOT SAVED')
+                    print('above noise, NO OPTIMIZATION and NOT SAVED')
                     
                     shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', file_json_save_phys)
 
@@ -4353,7 +4343,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(gensim_data_optimized, fit_funct)
 
-            print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_noise_real*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(MAG_RMSD*SIGMA_ERR*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(LEN_RMSD*SIGMA_ERR,3),''+str(SIGMA_ERR*2)+'sig',round(LEN_RMSD*SIGMA_ERR*2,3),'|| Event noise len', round(rmsd_lag,3))
+            # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_noise_real,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*2,3),'|| Event noise len', round(rmsd_lag,3))
 
             if Metsim_flag:
                 
@@ -4381,14 +4371,14 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             ax[5].lines[-1].set_marker("x")
 
 
-        if rmsd_mag<MAG_RMSD*SIGMA_ERR and rmsd_lag<LEN_RMSD*SIGMA_ERR:
+        if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
 
-            # output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS
+            # output_folder+os.sep+save_results_folder_events_plots
             if run_optimization:
-                print('below',SIGMA_ERR,'sigma noise, OPTIMIZED and SAVED')
+                print('below noise, OPTIMIZED and SAVED')
                 fig.suptitle(file_name_title+' optimized SELECTED')
             else:
-                print('below',SIGMA_ERR,'sigma noise, SAVED')
+                print('below noise, SAVED')
                 fig.suptitle(file_name_title+' simulation SELECTED')
             # pu the leggend putside the plot and adjust the plot base on the screen size
             ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
@@ -4397,21 +4387,25 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             plt.subplots_adjust(wspace=0.2)
             # make more space
             plt.tight_layout()
-            plt.savefig(output_dir+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+            plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
             
             if run_optimization:
                 if not os.path.isfile(file_json_save_phys):
                     # output_dir+os.sep+file_name_obs+'_sim_fit.json'
                     shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_results)
+                    shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
+                # change solution_id of pd_datafram_PCA_sim_optimized to file_json_save_results
+                pd_datafram_PCA_sim_optimized['solution_id']=file_json_save_phys
                 pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_sim_optimized], axis=0)
             else:
                 pd_datafram_PCA_sim = array_to_pd_dataframe_PCA(data_file, fit_funct)
-                shutil.copy(file_json_save_phys_NOoptimized, output_dir+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+file_name_title)
+                pd_datafram_PCA_sim['solution_id']=file_json_save_phys_NOoptimized
+                shutil.copy(file_json_save_phys_NOoptimized, output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title)
                 # remove curr_sel.iloc[[ii]].drop(columns=['rmsd_mag', 'rmsd_len', 'solution_id_dist', 'distance_meteor', 'distance_mean']) rmsd_mag	rmsd_len solution_id_dist	distance_meteor	distance_mean
                 pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_sim], axis=0)
 
         else:
-            print('above',SIGMA_ERR,'sigma noise, OPTIMIZATION NOT SAVED')
+            print('above the noise, NOT SAVED')
             if run_optimization:
                 fig.suptitle(file_name_title+' BAD optimization was not good enough')
             else:
@@ -4753,8 +4747,8 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
     # 5 sigma confidence interval
     # five_sigma=False
-    # mag_noise = MAG_RMSD*SIGMA_ERR
-    # len_noise = LEN_RMSD*SIGMA_ERR
+    # mag_noise = mag_RMSD
+    # len_noise = len_RMSD
     mag_noise = mag_noise_real.copy()
     len_noise = len_noise_real.copy()
 
@@ -5038,12 +5032,12 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
         df_sel_shower_real.to_csv(output_folder_of_csv, index=False)
 
 
-def modify_rmsd_confidence(pd_datafram_PCA_sim_real, MAG_RMSD, LEN_RMSD, rmsd_pol_mag, rmsd_t0_lag, output_path_distrib_rmsd=''):
+def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag, output_path_distrib_rmsd=''):
     # deep copy pd_datafram_PCA_sim
     pd_datafram_PCA_sim = pd_datafram_PCA_sim_real.copy()
 
-    MAG_RMSD_conf_old= (2 * stats.norm.cdf(MAG_RMSD/rmsd_pol_mag) - 1)*100 
-    LEN_RMSD_conf_old= (2 * stats.norm.cdf(LEN_RMSD/rmsd_t0_lag) - 1)*100
+    MAG_RMSD_conf_old= (2 * stats.norm.cdf(mag_RMSD/rmsd_pol_mag) - 1)*100 
+    LEN_RMSD_conf_old= (2 * stats.norm.cdf(len_RMSD/rmsd_t0_lag) - 1)*100
 
     # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
     if os.path.exists(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt"):
@@ -5051,8 +5045,8 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, MAG_RMSD, LEN_RMSD, rmsd_po
         os.remove(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt")
     sys.stdout = Logger(output_path_distrib_rmsd,"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt") # _30var_99%_13PC
 
-    print('MAG_RMSD:'+str(np.round(MAG_RMSD,3))+' Confidence interval MAG:'+str(np.round(MAG_RMSD_conf_old,3))+'%')
-    print('LEN_RMSD:'+str(np.round(LEN_RMSD,3))+' Confidence interval LEN:'+str(np.round(LEN_RMSD_conf_old,3))+'%')
+    print('mag_RMSD:'+str(np.round(mag_RMSD,3))+' Confidence interval MAG:'+str(np.round(MAG_RMSD_conf_old,3))+'%')
+    print('len_RMSD:'+str(np.round(len_RMSD,3))+' Confidence interval LEN:'+str(np.round(LEN_RMSD_conf_old,3))+'%')
 
     # Normalize the columns to bring them to the same scale
     pd_datafram_PCA_sim['rmsd_mag_norm'] = pd_datafram_PCA_sim['rmsd_mag'] / pd_datafram_PCA_sim['rmsd_mag'].max()
@@ -5073,33 +5067,33 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, MAG_RMSD, LEN_RMSD, rmsd_po
     # # Drop the auxiliary columns if they are no longer needed
     # pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_metric'])
 
-    # check first if any is smaller than MAG_RMSD and LEN_RMSD
-    if pd_datafram_PCA_sim['rmsd_mag'].iloc[0] < MAG_RMSD and pd_datafram_PCA_sim['rmsd_len'].iloc[0] < LEN_RMSD:
-        # print there are values smaller than MAG_RMSD and LEN_RMSD
-        print('There is at least one value smaller than MAG_RMSD and LEN_RMSD')
-        # check biggest index in pd_datafram_PCA_sim['rmsd_mag'] that is still<MAG_RMSD
-        index_mag = pd_datafram_PCA_sim[pd_datafram_PCA_sim['rmsd_mag'] < MAG_RMSD].index.max()
-        print('closest index_mag to MAG RMSD',MAG_RMSD,'is index_mag',index_mag,'with rmsd_mag',pd_datafram_PCA_sim['rmsd_mag'].iloc[index_mag])
-        index_len = pd_datafram_PCA_sim[pd_datafram_PCA_sim['rmsd_len'] < LEN_RMSD].index.max()
-        print('closest index_len to LEN RMSD',LEN_RMSD,'is index_len',index_len,'with rmsd_len',pd_datafram_PCA_sim['rmsd_len'].iloc[index_len])
+    # check first if any is smaller than mag_RMSD and len_RMSD
+    if pd_datafram_PCA_sim['rmsd_mag'].iloc[0] < mag_RMSD and pd_datafram_PCA_sim['rmsd_len'].iloc[0] < len_RMSD:
+        # print there are values smaller than mag_RMSD and len_RMSD
+        print('There is at least one value smaller than mag_RMSD and len_RMSD')
+        # check biggest index in pd_datafram_PCA_sim['rmsd_mag'] that is still<mag_RMSD
+        index_mag = pd_datafram_PCA_sim[pd_datafram_PCA_sim['rmsd_mag'] < mag_RMSD].index.max()
+        print('closest index_mag to MAG RMSD',mag_RMSD,'is index_mag',index_mag,'with rmsd_mag',pd_datafram_PCA_sim['rmsd_mag'].iloc[index_mag])
+        index_len = pd_datafram_PCA_sim[pd_datafram_PCA_sim['rmsd_len'] < len_RMSD].index.max()
+        print('closest index_len to LEN RMSD',len_RMSD,'is index_len',index_len,'with rmsd_len',pd_datafram_PCA_sim['rmsd_len'].iloc[index_len])
         
         # check if index_mag > index_len or viceversa
         if index_mag >= index_len:
-            LEN_RMSD_new = LEN_RMSD
-            LEN_z_score_new = LEN_RMSD / rmsd_t0_lag
-            # create the new MAG_RMSD based on the index the multiplication is required so that the MAG_RMSD_new is bigger than pd_datafram_PCA_sim['rmsd_mag'].iloc[index_len] (handle the < condition)
+            LEN_RMSD_new = len_RMSD
+            LEN_z_score_new = len_RMSD / rmsd_t0_lag
+            # create the new mag_RMSD based on the index the multiplication is required so that the MAG_RMSD_new is bigger than pd_datafram_PCA_sim['rmsd_mag'].iloc[index_len] (handle the < condition)
             MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].iloc[index_len]#+((pd_datafram_PCA_sim['rmsd_mag'].iloc[index_len]-pd_datafram_PCA_sim['rmsd_mag'].iloc[index_len+1])/1000)
             MAG_z_score_new = MAG_RMSD_new / rmsd_pol_mag
             
         elif index_mag < index_len:
-            MAG_RMSD_new = MAG_RMSD
-            MAG_z_score_new = MAG_RMSD / rmsd_pol_mag
-            # create the new LEN_RMSD based on the index the multiplication is required so that the LEN_RMSD_new is bigger than pd_datafram_PCA_sim['rmsd_len'].iloc[index_mag] (handle the < condition)
+            MAG_RMSD_new = mag_RMSD
+            MAG_z_score_new = mag_RMSD / rmsd_pol_mag
+            # create the new len_RMSD based on the index the multiplication is required so that the LEN_RMSD_new is bigger than pd_datafram_PCA_sim['rmsd_len'].iloc[index_mag] (handle the < condition)
             LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].iloc[index_mag]#+((pd_datafram_PCA_sim['rmsd_len'].iloc[index_mag]-pd_datafram_PCA_sim['rmsd_len'].iloc[index_mag+1])/1000)
             LEN_z_score_new = LEN_RMSD_new / rmsd_t0_lag
     else:
-        # print there are values smaller than MAG_RMSD and LEN_RMSD
-        print('NO values smaller than MAG_RMSD and LEN_RMSD')
+        # print there are values smaller than mag_RMSD and len_RMSD
+        print('NO values smaller than mag_RMSD and len_RMSD')
         # find the knee of 'rmsd_mag', 'rmsd_len' and use it as the MAG_RMSD_new and LEN_RMSD_new
         index = find_knee_dist_index(pd_datafram_PCA_sim.head(50), output_path=output_path_distrib_rmsd, around_meteor='Combined RMSD metric', data_meteor_pd_sel='combined_RMSD_metric')# , window_of_smothing_avg=1
         # find the highest value rmsd_mag .head(index)
@@ -5107,36 +5101,12 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, MAG_RMSD, LEN_RMSD, rmsd_po
         # find the highest value rmsd_len .head(index)
         LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].head(index).max()
 
-        print('initial MAG RMSD',MAG_RMSD,'the new rmsd_mag',MAG_RMSD_new)
-        print('initial LEN RMSD',LEN_RMSD,'the new rmsd_len',LEN_RMSD_new)
+        print('initial MAG RMSD',mag_RMSD,'the new rmsd_mag',MAG_RMSD_new)
+        print('initial LEN RMSD',len_RMSD,'the new rmsd_len',LEN_RMSD_new)
 
         # find the z_score for the new MAG_RMSD_new and LEN_RMSD_new
         MAG_z_score_new = MAG_RMSD_new / rmsd_pol_mag
         LEN_z_score_new = LEN_RMSD_new / rmsd_t0_lag
-
-        # print('initial MAG RMSD',MAG_RMSD,'the new index',index,'with rmsd_mag',pd_datafram_PCA_sim['rmsd_mag'].iloc[index])
-        # print('initial LEN RMSD',LEN_RMSD,'the new index',index,'with rmsd_len',pd_datafram_PCA_sim['rmsd_len'].iloc[index])
-
-        # # find the knee of 'rmsd_mag', 'rmsd_len' and use it as the MAG_RMSD_new and LEN_RMSD_new
-        # index_mag = find_knee_dist_index(pd_datafram_PCA_sim.head(50), output_path=output_path_distrib_rmsd, around_meteor='RMSD_MAG', data_meteor_pd_sel='rmsd_mag', window_of_smothing_avg=1)
-        # print('initial MAG RMSD',MAG_RMSD,'the new index_mag',index_mag,'with rmsd_mag',pd_datafram_PCA_sim['rmsd_mag'].iloc[index_mag])
-        # index_len = find_knee_dist_index(pd_datafram_PCA_sim.head(50), output_path=output_path_distrib_rmsd, around_meteor='RMSD_LEN', data_meteor_pd_sel='rmsd_len', window_of_smothing_avg=1)
-        # print('initial LEN RMSD',LEN_RMSD,'the new index_len',index_len,'with rmsd_len',pd_datafram_PCA_sim['rmsd_len'].iloc[index_len])
-        
-        # # check if index_mag > index_len or viceversa
-        # if index_mag >= index_len:
-        #     LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].iloc[index_len]+((pd_datafram_PCA_sim['rmsd_len'].iloc[index_len]-pd_datafram_PCA_sim['rmsd_len'].iloc[index_len+1])/1000)
-        #     LEN_z_score_new = LEN_RMSD / rmsd_t0_lag
-        #     # create the new MAG_RMSD based on the index the multiplication is required so that the MAG_RMSD_new is bigger than pd_datafram_PCA_sim['rmsd_mag'].iloc[index_len] (handle the < condition)
-        #     MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].iloc[index_len]+((pd_datafram_PCA_sim['rmsd_mag'].iloc[index_len]-pd_datafram_PCA_sim['rmsd_mag'].iloc[index_len+1])/1000)
-        #     MAG_z_score_new = MAG_RMSD_new / rmsd_pol_mag
-            
-        # elif index_mag < index_len:
-        #     MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].iloc[index_mag]+((pd_datafram_PCA_sim['rmsd_mag'].iloc[index_mag]-pd_datafram_PCA_sim['rmsd_mag'].iloc[index_mag+1])/1000)
-        #     MAG_z_score_new = MAG_RMSD / rmsd_pol_mag
-        #     # create the new LEN_RMSD based on the index the multiplication is required so that the LEN_RMSD_new is bigger than pd_datafram_PCA_sim['rmsd_len'].iloc[index_mag] (handle the < condition)
-        #     LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].iloc[index_mag]+((pd_datafram_PCA_sim['rmsd_len'].iloc[index_mag]-pd_datafram_PCA_sim['rmsd_len'].iloc[index_mag+1])/1000)
-        #     LEN_z_score_new = LEN_RMSD_new / rmsd_t0_lag
 
     # Drop the auxiliary columns if they are no longer needed
     pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
@@ -5144,8 +5114,8 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, MAG_RMSD, LEN_RMSD, rmsd_po
     CONF_MAG_new = (2 * stats.norm.cdf(MAG_z_score_new) - 1)*100
     CONF_LEN_new = (2 * stats.norm.cdf(LEN_z_score_new) - 1)*100
 
-    print('NEW MAG_RMSD:'+str(np.round(MAG_RMSD_new,3))+' NEW Confidence interval MAG:'+str(np.round(CONF_MAG_new,3))+'%')
-    print('NEW LEN_RMSD:'+str(np.round(LEN_RMSD_new,3))+' NEW Confidence interval LEN:'+str(np.round(CONF_LEN_new,3))+'%')
+    print('NEW mag_RMSD:'+str(np.round(MAG_RMSD_new,3))+' NEW Confidence interval MAG:'+str(np.round(CONF_MAG_new,3))+'%')
+    print('NEW len_RMSD:'+str(np.round(LEN_RMSD_new,3))+' NEW Confidence interval LEN:'+str(np.round(CONF_LEN_new,3))+'%')
 
     # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
     sys.stdout.close()
@@ -5171,6 +5141,9 @@ if __name__ == "__main__":
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\20210813_061453_emccd_skyfit2_CAMO', \
         help="Path were are store both simulated and observed shower .csv file.")
     
+    arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
+        help="Number of frames per second of the video, by default 32 like EMCCD.")
+    
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   
 
@@ -5186,13 +5159,16 @@ if __name__ == "__main__":
     arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=30, \
         help="Minimum number of results that are in the CI that have to be found.")
     
+    arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=3, \
+        help="Number of failed attemp allowed to generate the set number of similar simulations, by default 3.")
+    
     arg_parser.add_argument('--resample_sim', metavar='RESAMPLE_SIM', type=bool, default=False, \
         help="if the number of simulations in the csv file is above SIM_NUM then resample the csv file base on the simulations.")
     
-    arg_parser.add_argument('--mag_rmsd', metavar='MAG_RMSD', type=float, default=0, \
+    arg_parser.add_argument('--mag_rmsd', metavar='mag_RMSD', type=float, default=0, \
         help="Minimum absolute Magnitude RMSD = mag_rmsd*conf_lvl.")
     
-    arg_parser.add_argument('--len_rmsd', metavar='LEN_RMSD', type=float, default=0, \
+    arg_parser.add_argument('--len_rmsd', metavar='len_RMSD', type=float, default=0, \
         help="Minimum lenght RMSD = len_rmsd*conf_lvl.")
 
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
@@ -5217,7 +5193,7 @@ if __name__ == "__main__":
         help="save test plots of the realization and the simulations and more plots in PCA control plots.")
     
     arg_parser.add_argument('--optimize', metavar='OPTIMIZE', type=bool, default=False, \
-        help="Run optimization step to have more precise results but increase the computation time.")
+        help="Run optimization step to have more precise results but increase the computation time, automatically active if no solution found for 5 events.")
 
     arg_parser.add_argument('--number_optimized', metavar='NUMBER_OPTIMZED', type=int, default=0, \
         help="ONLY ACTIVE IF OPTIMIZE=True, Number of optimized simulations that have to be optimized starting starting from the best, 0 means all, by default 0.")
@@ -5233,6 +5209,9 @@ if __name__ == "__main__":
 
     # Parse the command line arguments
     cml_args = arg_parser.parse_args()
+
+    # needed to avaoid modifing the entire script to add FPS when multiprocessing
+    FPS = cml_args.fps
 
     #########################
     warnings.filterwarnings('ignore')
@@ -5413,25 +5392,30 @@ if __name__ == "__main__":
         z_score = norm.ppf(1 - (1 - cml_args.conf_lvl) / 2)
         print('z_score:',z_score)
         if cml_args.mag_rmsd != 0:
-            # set the value of rmsd_pol_mag=rmsd_mag_obs and LEN_RMSD=rmsd_lag_obs*conf_lvl
+            # set the value of rmsd_pol_mag=rmsd_mag_obs and len_RMSD=rmsd_lag_obs*conf_lvl
             rmsd_pol_mag = cml_args.mag_rmsd
         if cml_args.len_rmsd != 0:
-            # set the value of rmsd_t0_lag=rmsd_mag_obs and LEN_RMSD=rmsd_lag_obs*conf_lvl
-            rmsd_t0_lag = cml_args.len_rmsd
+            if rmsd_t0_lag>1:
+                # set the value of rmsd_t0_lag=rmsd_mag_obs and len_RMSD=rmsd_lag_obs*conf_lvl
+                rmsd_t0_lag = cml_args.len_rmsd
+            else:
+                # keep it in m instead of km
+                rmsd_t0_lag = cml_args.len_rmsd*1000
+
         
-        # set the value of MAG_RMSD=rmsd_mag_obs*conf_lvl and LEN_RMSD=rmsd_lag_obs*conf_lvl
-        MAG_RMSD = rmsd_pol_mag*z_score
+        # set the value of mag_RMSD=rmsd_mag_obs*conf_lvl and len_RMSD=rmsd_lag_obs*conf_lvl
+        mag_RMSD = rmsd_pol_mag*z_score
         # check if in km or m
         if rmsd_t0_lag>1:
-            LEN_RMSD = rmsd_t0_lag/1000*z_score
+            len_RMSD = rmsd_t0_lag/1000*z_score
         else:
-            LEN_RMSD = rmsd_t0_lag*z_score
+            len_RMSD = rmsd_t0_lag*z_score
 
         # # Calculate the cumulative probability for the z-value, the confidence level is the percentage of the area within ±z_value
         CONFIDENCE_LEVEL = (2 * stats.norm.cdf(z_score) - 1)*100
-        print('INITIAL CONFIDENCE_LEVEL : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
-        print('MAG_RMSD:',MAG_RMSD)
-        print('LEN_RMSD:',LEN_RMSD)
+        print('CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
+        print('mag_RMSD:',mag_RMSD)
+        print('len_RMSD:',len_RMSD)
 
         print()
 
@@ -5586,7 +5570,17 @@ if __name__ == "__main__":
             os.remove(os.path.join(output_folder, file))
 
 
-        MAG_RMSD, LEN_RMSD, MAG_z_score, LEN_z_score, CONF_MAG, CONF_LEN = modify_rmsd_confidence(pd_datafram_PCA_sim, MAG_RMSD, LEN_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
+        mag_RMSD, len_RMSD, MAG_z_score, LEN_z_score, CONF_MAG, CONF_LEN = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
+
+        flag_preliminary_results = False
+        SAVE_RESULTS_FOLDER=SAVE_RESULTS_FINAL_FOLDER
+        save_results_folder_events_plots = SAVE_RESULTS_FOLDER+os.sep+'events_plots'
+        if CONF_MAG>CONFIDENCE_LEVEL or CONF_LEN>CONFIDENCE_LEVEL:
+            print('New RMSD above the CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
+            print('save the initial results in the Preliminary_Result folder')
+            SAVE_RESULTS_FOLDER=SAVE_PRELIMINARY_RESULTS_FOLDER
+            save_results_folder_events_plots = SAVE_RESULTS_FOLDER+os.sep+'events_plots'
+            flag_preliminary_results = True
         
         print()
             
@@ -5595,6 +5589,9 @@ if __name__ == "__main__":
         ######################## PCA SELECTION ###############################
 
         pd_datafram_PCA_selected_lowRMSD = pd.DataFrame()
+
+        mkdirP(output_folder+os.sep+SAVE_RESULTS_FOLDER)
+        mkdirP(output_folder+os.sep+save_results_folder_events_plots)
 
         if cml_args.use_PCA:
 
@@ -5613,18 +5610,15 @@ if __name__ == "__main__":
             # plot correlation function of the selected simulations
             PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition, pca_N_comp, output_folder)
 
-
-            mkdirP(output_folder+os.sep+SAVE_RESULTS_FOLDER)
-            mkdirP(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS)
             print('Selected simulations and generate KDE and MODE plot')
             # pd_datafram_PCA_selected_mode_min_KDE = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder)
-            input_list_obs = [[pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real.iloc[[ii]].reset_index(drop=True), pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real['solution_id'].iloc[ii]], pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder] for ii in range(len(pd_dataframe_PCA_obs_real))]
+            input_list_obs = [[pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real.iloc[[ii]].reset_index(drop=True), pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real['solution_id'].iloc[ii]], pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots] for ii in range(len(pd_dataframe_PCA_obs_real))]
             results_list = domainParallelizer(input_list_obs, PCA_physicalProp_KDE_MODE_PLOT, cores=cml_args.cores)
         
             # if no read the json files in the folder and create a new csv file
             pd_datafram_PCA_selected_mode_min_KDE = pd.concat(results_list)
 
-            pd_datafram_PCA_selected_mode_min_KDE_TOT = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder,True, True)
+            pd_datafram_PCA_selected_mode_min_KDE_TOT = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, pca_N_comp, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots,True, True)
 
             # concatenate the two dataframes
             pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_mode_min_KDE_TOT, pd_datafram_PCA_selected_mode_min_KDE])
@@ -5651,9 +5645,9 @@ if __name__ == "__main__":
                     directory, filename = os.path.split(solution_id)
                     filename_list.append(filename)
                 # print(filename_list)
-                json_files = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS) if f.endswith('.json')]
+                json_files = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
                 for json_file in json_files:
-                    folder_and_jsonfile_result = output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file
+                    folder_and_jsonfile_result = output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file
                     if json_file not in filename_list:
                         # print that is found a json file that is not in the selected simulations
                         print(folder_and_jsonfile_result,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
@@ -5679,7 +5673,7 @@ if __name__ == "__main__":
         print('--- RMSD CHECK ---')
 
         # check if in pd_datafram_PCA_sim there are any where rmsd_mag and rmsd_len are below RMSDmag and RMSDlen
-        pd_datafram_check_below_RMSD = pd_datafram_PCA_sim[(pd_datafram_PCA_sim['rmsd_mag'] < MAG_RMSD*SIGMA_ERR) & (pd_datafram_PCA_sim['rmsd_len'] < LEN_RMSD*SIGMA_ERR)]
+        pd_datafram_check_below_RMSD = pd_datafram_PCA_sim[(pd_datafram_PCA_sim['rmsd_mag'] < mag_RMSD) & (pd_datafram_PCA_sim['rmsd_len'] < len_RMSD)]
         flag_sim_below_RMSD = True
         # check if pd_datafram_check_below_RMSD is empty
         if pd_datafram_check_below_RMSD.empty and flag_MODE_KDE_below_RMSD==False:
@@ -5723,16 +5717,16 @@ if __name__ == "__main__":
         # # plot the values and find the RMSD of each of them
         # pd_datafram_PCA_selected_optimized = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_check_below_RMSD, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, cml_args.number_optimized, cml_args.optimize) # file_name, trajectory_Metsim_file, 
         if cml_args.number_optimized == 0:
-            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, cml_args.optimize] for ii in range(len(pd_datafram_check_below_RMSD))]
+            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, save_results_folder_events_plots, cml_args.optimize] for ii in range(len(pd_datafram_check_below_RMSD))]
             results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
             pd_datafram_PCA_selected_optimized = pd.concat(results_list)
         elif cml_args.number_optimized > 0 and cml_args.optimize==True:
             # take only the first cml_args.number_optimized
-            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, True] for ii in range()]
+            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, save_results_folder_events_plots, True] for ii in range()]
             results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
             pd_datafram_PCA_selected_optimized = pd.concat(results_list)
             # repeat for the rest of the selected events but no Optimization
-            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, False] for ii in range(len(pd_datafram_check_below_RMSD))]
+            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_check_below_RMSD))]
             results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
             pd_datafram_PCA_selected_NO_optimizad = pd.concat(results_list)
             pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_selected_NO_optimizad])
@@ -5745,32 +5739,32 @@ if __name__ == "__main__":
         if flag_manual_metsim:
             print('Check the manual reduction')
             # check also the manual reduction
-            pd_datafram_PCA_selected_optimized_Metsim = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_PCA_sim_Metsim, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, False) # file_name, trajectory_Metsim_file, 
+            pd_datafram_PCA_selected_optimized_Metsim = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_PCA_sim_Metsim, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, save_results_folder_events_plots, False) # file_name, trajectory_Metsim_file, 
             
         # concatenate the two dataframes
         pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized_Metsim, pd_datafram_PCA_selected_lowRMSD])
 
-        # get all the json file in output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS
-        json_files_results = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS) if f.endswith('.json')]
+        # get all the json file in output_folder+os.sep+save_results_folder_events_plots
+        json_files_results = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
         # check if any json_files_results is in pd_datafram_PCA_selected_lowRMSD['solution_id'].values
         if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
             for json_file in json_files_results:
                 if json_file not in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
                     # print that is found a json file that is not in the selected simulations
-                    print(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
-                    f = open(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file,"r")
+                    print(output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
+                    f = open(output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file,"r")
                     data = json.loads(f.read())
                     if 'ht_sampled' in data:
-                        data_file = read_GenerateSimulations_output(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file)
+                        data_file = read_GenerateSimulations_output(output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file)
                         pd_datafram_PCA_sim_resulsts=array_to_pd_dataframe_PCA(data_file, fit_funct)
                     else:
-                        _, data_file, pd_datafram_PCA_sim_resulsts = run_simulation(output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file, gensim_data_obs, fit_funct)
+                        _, data_file, pd_datafram_PCA_sim_resulsts = run_simulation(output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file, gensim_data_obs, fit_funct)
                     
                     rmsd_mag, rmsd_vel, rmsd_lag, _, _, _, _, _ = RMSD_calc_diff(data_file, fit_funct)
                     # Add the simulation results that have a rmsd_mag and rmsd_len that is below RMSD to pd_datafram_PCA_selected_lowRMSD
-                    if rmsd_mag < MAG_RMSD*SIGMA_ERR and rmsd_lag < LEN_RMSD*SIGMA_ERR:
+                    if rmsd_mag < mag_RMSD and rmsd_lag < len_RMSD:
                         # print to added to the selected simulations pd_datafram_PCA_sim_resulsts['solution_id'].values[0]
-                        print('Added to the selected simulations:',output_folder+os.sep+SAVE_RESULTS_FOLDER_EVENTS_PLOTS+os.sep+json_file)
+                        print('Added to the selected simulations:',output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file)
                         pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
                         # pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
                         # pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
@@ -5783,6 +5777,12 @@ if __name__ == "__main__":
 
         print('--- RESULTS ---')
 
+        # move the txt file starting with log_RMSD_ to the SAVE_RESULTS_FOLDER
+        files = [f for f in os.listdir(output_folder) if f.startswith('log_RMSD_')]
+        for file in files:
+            shutil.move(os.path.join(output_folder, file), os.path.join(output_folder, SAVE_RESULTS_FOLDER, file))
+
+        flag_fail = False
         old_results_number = 0
         result_number = 0
         ii_repeat = 0
@@ -5823,8 +5823,8 @@ if __name__ == "__main__":
                 print()
                 print('SUCCES: the physical characteristics range is in the results folder')
             else:
-                # print('FAIL: Not found any result below magRMSD',rmsd_pol_mag*SIGMA_ERR,'and lenRMSD',rmsd_t0_lag*SIGMA_ERR/1000)
-                print('FAIL: Not found any result below magRMSD',MAG_RMSD*SIGMA_ERR,'and lenRMSD',LEN_RMSD*SIGMA_ERR)
+                # print('FAIL: Not found any result below magRMSD',rmsd_pol_mag,'and lenRMSD',rmsd_t0_lag/1000)
+                print('FAIL: Not found any result below magRMSD',mag_RMSD,'and lenRMSD',len_RMSD)
                 break
 
 
@@ -5911,7 +5911,7 @@ if __name__ == "__main__":
 
             result_number = len(pd_results)
 
-            if cml_args.min_nresults <= result_number:
+            if cml_args.min_nresults <= result_number and flag_preliminary_results==False:
                 # print the number of results found
                 print('SUCCES: Number of results found:',result_number)
                 break
@@ -5919,10 +5919,11 @@ if __name__ == "__main__":
                 if old_results_number == result_number:
                     print('Same number of results found:',result_number)
                     ii_repeat+=1
-                if ii_repeat==3:
-                    print('STOP: After 3 times the same number of results found')
-                    print('STOP: After new simulation within 95%CI no new simulation below magRMSD',MAG_RMSD*SIGMA_ERR,'and lenRMSD',LEN_RMSD*SIGMA_ERR)
+                if ii_repeat==cml_args.ntry:
+                    print('STOP: After '+str(cml_args.ntry)+' failed attempt')
+                    print('STOP: No new simulation below magRMSD',mag_RMSD,'and lenRMSD',len_RMSD)
                     print('STOP: Number of results found:',result_number)
+                    flag_fail = True
                     break
                 old_results_number = result_number
                 print('regenerate new simulation in the CI range')
@@ -5961,16 +5962,75 @@ if __name__ == "__main__":
                 # print saved csv file
                 print('saved sim csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM_NEW)
 
-                input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, file_name, False] for ii in range(len(pd_datafram_NEWsim_good))]
+                if CONF_LEN > CONFIDENCE_LEVEL or CONF_MAG > CONFIDENCE_LEVEL:
+                    MAG_RMSD_new, LEN_RMSD_new, MAG_z_score, LEN_z_score, CONF_MAG, CONF_LEN = modify_rmsd_confidence(pd_datafram_NEWsim_good, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder+os.sep+SAVE_RESULTS_FOLDER)
+                    if CONF_LEN <= CONFIDENCE_LEVEL+0.001 and CONF_MAG <= CONFIDENCE_LEVEL+0.001:
+
+                        # restart with a new simulation set no longer consider any previous results
+
+                        mag_RMSD=MAG_RMSD_new
+                        len_RMSD=LEN_RMSD_new
+
+                        ####### RESTART WITH A NEW SIMULATION SET NO LONGER CONSIDER ANY PREVIOUS RESULTS #######
+
+                        old_results_number = 0
+                        result_number = 0
+                        ii_repeat = 0
+                        pd_results = pd.DataFrame()
+
+                        # move the txt file starting with log_RMSD_ to the SAVE_RESULTS_FOLDER
+                        files = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FOLDER) if f.startswith('log_RMSD_')]
+                        for file in files:
+                            shutil.move(os.path.join(output_folder+os.sep+SAVE_RESULTS_FOLDER, file), os.path.join(output_folder, SAVE_RESULTS_FINAL_FOLDER, file))
+                        
+                        print('RMSD below the CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
+                        print('RESULTS: save results!')
+
+                        SAVE_RESULTS_FOLDER = SAVE_RESULTS_FINAL_FOLDER
+                        save_results_folder_events_plots = SAVE_RESULTS_FOLDER+os.sep+'events_plots'
+
+                        mkdirP(output_folder+os.sep+SAVE_RESULTS_FOLDER)
+                        mkdirP(output_folder+os.sep+save_results_folder_events_plots)
+
+                        flag_preliminary_results=False
+
+
+                input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, file_name, False] for ii in range(len(pd_datafram_NEWsim_good))]
                 results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
 
                 # base on the one selected
                 pd_datafram_PCA_selected_lowRMSD = pd.concat(results_list)
 
-                if CONF_LEN > CONF_LVL or CONF_MAG > CONF_LVL:
-                    MAG_RMSD, LEN_RMSD, MAG_z_score, LEN_z_score, CONF_MAG, CONF_LEN = modify_rmsd_confidence(pd_datafram_NEWsim_good, MAG_RMSD, LEN_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
+        print()
 
-            
+
+
+
+        ######################## FINAL RESULTS ###############################
+
+        # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist print('processing file:',file_name)
+        if os.path.exists(SAVE_RESULTS_FOLDER+os.sep+"log_"+file_name[:15]+"_results.txt"):
+            # remove the file
+            os.remove(SAVE_RESULTS_FOLDER+os.sep+"log_"+file_name[:15]+"_results.txt")
+        sys.stdout = Logger(SAVE_RESULTS_FOLDER,"log_"+file_name[:15]+"_results.txt") # _30var_99%_13PC
+
+        print('--- FINAL RESULTS ---')
+
+        print()
+
+        if flag_fail == False:
+            if flag_preliminary_results == False:
+                print('Save RESULTS!')
+                print('Number of RESULTS found:',result_number)
+                print('SUCCES: Number of RESULTS found:',result_number)
+            else:
+                print('Only PRELIMINARY RESULTS found')
+                print('Number of PRELIMINARY RESULTS found:',result_number)
+                print('SUCCES: Number of PRELIMINARY RESULTS found:',result_number)
+        else:
+            print('FAIL: Not found any result below magRMSD',mag_RMSD,'and lenRMSD',len_RMSD)
+            print('FAIL: Number of results found:',result_number)
+
         # Timing end
         end_time = time.time()
         
@@ -5981,6 +6041,14 @@ if __name__ == "__main__":
         # print('Elapsed time in seconds:',elapsed_time)
         print(f"Elapsed time: {int(hours):02}:{int(minutes):02}:{int(seconds):02}")
 
+        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+        sys.stdout.close()
+
+        # Reset sys.stdout to its original value if needed
+        sys.stdout = sys.__stdout__
+
         print()
+
+        
 
 

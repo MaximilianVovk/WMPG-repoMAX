@@ -6253,7 +6253,7 @@ if __name__ == "__main__":
                 print('Number of PRELIMINARY RESULTS found:',result_number)
                 print('SUCCES: Number of PRELIMINARY RESULTS found:',result_number)
         else:
-            print('FAIL: Not found enough result below magRMSD',mag_RMSD,'and lenRMSD',len_RMSD)
+            print('FAIL: Not found any result below magRMSD',mag_RMSD,'and lenRMSD',len_RMSD)
             print('FAIL: Number of results found:',result_number)
 
         # Timing end

@@ -3651,7 +3651,11 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDvel '+str(round(curr
         rho:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+' sigma:'+str(round(pd_datafram_PCA_sim.iloc[0]['sigma']*1000000,4))+'\n\
         er.height:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_height_start'],2))+' er.log:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_range'],1))+'\n\
         er.coeff:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_coeff']*1000000,3))+' er.index:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
-
+            # ax[0].lines[1].set_marker(None)
+            ax[1].lines[1].set_marker(None)
+            # ax[2].lines[1].set_marker(None)
+            ax[5].lines[1].set_marker(None)
+            
             # pd_datafram_PCA_sim['erosion_coeff']=pd_datafram_PCA_sim['erosion_coeff']/1000000
             # pd_datafram_PCA_sim['sigma']=pd_datafram_PCA_sim['sigma']/1000000
 
@@ -5632,7 +5636,7 @@ if __name__ == "__main__":
         # # check if output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots' exist
         if os.path.isdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots'):
             # get all the json file in output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots'
-            json_files_results = json_files_results + [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots') if f.endswith('.json')]
+            json_files_results = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots') if f.endswith('.json')]
 
         # check if any json_files_results is in pd_datafram_PCA_selected_lowRMSD['solution_id'].values
         if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:

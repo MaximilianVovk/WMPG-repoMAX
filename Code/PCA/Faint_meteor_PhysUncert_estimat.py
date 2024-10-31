@@ -5899,7 +5899,7 @@ if __name__ == "__main__":
                     pd_datafram_NEWsim_good = pd.concat(results_list)
 
 
-                input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_NEWsim_good))]
+                input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, vel_RMSD, fps, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_NEWsim_good))]
                 results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
 
                 # base on the one selected

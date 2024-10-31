@@ -5016,7 +5016,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \
@@ -5261,8 +5261,8 @@ if __name__ == "__main__":
         print('CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
         print('mag_RMSD:',mag_RMSD)
         print('vel_RMSD:',vel_RMSD)
-        print('rmsd_t0_len:',rmsd_t0_lag)
-        print('rmsd_t0_vel:',rmsd_t0_vel)
+        print('rmsd_t0_len:',rmsd_t0_lag/1000)
+        print('rmsd_t0_vel:',rmsd_t0_vel/1000)
 
         print()
 
@@ -5420,7 +5420,7 @@ if __name__ == "__main__":
         for file in files:
             os.remove(os.path.join(output_folder, file))
 
-        mag_RMSD, len_RMSD, MAG_z_score, LEN_z_score, conf_mag, conf_len = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
+        mag_RMSD, vel_RMSD, MAG_z_score, LEN_z_score, conf_mag, conf_len = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, vel_RMSD, rmsd_pol_mag, rmsd_t0_vel/1000, output_folder)
 
         flag_preliminary_results = False
         save_results_folder=SAVE_RESULTS_FINAL_FOLDER

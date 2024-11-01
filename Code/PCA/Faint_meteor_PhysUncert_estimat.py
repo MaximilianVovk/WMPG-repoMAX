@@ -5637,7 +5637,7 @@ if __name__ == "__main__":
         json_files_results = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots') if f.endswith('.json')]
 
         # check if any json_files_results is in pd_datafram_PCA_selected_lowRMSD['solution_id'].values
-        if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
+        if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns and os.path.isdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots'):
             for json_file in json_files_results:
                 if json_file not in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
                     # print that is found a json file that is not in the selected simulations

@@ -5634,9 +5634,7 @@ if __name__ == "__main__":
         # json_files_results = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
         
         # # check if output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots' exist
-        if os.path.isdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots'):
-            # get all the json file in output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots'
-            json_files_results = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots') if f.endswith('.json')]
+        json_files_results = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots') if f.endswith('.json')]
 
         # check if any json_files_results is in pd_datafram_PCA_selected_lowRMSD['solution_id'].values
         if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:

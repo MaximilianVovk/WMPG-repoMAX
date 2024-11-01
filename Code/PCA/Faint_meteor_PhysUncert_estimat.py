@@ -3663,7 +3663,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDvel '+str(round(curr
             select_mode_print='No'
             if rmsd_mag<mag_RMSD and rmsd_vel<vel_RMSD:
                 select_mode_print='Yes'
-                print('below 5 sigma noise, SAVED')
+                print('below sigma noise, SAVED')
                 pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
 
                 if total_distribution:
@@ -5632,12 +5632,16 @@ if __name__ == "__main__":
 
         # # get all the json file in output_folder+os.sep+save_results_folder_events_plots
         # json_files_results = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
-        
+
+        flag_no_previous_results = False
         # # check if output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots' exist
-        json_files_results = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots') if f.endswith('.json')]
+        if os.path.isdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots'):
+            # get all the json file in output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots'
+            json_files_results = [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots') if f.endswith('.json')]
+            flag_no_previous_results = True
 
         # check if any json_files_results is in pd_datafram_PCA_selected_lowRMSD['solution_id'].values
-        if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns and os.path.isdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots'):
+        if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns and flag_no_previous_results == True:
             for json_file in json_files_results:
                 if json_file not in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
                     # print that is found a json file that is not in the selected simulations

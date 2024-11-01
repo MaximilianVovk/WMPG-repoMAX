@@ -5915,10 +5915,10 @@ if __name__ == "__main__":
         ######################## FINAL RESULTS ###############################
 
         # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist print('processing file:',file_name)
-        if os.path.exists(save_results_folder+os.sep+"log_"+file_name[:15]+"_results.txt"):
+        if os.path.exists(output_folder+save_results_folder+os.sep+"log_"+file_name[:15]+"_results.txt"):
             # remove the file
-            os.remove(save_results_folder+os.sep+"log_"+file_name[:15]+"_results.txt")
-        sys.stdout = Logger(save_results_folder,"log_"+file_name[:15]+"_results.txt") # _30var_99%_13PC
+            os.remove(output_folder+save_results_folder+os.sep+"log_"+file_name[:15]+"_results.txt")
+        sys.stdout = Logger(output_folder+save_results_folder,"log_"+file_name[:15]+"_results.txt") # _30var_99%_13PC
 
         print('--- FINAL RESULTS ---')
 

@@ -4926,21 +4926,45 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, vel_RMSD, rmsd_po
             print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
 
     else:
+        
         # print there are values smaller than mag_RMSD and vel_RMSD
         print('NO values smaller than mag_RMSD and vel_RMSD')
-        # find the knee of 'rmsd_mag', 'rmsd_vel' and use it as the MAG_RMSD_new and VEL_RMSD_new, no smoothing use want a conservative estimate
-        index = find_knee_dist_index(pd_datafram_PCA_sim.head(50), output_path=output_path_distrib_rmsd, around_meteor='Combined RMSD metric', data_meteor_pd_sel='combined_RMSD_metric', window_of_smothing_avg=1, find_closest_results=True)# , window_of_smothing_avg=1
-        
-        # find the highest value rmsd_mag .head(index)
-        MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].head(index+1).max()+0.0001
-        # find the highest value rmsd_vel .head(index)
-        VEL_RMSD_new = pd_datafram_PCA_sim['rmsd_vel'].head(index+1).max()+0.0001
 
-        print('Number of simulations below the new RMSD :',index+1)
-        # print all the 'solution_id' of all from 0 to index
-        print('File of all the simulations below the new RMSD :')
-        for i in range(index+1):
+        # write the closest 5 events
+        print('File of the 5 closest simulations to the new RMSD :')
+        for i in range(5):
             print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
+        
+        # find the z_score for the new MAG_RMSD_new and VEL_RMSD_new
+        MAG_z_score = MAG_RMSD / rmsd_pol_mag
+        VEL_z_score = VEL_RMSD / rmsd_t0_lag
+
+        CONF_MAG = (2 * stats.norm.cdf(MAG_z_score) - 1)*100
+        CONF_VEL = (2 * stats.norm.cdf(VEL_z_score) - 1)*100
+
+        if output_path_distrib_rmsd != '':
+            # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+            sys.stdout.close()
+
+            # Reset sys.stdout to its original value if needed
+            sys.stdout = sys.__stdout__
+
+        return mag_RMSD, vel_RMSD, MAG_z_score, VEL_z_score, CONF_MAG, CONF_VEL
+    
+    # else:
+        # # find the knee of 'rmsd_mag', 'rmsd_vel' and use it as the MAG_RMSD_new and VEL_RMSD_new, no smoothing use want a conservative estimate
+        # index = find_knee_dist_index(pd_datafram_PCA_sim.head(50), output_path=output_path_distrib_rmsd, around_meteor='Combined RMSD metric', data_meteor_pd_sel='combined_RMSD_metric', window_of_smothing_avg=1, find_closest_results=True)# , window_of_smothing_avg=1
+        
+        # # find the highest value rmsd_mag .head(index)
+        # MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].head(index+1).max()+0.0001
+        # # find the highest value rmsd_vel .head(index)
+        # VEL_RMSD_new = pd_datafram_PCA_sim['rmsd_vel'].head(index+1).max()+0.0001
+
+        # print('Number of simulations below the new RMSD :',index+1)
+        # # print all the 'solution_id' of all from 0 to index
+        # print('File of all the simulations below the new RMSD :')
+        # for i in range(index+1):
+        #     print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
 
     print('initial MAG RMSD',mag_RMSD,'the new rmsd_mag',MAG_RMSD_new)
     print('initial VEL RMSD',vel_RMSD,'the new rmsd_vel',VEL_RMSD_new)

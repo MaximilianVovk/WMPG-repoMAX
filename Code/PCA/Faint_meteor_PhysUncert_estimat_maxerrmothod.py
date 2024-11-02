@@ -282,6 +282,18 @@ def find_noise_of_data(data, fps=32, plot_case=False):
 
     len_t0_extr = fitted_lag_t0_lag + (fitted_vel_t0[0]*data_obs['time'])
 
+    # print(len_t0_extr)
+    print('stdev mag',stdev_pol_mag)
+    print('stddev lag',stdev_t0_lag/1000)
+    print('stddev vel',stdev_t0_lag*np.sqrt(2)/(1.0/fps)/1000)
+
+    # compute teh RMSD of the of lag and magnitude
+    print('RMSD mag',np.sqrt(np.mean(residuals_pol_mag ** 2)))
+    print('RMSD lag',np.sqrt(np.mean(residuals_t0_lag ** 2))/1000)
+    print('RMSD vel',np.sqrt(np.mean(residuals_t0_lag ** 2))*np.sqrt(2)/(1.0/fps)/1000)
+    
+
+
     # create a pd dataframe with fit_pol_mag and fitted_vel_t0 and time and height
     fit_funct = {
         'velocities': fitted_vel_t0,
@@ -3949,6 +3961,14 @@ def RMSD_calc_diff(data_file, fit_funct):
     lag_kms_fit = np.array(fit_funct['lag']) / 1000
     len_km_fit = np.array(fit_funct['length']) / 1000
 
+    threshold_mag = fit_funct['stdev_mag']
+    threshold_vel = fit_funct['stdev_vel']
+    threshold_lag = fit_funct['stdev_lag']
+    fps = fit_funct['fps']
+
+    # # compute the new lag for lag_kms_data
+    # lag_sampled=len_sampled-(vel_sampled[0]*time_sampled+len_sampled[0])
+
     # Define the overlapping range for time
     common_height_min = max(height_km_data.min(), height_km_fit.min())
     common_height_max = min(height_km_data.max(), height_km_fit.max())
@@ -3962,50 +3982,153 @@ def RMSD_calc_diff(data_file, fit_funct):
     if not np.any(valid_fit_indices):
         print('No valid fit data in overlapping time range')
         return 9999, 9999, 9999, 9999, 9999, 9999, time_fit[0], height_km_fit[0]
-    
-    # # find the index closer to height_km_fit[0] in height_km_data
-    # idx = (np.abs(height_km_data - height_km_fit[0])).argmin()
-    # # subtract the value of theat index in leght to the value of the index in fit
-    # len_kms_data = len_km_data - len_km_data[idx]
-
-    # Interpolation on the fit data's height grid
-    interp_abs_mag_data = interp1d(height_km_data, abs_mag_data, kind='linear', bounds_error=False, fill_value='extrapolate')
-    interp_vel_kms_data = interp1d(height_km_data, vel_kms_data, kind='linear', bounds_error=False, fill_value='extrapolate')
-    interp_lag_kms_data = interp1d(height_km_data, lag_kms_data, kind='linear', bounds_error=False, fill_value='extrapolate')
-    interp_len_km_data = interp1d(height_km_data, len_km_data, kind='linear', bounds_error=False, fill_value='extrapolate')
 
     # Interpolation on the fit data's height grid
     interp_abs_mag_fit = interp1d(height_km_fit, abs_mag_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
     interp_vel_kms_fit = interp1d(height_km_fit, vel_kms_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
     interp_lag_kms_fit = interp1d(height_km_fit, lag_kms_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
-    interp_len_km_fit = interp1d(height_km_fit, len_km_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
-
-    # Interpolated data on fit grid
-    abs_mag_data_interp = interp_abs_mag_data(height_km_fit)
-    vel_kms_data_interp = interp_vel_kms_data(height_km_fit)
-    lag_kms_data_interp = interp_lag_kms_data(height_km_fit)
-    len_km_data_interp = interp_len_km_data(height_km_fit)
-
-    # Interpolated fit data on fit grid
+    # Interpolated fit on data grid
     abs_mag_fit_interp = interp_abs_mag_fit(height_km_data)
     vel_kms_fit_interp = interp_vel_kms_fit(height_km_data)
     lag_kms_fit_interp = interp_lag_kms_fit(height_km_data)
-    len_km_fit_interp = interp_len_km_fit(height_km_data)
+    # Calculate differences
+    magnitude_differences = abs_mag_fit_interp - abs_mag_data
+    velocity_differences = vel_kms_fit_interp - vel_kms_data
+
+
+    ########## Recalculate lag_sampled using fitted initial conditions ##########
+
+    height_range = np.linspace(common_height_min, common_height_max, 1000)
+
+    # find which one contains the common_height_max 
+    if common_height_max in height_km_data:
+        # find the index of the common_height_max but ad more datapoints to be more precise
+        idx_max_data = np.abs(height_km_fit - common_height_max).argmin()
+        # subtract the time data to the index
+        time_fit = time_fit-time_fit[idx_max_data]
+        len_km_fit = len_km_fit-len_km_fit[idx_max_data]
+
+    else:
+        # find the index of the common_height_max but ad more datapoints to be more precise
+        idx_max_data = np.abs(height_km_data - common_height_max).argmin()
+        # subtract the time data to the index
+        time_data = time_data-time_data[idx_max_data]
+        len_km_data = len_km_data-len_km_data[idx_max_data]
+
+    # Define the overlapping range for time
+    common_time_min = max(time_data.min(), time_fit.min())
+    common_time_max = min(time_data.max(), time_fit.max())
+
+    time_range = np.linspace(common_time_min, common_time_max, 1000)
+
+    # Interpolation on the fit data's height grid
+    interp_abs_mag_data = interp1d(height_km_data, abs_mag_data, kind='linear', bounds_error=False, fill_value='extrapolate')
+    interp_time_data = interp1d(height_km_data, time_data, kind='linear', bounds_error=False, fill_value='extrapolate')
+    # Interpolation on the data fit's height grid
+    interp_abs_mag_fit = interp1d(height_km_fit, abs_mag_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
+    interp_time_fit = interp1d(height_km_fit, time_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
+    # convert to the range
+    abs_mag_data_interp = interp_abs_mag_data(height_range)
+    time_data_interp = interp_time_data(height_range)
+    abs_mag_fit_interp = interp_abs_mag_fit(height_range)
+    time_fit_interp = interp_time_fit(height_range)
+    time_fit_interp = abs(time_fit_interp-time_fit_interp[0])
+
+    # Interpolation on the fit data's time grid
+    interp_vel_kms_data = interp1d(time_data, vel_kms_data, kind='linear', bounds_error=False, fill_value='extrapolate')
+    interp_lag_kms_data = interp1d(time_data, lag_kms_data, kind='linear', bounds_error=False, fill_value='extrapolate')
+    interp_len_km_data = interp1d(time_data, len_km_data, kind='linear', bounds_error=False, fill_value='extrapolate')
+    # Interpolation on the data fit's time grid
+    interp_vel_kms_fit = interp1d(time_fit, vel_kms_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
+    interp_lag_kms_fit = interp1d(time_fit, lag_kms_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
+    interp_len_km_fit = interp1d(time_fit, len_km_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
+    # Interpolated data on fit grid
+    vel_kms_data_interp = interp_vel_kms_data(time_range)
+    # lag_kms_data_interp = interp_lag_kms_data(time_range)
+    len_km_data_interp = interp_len_km_data(time_range)
+    # Interpolated fit data on fit grid
+    vel_kms_fit_interp = interp_vel_kms_fit(time_range)
+    # lag_kms_fit_interp = interp_lag_kms_fit(time_range)
+    len_km_fit_interp = interp_len_km_fit(time_range)
 
     # Calculate differences
-    magnitude_differences = abs_mag_data_interp - abs_mag_fit
-    velocity_differences = vel_kms_data_interp - vel_kms_fit
-    lag_differences = lag_kms_data_interp - lag_kms_fit
+    magnitude_differences = abs_mag_data_interp - abs_mag_fit_interp
+    velocity_differences = vel_kms_data_interp - vel_kms_fit_interp
 
-    threshold_mag = fit_funct['stdev_mag']
-    threshold_vel = fit_funct['stdev_vel']
-    threshold_lag = fit_funct['stdev_lag']
-    fps = fit_funct['fps']
+    # # Recalculate lag_sampled using fitted initial conditions
+    # lag_sampled_adj = len_km_data_interp - (vel_kms_fit_interp[0] * time_fit_interp + len_km_fit_interp[0])
+
+    # lag_differences = lag_kms_data_interp - lag_kms_fit_interp
+    # # lag_sampled_adj = len_km_data_interp - (vel_kms_fit[0] * time_fit_interp + len_km_fit[0])
+    # lag_sampled_adj = len_km_data - (vel_kms_fit[0] * time_data + len_km_fit[0])
+
+    # works
+    # lag_sampled_adj = len_km_data_interp - (vel_kms_fit_interp[0] * time_range + len_km_fit_interp[0])
+    # lag_differences = lag_sampled_adj - lag_kms_fit_interp
+
+    lag_sampled_adj = len_km_data - (vel_kms_fit_interp[0] * time_data + len_km_fit_interp[0])
+    lag_differences = lag_kms_fit_interp - lag_sampled_adj
+
+    # prit the RMSD and the stdev of the differences
+    print('RMSD mag:', np.sqrt(np.mean(magnitude_differences**2)), 'stdev mag:', np.std(magnitude_differences))
+    print('RMSD lag:', np.sqrt(np.mean(lag_differences**2)), 'stdev lag:', np.std(lag_differences))
+    print('RMSD vel:', np.sqrt(np.mean(velocity_differences**2)), 'stdev vel:', np.std(velocity_differences))
+
+    residual_time_pos = time_fit_interp
+    residual_height_pos = height_km_data
+
+    # Plotting the results
+    plt.figure(figsize=(10, 5))
+    # create 3 subplots
+    plt.subplot(1, 3, 1)
+    # plot both the abs_mag_data_interp against the height and the vel_kms_data_interp angainst time and the lag_sampled_adj gainst time
+    plt.plot(abs_mag_data_interp, height_range, 'k-', label='abs_mag_data_interp')
+    plt.plot(abs_mag_fit_interp, height_range, 'k.', label='abs_mag_fit_interp')
+    # against the abs_mag_fit and the height_km_fit
+    plt.plot(abs_mag_fit, height_km_fit, 'b-', label='abs_mag_fit')
+    # put also the range of the threshold_mag
+    plt.plot(abs_mag_fit-threshold_mag, height_km_fit, 'r--', label='threshold_mag')
+    plt.plot(abs_mag_fit+threshold_mag, height_km_fit, 'r--')
+    plt.ylabel('Height [km]')
+    plt.xlabel('Absolute Magnitude')
+    plt.grid()
+    plt.legend()
+
+    plt.subplot(1, 3, 2)
+    plt.plot(time_range, vel_kms_data_interp,'k-', label='vel_kms_data_interp')
+    plt.plot(time_range, vel_kms_fit_interp, 'k.', label='vel_kms_fit_interp')
+    plt.plot(time_fit, vel_kms_fit, 'b-', label='vel_kms_fit')
+    # put also the range of the threshold_vel
+    plt.plot(time_fit, vel_kms_fit-threshold_vel, 'r--', label='threshold_vel')
+    plt.plot(time_fit, vel_kms_fit+threshold_vel, 'r--')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Velocity [km/s]')
+    plt.grid()
+    plt.legend()
+
+    plt.subplot(1, 3, 3)
+    # plt.plot(time_data, lag_sampled_adj, 'k-', label='lag_sampled_adj')
+    plt.plot(time_data, lag_sampled_adj, 'k-', label='lag_sampled_adj')
+    plt.plot(time_data, lag_kms_fit_interp, 'k.', label='lag_kms_fit_interp')
+    plt.plot(time_fit, lag_kms_fit, 'b-', label='lag_kms_fit')
+    # put also the range of the threshold_lag 
+    plt.plot(time_fit, lag_kms_fit-threshold_lag, 'r--', label='threshold_lag')
+    plt.plot(time_fit, lag_kms_fit+threshold_lag, 'r--')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Lag [km]')
+    plt.grid()
+    plt.legend()
+
+    # more space between the plots
+    plt.tight_layout()
+    # show the plot
+    plt.show()
+    
 
     magnitude_differences_stdev = magnitude_differences
     # time_stdev, magnitude_differences_stdev = adaptive_sampling_random_function(x_fine, y_fine, y_threshold, threshold, fine_sampling_rate, coarse_sampling_rate):
     time_stdev, velocity_differences_stdev = adaptive_sampling_random_function(time_data, vel_kms_data, vel_kms_fit_interp, threshold_vel, abs(time_data[0]-time_data[1]), 1/fps)
-    time_stdev, lag_differences_stdev = adaptive_sampling_random_function(time_data, len_km_data, len_km_fit_interp, threshold_lag, abs(time_data[0]-time_data[1]), 1/fps)
+    time_stdev, lag_differences_stdev = adaptive_sampling_random_function(time_data, lag_sampled_adj, lag_kms_fit_interp, threshold_lag, abs(time_data[0]-time_data[1]), 1/fps)
 
     # PENALITY_FACTORS #
 

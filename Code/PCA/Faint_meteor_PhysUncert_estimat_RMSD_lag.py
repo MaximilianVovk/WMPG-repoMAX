@@ -986,9 +986,9 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
         ax[1].set_ylim(ax[0].get_ylim())
 
         if label1!='':
-            ax[2].plot(obs1['time'], obs1['velocities'], colorline1, color=line_color, label=label1)
+            ax[2].plot(residual_time_pos, obs1['velocities'], colorline1, color=line_color, label=label1)
         else:
-            ax[2].plot(obs1['time'], obs1['velocities'], colorline1, color=line_color)
+            ax[2].plot(residual_time_pos, obs1['velocities'], colorline1, color=line_color)
         # show the legend
         if label1 != '':
             ax[2].legend()
@@ -4196,8 +4196,8 @@ def RMSD_calc_diff(data_file, fit_funct):
     abs_mag_data_interp = interp_abs_mag_fit(height_km_data)
     vel_kms_data_interp = interp_vel_kms_fit(height_km_data)
     # Calculate differences
-    magnitude_differences = abs_mag_data_interp - abs_mag_data
-    velocity_differences = vel_kms_data_interp - vel_kms_data
+    magnitude_differences_data = abs_mag_data_interp - abs_mag_data
+    velocity_differences_data = vel_kms_data_interp - vel_kms_data
 
     
     # Interpolation on the fit data's time grid
@@ -4222,8 +4222,8 @@ def RMSD_calc_diff(data_file, fit_funct):
     abs_mag_fit_interp = interp_mag_fit(time_range)
 
     # Calculate differences
-    magnitude_differences_data = abs_mag_data_interp - abs_mag_fit_interp
-    velocity_differences_data = vel_kms_data_interp - vel_kms_fit_interp
+    magnitude_differences = abs_mag_data_interp - abs_mag_fit_interp
+    velocity_differences = vel_kms_data_interp - vel_kms_fit_interp
     # # Recalculate lag_sampled using fitted initial conditions
     lag_sampled_adj = len_km_data_interp - (vel_kms_fit_interp[0] * time_range + len_km_fit_interp[0])
     lag_differences = lag_sampled_adj - lag_kms_fit_interp
@@ -5270,7 +5270,8 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
 
             ax[0].plot(abs_mag_sim_err, height_km_err, 'k--')
-            ax[1].plot(obs_time_err, vel_kms_err, 'k--', label='Fit')
+            ax[1].plot(obs_time_err, vel_kms_err, 'k--')
+            # ax[1].plot(obs_time_err, vel_kms_err, 'k--', label='Fit')
 
         elif ii<=n_confront_sel:
 
@@ -5542,30 +5543,30 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, vel_RMSD, rmsd_po
     pd_datafram_PCA_sim = pd_datafram_PCA_sim_real.copy()
 
     MAG_RMSD_conf_old= (2 * stats.norm.cdf(mag_RMSD/rmsd_pol_mag) - 1)*100 
-    VEL_RMSD_conf_old= (2 * stats.norm.cdf(vel_RMSD/rmsd_t0_lag) - 1)*100
+    LEN_RMSD_conf_old= (2 * stats.norm.cdf(len_RMSD/rmsd_t0_lag) - 1)*100
 
     if output_path_distrib_rmsd != '':
         # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-        if os.path.exists(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(VEL_RMSD_conf_old,3))+"%.txt"):
+        if os.path.exists(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt"):
             # remove the file
-            os.remove(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(VEL_RMSD_conf_old,3))+"%.txt")
-        sys.stdout = Logger(output_path_distrib_rmsd,"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(VEL_RMSD_conf_old,3))+"%.txt") # _30var_99%_13PC
+            os.remove(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt")
+        sys.stdout = Logger(output_path_distrib_rmsd,"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt") # _30var_99%_13PC
 
     print('mag RMSD Observation - Fit : ',rmsd_pol_mag)
-    print('vel RMSD Observation - Fit : ',rmsd_t0_lag)
+    print('len RMSD Observation - Fit : ',rmsd_t0_lag)
 
     print('mag RMSD:'+str(np.round(mag_RMSD,3))+' Confidence interval MAG:'+str(MAG_RMSD_conf_old)+'%') # +str(np.round(MAG_RMSD_conf_old,3))+'%')
-    print('vel RMSD:'+str(np.round(vel_RMSD,3))+' Confidence interval VEL:'+str(VEL_RMSD_conf_old)+'%') # +str(np.round(VEL_RMSD_conf_old,3))+'%')
+    print('len RMSD:'+str(np.round(len_RMSD,3))+' Confidence interval LEN:'+str(LEN_RMSD_conf_old)+'%') # +str(np.round(LEN_RMSD_conf_old,3))+'%')
 
     # Normalize the columns to bring them to the same scale
     pd_datafram_PCA_sim['rmsd_mag_norm'] = pd_datafram_PCA_sim['rmsd_mag'] / pd_datafram_PCA_sim['rmsd_mag'].max()
-    pd_datafram_PCA_sim['rmsd_vel_norm'] = pd_datafram_PCA_sim['rmsd_vel'] / pd_datafram_PCA_sim['rmsd_vel'].max()
+    pd_datafram_PCA_sim['rmsd_len_norm'] = pd_datafram_PCA_sim['rmsd_len'] / pd_datafram_PCA_sim['rmsd_len'].max()
 
     # Compute the combined metric (e.g., sum of absolute normalized values)
-    pd_datafram_PCA_sim['combined_RMSD_metric'] = abs(pd_datafram_PCA_sim['rmsd_mag_norm']) + abs(pd_datafram_PCA_sim['rmsd_vel_norm'])
+    pd_datafram_PCA_sim['combined_RMSD_metric'] = abs(pd_datafram_PCA_sim['rmsd_mag_norm']) + abs(pd_datafram_PCA_sim['rmsd_len_norm'])
 
     # Alternative metric using Euclidean distance If you want to penalize large deviations more severely especially for gaussian distribution (not the case)
-    # pd_datafram_PCA_sim['combined_metric'] = (pd_datafram_PCA_sim['rmsd_mag_norm']**2 + pd_datafram_PCA_sim['rmsd_vel_norm']**2)**0.5
+    # pd_datafram_PCA_sim['combined_metric'] = (pd_datafram_PCA_sim['rmsd_mag_norm']**2 + pd_datafram_PCA_sim['rmsd_len_norm']**2)**0.5
 
     # Sort the DataFrame based on the combined metric
     pd_datafram_PCA_sim = pd_datafram_PCA_sim.sort_values(by='combined_RMSD_metric')
@@ -5574,14 +5575,14 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, vel_RMSD, rmsd_po
     pd_datafram_PCA_sim = pd_datafram_PCA_sim.reset_index(drop=True)
 
     # # Drop the auxiliary columns if they are no longer needed
-    # pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_vel_norm', 'combined_RMSD_metric'])
+    # pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
 
-    # check first if any is smaller than mag_RMSD and vel_RMSD
-    if pd_datafram_PCA_sim['rmsd_mag'].iloc[0] <= mag_RMSD and pd_datafram_PCA_sim['rmsd_vel'].iloc[0] <= vel_RMSD:
+    # check first if any is smaller than mag_RMSD and len_RMSD
+    if pd_datafram_PCA_sim['rmsd_mag'].iloc[0] <= mag_RMSD and pd_datafram_PCA_sim['rmsd_len'].iloc[0] <= len_RMSD:
 
-        # check if the following values are also smaller than mag_RMSD and vel_RMSD and save the index
+        # check if the following values are also smaller than mag_RMSD and len_RMSD and save the index
         for i in range(1, len(pd_datafram_PCA_sim)):
-            if pd_datafram_PCA_sim['rmsd_mag'].iloc[i] > mag_RMSD or pd_datafram_PCA_sim['rmsd_vel'].iloc[i] > vel_RMSD:
+            if pd_datafram_PCA_sim['rmsd_mag'].iloc[i] > mag_RMSD or pd_datafram_PCA_sim['rmsd_len'].iloc[i] > len_RMSD:
                 index = i-1
                 break
         
@@ -5590,8 +5591,8 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, vel_RMSD, rmsd_po
 
         # find the highest value rmsd_mag .head(index)
         MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].head(index+1).max()+0.0001
-        # find the highest value rmsd_vel .head(index)
-        VEL_RMSD_new = pd_datafram_PCA_sim['rmsd_vel'].head(index+1).max()+0.0001
+        # find the highest value rmsd_len .head(index)
+        LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].head(index+1).max()+0.0001
 
         print('Number of simulations below the more stringent RMSD :',index+1)
 
@@ -5601,7 +5602,7 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, vel_RMSD, rmsd_po
             print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
 
     else:
-        
+
         # print there are values smaller than mag_RMSD and vel_RMSD
         print('NO values smaller than mag_RMSD and vel_RMSD')
 
@@ -5626,14 +5627,16 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, vel_RMSD, rmsd_po
 
         return mag_RMSD, vel_RMSD, MAG_z_score, VEL_z_score, CONF_MAG, CONF_VEL
     
-    # else:
-        # # find the knee of 'rmsd_mag', 'rmsd_vel' and use it as the MAG_RMSD_new and VEL_RMSD_new, no smoothing use want a conservative estimate
+
+        # # print there are values smaller than mag_RMSD and len_RMSD
+        # print('NO values smaller than mag_RMSD and len_RMSD')
+        # # find the knee of 'rmsd_mag', 'rmsd_len' and use it as the MAG_RMSD_new and LEN_RMSD_new, no smoothing use want a conservative estimate
         # index = find_knee_dist_index(pd_datafram_PCA_sim.head(50), output_path=output_path_distrib_rmsd, around_meteor='Combined RMSD metric', data_meteor_pd_sel='combined_RMSD_metric', window_of_smothing_avg=1, find_closest_results=True)# , window_of_smothing_avg=1
         
         # # find the highest value rmsd_mag .head(index)
         # MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].head(index+1).max()+0.0001
-        # # find the highest value rmsd_vel .head(index)
-        # VEL_RMSD_new = pd_datafram_PCA_sim['rmsd_vel'].head(index+1).max()+0.0001
+        # # find the highest value rmsd_len .head(index)
+        # LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].head(index+1).max()+0.0001
 
         # print('Number of simulations below the new RMSD :',index+1)
         # # print all the 'solution_id' of all from 0 to index
@@ -5642,20 +5645,20 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, vel_RMSD, rmsd_po
         #     print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
 
     print('initial MAG RMSD',mag_RMSD,'the new rmsd_mag',MAG_RMSD_new)
-    print('initial VEL RMSD',vel_RMSD,'the new rmsd_vel',VEL_RMSD_new)
+    print('initial LEN RMSD',len_RMSD,'the new rmsd_len',LEN_RMSD_new)
 
-    # find the z_score for the new MAG_RMSD_new and VEL_RMSD_new
+    # find the z_score for the new MAG_RMSD_new and LEN_RMSD_new
     MAG_z_score_new = MAG_RMSD_new / rmsd_pol_mag
-    VEL_z_score_new = VEL_RMSD_new / rmsd_t0_lag
+    LEN_z_score_new = LEN_RMSD_new / rmsd_t0_lag
 
     # Drop the auxiliary columns if they are no longer needed
-    pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_vel_norm', 'combined_RMSD_metric'])
+    pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
 
     CONF_MAG_new = (2 * stats.norm.cdf(MAG_z_score_new) - 1)*100
-    CONF_VEL_new = (2 * stats.norm.cdf(VEL_z_score_new) - 1)*100
+    CONF_LEN_new = (2 * stats.norm.cdf(LEN_z_score_new) - 1)*100
 
     print('NEW mag RMSD:'+str(np.round(MAG_RMSD_new,3))+' NEW Confidence interval MAG:'+str(CONF_MAG_new)+'%') # +str(np.round(CONF_MAG_new,3))+'%')
-    print('NEW vel RMSD:'+str(np.round(VEL_RMSD_new,3))+' NEW Confidence interval VEL:'+str(CONF_VEL_new)+'%') # +str(np.round(CONF_VEL_new,3))+'%')
+    print('NEW len RMSD:'+str(np.round(LEN_RMSD_new,3))+' NEW Confidence interval LEN:'+str(CONF_LEN_new)+'%') # +str(np.round(CONF_LEN_new,3))+'%')
 
 
     if output_path_distrib_rmsd != '':
@@ -5665,7 +5668,8 @@ def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, vel_RMSD, rmsd_po
         # Reset sys.stdout to its original value if needed
         sys.stdout = sys.__stdout__
 
-    return MAG_RMSD_new, VEL_RMSD_new, MAG_z_score_new, VEL_z_score_new, CONF_MAG_new, CONF_VEL_new
+    return MAG_RMSD_new, LEN_RMSD_new, MAG_z_score_new, LEN_z_score_new, CONF_MAG_new, CONF_LEN_new
+
 
 
 
@@ -6126,7 +6130,7 @@ if __name__ == "__main__":
         for file in files:
             os.remove(os.path.join(output_folder, file))
 
-        mag_RMSD, len_RMSD, MAG_z_score, LEN_z_score, conf_mag, conf_len = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
+        mag_RMSD_new, len_RMSD_new, MAG_z_score_new, LEN_z_score_new, conf_mag_new, conf_len_new = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
 
         flag_preliminary_results = False
         save_results_folder=SAVE_RESULTS_FINAL_FOLDER
@@ -6551,7 +6555,7 @@ if __name__ == "__main__":
                 # open the folder and extract all the json files
                 os.chdir(input_folder)
 
-                print('Number of simulated files : ',len(all_jsonfiles),' LEN confidence interval', conf_len,'% MAG confidence interval', conf_mag,'%')
+                # print('Number of simulated files : ',len(all_jsonfiles),' LEN confidence interval', conf_len,'% MAG confidence interval', conf_mag,'%')
 
                 input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct] for ii in range(len(all_jsonfiles))]
                 results_list = domainParallelizer(input_list, read_GenerateSimulations_output_to_PCA, cores=cml_args.cores)
@@ -6562,41 +6566,6 @@ if __name__ == "__main__":
                 pd_datafram_NEWsim_good.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM_NEW, index=False)
                 # print saved csv file
                 print('saved sim csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM_NEW)
-
-                if ii_repeat == 0 and flag_preliminary_results==True:
-                    # concatenate the pd_datafram_PCA_selected_lowRMSD dataframes with pd_datafram_NEWsim_good
-                    pd_datafram_NEWsim_good = pd.concat([pd_datafram_NEWsim_good, pd_datafram_PCA_selected_lowRMSD])
-
-                if conf_len > CONFIDENCE_LEVEL or conf_mag > CONFIDENCE_LEVEL:
-                    MAG_RMSD_new, LEN_RMSD_new, MAG_z_score, LEN_z_score, conf_mag, conf_len = modify_rmsd_confidence(pd_datafram_NEWsim_good, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000)
-                    if conf_len <= CONFIDENCE_LEVEL+0.001 and conf_mag <= CONFIDENCE_LEVEL+0.001:
-                        
-                        save_results_folder = SAVE_RESULTS_FINAL_FOLDER
-                        save_results_folder_events_plots = save_results_folder+os.sep+'events_plots'
-
-                        mkdirP(output_folder+os.sep+save_results_folder)
-                        mkdirP(output_folder+os.sep+save_results_folder_events_plots)
-
-                        # restart with a new simulation set no longer consider any previous results
-                        mag_RMSD, len_RMSD, MAG_z_score, LEN_z_score, conf_mag, conf_len = modify_rmsd_confidence(pd_datafram_NEWsim_good, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder+os.sep+save_results_folder)
-
-                        ####### RESTART WITH A NEW SIMULATION SET NO LONGER CONSIDER ANY PREVIOUS RESULTS #######
-
-                        old_results_number = 0
-                        result_number = 0
-                        ii_repeat = 0
-                        pd_results = pd.DataFrame()
-
-                        print('RMSD below the CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
-                        print('RESULTS: save results!')
-
-                        flag_preliminary_results=False
-
-
-                if ii_repeat == 0 and flag_preliminary_results==True:
-                    # if no simulations that was generated with PCA that have not beenn checked then there is no need to merge the two
-                    pd_datafram_NEWsim_good = pd.concat(results_list)
-
 
                 input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_NEWsim_good))]
                 results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)

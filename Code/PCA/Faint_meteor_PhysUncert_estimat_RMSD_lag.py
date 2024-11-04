@@ -4532,6 +4532,8 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
         data_file_real = read_pickle_reduction_file(df_obs_shower.iloc[0]['solution_id'])
     elif df_obs_shower.iloc[0]['solution_id'].endswith('.json'):
         data_file_real = read_with_noise_GenerateSimulations_output(df_obs_shower.iloc[0]['solution_id'], fps)
+        print('json file no optimization possible:', data_file_real)
+        run_optimization=False
 
     _, _, _, residuals_mag_real, residuals_vel_real, _, residual_time_pos_real, residual_height_pos_real = RMSD_calc_diff(data_file_real, fit_funct)
 
@@ -4707,11 +4709,13 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 elif curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD*1.1 and curr_sel.iloc[ii]['rmsd_len']<len_RMSD*1.1: # 95CI 1.96 z-score
                     print('below noise, OPTIMIZED')
                     shutil.copy(output_dir+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
+                    shutil.copy(df_obs_shower.iloc[0]['solution_id'], output_dir_optimized+os.sep+os.path.basename(df_obs_shower.iloc[0]['solution_id']))
                     update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, False, False) # More_complex_fit=False, Custom_refinement=False
 
                 elif curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD*2 and curr_sel.iloc[ii]['rmsd_len']<len_RMSD*2: # 99.99CI 1.96*2 z-score
                     print('between sigma noise, try major OPTIMIZATION and SAVE')
                     shutil.copy(output_dir+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
+                    shutil.copy(df_obs_shower.iloc[0]['solution_id'], output_dir_optimized+os.sep+os.path.basename(df_obs_shower.iloc[0]['solution_id']))
                     update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, True, True) # More_complex_fit=False, Custom_refinement=False
 
                 else:
@@ -4726,7 +4730,6 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     # close the plot
                     plt.close()
                     continue
-
 
 
                 print('runing the optimization...')
@@ -5685,7 +5688,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\20230811_082649_emccd_skyfit2_CAMO', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/20230811-082648.931419', \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
@@ -5751,7 +5754,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--esclude_real_solution_from_selection', metavar='ESCLUDE_REAL_SOLUTION_FROM_SELECTION', type=bool, default=False, \
         help="When use a generate simulation you can select to exclude the real result with True or also consider it in the distance calculations with False.")
     
-    arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'C:\Users\maxiv\WesternMeteorPyLib\wmpl\MetSim\AutoRefineFit_options.txt', \
+    arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'/home/mvovk/WesternMeteorPyLib/wmpl/MetSim/AutoRefineFit_options.txt', \
         help="path and name of like C: path + AutoRefineFit_options.txt")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None, \

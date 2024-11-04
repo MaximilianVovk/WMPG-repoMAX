@@ -5685,7 +5685,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\20210813_061453_emccd_skyfit2_CAMO', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Desktop\20230811_082649_emccd_skyfit2_CAMO', \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
@@ -5776,6 +5776,8 @@ if __name__ == "__main__":
                 print('file '+cml_args.ref_opt_path+' not found')
                 print("You need to specify the correct path and name of the AutoRefineFit_options.txt file in --ref_opt_path, like: C:\\path\\AutoRefineFit_options.txt")
                 sys.exit()
+        # copy the file to the output_folder
+        shutil.copy(cml_args.ref_opt_path, output_folder+os.sep+'AutoRefineFit_options.txt')
     else:
         cml_args.number_optimized = 0
 
@@ -6130,7 +6132,7 @@ if __name__ == "__main__":
         for file in files:
             os.remove(os.path.join(output_folder, file))
 
-        mag_RMSD_new, len_RMSD_new, MAG_z_score_new, LEN_z_score_new, conf_mag_new, conf_len_new = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
+        # mag_RMSD_new, len_RMSD_new, MAG_z_score_new, LEN_z_score_new, conf_mag_new, conf_len_new = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
 
         flag_preliminary_results = False
         save_results_folder=SAVE_RESULTS_FINAL_FOLDER
@@ -6198,7 +6200,7 @@ if __name__ == "__main__":
             # PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
 
 
-            flag_MODE_KDE_below_RMSD = True
+            flag_MODE_KDE_below_RMSD = False
             # print(pd_datafram_PCA_selected_lowRMSD)
             # split in directory and filename
             filename_list = []
@@ -6222,9 +6224,16 @@ if __name__ == "__main__":
                             pd_datafram_PCA_sim_resulsts=array_to_pd_dataframe_PCA(data_file, fit_funct)
                         else:
                             _, _, pd_datafram_PCA_sim_resulsts = run_simulation(folder_and_jsonfile_result, gensim_data_obs, fit_funct)
-                        # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
-                        pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
-                pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
+                        
+                        pd_datafram_PCA_sim_resulsts['type'] = 'Simulation_sel'
+                        # delete every pd_datafram_PCA_sim_resulsts with RMSD above mag_RMSD and len_RMSD
+                        if pd_datafram_PCA_sim_resulsts['rmsd_mag'].iloc[0] < mag_RMSD and pd_datafram_PCA_sim_resulsts['rmsd_len'].iloc[0] < len_RMSD:
+                            # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
+                            pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
+
+                        # # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
+                        # pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
+
                 pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
             else:
                 print('No Mode and Densest point solutions for the selected simulations')
@@ -6259,9 +6268,26 @@ if __name__ == "__main__":
             if pd_datafram_check_below_RMSD['rmsd_mag'].iloc[i] > mag_RMSD or pd_datafram_check_below_RMSD['rmsd_len'].iloc[i] > len_RMSD:
                 index = i-1
                 break
-
-        # take the head of the dataframe with the index
-        pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.head(index+1)
+            
+        if index==0 and flag_MODE_KDE_below_RMSD==False:
+            cml_args.optimize=True
+            if cml_args.number_optimized==0:
+                cml_args.number_optimized=5            
+            pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.head(cml_args.number_optimized)
+            print('No simulations below RMSD, run the optimization for the first',cml_args.number_optimized,'simulations')
+            if not os.path.isfile(cml_args.ref_opt_path):
+                # If the file is not found, check in the parent directory
+                parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                cml_args.ref_opt_path = os.path.join(parent_directory, 'AutoRefineFit_options.txt')
+                if not os.path.isfile(cml_args.ref_opt_path):
+                    print('file '+cml_args.ref_opt_path+' not found')
+                    print("You need to specify the correct path and name of the AutoRefineFit_options.txt file in --ref_opt_path, like: C:\\path\\AutoRefineFit_options.txt")
+                    sys.exit()
+            # copy the file to the output_folder
+            shutil.copy(cml_args.ref_opt_path, output_folder+os.sep+'AutoRefineFit_options.txt')
+        else:
+            # take the head of the dataframe with the index
+            pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.head(index+1)
 
         # Drop the auxiliary columns if they are no longer needed
         pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
@@ -6300,25 +6326,34 @@ if __name__ == "__main__":
         # check if cml_args.number_optimized is bigger than the number of selected simulations
         if cml_args.number_optimized > len(pd_datafram_check_below_RMSD):
             cml_args.number_optimized = 0
-            
-        if pd_datafram_check_below_RMSD.empty and flag_MODE_KDE_below_RMSD==False:
-            cml_args.optimize=True
-            cml_args.number_optimized=5
 
         # # plot the values and find the RMSD of each of them
         if cml_args.number_optimized == 0:
             input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, cml_args.optimize] for ii in range(len(pd_datafram_check_below_RMSD))]
             results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
-            pd_datafram_PCA_selected_optimized = pd.concat(results_list)
+            # check if the results_list is empty
+            if len(results_list)==0:
+                pd_datafram_PCA_selected_optimized = pd.DataFrame()
+            else:
+                pd_datafram_PCA_selected_optimized = pd.concat(results_list)
         elif cml_args.number_optimized > 0 and cml_args.optimize==True:
-            # take only the first cml_args.number_optimized
-            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, True] for ii in range()]
-            results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
-            pd_datafram_PCA_selected_optimized = pd.concat(results_list)
             # repeat for the rest of the selected events but no Optimization
-            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_check_below_RMSD))]
+            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, False] for ii in range(cml_args.number_optimized,len(pd_datafram_check_below_RMSD))]
             results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
-            pd_datafram_PCA_selected_NO_optimizad = pd.concat(results_list)
+            # check if is.empty(results_list)
+            if len(results_list)==0:
+                pd_datafram_PCA_selected_NO_optimizad = pd.DataFrame()
+            else:
+                pd_datafram_PCA_selected_NO_optimizad = pd.concat(results_list)        
+            # # take only the first cml_args.number_optimized
+            # input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, True] for ii in range(cml_args.number_optimized)]
+            # results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
+            # # check if is.empty(results_list)
+            # if len(results_list)==0:
+            #     pd_datafram_PCA_selected_optimized = pd.DataFrame()
+            # else:
+            #     pd_datafram_PCA_selected_optimized = pd.concat(results_list)
+            pd_datafram_PCA_selected_optimized = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_check_below_RMSD.head(cml_args.number_optimized), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, True)
             pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_selected_NO_optimizad])
 
         
@@ -6602,6 +6637,12 @@ if __name__ == "__main__":
         else:
             print('FAIL: Not found any result below magRMSD',mag_RMSD,'and lenRMSD',len_RMSD)
             print('FAIL: Number of results found:',result_number)
+
+        print('The results are in the folder:',output_folder+os.sep+save_results_folder)
+        # print the RMSD and the rmsd_pol_mag, rmsd_t0_lag/1000 and the CONFIDENCE_LEVEL
+        print('real data RMSD mag:'+str(rmsd_pol_mag)+'[-] RMSD len:'+str(rmsd_t0_lag/1000)+'[km]')
+        print('CONFIDENCE LEVEL: '+str(CONFIDENCE_LEVEL)+'%')
+        print('RMSD mag:'+str(mag_RMSD)+'[-] RMSD len:'+str(len_RMSD)+'[km]')
 
         # Timing end
         end_time = time.time()

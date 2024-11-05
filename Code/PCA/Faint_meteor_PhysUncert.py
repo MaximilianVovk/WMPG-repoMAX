@@ -823,13 +823,13 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
         # Mass range (kg)
         erosion_sim_params.m_init = MetParam(10**(-7), 10**(-4))
         
-
-    if v_init_180km>60000:
-        erosion_sim_params.dt = 0.005
-    elif v_init_180km<20000:
-        erosion_sim_params.dt = 0.01
-    else:
-        erosion_sim_params.dt = (-1)*0.000000125*v_init_180km+0.0125
+    erosion_sim_params.dt = 0.005
+    # if v_init_180km>60000:
+    #     erosion_sim_params.dt = 0.005
+    # elif v_init_180km<20000:
+    #     erosion_sim_params.dt = 0.01
+    # else:
+    #     erosion_sim_params.dt = (-1)*0.000000125*v_init_180km+0.0125
 
 
     # Zenith angle range

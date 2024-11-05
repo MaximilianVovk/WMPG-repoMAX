@@ -73,7 +73,10 @@ PCA_SEL_DIR_SUFX = '_sel_PCA_vs_physProp'
 SAVE_PRELIMINARY_RESULTS_FOLDER='Preliminary_Results'
 SAVE_RESULTS_FINAL_FOLDER='Results'
 
-
+# sensistivity lvl mag of camera
+CAMERA_SENSITIVITY_LVL_MAG = np.float64(0.1)
+# sensistivity lvl mag of camera
+CAMERA_SENSITIVITY_LVL_LEN = np.float64(0.006)*1000
 # Length of data that will be used as an input during training
 DATA_LENGTH = 256
 # Default number of minimum frames for simulation
@@ -132,7 +135,7 @@ def cubic_velocity(t, a, b, v0, t0):
     # Compute the velocity linearly before t0
     v_before = np.ones_like(t_before)*v0
 
-    # Compute the velocity quadratically after t0
+    # Compute the velocity quadratically after t0 lag_sampled=len_sampled-(vel_sampled[0]*time_sampled+len_sampled[0])
     v_after = -3*abs(a)*(t_after - t0)**2 - 2*abs(b)*(t_after - t0) + v0
 
     return np.concatenate((v_before, v_after))
@@ -220,6 +223,105 @@ def fit_lag_t0_RMSD_old(lag_data,time_data,velocity_data):
 
     return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', fitted_vel_t0, fitted_acc_t0
 
+def fit_lag_t0_RMSD_lag_mean_wrong(lag_data, time_data, velocity_data, lenght_data, obs1_time, obs2_time, obs1_length, obs2_length):
+    v_init = velocity_data[0]
+    # # find all the index of the velocity_data == v_init and delete them
+    # index_v_init = [i for i, x in enumerate(velocity_data) if x == v_init]
+    # print('initila vel',v_init)
+    # print(velocity_data)
+    # print('index_v_init',index_v_init)
+    # # put 3 to the list of index
+    # index_v_init.append(3)
+    # print('index_v_init',index_v_init)
+    
+    # # delete the index_v_init from the velocity_data and time_data
+    # velocity_data = [i for j, i in enumerate(velocity_data) if j not in index_v_init]
+    # time_data_vel = [i for j, i in enumerate(time_data) if j not in index_v_init]
+    # # time_data = [i for j, i in enumerate(time_data) if j not in index_v_init]
+    # # lag_data = [i for j, i in enumerate(lag_data) if j not in index_v_init]
+
+    # initial guess of deceleration decel equal to linear fit of velocity
+    p0 = [np.mean(lag_data), 0, 0, np.mean(time_data)]
+    opt_res = opt.minimize(lag_residual, p0, args=(np.array(time_data), np.array(lag_data)), method='Nelder-Mead')
+    a_t0, b_t0, c_t0, t0 = opt_res.x
+    fitted_lag_t0 = cubic_lag(np.array(time_data), a_t0, b_t0, c_t0, t0)
+    
+    # Optimize velocity residual based on initial guess from lag residual
+    opt_res_vel = opt.minimize(vel_residual, [a_t0, b_t0, v_init, t0], args=(np.array(time_data), np.array(velocity_data)), method='Nelder-Mead')
+    a_t0_vel, b_t0_vel, v_init_vel, t0_vel = opt_res_vel.x
+    fitted_vel_t0_vel = cubic_velocity(np.array(time_data), a_t0_vel, b_t0_vel, v_init_vel, t0_vel)
+
+    # find the lag again with the optimized velocity lag_sampled=len_sampled-(vel_sampled[0]*time_sampled+len_sampled[0])
+    lag_data = np.array(obs1_length) - (v_init_vel*np.array(obs1_time)+np.array(obs1_length[0]))
+    lag_data = np.concatenate((lag_data, np.array(obs2_length) - (v_init_vel*np.array(obs2_time)+np.array(obs2_length[0]))))
+    # order them base on the time
+    time_data = np.concatenate((obs1_time, obs2_time))
+    # order lag_data base on time_data
+    lag_data = [x for _,x in sorted(zip(time_data,lag_data))]
+    time_data = sorted(time_data)
+
+
+    print('t0_vel',t0_vel)
+    print('t0',t0)
+    print('a_t0_vel',a_t0_vel)
+    print('a_t0',a_t0)
+    print('b_t0_vel',b_t0_vel)
+    print('b_t0',b_t0)
+    print('v_init_vel',v_init_vel)
+    print('v_init',v_init)
+    print('c_t0',c_t0)
+    
+    # # Compute fitted velocity from original lag optimization
+    fitted_vlag_t0_vel = cubic_lag(np.array(time_data), a_t0_vel, b_t0_vel, c_t0, t0_vel)
+
+    # Compute fitted velocity from original lag optimization
+    fitted_vel_t0_lag = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init_vel, t0)
+    fitted_vel_t0_lag_res = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init_vel, t0)
+
+    # # Compute fitted velocity from original lag optimization
+    # fitted_vel_t0_lag_vel = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init_vel, t0)
+    
+    # Calculate residuals
+    residuals_vel_vel = velocity_data - fitted_vel_t0_vel
+    residuals_vel_lag = velocity_data - fitted_vel_t0_lag_res
+    
+    rmsd_vel_vel = np.sqrt(np.mean(residuals_vel_vel ** 2))
+    rmsd_vel_lag = np.sqrt(np.mean(residuals_vel_lag ** 2))
+    
+    # Choose the best fitted velocity based on RMSD
+    if rmsd_vel_vel < rmsd_vel_lag:
+        best_fitted_vel_t0 = fitted_vel_t0_vel
+        best_a_t0, best_b_t0, best_t0 = a_t0_vel, b_t0_vel, t0_vel
+    else:
+        best_fitted_vel_t0 = fitted_vel_t0_lag
+        best_a_t0, best_b_t0, best_t0 = a_t0, b_t0, t0
+    
+    fitted_acc_t0 = cubic_acceleration(np.array(time_data), best_a_t0, best_b_t0, best_t0)
+    residuals_t0 = lag_data - fitted_lag_t0
+    rmsd_t0 = np.sqrt(np.mean(residuals_t0 ** 2))
+
+    # plot the two curves of lag and velocity
+    fig, ax = plt.subplots(1, 2, figsize=(14, 6), dpi=300)
+    # flat the ax
+    ax = ax.flatten()
+    ax[0].plot(time_data, lag_data, 'go', label='Observation')
+    ax[0].plot(time_data, fitted_lag_t0, 'k--', label='Cubic Fit lag')
+    ax[0].plot(time_data, fitted_vlag_t0_vel, 'r--', label='Cubic Fit vel')
+    ax[0].set_xlabel('Time (s)')
+    ax[0].set_ylabel('Lag (m)')
+    ax[0].legend()
+    ax[1].plot(time_data, velocity_data, 'go', label='Observation')
+    ax[1].plot(time_data, fitted_vel_t0_lag, 'k--', label='Cubic Fit lag')
+    ax[1].plot(time_data, fitted_vel_t0_vel, 'r--', label='Cubic Fit vel')
+    ax[1].set_ylabel('Velocity (m/s)')
+    ax[1].set_xlabel('Time (s)')
+    ax[1].legend()
+    plt.show()
+
+
+    return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', best_fitted_vel_t0, fitted_acc_t0
+
+
 def fit_lag_t0_RMSD(lag_data, time_data, velocity_data):
     v_init = velocity_data[0]
     # initial guess of deceleration decel equal to linear fit of velocity
@@ -256,10 +358,32 @@ def fit_lag_t0_RMSD(lag_data, time_data, velocity_data):
     else:
         best_fitted_vel_t0 = fitted_vel_t0_lag
         best_a_t0, best_b_t0, best_t0 = a_t0, b_t0, t0
-    
+
+    # # plot the two curves of lag and velocity
+    # fig, ax = plt.subplots(1, 2, figsize=(14, 6), dpi=300)
+    # # flat the ax
+    # ax = ax.flatten()
+    # ax[0].plot(time_data, lag_data, 'go', label='Observation')
+    # ax[0].plot(time_data, fitted_lag_t0, 'k--', label='Cubic Fit lag')
+    # ax[0].plot(time_data, fitted_vlag_t0_vel, 'r--', label='Cubic Fit vel')
+    # ax[0].set_xlabel('Time (s)')
+    # ax[0].set_ylabel('Lag (m)')
+    # ax[0].legend()
+    # ax[1].plot(time_data, velocity_data, 'go', label='Observation')
+    # ax[1].plot(time_data, fitted_vel_t0_lag, 'k--', label='Cubic Fit lag')
+    # ax[1].plot(time_data, fitted_vel_t0_vel, 'r--', label='Cubic Fit vel')
+    # ax[1].set_ylabel('Velocity (m/s)')
+    # ax[1].set_xlabel('Time (s)')
+    # ax[1].legend()
+    # plt.show()
+
     fitted_acc_t0 = cubic_acceleration(np.array(time_data), best_a_t0, best_b_t0, best_t0)
+    # lag can be wrong for short meteors but stil the RMSD will be the same as the scatter WILL NOT CHANGE
     residuals_t0 = lag_data - fitted_lag_t0
     rmsd_t0 = np.sqrt(np.mean(residuals_t0 ** 2))
+
+    # lag can be wrong for short meteors where velocity drops suddenly
+    fitted_lag_t0 = cubic_lag(np.array(time_data), best_a_t0, best_b_t0, c_t0, best_t0)
 
     return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', best_fitted_vel_t0, fitted_acc_t0
 
@@ -268,6 +392,7 @@ def find_noise_of_data(data, fps=32, plot_case=False):
     # make a copy of data_obs
     data_obs = copy.deepcopy(data)
 
+    # fitted_lag_t0_lag, residuals_t0_lag, rmsd_t0_lag, fit_type_lag, fitted_vel_t0, fitted_acc_t0 = fit_lag_t0_RMSD(data_obs['lag'],data_obs['time'], data_obs['velocities'], data_obs['length'], data_obs['obs1_time'], data_obs['obs2_time'], data_obs['obs1_length'], data_obs['obs2_length'])
     fitted_lag_t0_lag, residuals_t0_lag, rmsd_t0_lag, fit_type_lag, fitted_vel_t0, fitted_acc_t0 = fit_lag_t0_RMSD(data_obs['lag'],data_obs['time'], data_obs['velocities'])
     # now do it for fit_mag_polin2_RMSD
     fit_pol_mag, residuals_pol_mag, rmsd_pol_mag, fit_type_mag = fit_mag_polin2_RMSD(data_obs['absolute_magnitudes'],data_obs['time'])
@@ -1491,6 +1616,12 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
     
     # Save distinct values for the two observations
     obs1, obs2 = obs_data[0], obs_data[1]
+
+    # save time of each observation
+    obs1_time = obs1['time']
+    obs2_time = obs2['time']
+    obs1_length = obs1['length']
+    obs2_length = obs2['length']
     
     # Combine obs1 and obs2
     combined_obs = {}
@@ -1543,6 +1674,10 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
     combined_obs['name'] = file_path    
     combined_obs['v_init'] = combined_obs['velocities'][0]
     combined_obs['v_init_180km'] = combined_obs['velocities'][0]+100
+    combined_obs['obs1_time'] = obs1_time
+    combined_obs['obs2_time'] = obs2_time
+    combined_obs['obs1_length'] = obs1_length   
+    combined_obs['obs2_length'] = obs2_length
     combined_obs['type'] = type_sim
     combined_obs['v_avg'] = v_avg
     combined_obs['Dynamic_pressure_peak_abs_mag'] = Dynamic_pressure_peak_abs_mag
@@ -4507,11 +4642,11 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
     # curr_sel = curr_sel.groupby('solution_id_dist').head(len(number_event_to_optimize))
     # check if distance_meteor is in the columns
     no_distance_flag = False
-    if 'distance_meteor' in curr_sel.columns:
-        # order by distance_meteor
-        curr_sel = curr_sel.sort_values('distance_meteor')
-    else:
-        no_distance_flag = True
+    # if 'distance_meteor' in curr_sel.columns:
+    #     # order by distance_meteor
+    #     curr_sel = curr_sel.sort_values('distance_meteor')
+    # else:
+    #     no_distance_flag = True
 
     # if number_event_to_optimize == 0:
     #     number_event_to_optimize = len(df_sel_shower)
@@ -4532,7 +4667,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
         data_file_real = read_pickle_reduction_file(df_obs_shower.iloc[0]['solution_id'])
     elif df_obs_shower.iloc[0]['solution_id'].endswith('.json'):
         data_file_real = read_with_noise_GenerateSimulations_output(df_obs_shower.iloc[0]['solution_id'], fps)
-        print('json file no optimization possible:', data_file_real)
+        print('json file NO optimization possible:', data_file_real)
         run_optimization=False
 
     _, _, _, residuals_mag_real, residuals_vel_real, _, residual_time_pos_real, residual_height_pos_real = RMSD_calc_diff(data_file_real, fit_funct)
@@ -4600,11 +4735,6 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
     rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
     er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
     er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
-            
-            # ax[0].lines[1].set_marker(None)
-            ax[1].lines[1].set_marker(None)
-            # ax[2].lines[1].set_marker(None)
-            ax[5].lines[1].set_marker(None)
            
                                                                         
         else:
@@ -4621,14 +4751,14 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
     er.coeff:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+' er.index:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2)), residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
 
             # change first line color
-            ax[0].lines[-1].set_color(color_line)
-            ax[1].lines[-1].set_color(color_line)
-            ax[2].lines[-1].set_color(color_line)
-            ax[5].lines[-1].set_color(color_line)
-            # ax[0].lines[1].set_marker(None)
-            ax[1].lines[1].set_marker(None)
-            # ax[2].lines[1].set_marker(None)
-            ax[5].lines[1].set_marker(None)
+            ax[0].lines[2].set_color(color_line)
+            ax[1].lines[2].set_color(color_line)
+            ax[2].lines[2].set_color(color_line)
+            ax[5].lines[2].set_color(color_line)
+        # ax[0].lines[1].set_marker(None)
+        ax[1].lines[1].set_marker(None)
+        # ax[2].lines[1].set_marker(None)
+        ax[5].lines[1].set_marker(None)
 
         # split the name from the path
         _, file_name_title = os.path.split(curr_sel.iloc[ii]['solution_id'])
@@ -4649,8 +4779,8 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_fitted.json'
             file_json_save_results=output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:23]+'_fitted.json'
         else:
-            file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
-            file_json_save_results=output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_obs[:15]+'_'+file_name_title[:23]+'_fitted.json'
+            file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:-5]+'_fitted.json'
+            file_json_save_results=output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_obs[:15]+'_'+file_name_title[:-5]+'_fitted.json'
 
         try:
             # copy the file over to the selected folder
@@ -4662,8 +4792,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
         if run_optimization:
             # check if file_json_save_phys is present
             if not os.path.isfile(file_json_save_phys):
-
-                output_dir_optimized = output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+'Optimization_'+file_name_title[:23]
+                output_dir_optimized = output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+'Optimization_'+file_name_title[:-5]
                 mkdirP(output_dir_optimized)
 
                 if Metsim_flag:
@@ -4707,19 +4836,17 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     continue
 
                 elif curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD*1.1 and curr_sel.iloc[ii]['rmsd_len']<len_RMSD*1.1: # 95CI 1.96 z-score
-                    print('below noise, OPTIMIZED')
+                    print('A little bit above the RMSD, try minor OPTIMIZATION')
                     shutil.copy(output_dir+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
-                    shutil.copy(df_obs_shower.iloc[0]['solution_id'], output_dir_optimized+os.sep+os.path.basename(df_obs_shower.iloc[0]['solution_id']))
                     update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, False, False) # More_complex_fit=False, Custom_refinement=False
 
                 elif curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD*2 and curr_sel.iloc[ii]['rmsd_len']<len_RMSD*2: # 99.99CI 1.96*2 z-score
-                    print('between sigma noise, try major OPTIMIZATION and SAVE')
+                    print('between 2 and 4 times the RMSD threshold, try major OPTIMIZATION')
                     shutil.copy(output_dir+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
-                    shutil.copy(df_obs_shower.iloc[0]['solution_id'], output_dir_optimized+os.sep+os.path.basename(df_obs_shower.iloc[0]['solution_id']))
                     update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, True, True) # More_complex_fit=False, Custom_refinement=False
 
                 else:
-                    print('above noise, NO OPTIMIZATION and NOT SAVED')
+                    print('4 times above RMSD threshold, NO OPTIMIZATION and NOT SAVED')
                     
                     shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', file_json_save_phys)
 
@@ -4731,6 +4858,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     plt.close()
                     continue
 
+                shutil.copy(df_obs_shower.iloc[0]['solution_id'], output_dir_optimized+os.sep+os.path.basename(df_obs_shower.iloc[0]['solution_id']))
 
                 print('runing the optimization...')
                 # this creates a ew file called output_dir+os.sep+file_name_obs+'_sim_fit_fitted.json'
@@ -4778,8 +4906,8 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             ax[1].lines[-1].set_marker("x")
             ax[2].lines[-1].set_marker("x")
             ax[5].lines[-1].set_marker("x")
-
-
+        print('is this valid:')
+        print(rmsd_mag,'<',mag_RMSD,'and',rmsd_lag,'<',len_RMSD)
         if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
 
             # output_folder+os.sep+save_results_folder_events_plots
@@ -4820,7 +4948,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             else:
                 fig.suptitle(file_name_title+' NOT SELECTED simulation')
 
-        # pu the leggend putside the plot and adjust the plot base on the screen size
+        # put the leggend putside the plot and adjust the plot base on the screen size
         ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
         # the legend do not fit in the plot, so adjust the plot
         plt.subplots_adjust(right=.7)
@@ -4829,7 +4957,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
         # make more space
         plt.tight_layout()
 
-        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
 
         # close the plot
         plt.close()
@@ -5278,12 +5406,13 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
         elif ii<=n_confront_sel:
 
-            rmsd_mag, rmsd_vel, rmsd_lag, _, _, _, _, _ = RMSD_calc_diff(data_file, fit_funct)
+            # rmsd_mag, rmsd_vel, rmsd_lag, _, _, _, _, _ = RMSD_calc_diff(data_file, fit_funct)
+            rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos = RMSD_calc_diff(data_file, fit_funct)
             
             if Metsim_flag:
                 metsim_numbs=ii
                 ax[0].plot(abs_mag_sim,height_km, 'k')
-                ax[1].plot(obs_time, vel_kms, 'k', label='Metsim data reduction\n\
+                ax[1].plot(residual_time_pos, vel_kms, 'k', label='Metsim data reduction\n\
 RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
     m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
     rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
@@ -5299,7 +5428,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 #     line_color='m'
                 #     ax[0].plot(abs_mag_sim,height_km, color='m')
                 
-                ax[1].plot(obs_time, vel_kms, color=line_color ,label='RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
+                ax[1].plot(residual_time_pos, vel_kms, color=line_color ,label='RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
     m:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+' F:'+str(round(curr_sel.iloc[ii]['F'],2))+'\n\
     rho:'+str(round(curr_sel.iloc[ii]['rho']))+' sigma:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'\n\
     er.height:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],2))+' er.log:'+str(round(curr_sel.iloc[ii]['erosion_range'],1))+'\n\
@@ -5797,6 +5926,9 @@ if __name__ == "__main__":
         print(output_folder)
         print(trajectory_Metsim_file)
 
+        # add to SAVE_RESULTS_FINAL_FOLDER the file_name
+        SAVE_RESULTS_FINAL_FOLDER = SAVE_RESULTS_FINAL_FOLDER+file_name
+
         flag_manual_metsim=True
         # check if it ends with _first_guess.json
         if trajectory_Metsim_file.endswith('_first_guess.json'):
@@ -5962,6 +6094,17 @@ if __name__ == "__main__":
                 # keep it in m instead of km
                 rmsd_t0_lag = cml_args.len_rmsd*1000
 
+        if rmsd_pol_mag<CAMERA_SENSITIVITY_LVL_MAG:
+            # rmsd_pol_mag if below 0.1 print the value and set it to 0.1
+            print('below the sensitivity level RMSD required, real RMSD mag:',rmsd_pol_mag)
+            print('set the RMSD mag to',CAMERA_SENSITIVITY_LVL_MAG)
+            rmsd_pol_mag = CAMERA_SENSITIVITY_LVL_MAG
+
+        if rmsd_t0_lag<CAMERA_SENSITIVITY_LVL_LEN:
+            # rmsd_pol_mag if below 0.1 print the value and set it to 0.1
+            print('below the sensitivity level RMSD required, real RMSD len:',rmsd_t0_lag)
+            print('set the RMSD len to',CAMERA_SENSITIVITY_LVL_LEN)
+            rmsd_t0_lag = CAMERA_SENSITIVITY_LVL_LEN
         
         # set the value of mag_RMSD=rmsd_mag_obs*conf_lvl and len_RMSD=rmsd_lag_obs*conf_lvl
         mag_RMSD = rmsd_pol_mag*z_score
@@ -6348,15 +6491,15 @@ if __name__ == "__main__":
                 pd_datafram_PCA_selected_NO_optimizad = pd.DataFrame()
             else:
                 pd_datafram_PCA_selected_NO_optimizad = pd.concat(results_list)        
-            # # take only the first cml_args.number_optimized
-            # input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, True] for ii in range(cml_args.number_optimized)]
-            # results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
-            # # check if is.empty(results_list)
-            # if len(results_list)==0:
-            #     pd_datafram_PCA_selected_optimized = pd.DataFrame()
-            # else:
-            #     pd_datafram_PCA_selected_optimized = pd.concat(results_list)
-            pd_datafram_PCA_selected_optimized = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_check_below_RMSD.head(cml_args.number_optimized), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, True)
+            # take only the first cml_args.number_optimized
+            input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, True] for ii in range(cml_args.number_optimized)]
+            results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
+            # check if is.empty(results_list)
+            if len(results_list)==0:
+                pd_datafram_PCA_selected_optimized = pd.DataFrame()
+            else:
+                pd_datafram_PCA_selected_optimized = pd.concat(results_list)
+            # pd_datafram_PCA_selected_optimized = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_check_below_RMSD.head(cml_args.number_optimized), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, True)
             pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_selected_NO_optimizad])
 
         
@@ -6640,11 +6783,17 @@ if __name__ == "__main__":
         else:
             print('FAIL: Not found any result below magRMSD',mag_RMSD,'and lenRMSD',len_RMSD)
             print('FAIL: Number of results found:',result_number)
+            print('INCREASE the intial SIMULATIONS or ADD an other FRAGMENTATION!')
 
         print('The results are in the folder:',output_folder+os.sep+save_results_folder)
         # print the RMSD and the rmsd_pol_mag, rmsd_t0_lag/1000 and the CONFIDENCE_LEVEL
         print('real data RMSD mag:'+str(rmsd_pol_mag)+'[-] RMSD len:'+str(rmsd_t0_lag/1000)+'[km]')
-        print('CONFIDENCE LEVEL: '+str(CONFIDENCE_LEVEL)+'%')
+        if rmsd_pol_mag==CAMERA_SENSITIVITY_LVL_MAG:
+            print('real data RMSD mag at the limit of sensistivity, automatically set to '+str(CAMERA_SENSITIVITY_LVL_MAG)+'[-]')
+        if rmsd_t0_lag==CAMERA_SENSITIVITY_LVL_LEN:
+            print('real data RMSD len at the limit of sensistivity, automatically set to '+str(CAMERA_SENSITIVITY_LVL_LEN)+'[-]')
+        print('Confidence level: '+str(CONFIDENCE_LEVEL)+'% and z-factor: '+str(z_score))
+        print('real data RMSD * z-factor = RMSD')
         print('RMSD mag:'+str(mag_RMSD)+'[-] RMSD len:'+str(len_RMSD)+'[km]')
 
         # Timing end

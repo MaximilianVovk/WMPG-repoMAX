@@ -76,7 +76,7 @@ SAVE_RESULTS_FINAL_FOLDER='Results'
 # sensistivity lvl mag of camera
 CAMERA_SENSITIVITY_LVL_MAG = np.float64(0.1)
 # sensistivity lvl mag of camera
-CAMERA_SENSITIVITY_LVL_LEN = np.float64(0.006)*1000
+CAMERA_SENSITIVITY_LVL_LEN = np.float64(0.001)*1000
 # Length of data that will be used as an input during training
 DATA_LENGTH = 256
 # Default number of minimum frames for simulation

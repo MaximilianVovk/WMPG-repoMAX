@@ -5842,10 +5842,10 @@ if __name__ == "__main__":
         help="Number of failed attemp allowed to generate the set number of similar simulations, by default 3.")
 
     arg_parser.add_argument('--fix_n_sim', metavar='FIX_NUM_SIM', type=bool, default=True, \
-        help="if the number of simulations in the csv file is above SIM_NUM then resample the csv file base on the simulations.")
+        help="do not change the number of simularions if the csv file is smaller than the SIM_RESULTS.")
 
     arg_parser.add_argument('--resample_sim', metavar='RESAMPLE_SIM', type=bool, default=False, \
-        help="if the number of simulations in the csv file is above SIM_NUM then resample the csv file base on the simulations.")
+        help="if the number of simulations in the csv file is above SIM_NUM then resample the csv file base on the requested SIM_RESULTS.")
     
     arg_parser.add_argument('--mag_rmsd', metavar='mag_RMSD', type=float, default=0, \
         help="Minimum absolute Magnitude RMSD = mag_rmsd*conf_lvl.")
@@ -5856,7 +5856,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \

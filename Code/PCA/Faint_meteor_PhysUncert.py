@@ -76,7 +76,7 @@ SAVE_RESULTS_FINAL_FOLDER='Results'
 # sensistivity lvl mag of camera
 CAMERA_SENSITIVITY_LVL_MAG = np.float64(0.1)
 # sensistivity lvl mag of camera
-CAMERA_SENSITIVITY_LVL_LEN = np.float64(0.001)*1000
+CAMERA_SENSITIVITY_LVL_LEN = np.float64(0.006)*1000
 # Length of data that will be used as an input during training
 DATA_LENGTH = 256
 # Default number of minimum frames for simulation
@@ -5817,7 +5817,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/20230811-082648.931419', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/20210813_061453_emccd_skyfit2_CAMO/20210813-061452.941123', \
         help="Path were are store both simulated and observed shower .csv file.")
     
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
@@ -5835,7 +5835,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=30, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=30, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=2, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=3, \
@@ -5846,6 +5846,9 @@ if __name__ == "__main__":
 
     arg_parser.add_argument('--resample_sim', metavar='RESAMPLE_SIM', type=bool, default=False, \
         help="if the number of simulations in the csv file is above SIM_NUM then resample the csv file base on the requested SIM_RESULTS.")
+    
+    arg_parser.add_argument('--delete_sim', metavar='DELETE_SIM', type=bool, default=False, \
+        help="Delete the simulations after the entire run.")
     
     arg_parser.add_argument('--mag_rmsd', metavar='mag_RMSD', type=float, default=0, \
         help="Minimum absolute Magnitude RMSD = mag_rmsd*conf_lvl.")
@@ -5898,6 +5901,10 @@ if __name__ == "__main__":
     #########################
     warnings.filterwarnings('ignore')
 
+    # set up observation folder
+    Class_folder_files=SetUpObservationFolders(cml_args.input_dir, cml_args.MetSim_json)
+    input_folder_file=Class_folder_files.input_folder_file
+
     if cml_args.optimize:
         # check if the file exist
         if not os.path.isfile(cml_args.ref_opt_path):
@@ -5908,14 +5915,10 @@ if __name__ == "__main__":
                 print('file '+cml_args.ref_opt_path+' not found')
                 print("You need to specify the correct path and name of the AutoRefineFit_options.txt file in --ref_opt_path, like: C:\\path\\AutoRefineFit_options.txt")
                 sys.exit()
-        # copy the file to the output_folder
-        shutil.copy(cml_args.ref_opt_path, output_folder+os.sep+'AutoRefineFit_options.txt')
-    else:
-        cml_args.number_optimized = 0
 
-    # set up observation folder
-    Class_folder_files=SetUpObservationFolders(cml_args.input_dir, cml_args.MetSim_json)
-    input_folder_file=Class_folder_files.input_folder_file
+    # shuty copy cml_args.number_optimized and cml_args.optimize
+    number_to_optimize = cml_args.number_optimized
+    flag_optimize = cml_args.optimize
 
     # print only the file name in the directory split the path and take the last element
     print('Number of trajectory.pickle files find',len(input_folder_file))
@@ -6796,6 +6799,31 @@ if __name__ == "__main__":
         print('real data RMSD * z-factor = RMSD')
         print('RMSD mag:'+str(mag_RMSD)+'[-] RMSD len:'+str(len_RMSD)+'[km]')
 
+        # if cml_args.delete_sim then delete the folder that contains the simulations
+        if cml_args.delete_sim:
+            # Initialize a set to store unique 'vXX' directories
+            directories_to_delete = set()
+
+            # Loop over each solution_id in your DataFrame
+            for solution_id in pd_datafram_PCA_sim['solution_id']:
+                # Get the directory of the file
+                dir_path = os.path.dirname(solution_id)
+                # Split the path into its components
+                path_parts = dir_path.split(os.sep)
+                # Iterate over the parts to find the 'vXX' directory
+                for idx, part in enumerate(path_parts):
+                    if part.startswith('v') and len(part) == 3 and part[1:].isdigit():
+                        # Reconstruct the path up to the 'vXX' directory
+                        v_dir = os.sep.join(path_parts[:idx+1])
+                        directories_to_delete.add(v_dir)
+                        break  # Stop after finding the 'vXX' directory
+
+            # Delete each 'vXX' directory if it exists
+            for dir_path in directories_to_delete:
+                if os.path.isdir(dir_path):
+                    shutil.rmtree(dir_path)
+                    print(f"Deleted directory: {dir_path}")
+
         # Timing end
         end_time = time.time()
         
@@ -6811,5 +6839,9 @@ if __name__ == "__main__":
 
         # Reset sys.stdout to its original value if needed
         sys.stdout = sys.__stdout__
+
+        # revert back the changes
+        cml_args.number_optimized = number_to_optimize
+        cml_args.optimize = flag_optimize
 
         print()

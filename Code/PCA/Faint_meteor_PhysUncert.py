@@ -5824,11 +5824,11 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.reset_index(drop=True)
 
     # check if the following values are also smaller than mag_RMSD and len_RMSD and save the index
-    for i in range(1, len(pd_datafram_check_below_RMSD)):
+    for i in range(0, len(pd_datafram_check_below_RMSD)):
         if pd_datafram_check_below_RMSD['rmsd_mag'].iloc[i] > mag_RMSD or pd_datafram_check_below_RMSD['rmsd_len'].iloc[i] > len_RMSD:
-            index = i-1
+            index = i
             break
-        
+    
     if index==0 and flag_MODE_KDE_below_RMSD==False:
         cml_args.optimize=True
         if cml_args.number_optimized==0:
@@ -5847,7 +5847,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         shutil.copy(cml_args.ref_opt_path, output_folder+os.sep+'AutoRefineFit_options.txt')
     else:
         # take the head of the dataframe with the index
-        pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.head(index+1)
+        pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.head(index)
 
     # Drop the auxiliary columns if they are no longer needed
     pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
@@ -5924,13 +5924,13 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_selected_lowRMSD])
 
     # check if trajectory_Metsim_file is among the pd_datafram_check_below_RMSD
-    if flag_manual_metsim:
+    if flag_manual_metsim and trajectory_Metsim_file not in pd_datafram_check_below_RMSD['solution_id'].values:
         print('Check the manual reduction')
         # check also the manual reduction
         pd_datafram_PCA_selected_optimized_Metsim = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_PCA_sim_Metsim, pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD, len_RMSD, fps, file_name, save_results_folder_events_plots, False) # file_name, trajectory_Metsim_file, 
-        
-    # concatenate the two dataframes
-    pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized_Metsim, pd_datafram_PCA_selected_lowRMSD])
+            
+        # concatenate the two dataframes
+        pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized_Metsim, pd_datafram_PCA_selected_lowRMSD])
 
     # get all the json file in output_folder+os.sep+save_results_folder_events_plots
     json_files_results = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
@@ -6318,7 +6318,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \

@@ -5449,8 +5449,8 @@ if __name__ == "__main__":
         print(output_folder)
         print(trajectory_Metsim_file)
 
-        # add to SAVE_RESULTS_FINAL_FOLDER the file_name
-        SAVE_RESULTS_FINAL_FOLDER = SAVE_RESULTS_FINAL_FOLDER+file_name
+        # add to save_res_fin_folder the file_name
+        save_res_fin_folder=SAVE_RESULTS_FINAL_FOLDER+file_name
 
         flag_manual_metsim=True
         # check if it ends with _first_guess.json
@@ -5804,7 +5804,7 @@ if __name__ == "__main__":
         # mag_RMSD_new, len_RMSD_new, MAG_z_score_new, LEN_z_score_new, conf_mag_new, conf_len_new = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
 
         flag_preliminary_results = False
-        save_results_folder=SAVE_RESULTS_FINAL_FOLDER
+        save_results_folder=save_res_fin_folder
         save_results_folder_events_plots = save_results_folder+os.sep+'events_plots'
         # if conf_mag>CONFIDENCE_LEVEL or conf_len>CONFIDENCE_LEVEL:
         #     print('New RMSD above the CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
@@ -6043,10 +6043,10 @@ if __name__ == "__main__":
 
         # get all the json file in output_folder+os.sep+save_results_folder_events_plots
         json_files_results = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
-        # check if output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots' exist
-        if os.path.isdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots'):
-            # get all the json file in output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+'events_plots'
-            json_files_results = json_files_results + [f for f in os.listdir(output_folder+os.sep+SAVE_RESULTS_FINAL_FOLDER+os.sep+'events_plots') if f.endswith('.json')]
+        # check if output_folder+os.sep+save_res_fin_folder+'events_plots' exist
+        if os.path.isdir(output_folder+os.sep+save_res_fin_folder+os.sep+'events_plots'):
+            # get all the json file in output_folder+os.sep+save_res_fin_folder+'events_plots'
+            json_files_results = json_files_results + [f for f in os.listdir(output_folder+os.sep+save_res_fin_folder+os.sep+'events_plots') if f.endswith('.json')]
 
         # check if any json_files_results is in pd_datafram_PCA_selected_lowRMSD['solution_id'].values
         if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:

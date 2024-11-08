@@ -2599,10 +2599,17 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
     # if PCA_pairplot:
     df_all_nameless_plot=df_all.copy()
 
+    # Store the values for vertical lines before sampling
+    vertical_line_values = {}
+    for var in variable_PCA[2:]:
+        vertical_line_values[var] = df_all_nameless_plot[var].values[len(df_sim_shower[variable_PCA])]
+
+
     if len(df_all_nameless_plot)>10000:
         # pick randomly 10000 events
         print('Number of events in the simulated:',len(df_all_nameless_plot))
         df_all_nameless_plot=df_all_nameless_plot.sample(n=10000)
+        # add the last len(df_sim_shower[variable_PCA])
 
     # make a subplot of the rho againist each variable_PCA as a scatter plot
     fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:])/5)), 5, figsize=(20, 15))
@@ -2614,7 +2621,7 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
         # axs[i//4, i%4].set_title('Distribution of '+var)
         # put a vertical line for the df_obs_shower[var] value
         # print(df_all_nameless_plot['solution_id'].values[len(df_sim_shower[variable_PCA])])
-        axs[i].axvline(df_all_nameless_plot[var].values[len(df_sim_shower[variable_PCA])], color='limegreen', linestyle='--', linewidth=5)       
+        axs[i].axvline(vertical_line_values[var], color='limegreen', linestyle='--', linewidth=5)      
         # x axis
         axs[i].set_xlabel(var)
         # # grid
@@ -3026,16 +3033,23 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
 
     # dataframe with the simulated and the selected meteors in the PCA space
     # df_sim_sel_PCA = pd.concat([df_sim_PCA,df_sel_PCA], axis=0)
-
     if PCA_pairplot:
 
-        df_sim_shower_small=df_sim_shower.copy()
+        # Copy the DataFrame
+        df_sim_shower_small = df_sim_shower.copy()
 
-        if len(df_sim_shower_small)>10000: # w/o takes forever to plot
-            # pick randomly 10000 events
-            df_sim_shower_small=df_sim_shower_small.sample(n=10000)
+        # Store necessary values before sampling
+        # For example, store the first value of var_phys
+        physical_vars = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
+        var_phys_values = {}
+        for var_phys in physical_vars:
+            var_phys_values[var_phys] = df_sim_shower[var_phys].values[0]
 
-        print('generating sel sim histogram plot...')
+        if len(df_sim_shower_small) >10000:  # Avoid long plotting times
+            # Randomly sample 10,000 events
+            df_sim_shower_small = df_sim_shower_small.sample(n=10000)
+
+        print('Generating selected simulation histogram plot...')
 
         # Define a custom palette
         custom_palette = {
@@ -3047,219 +3061,175 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
             'Observation': "limegreen"
         }
 
+        # Concatenate DataFrames
+        curr_df = pd.concat([df_sim_shower_small, df_sel_shower, df_obs_shower], axis=0)
 
-        curr_df = pd.concat([df_sim_shower_small,df_sel_shower,df_obs_shower], axis=0)
-
+        # Compute weights
         curr_df['num_type'] = curr_df.groupby('type')['type'].transform('size')
         curr_df['weight'] = 1 / curr_df['num_type']
-        
 
-        fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:])/5)), 5, figsize=(20, 15))
-        # flatten the axs
+        # Plotting
+        fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:]) / 5)), 5, figsize=(20, 15))
         axs = axs.flatten()
 
-        # to_plot_unit=['init vel [km/s]','avg vel [km/s]','duration [s]','begin height [km]','peak height [km]','end height [km]','begin abs mag [-]','peak abs mag [-]','end abs mag [-]','F parameter [-]','zenith angle [deg]','deceleration [km/s^2]','trail lenght [km]','kurtosis','skew']
-
-        # to_plot=['vel_init_norot','vel_avg_norot','duration','begin_height','peak_mag_height','end_height','beg_abs_mag','peak_abs_mag','end_abs_mag','F','zenith_angle','decel_parab_t0','trail_len','kurtosis','skew']
-
-        # deleter form curr_df the mass
-        #curr_df=curr_df.drop(['mass'], axis=1)
         for ii, var in enumerate(variable_PCA[2:]):
-
-            # if var in ['decel_parab_t0','decel_t0']:
-            #     sns.histplot(curr_df, x=x_plot[x_plot>-500], weights=curr_df['weight'][x_plot>-500],hue='type', ax=axs[ii], kde=True, palette=custom_palette, bins=20)
-            #     axs[ii].set_xticks([np.round(np.min(x_plot[x_plot>-500]),2),np.round(np.max(x_plot[x_plot>-500]),2)])
-            
-            # else:
-
             sns.histplot(curr_df, x=var, weights=curr_df['weight'], hue='type', ax=axs[ii], kde=True, palette=custom_palette, bins=20)
-            axs[ii].set_xticks([np.round(np.min(curr_df[var]),2),np.round(np.max(curr_df[var]),2)])
+            axs[ii].set_xticks([np.round(np.min(curr_df[var]), 2), np.round(np.max(curr_df[var]), 2)])
 
-            # if beg_abs_mag','peak_abs_mag','end_abs_mag inver the x axis
-            if var in ['beg_abs_mag','peak_abs_mag','end_abs_mag']:
+            # Invert x-axis for specific variables
+            if var in ['beg_abs_mag', 'peak_abs_mag', 'end_abs_mag']:
                 axs[ii].invert_xaxis()
 
-            # Set the x-axis formatter to ScalarFormatter
+            # Format x-axis
             axs[ii].xaxis.set_major_formatter(ScalarFormatter())
             axs[ii].ticklabel_format(useOffset=False, style='plain', axis='x')
-            # Set the number of x-axis ticks to 3
-            # axs[ii].xaxis.set_major_locator(MaxNLocator(nbins=3))
 
-            axs[ii].set_ylabel('probability')
+            axs[ii].set_ylabel('Probability')
             axs[ii].set_xlabel(var)
             axs[ii].get_legend().remove()
-            # check if there are more than 3 ticks and if yes only use the first and the last
-
-            # put y axis in log scale
             axs[ii].set_yscale('log')
-            axs[ii].set_ylim(0.01,1)
+            axs[ii].set_ylim(0.01, 1)
 
-            
-        # more space between the subplots
         plt.tight_layout()
-        # # full screen
-        # figManager = plt.get_current_fig_manager()
-        # figManager.window.showMaximized()
-
-        # save the figure
-        fig.savefig(OUT_PUT_PATH+os.sep+file_name_obs+'_Histograms_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png', dpi=300)
+        fig.savefig(OUT_PUT_PATH + os.sep + file_name_obs + '_Histograms_' + str(len(variable_PCA) - 2) + 'var_' + str(PCA_percent) + '%_' + str(pca.n_components_) + 'PC.png', dpi=300)
         plt.close()
 
-        if len(df_sim_PCA)>10000: # w/o takes forever to plot
-            # df_sim_PCA=df_sim_PCA.sample(n=10000)
-            # pick only the one with the same index in df_sim_shower_small
-            df_sim_PCA = df_sim_PCA[df_sim_PCA.index.isin(df_sim_shower_small.index)] 
-        
-        print('generating PCA space plot...')
+        # Sampling df_sim_PCA consistently
+        if len(df_sim_PCA) >10000:
+            # Use the same indices as in df_sim_shower_small
+            df_sim_PCA = df_sim_PCA.loc[df_sim_shower_small.index]
 
-        df_sim_sel_PCA = pd.concat([df_sim_PCA,df_sel_PCA,df_obs_PCA], axis=0)
+        print('Generating PCA space plot...')
 
-        # Select only the numeric columns for percentile calculations
+        df_sim_sel_PCA = pd.concat([df_sim_PCA, df_sel_PCA, df_obs_PCA], axis=0)
+
+        # Select only numeric columns
         numeric_columns = df_sim_sel_PCA.select_dtypes(include=[np.number]).columns
 
-        # Create a new column for point sizes
+        # Map point sizes
         df_sim_sel_PCA['point_size'] = df_sim_sel_PCA['type'].map({
             'Simulation_sel': 5,
             'Simulation': 5,
             'MetSim': 20,
-            'Realization': 20,    
+            'Realization': 20,
             'Observation': 40
         })
-        
 
-        # open a new figure to plot the pairplot
-        fig = plt.figure(figsize=(10, 10), dpi=300)
-
-        # # fig = sns.pairplot(df_sim_sel_PCA, hue='type', plot_kws={'alpha': 0.6, 's': 5, 'edgecolor': 'k'},corner=True)
-        # fig = sns.pairplot(df_sim_sel_PCA, hue='type',corner=True, palette='bright', diag_kind='kde', plot_kws={'s': 5, 'edgecolor': 'k'})
-        # # plt.show()
-
-        # Create the pair plot without points initially
-        fig = sns.pairplot(df_sim_sel_PCA[numeric_columns.append(pd.Index(['type']))], hue='type', corner=True, palette=custom_palette, diag_kind='kde', plot_kws={'s': 5, 'edgecolor': 'k'})
+        # Create the pair plot
+        fig = sns.pairplot(
+            df_sim_sel_PCA[numeric_columns.append(pd.Index(['type']))],
+            hue='type',
+            corner=True,
+            palette=custom_palette,
+            diag_kind='kde',
+            plot_kws={'s': 5, 'edgecolor': 'k'}
+        )
 
         # Overlay scatter plots with custom point sizes
         for i in range(len(fig.axes)):
             for j in range(len(fig.axes)):
                 if i > j:
-                    # check if the variable is in the list of the numeric_columns and set the axis limit
-                    if df_sim_sel_PCA.columns[j] in numeric_columns and df_sim_sel_PCA.columns[i] in numeric_columns:
+                    ax = fig.axes[i, j]
+                    sns.scatterplot(
+                        data=df_sim_sel_PCA,
+                        x=df_sim_sel_PCA.columns[j],
+                        y=df_sim_sel_PCA.columns[i],
+                        hue='type',
+                        size='point_size',
+                        sizes=(5, 40),
+                        ax=ax,
+                        legend=False,
+                        edgecolor='k',
+                        palette=custom_palette
+                    )
 
-                        ax = fig.axes[i, j]
-                        sns.scatterplot(data=df_sim_sel_PCA, x=df_sim_sel_PCA.columns[j], y=df_sim_sel_PCA.columns[i], hue='type', size='point_size', sizes=(5, 40), ax=ax, legend=False, edgecolor='k', palette=custom_palette)
-
-                        # ax.set_xlim(percentiles_1[df_sim_sel_PCA.columns[j]], percentiles_99[df_sim_sel_PCA.columns[j]])
-                        # ax.set_ylim(percentiles_1[df_sim_sel_PCA.columns[i]], percentiles_99[df_sim_sel_PCA.columns[i]])
-
-        # delete the last row of the plot
-        # fig.axes[-1, -1].remove()
-        # Hide the last row of plots
-        # for ax in fig.axes[-1]:
-        #     ax.remove()
-
-        # Adjust the subplots layout parameters to give some padding
         plt.subplots_adjust(hspace=0.3, wspace=0.3)
-        # plt.show()
-        
-        # save the figure
-        fig.savefig(OUT_PUT_PATH+os.sep+file_name_obs+'PCAspace_sim_sel_real_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
-        # close the figure
+        fig.savefig(OUT_PUT_PATH + os.sep + file_name_obs + 'PCAspace_sim_sel_real_' + str(len(variable_PCA) - 2) + 'var_' + str(PCA_percent) + '%_' + str(pca.n_components_) + 'PC.png')
         plt.close()
 
-        print('generating result variable plot...')
+        print('Generating result variable plot...')
 
-        output_folder=OUT_PUT_PATH+os.sep+file_name_obs+VAR_SEL_DIR_SUFX
-        # check if the output_folder exists
+        output_folder = OUT_PUT_PATH + os.sep + file_name_obs + VAR_SEL_DIR_SUFX
         if not os.path.isdir(output_folder):
             mkdirP(output_folder)
 
-        # df_sim_PCA,df_sel_PCA,df_obs_PCA
-        # print(df_sim_shower)
-        # loop all physical variables
-        physical_vars = ['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
+        # Loop over physical variables
         for var_phys in physical_vars:
-            # make a subplot of the rho againist each variable_PCA as a scatter plot
-            fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:])/5)), 5, figsize=(20, 15))
-            # flat it
+            # Create subplots
+            fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:]) / 5)), 5, figsize=(20, 15))
             axs = axs.flatten()
 
             for i, var in enumerate(variable_PCA[2:]):
-                # plot the rho againist the variable with black borders
-                axs[i].scatter(df_sim_shower_small[var], df_sim_shower_small[var_phys], c='b') #, edgecolors='k', alpha=0.5
+                # Plot simulation data
+                axs[i].scatter(df_sim_shower_small[var], df_sim_shower_small[var_phys], c='b')
 
-                axs[i].scatter(df_sel_shower[var], df_sel_shower[var_phys], c='orange') #, edgecolors='k', alpha=0.5
-                # put a green vertical line for the df_obs_shower[var] value
+                # Plot selected data
+                axs[i].scatter(df_sel_shower[var], df_sel_shower[var_phys], c='orange')
+
+                # Plot vertical line using stored value
                 axs[i].axvline(shower_current[var].values[0], color='limegreen', linestyle='--', linewidth=5)
-                # put a horizontal line for the rho of the first df_sim_shower_small
-                axs[i].axhline(df_sim_shower[var_phys].values[0], color='k', linestyle='-', linewidth=2)
-                # axs[i].set_title(var)
-                # as a suptitle put the variable_PCA
-                # fig.suptitle(var_phys)
-                if i == 0 or i == 5 or i == 10 or i == 15 or i == 20:
-                    # as a suptitle put the variable_PCA
+
+                # Plot horizontal line using stored value
+                axs[i].axhline(var_phys_values[var_phys], color='k', linestyle='-', linewidth=2)
+
+                if i % 5 == 0:
                     axs[i].set_ylabel(var_phys)
 
-                # x axis
                 axs[i].set_xlabel(var)
-
-                # grid
                 axs[i].grid()
-                # make y axis log if the variable is 'erosion_mass_min' 'erosion_mass_max'
-                if var_phys == 'erosion_mass_min' or var_phys == 'erosion_mass_max':
+
+                # Log scale for specific variables
+                if var_phys in ['erosion_mass_min', 'erosion_mass_max']:
                     axs[i].set_yscale('log')
 
+            # Remove unused subplots
+            for i in range(len(variable_PCA[2:]), len(axs)):
+                fig.delaxes(axs[i])
+
             plt.tight_layout()
-            # save the figure
-            plt.savefig(output_folder+os.sep+file_name_obs+var_phys+'_vs_var_select_PCA.png')
-            # close the figure
+            plt.savefig(output_folder + os.sep + file_name_obs + var_phys + '_vs_var_select_PCA.png')
             plt.close()
 
-        print('generating PCA position plot...')
+        print('Generating PCA position plot...')
 
-        output_folder=OUT_PUT_PATH+os.sep+file_name_obs+PCA_SEL_DIR_SUFX
-        # check if the output_folder exists
+        output_folder = OUT_PUT_PATH + os.sep + file_name_obs + PCA_SEL_DIR_SUFX
         if not os.path.isdir(output_folder):
             mkdirP(output_folder)
 
-        # loop all pphysical variables
-        physical_vars = ['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
+        # Loop over physical variables
         for var_phys in physical_vars:
-
-            # make a subplot of the rho againist each variable_PCA as a scatter plot
-            fig, axs = plt.subplots(int(np.ceil(len(columns_PC)/5)), 5, figsize=(20, 15))
-
-            # flatten the axs array
+            fig, axs = plt.subplots(int(np.ceil(len(columns_PC) / 5)), 5, figsize=(20, 15))
             axs = axs.flatten()
-            for i, var in enumerate(columns_PC):
-                # plot the rho againist the variable with black borders
-                axs[i].scatter(df_sim_PCA[var], df_sim_shower_small[var_phys], c='b') #, edgecolors='k', alpha=0.5
 
-                axs[i].scatter(df_sel_PCA[var], df_sel_shower_no_repetitions[var_phys], c='orange') #, edgecolors='k', alpha=0.5
-                # put a green vertical line for the df_obs_shower[var] value
+            for i, var in enumerate(columns_PC):
+                # Plot simulation data
+                axs[i].scatter(df_sim_PCA[var], df_sim_shower_small[var_phys], c='b')
+
+                # Plot selected data
+                axs[i].scatter(df_sel_PCA[var], df_sel_shower_no_repetitions[var_phys], c='orange')
+
+                # Plot vertical line
                 axs[i].axvline(df_obs_PCA[var].values[0], color='limegreen', linestyle='--', linewidth=5)
-                # put a horizontal line for the rho of the first df_sim_shower_small
-                axs[i].axhline(df_sim_shower[var_phys].values[0], color='k', linestyle='-', linewidth=2)
-                # axs[i].set_title(var)
-                # # as a suptitle put the variable_PCA
-                # fig.suptitle(var_phys)
-                if i == 0 or i == 5 or i == 10 or i == 15 or i == 20:
-                    # as a suptitle put the variable_PCA
+
+                # Plot horizontal line using stored value
+                axs[i].axhline(var_phys_values[var_phys], color='k', linestyle='-', linewidth=2)
+
+                if i % 5 == 0:
                     axs[i].set_ylabel(var_phys)
-                # axis x
+
                 axs[i].set_xlabel(var)
-                # grid
                 axs[i].grid()
-                # make y axis log if the variable is 'erosion_mass_min' 'erosion_mass_max'
-                if var_phys == 'erosion_mass_min' or var_phys == 'erosion_mass_max':
+
+                # Log scale for specific variables
+                if var_phys in ['erosion_mass_min', 'erosion_mass_max']:
                     axs[i].set_yscale('log')
 
-            # delete the subplot that are not used
+            # Remove unused subplots
             for i in range(len(columns_PC), len(axs)):
                 fig.delaxes(axs[i])
 
             plt.tight_layout()
-            # save the figure
-            plt.savefig(output_folder+os.sep+file_name_obs+var_phys+'_vs_var_select_PC_space.png')
-            # close the figure
+            plt.savefig(output_folder + os.sep + file_name_obs + var_phys + '_vs_var_select_PC_space.png')
             plt.close()
 
 
@@ -4056,12 +4026,17 @@ def RMSD_calc_diff(data_file, fit_funct):
     rmsd_vel = np.sqrt(np.mean(velocity_differences**2))
     rmsd_lag = np.sqrt(np.mean(lag_differences**2))
 
+    max_diff_threshold = MAX_MAG_DIFF
     # Identify which differences exceed the maximum allowed difference
-    exceeds_threshold = np.abs(magnitude_differences_data) > threshold_mag*2
+    if threshold_mag*2 > MAX_MAG_DIFF:
+        max_diff_threshold = threshold_mag*2
+        exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
+    else:
+        exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
 
     if np.any(exceeds_threshold):
         exceeding_values = magnitude_differences_data[exceeds_threshold]
-        print(f'Magnitude differences exceeding {threshold_mag*2} found: {len(exceeding_values)}')
+        print(f'Magnitude differences exceeding {max_diff_threshold} found: {len(exceeding_values)}')
         rmsd_mag = 9999
 
         # # Proceed to split and compute RMSD Find the index of the smallest value in abs_mag_data_interp
@@ -5356,8 +5331,7 @@ if __name__ == "__main__":
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/20210813_061453_emccd_skyfit2_CAMO/20210813-061452.941123', \
     #    help="Path were are store both simulated and observed shower .csv file.")
-    # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/20210813_061453_emccd_skyfit2_CAMO/20210813-061452.941123', \
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
         help="Path were are store both simulated and observed shower .csv file.")
         
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
@@ -5369,13 +5343,13 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=10000, \
         help="Number of simulations to generate.")
     
-    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=100, \
+    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=10, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=3, \

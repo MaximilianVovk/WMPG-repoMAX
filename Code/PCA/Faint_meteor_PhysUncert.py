@@ -4026,19 +4026,19 @@ def RMSD_calc_diff(data_file, fit_funct):
     rmsd_vel = np.sqrt(np.mean(velocity_differences**2))
     rmsd_lag = np.sqrt(np.mean(lag_differences**2))
 
-    # max_diff_threshold = MAX_MAG_DIFF
-    # # Identify which differences exceed the maximum allowed difference
-    # if threshold_mag*2 > MAX_MAG_DIFF:
-    #     max_diff_threshold = threshold_mag*2
-    #     exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
-    # else:
-    #     exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
+    max_diff_threshold = MAX_MAG_DIFF
+    # Identify which differences exceed the maximum allowed difference
+    if threshold_mag*2 > MAX_MAG_DIFF:
+        max_diff_threshold = threshold_mag*2
+        exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
+    else:
+        exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
 
-    exceeds_threshold = np.abs(magnitude_differences_data) > MAX_MAG_DIFF
+    # exceeds_threshold = np.abs(magnitude_differences_data) > MAX_MAG_DIFF
 
     if np.any(exceeds_threshold):
         exceeding_values = magnitude_differences_data[exceeds_threshold]
-        print(f'Magnitude differences exceeding {MAX_MAG_DIFF} found: {len(exceeding_values)}')
+        print(f'Magnitude differences exceeding {max_diff_threshold} found: {len(exceeding_values)}')
         rmsd_mag = 9999
 
         # # Proceed to split and compute RMSD Find the index of the smallest value in abs_mag_data_interp

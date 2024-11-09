@@ -316,6 +316,8 @@ def fit_lag_t0_RMSD(lag_data, time_data, velocity_data):
     opt_res_vel = opt.minimize(vel_residual, [a_t0, b_t0, v_init, t0], args=(np.array(time_data), np.array(velocity_data)), method='Nelder-Mead')
     a_t0_vel, b_t0_vel, v_init_vel, t0_vel = opt_res_vel.x
     fitted_vel_t0_vel = cubic_velocity(np.array(time_data), a_t0_vel, b_t0_vel, v_init_vel, t0_vel)
+
+    fitted_vlag_t0_vel = cubic_lag(np.array(time_data), a_t0_vel, b_t0_vel, c_t0, t0_vel)
     
     # # Compute fitted velocity from original lag optimization
     # fitted_vel_t0_lag = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init, t0)
@@ -364,8 +366,8 @@ def fit_lag_t0_RMSD(lag_data, time_data, velocity_data):
     residuals_t0 = lag_data - fitted_lag_t0
     rmsd_t0 = np.sqrt(np.mean(residuals_t0 ** 2))
 
-    # lag can be wrong for short meteors where velocity drops suddenly
-    fitted_lag_t0 = cubic_lag(np.array(time_data), best_a_t0, best_b_t0, c_t0, best_t0)
+    # # lag can be wrong for short meteors where velocity drops suddenly
+    # fitted_lag_t0 = cubic_lag(np.array(time_data), best_a_t0, best_b_t0, c_t0, best_t0)
 
     return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', best_fitted_vel_t0, fitted_acc_t0
 
@@ -774,10 +776,11 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     '''
         Generate simulations for the given real data
     '''
-    simulation_MetSim_object.fps = fps
 
     # Init simulation parameters with the given class name
     erosion_sim_params = SIM_CLASSES[SIM_CLASSES_NAMES.index('ErosionSimParametersEMCCD_Comet')]()
+
+    erosion_sim_params.fps = fps
 
     # get from real_data the beg_abs_mag value of the first row and set it as the lim_mag_faintest value
     erosion_sim_params.lim_mag_faintest = real_data['beg_abs_mag'].iloc[0]+0.01
@@ -1574,23 +1577,34 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
         traj = pickle.load(f, encoding='latin1')
 
     v_avg = traj.v_avg
+    v_init=traj.orbit.v_init
     jd_dat=traj.jdt_ref
     obs_data = []
+    # obs_init_vel = []
     for obs in traj.observations:
         if obs.station_id == "01G" or obs.station_id == "02G" or obs.station_id == "01F" or obs.station_id == "02F" or obs.station_id == "1G" or obs.station_id == "2G" or obs.station_id == "1F" or obs.station_id == "2F":
             obs_dict = {
-                'v_init': obs.v_init, # m/s
-                'velocities': np.array(obs.velocities), # m/s
-                'height': np.array(obs.model_ht), # m
-                'absolute_magnitudes': np.array(obs.absolute_magnitudes),
-                'lag': np.array(obs.lag), # m
-                'length': np.array(obs.length), # m
-                'time': np.array(obs.time_data), # s
+                # 'v_init': obs.v_init, # m/s
+                'velocities': np.array(obs.velocities)[1:], # m/s
+                # 'height': np.array(obs.model_ht), # m
+                # pick all except the first element
+                'height' : np.array(obs.model_ht)[1:],
+                # 'absolute_magnitudes': np.array(obs.absolute_magnitudes),
+                'absolute_magnitudes': np.array(obs.absolute_magnitudes)[1:],
+                # 'lag': np.array(obs.lag), # m
+                'lag': np.array(obs.lag)[1:],
+                # 'length': np.array(obs.length), # m
+                'length': np.array(obs.state_vect_dist)[1:],
+                # 'time': np.array(obs.time_data), # s
+                'time': np.array(obs.time_data)[1:]
                 # 'station_id': obs.station_id
-                'elev_data':  np.array(obs.elev_data)
+                # 'elev_data':  np.array(obs.elev_data)
             }
-            obs_dict['velocities'][0] = obs_dict['v_init']
+            
+            # obs_dict['velocities'][0] = obs_dict['v_init']
             obs_data.append(obs_dict)
+
+            # obs_init_vel.append(obs.v_init)
                 
             lat_dat=obs.lat
             lon_dat=obs.lon
@@ -1599,8 +1613,13 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
             print(obs.station_id,'Station not in the list of stations')
             continue
     
+    
+    
     # Save distinct values for the two observations
     obs1, obs2 = obs_data[0], obs_data[1]
+
+    # # do the average of the two obs_init_vel
+    # v_init_vel = np.mean(obs_init_vel)
 
     # save time of each observation
     obs1_time = obs1['time']
@@ -1610,20 +1629,20 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
     
     # Combine obs1 and obs2
     combined_obs = {}
-    for key in ['velocities', 'height', 'absolute_magnitudes', 'lag', 'length', 'time', 'elev_data']:
+    for key in ['velocities', 'height', 'absolute_magnitudes', 'lag', 'length', 'time']: #, 'elev_data']:
         combined_obs[key] = np.concatenate((obs1[key], obs2[key]))
 
     # Order the combined observations based on time
     sorted_indices = np.argsort(combined_obs['time'])
-    for key in ['time', 'velocities', 'height', 'absolute_magnitudes', 'lag', 'length', 'elev_data']:
+    for key in ['time', 'velocities', 'height', 'absolute_magnitudes', 'lag', 'length']: #, 'elev_data']:
         combined_obs[key] = combined_obs[key][sorted_indices]
 
-    # check if any value is below 10 absolute_magnitudes and print find values below 10 absolute_magnitudes
-    if np.any(combined_obs['absolute_magnitudes'] > 14):
-        print('Found values below 14 absolute magnitudes:', combined_obs['absolute_magnitudes'][combined_obs['absolute_magnitudes'] > 14])
+    # check if any value is below 10 absolute_magnitudes and print find values below 8 absolute_magnitudes
+    if np.any(combined_obs['absolute_magnitudes'] > 8):
+        print('Found values below 8 absolute magnitudes:', combined_obs['absolute_magnitudes'][combined_obs['absolute_magnitudes'] > 8])
     
     # delete any values above 10 absolute_magnitudes and delete the corresponding values in the other arrays
-    combined_obs = {key: combined_obs[key][combined_obs['absolute_magnitudes'] < 14] for key in combined_obs.keys()}
+    combined_obs = {key: combined_obs[key][combined_obs['absolute_magnitudes'] < 8] for key in combined_obs.keys()}
 
     Dynamic_pressure_peak_abs_mag=(wmpl.Utils.Physics.dynamicPressure(lat_dat, lon_dat, combined_obs['height'][np.argmin(combined_obs['absolute_magnitudes'])], jd_dat, combined_obs['velocities'][np.argmin(combined_obs['absolute_magnitudes'])]))
     const=Constants()
@@ -1646,19 +1665,20 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
         erosion_range=(0)
         erosion_energy_per_unit_cross_section_arr=(0)
         erosion_energy_per_unit_mass_arr=(0)
+        v_180km=v_init
 
         type_sim='Observation'
 
         # put all the varible in a array mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr
-        output_phys = [mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr]
+        output_phys = [mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr, v_180km]
 
-    # delete the elev_data from the combined_obs
-    del combined_obs['elev_data']
+    # # delete the elev_data from the combined_obs
+    # del combined_obs['elev_data']
 
     # add to combined_obs the avg velocity and the peak dynamic pressure and all the physical parameters
     combined_obs['name'] = file_path    
-    combined_obs['v_init'] = combined_obs['velocities'][0]
-    combined_obs['v_init_180km'] = combined_obs['velocities'][0]+100
+    combined_obs['v_init'] = v_init
+    combined_obs['v_init_180km'] = output_phys[11]
     combined_obs['obs1_time'] = obs1_time
     combined_obs['obs2_time'] = obs2_time
     combined_obs['obs1_length'] = obs1_length   
@@ -1694,7 +1714,7 @@ def read_MetSim_phyProp_output(MetSim_phys_file_path):
             data = json.load(json_file)
             mass=(data['m_init'])
             # add also rho	sigma	erosion_height_start	erosion_coeff	erosion_mass_index	erosion_mass_min	erosion_mass_max	erosion_range	erosion_energy_per_unit_cross_section	erosion_energy_per_unit_mass
-            # mass=(data['m_init'])
+            v_180km=(data['v_init'])
             rho=(data['rho'])
             sigma=(data['sigma'])
             erosion_height_start=(data['erosion_height_start']/1000)
@@ -1732,9 +1752,10 @@ def read_MetSim_phyProp_output(MetSim_phys_file_path):
         erosion_range=(0)
         erosion_energy_per_unit_cross_section_arr=(0)
         erosion_energy_per_unit_mass_arr=(0)
+        v_180km=(0)
 
     # put all the varible in a array mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr
-    output_phys = [mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr]
+    output_phys = [mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr, v_180km]
     
     return output_phys
 
@@ -2414,25 +2435,7 @@ def mahalanobis_distance(x, mean, cov_inv):
 
 
 
-# PCA ####################################################################################
-
-def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel=0, variable_PCA=[], No_var_PCA=['rmsd_mag', 'rmsd_len', 'v_init_180km','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], file_name_obs='', cores_parallel=None, PCA_pairplot=False, esclude_real_solution_from_selection=False):
-    '''
-    This function generate the simulated shower from the erosion model and apply PCA.
-    The function read the json file in the folder and create a csv file with the simulated shower and take the data from GenerateSimulation.py folder.
-    The function return the dataframe of the selected simulated shower.
-
-    'solution_id','type','vel_init_norot','vel_avg_norot','duration',
-    'mass','peak_mag_height','begin_height','end_height','t0','peak_abs_mag','beg_abs_mag','end_abs_mag',
-    'F','trail_len','deceleration_lin','deceleration_parab','decel_jacchia','decel_t0','zenith_angle', 
-    'kc','Dynamic_pressure_peak_abs_mag',
-    'a_acc','b_acc','c_acc','a1_acc_jac','a2_acc_jac','a_mag_init','b_mag_init','c_mag_init','a_mag_end','b_mag_end','c_mag_end',
-    'rho','sigma','erosion_height_start','erosion_coeff', 'erosion_mass_index',
-    'erosion_mass_min','erosion_mass_max','erosion_range',
-    'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'
-
-    '''
-
+def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower, OUT_PUT_PATH, file_name_obs, PCA_pairplot=False):
     # if variable_PCA is not empty
     if variable_PCA != []:
         # add to variable_PCA array 'type','solution_id'
@@ -2481,47 +2484,97 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
     df_sim_shower = df_sim_shower[~outliers].copy()
 
 
-    # if PCA_pairplot:
-
-    # scale the data so to be easily plot against each other with the same scale
-    df_sim_var_sel = df_sim_shower[variable_PCA].copy()
-    df_sim_var_sel = df_sim_var_sel.drop(['type','solution_id'], axis=1)
-
-    if len(df_sim_var_sel)>10000:
-        # pick randomly 10000 events
-        print('Number of events in the simulated :',len(df_sim_var_sel))
-        df_sim_var_sel=df_sim_var_sel.sample(n=10000)
-
-    # make a subplot of the distribution of the variables
-    fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:])/5)), 5, figsize=(20, 15))
-    # flat it
-    axs = axs.flatten()
-    for i, var in enumerate(variable_PCA[2:]):
-        # plot the distribution of the variable
-        sns.histplot(df_sim_var_sel[var], kde=True, ax=axs[i], color='b', alpha=0.5, bins=20)
-        # axs[i//4, i%4].set_title('Distribution of '+var)
-        # put a vertical line for the df_obs_shower[var] value
-        axs[i].axvline(df_obs_shower[var].values[0], color='limegreen', linestyle='--', linewidth=5)
-        # x axis
-        axs[i].set_xlabel(var)
-        # # grid
-        # axs[i//5, i%5].grid()
-        if i != 0 and i != 5 and i != 10 and i != 15 and i != 20:
-            # delete the y axis
-            axs[i].set_ylabel('')
-
-    # delete the plot that are not used
-    for i in range(len(variable_PCA[2:]), len(axs)):
-        fig.delaxes(axs[i])
-
-    # space between the subplots
-    plt.tight_layout()
-
-    # save the figure
-    plt.savefig(OUT_PUT_PATH+os.sep+file_name_obs+'_var_hist_real.png')
-    # close the figure
-    plt.close()
+    if PCA_pairplot:
+        # Mapping of original variable names to LaTeX-style labels
+        variable_map = {
+            'vel_init_norot': r"$v_i$ [km/s]",
+            'vel_avg_norot': r"$v_{avg}[km/s]$",
+            'v_init_180km': r"$v_{180km}$ [km/s]",
+            'duration': r"$t$ [s]",
+            'peak_mag_height': r"$h_{p}$ [km]",
+            'begin_height': r"$h_{beg}$ [km]",
+            'end_height': r"$h_{end}$ [km]",
+            'peak_abs_mag': r"$M_{p}$",
+            'beg_abs_mag': r"$M_{beg}$",
+            'end_abs_mag': r"$M_{end}$",
+            'F': r"$F$",
+            'trail_len': r"$L$ [km]",
+            't0': r"$t_0$ [s]",
+            'deceleration_lin': r"$dAcc_{lin}$ [m/s$^2$]",
+            'deceleration_parab': r"$dAcc_{par}$ [m/s$^2$]",
+            'decel_parab_t0': r"$dAcc_{p_{t_0}}$ [m/s$^2$]",
+            'decel_t0': r"$dAcc_{p1_{t_0}}$ [m/s$^2$]",
+            'decel_jacchia': r"$dAcc_{jac}$ [m/s$^2$]",
+            'zenith_angle': r"$\zeta$ [deg]",
+            'avg_lag': r"$lag_{avg}$ [km]",
+            'kc': r"$k_c$",
+            'Dynamic_pressure_peak_abs_mag': r"$P_p$ [Pa]",
+            'a_mag_init': r"$Mfit_{a_{int}}$",
+            'b_mag_init': r"$Mfit_{b_{int}}$",
+            'a_mag_end': r"$Mfit_{a_{fin}}$",
+            'b_mag_end': r"$Mfit_{b_{fin}}$"
+        }
         
+        # Convert variable names to LaTeX-style labels
+        latex_labels = [variable_map.get(var, var) for var in variable_PCA[2:]]
+        
+        # Prepare data for plotting
+        df_sim_var_sel = df_sim_shower[variable_PCA].copy().drop(['type', 'solution_id'], axis=1)
+        
+        # Sample 10,000 events if the dataset is large
+        if len(df_sim_var_sel) > 10000:
+            print('Number of events in the simulated:', len(df_sim_var_sel))
+            df_sim_var_sel = df_sim_var_sel.sample(n=10000)
+        
+        # Setup the plot grid
+        fig, axs = plt.subplots(int(np.ceil(len(latex_labels) / 5)), 5, figsize=(20, 15))
+        axs = axs.flatten()
+
+        for i, (var, label) in enumerate(zip(variable_PCA[2:], latex_labels)):
+            if var == 'v_init_180km' or var == 'trail_len':
+                sns.histplot(df_sim_var_sel[var]/1000, kde=True, ax=axs[i], color='b', alpha=0.5, bins=20)
+                axs[i].axvline(df_obs_shower[var].values[0]/1000, color='limegreen', linestyle='--', linewidth=5)
+            else:
+                sns.histplot(df_sim_var_sel[var], kde=True, ax=axs[i], color='b', alpha=0.5, bins=20)
+                axs[i].axvline(df_obs_shower[var].values[0], color='limegreen', linestyle='--', linewidth=5)
+            axs[i].set_xlabel(label)
+            if i % 5 != 0:
+                axs[i].set_ylabel('N.events')
+
+        # Remove unused subplots
+        for i in range(len(latex_labels), len(axs)):
+            fig.delaxes(axs[i])
+
+        plt.tight_layout()
+        
+        # Save and close the figure
+        plt.savefig(os.path.join(OUT_PUT_PATH, f"{file_name_obs}_var_hist_real.png"))
+        plt.close()
+
+    return df_sim_shower, variable_PCA, outliers
+
+
+# PCA ####################################################################################
+
+def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel=0, variable_PCA=[], No_var_PCA=['rmsd_mag', 'rmsd_len', 'avg_lag','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], file_name_obs='', cores_parallel=None, PCA_pairplot=False, esclude_real_solution_from_selection=False):
+    '''
+    This function generate the simulated shower from the erosion model and apply PCA.
+    The function read the json file in the folder and create a csv file with the simulated shower and take the data from GenerateSimulation.py folder.
+    The function return the dataframe of the selected simulated shower.
+
+    'solution_id','type','vel_init_norot','vel_avg_norot','duration',
+    'mass','peak_mag_height','begin_height','end_height','t0','peak_abs_mag','beg_abs_mag','end_abs_mag',
+    'F','trail_len','deceleration_lin','deceleration_parab','decel_jacchia','decel_t0','zenith_angle', 
+    'kc','Dynamic_pressure_peak_abs_mag',
+    'a_acc','b_acc','c_acc','a1_acc_jac','a2_acc_jac','a_mag_init','b_mag_init','c_mag_init','a_mag_end','b_mag_end','c_mag_end',
+    'rho','sigma','erosion_height_start','erosion_coeff', 'erosion_mass_index',
+    'erosion_mass_min','erosion_mass_max','erosion_range',
+    'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'
+
+    '''
+
+
+    df_sim_shower, variable_PCA, outliers = process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower, OUT_PUT_PATH, file_name_obs, False)
 
 
     ##################################### delete var that are not in the 5 and 95 percentile of the simulated shower #####################################
@@ -2567,6 +2620,13 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
                     else:
                         shapiro_test = stats.shapiro(df_all[var])
                         print("Initial Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
+
+                        if var=='v_init_180km':
+                            # # do the cosine of the zenith angle
+                            # df_all[var]=np.cos(np.radians(df_all[var]))
+                            # # df_all[var]=transform_to_gaussian(df_all[var])
+                            # df_sim_shower_resample[var]=np.cos(np.radians(df_sim_shower_resample[var]))
+                            print('Variable ',var,' is not transformed')
 
                         if var=='zenith_angle':
                             # # do the cosine of the zenith angle
@@ -2788,6 +2848,7 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
     variable_map = {
         'vel_init_norot': r"$v_i$",
         'vel_avg_norot': r"$v_{avg}$",
+        'v_init_180km': r"$v_{180km}$",
         'duration': r"$t$",
         'peak_mag_height': r"$h_{p}$",
         'begin_height': r"$h_{beg}$",
@@ -3960,7 +4021,7 @@ def RMSD_calc_diff(data_file, fit_funct):
     common_time_min = max(time_data.min(), time_fit.min())
     common_time_max = min(time_data.max(), time_fit.max())
 
-    time_range = np.linspace(common_time_min, common_time_max, len(abs_mag_data))
+    time_range = np.linspace(common_time_min, common_time_max, 1000)
 
     # Interpolation on the fit data's height grid
     interp_abs_mag_fit = interp1d(height_km_fit, abs_mag_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
@@ -3977,48 +4038,48 @@ def RMSD_calc_diff(data_file, fit_funct):
     interp_vel_kms_data = interp1d(time_data, vel_kms_data, kind='linear', bounds_error=False, fill_value='extrapolate')
     interp_lag_kms_data = interp1d(time_data, lag_kms_data, kind='linear', bounds_error=False, fill_value='extrapolate')
     interp_len_km_data = interp1d(time_data, len_km_data, kind='linear', bounds_error=False, fill_value='extrapolate')
-    interp_mag_data = interp1d(time_data, abs_mag_data, kind='linear', bounds_error=False, fill_value='extrapolate')
+    interp_mag_data = interp1d(height_km_data, abs_mag_data, kind='linear', bounds_error=False, fill_value='extrapolate')
     # Interpolation on the data fit's time grid
     interp_vel_kms_fit = interp1d(time_fit, vel_kms_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
     interp_lag_kms_fit = interp1d(time_fit, lag_kms_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
     interp_len_km_fit = interp1d(time_fit, len_km_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
-    interp_mag_fit = interp1d(time_fit, abs_mag_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
+    interp_mag_fit = interp1d(height_km_fit, abs_mag_fit, kind='linear', bounds_error=False, fill_value='extrapolate')
     # Interpolated data on fit grid
     vel_kms_data_interp = interp_vel_kms_data(time_range)
     # lag_kms_data_interp = interp_lag_kms_data(time_range)
     len_km_data_interp = interp_len_km_data(time_range)
-    abs_mag_data_interp = interp_mag_data(time_range)
+    abs_mag_data_interp = interp_mag_data(height_range)
     # Interpolated fit data on fit grid
     vel_kms_fit_interp = interp_vel_kms_fit(time_range)
     lag_kms_fit_interp = interp_lag_kms_fit(time_range)
     len_km_fit_interp = interp_len_km_fit(time_range)
-    abs_mag_fit_interp = interp_mag_fit(time_range)
+    abs_mag_fit_interp = interp_mag_fit(height_range)
 
     # Calculate differences
     magnitude_differences = abs_mag_data_interp - abs_mag_fit_interp
     velocity_differences = vel_kms_data_interp - vel_kms_fit_interp
     # # Recalculate lag_sampled using fitted initial conditions
-    lag_sampled_adj = len_km_data_interp - (vel_kms_fit_interp[0] * time_range + len_km_fit_interp[0])
+    lag_sampled_adj = len_km_data_interp - (vel_kms_fit_interp[0] * time_range)
     lag_differences = lag_sampled_adj - lag_kms_fit_interp
 
-    lag_sampled_adj_data = len_km_data - (vel_kms_fit_interp[0] * time_data + len_km_fit_interp[0])
+    lag_sampled_adj_data = len_km_data - (vel_kms_fit_interp[0] * time_data)
     lag_differences_data = lag_sampled_adj_data - interp_lag_fit(height_km_data)
 
-    # Define height_diff_initial
-    height_diff_initial = abs(height_km_data.min() - height_km_fit.min())
-    # Define height_diff_final
-    height_diff_final = abs(height_km_data.max() - height_km_fit.max())
-    # find which one is the biggest height_diff_initial or height_diff_final
-    height_diff_penality_factor = max(height_diff_initial, height_diff_final) 
-    if height_diff_penality_factor < HEIGHT_THRESHOLD:
-        height_diff_penality_factor = 1
-    # Define time_diff_final 
-    time_diff_penality_factor = abs(time_data.max() - time_fit.max())/(1/fit_funct['fps'])
-    if time_diff_penality_factor < TIME_THRESHOLD:
-        time_diff_penality_factor = 1
-    # else:
-    #     time_diff_penality_factor = time_diff_penality_factor + 1
-    # time_diff_penality_factor=1
+    # # Define height_diff_initial
+    # height_diff_initial = abs(height_km_data.min() - height_km_fit.min())
+    # # Define height_diff_final
+    # height_diff_final = abs(height_km_data.max() - height_km_fit.max())
+    # # find which one is the biggest height_diff_initial or height_diff_final
+    # height_diff_penality_factor = max(height_diff_initial, height_diff_final) 
+    # if height_diff_penality_factor < HEIGHT_THRESHOLD:
+    #     height_diff_penality_factor = 1
+    # # Define time_diff_final 
+    # time_diff_penality_factor = abs(time_data.max() - time_fit.max())/(1/fit_funct['fps'])
+    # if time_diff_penality_factor < TIME_THRESHOLD:
+    #     time_diff_penality_factor = 1
+    # # else:
+    # #     time_diff_penality_factor = time_diff_penality_factor + 1
+    # # time_diff_penality_factor=1
         
 
     # copute RMSD
@@ -4119,6 +4180,188 @@ def RMSD_calc_diff(data_file, fit_funct):
     # plt.tight_layout()
     # # show the plot
     # plt.show()
+
+    return rmsd_mag, rmsd_vel, rmsd_lag, magnitude_differences_data, velocity_differences_data, lag_differences_data, residual_time_pos, residual_height_pos
+
+
+def RMSD_calc_diff_new(sim_file, real_funct):
+    
+    # Check if data_file and fit_funct are not None
+    if sim_file is None or real_funct is None:
+        print('Error: data_file or fit_funct is None')
+        return 9999, 9999, 9999, 9999, 9999, 9999, 0, 100
+
+    # Check if required keys are present in data_file and fit_funct
+    required_keys = ['height', 'absolute_magnitudes', 'time', 'velocities', 'lag']
+    for key in required_keys:
+        if key not in sim_file or key not in real_funct:
+            print(f'Error: Missing key {key} in data_file or fit_funct')
+            return 9999, 9999, 9999, 9999, 9999, 9999, 0, 100
+
+    # Convert lists to arrays and adjust units
+    height_km_sim = np.array(sim_file['height']) / 1000
+    abs_mag_sim = np.array(sim_file['absolute_magnitudes'])
+    time_sim= np.array(sim_file['time'])
+    vel_kms_sim = np.array(sim_file['velocities']) / 1000
+    lag_kms_sim = np.array(sim_file['lag']) / 1000
+
+    height_km_real = np.array(real_funct['height']) / 1000
+    abs_mag_real = np.array(real_funct['absolute_magnitudes'])
+    time_real = np.array(real_funct['time'])
+    vel_kms_real = np.array(real_funct['velocities']) / 1000
+    len_km_real = np.array(real_funct['length']) / 1000
+    lag_kms_real = len_km_real - (vel_kms_sim[0] * time_real)
+
+    threshold_mag = real_funct['rmsd_mag']
+    threshold_vel = real_funct['rmsd_vel']
+    threshold_lag = real_funct['rmsd_lag']
+    fps = real_funct['fps']
+    
+    # Define the overlapping range for time
+    common_height_min = max(height_km_sim.min(), height_km_real.min())
+    common_height_max = min(height_km_sim.max(), height_km_real.max())
+
+    if common_height_min >= common_height_max:
+        print('No overlap in time')
+        return 9999, 9999, 9999, 9999, 9999, 9999, time_real[0], height_km_real[0]
+
+    # Restrict fit_funct data to the overlapping time range
+    valid_fit_indices = (height_km_real >= common_height_min) & (height_km_real <= common_height_max)
+    if not np.any(valid_fit_indices):
+        print('No valid fit data in overlapping time range')
+        return 9999, 9999, 9999, 9999, 9999, 9999, time_real[0], height_km_real[0]
+
+    residual_time_pos = time_real
+    residual_height_pos = height_km_real
+
+    # Interpolation on the fit data's height grid
+    interp_ht_absmag= interp1d(height_km_sim, abs_mag_sim, kind='linear', bounds_error=False, fill_value='extrapolate')
+    # Interpolated fit on data grid
+    abs_mag_sim_interp = interp_ht_absmag(height_km_real)
+
+    magnitude_differences = abs_mag_sim_interp - abs_mag_real
+
+    # Interpolation on the fit data's time grid
+    interp_ht_vel = interp1d(time_sim, vel_kms_sim, kind='linear', bounds_error=False, fill_value='extrapolate')
+    interp_ht_lag = interp1d(time_sim, lag_kms_sim, kind='linear', bounds_error=False, fill_value='extrapolate')
+    # Interpolated fit on data grid
+    vel_kms_sim_interp = interp_ht_vel(time_real)
+    lag_kms_sim_interp = interp_ht_lag(time_real)
+
+    velocity_differences = vel_kms_sim_interp - vel_kms_real
+    lag_differences = lag_kms_sim_interp - lag_kms_real
+
+    # # Define height_diff_initial
+    # height_diff_initial = abs(height_km_data.min() - height_km_fit.min())
+    # # Define height_diff_final
+    # height_diff_final = abs(height_km_data.max() - height_km_fit.max())
+    # # find which one is the biggest height_diff_initial or height_diff_final
+    # height_diff_penality_factor = max(height_diff_initial, height_diff_final) 
+    # if height_diff_penality_factor < HEIGHT_THRESHOLD:
+    #     height_diff_penality_factor = 1
+    # # Define time_diff_final 
+    # time_diff_penality_factor = abs(time_data.max() - time_fit.max())/(1/fit_funct['fps'])
+    # if time_diff_penality_factor < TIME_THRESHOLD:
+    #     time_diff_penality_factor = 1
+    # # else:
+    # #     time_diff_penality_factor = time_diff_penality_factor + 1
+    # # time_diff_penality_factor=1
+        
+    # copute RMSD
+    rmsd_mag = np.sqrt(np.mean(magnitude_differences**2))
+    rmsd_vel = np.sqrt(np.mean(velocity_differences**2))
+    rmsd_lag = np.sqrt(np.mean(lag_differences**2))
+
+    # max_diff_threshold = MAX_MAG_DIFF
+    # # Identify which differences exceed the maximum allowed difference
+    # if threshold_mag*2 > MAX_MAG_DIFF:
+    #     max_diff_threshold = threshold_mag*2
+    #     exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
+    # else:
+    #     exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
+
+    # # exceeds_threshold = np.abs(magnitude_differences_data) > MAX_MAG_DIFF
+
+    # if np.any(exceeds_threshold):
+    #     exceeding_values = magnitude_differences_data[exceeds_threshold]
+    #     print(f'Magnitude differences exceeding {max_diff_threshold} found: {len(exceeding_values)}')
+    #     rmsd_mag = 9999
+
+    #     # # Proceed to split and compute RMSD Find the index of the smallest value in abs_mag_data_interp
+    #     # split_index = np.argmin(abs_mag_data_interp)
+    #     # # Split the data arrays
+    #     # abs_mag_data_first_half = abs_mag_data_interp[:split_index+1]
+    #     # abs_mag_data_second_half = abs_mag_data_interp[split_index:]
+
+    #     # abs_mag_fit_first_half = abs_mag_fit_interp[:split_index+1]
+    #     # abs_mag_fit_second_half = abs_mag_fit_interp[split_index:]
+
+    #     # # Compute magnitude differences for each half
+    #     # magnitude_differences_first_half = abs_mag_data_first_half - abs_mag_fit_first_half
+    #     # magnitude_differences_second_half = abs_mag_data_second_half - abs_mag_fit_second_half
+
+    #     # # Compute RMSD for each half
+    #     # rmsd_first_half = np.sqrt(np.mean(magnitude_differences_first_half ** 2))
+    #     # rmsd_second_half = np.sqrt(np.mean(magnitude_differences_second_half ** 2))
+    #     # # Get the maximum RMSD
+    #     # rmsd_mag = max(rmsd_first_half, rmsd_second_half)
+
+    #     # print(f"RMSD of the first half: {rmsd_first_half}")
+    #     # print(f"RMSD of the second half: {rmsd_second_half}")
+    #     # print(f"Maximum RMSD among the two halves: {rmsd_mag}")                                                                     
+
+
+    # Handle NaNs in RMSD calculations
+    if np.isnan(rmsd_mag):
+        rmsd_mag = 9999
+    if np.isnan(rmsd_vel):
+        rmsd_vel = 9999
+    if np.isnan(rmsd_lag):
+        rmsd_lag = 9999
+
+    # Plotting the results
+    plt.figure(figsize=(10, 5))
+    # create 3 subplots
+    plt.subplot(1, 3, 1)
+    # plot both the abs_mag_data_interp against the height and the vel_kms_data_interp angainst time and the lag_sampled_adj gainst time
+    plt.plot(abs_mag_sim_interp, height_km_real, 'k-', label='simulated')
+    # against the abs_mag_fit and the height_km_fit
+    plt.plot(abs_mag_real, height_km_real, 'b.', label='real')
+    # put also the range of the threshold_mag
+    plt.plot(abs_mag_sim_interp-threshold_mag, height_km_real, 'r--', label='threshold_mag')
+    plt.plot(abs_mag_sim_interp+threshold_mag, height_km_real, 'r--')
+    plt.ylabel('Height [km]')
+    plt.xlabel('Absolute Magnitude')
+    plt.grid()
+    plt.legend()
+
+    plt.subplot(1, 3, 2)
+    plt.plot(time_real, vel_kms_sim_interp,'k-', label='vel_kms_data_interp')
+    plt.plot(time_real, vel_kms_real, 'b.', label='real')
+    # put also the range of the threshold_vel
+    plt.plot(time_real, vel_kms_sim_interp-threshold_vel, 'r--', label='threshold_vel')
+    plt.plot(time_real, vel_kms_sim_interp+threshold_vel, 'r--')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Velocity [km/s]')
+    plt.grid()
+    plt.legend()
+
+    plt.subplot(1, 3, 3)
+    # plt.plot(time_data, lag_sampled_adj, 'k-', label='lag_sampled_adj')
+    plt.plot(time_real, lag_kms_sim_interp, 'k-', label='lag_sampled_adj')
+    plt.plot(time_real, lag_kms_real, 'b.', label='lag_kms_fit')
+    # put also the range of the threshold_lag 
+    plt.plot(time_real, lag_kms_sim_interp-threshold_lag, 'r--', label='threshold_lag')
+    plt.plot(time_real, lag_kms_sim_interp+threshold_lag, 'r--')
+    plt.xlabel('Time [s]')
+    plt.ylabel('Lag [km]')
+    plt.grid()
+    plt.legend()
+
+    # more space between the plots
+    plt.tight_layout()
+    # show the plot
+    plt.show()
 
     return rmsd_mag, rmsd_vel, rmsd_lag, magnitude_differences_data, velocity_differences_data, lag_differences_data, residual_time_pos, residual_height_pos
 
@@ -5468,6 +5711,10 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         # add to all the rows the rmsd_mag_obs, rmsd_lag_obs, RMSD cannot work for noisy simulations because of interp
         pd_dataframe_PCA_obs_real['rmsd_mag'] = rmsd_pol_mag
         pd_dataframe_PCA_obs_real['rmsd_len'] = rmsd_t0_lag/1000
+        if flag_manual_metsim:
+            simulation_MetSim_object, gensim_data_Metsim, pd_datafram_PCA_sim_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
+            # add pd_datafram_PCA_sim_Metsim['v_init_180km'] to pd_dataframe_PCA_obs_real
+            pd_dataframe_PCA_obs_real['v_init_180km'] = pd_datafram_PCA_sim_Metsim['v_init_180km'].iloc[0]
 
         pd_dataframe_PCA_obs_real.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_OBS, index=False)
         # print saved csv file
@@ -5719,6 +5966,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
     flag_MODE_KDE_below_RMSD = False
     pca_N_comp = 0
+
+    _,_,_=process_pca_variables(cml_args.YesPCA, cml_args.NoPCA, pd_dataframe_PCA_obs_real, pd_datafram_PCA_sim, output_folder, file_name, True)
+    
 
     if cml_args.use_PCA:
 
@@ -6274,7 +6524,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers/20241008-003707.055955', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
         # help="Path were are store both simulated and observed shower .csv file.")
@@ -6318,7 +6568,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \
@@ -6330,7 +6580,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--YesPCA', metavar='YESPCA', type=str, default=[], \
         help="Use specific variable to considered in PCA.")
 
-    arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=['rmsd_mag', 'rmsd_len', 'v_init_180km','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], \
+    arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=['rmsd_mag', 'rmsd_len', 'avg_lag','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], \
         help="Use specific variable NOT considered in PCA.")
 
     arg_parser.add_argument('--save_test_plot', metavar='SAVE_TEST_PLOT', type=bool, default=False, \

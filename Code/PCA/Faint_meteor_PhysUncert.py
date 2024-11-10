@@ -11,8 +11,6 @@ import copy
 import re
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.lines import Line2D
 from numpy.linalg import inv
 import numpy as np
 import subprocess
@@ -21,12 +19,10 @@ import os
 import pickle
 import seaborn as sns
 import scipy.spatial.distance
-from scipy.interpolate import griddata
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import wmpl
 import shutil
-from scipy.stats import kurtosis, skew
 from wmpl.Utils.OSTools import mkdirP
 from matplotlib.ticker import ScalarFormatter
 import math
@@ -36,7 +32,7 @@ from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 from scipy.linalg import svd
 from wmpl.MetSim.GUI import loadConstants, saveConstants,SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
-from scipy.interpolate import interp1d, UnivariateSpline
+from scipy.interpolate import interp1d
 from matplotlib.colors import Normalize
 from scipy.optimize import minimize
 import scipy.optimize as opt

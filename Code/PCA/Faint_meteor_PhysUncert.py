@@ -4267,16 +4267,6 @@ def RMSD_calc_diff(sim_file, real_funct):
     lag_kms_real = lag_kms_real - lag_kms_real[0]
     wrong_lag = np.array(real_funct['lag']) / 1000
 
-    # check if threshold_mag exists
-    if 'rmsd_mag' in real_funct:
-        threshold_mag = real_funct['rmsd_mag']
-    if 'rmsd_vel' in real_funct:
-        threshold_vel = real_funct['rmsd_vel']
-    if 'rmsd_len' in real_funct:
-        threshold_lag = real_funct['rmsd_len']
-    if 'fps' in real_funct:
-        fps = real_funct['fps']
-    
     # Define the overlapping range for time
     common_height_min = max(height_km_sim.min(), height_km_real.min())
     common_height_max = min(height_km_sim.max(), height_km_real.max())
@@ -4314,66 +4304,42 @@ def RMSD_calc_diff(sim_file, real_funct):
 
     residual_time_pos = time_sim_interp
     residual_height_pos = height_km_real
-
-    # # Define height_diff_initial
-    # height_diff_initial = abs(height_km_data.min() - height_km_fit.min())
-    # # Define height_diff_final
-    # height_diff_final = abs(height_km_data.max() - height_km_fit.max())
-    # # find which one is the biggest height_diff_initial or height_diff_final
-    # height_diff_penality_factor = max(height_diff_initial, height_diff_final) 
-    # if height_diff_penality_factor < HEIGHT_THRESHOLD:
-    #     height_diff_penality_factor = 1
-    # # Define time_diff_final 
-    # time_diff_penality_factor = abs(time_data.max() - time_fit.max())/(1/fit_funct['fps'])
-    # if time_diff_penality_factor < TIME_THRESHOLD:
-    #     time_diff_penality_factor = 1
-    # # else:
-    # #     time_diff_penality_factor = time_diff_penality_factor + 1
-    # # time_diff_penality_factor=1
         
     # copute RMSD
     rmsd_mag = np.sqrt(np.mean(magnitude_differences**2))
     rmsd_vel = np.sqrt(np.mean(velocity_differences**2))
     rmsd_lag = np.sqrt(np.mean(lag_differences**2))
+    
+    # check if threshold_mag exists
+    if 'rmsd_mag' in real_funct:
+        threshold_mag = real_funct['rmsd_mag']
+    else:
+        threshold_mag = 0
+    if 'rmsd_vel' in real_funct:
+        threshold_vel = real_funct['rmsd_vel']
+    else:
+        threshold_vel = 0
+    if 'rmsd_len' in real_funct:
+        threshold_lag = real_funct['rmsd_len']
+    else:
+        threshold_lag = 0
+    if 'fps' in real_funct:
+        fps = real_funct['fps']
+    else:
+        fps = 32
+    
+    max_diff_threshold = MAX_MAG_DIFF
+    # Identify which differences exceed the maximum allowed difference
+    if threshold_mag*2 > MAX_MAG_DIFF:
+        max_diff_threshold = threshold_mag*2
+        exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
+    else:
+        exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
 
-    # max_diff_threshold = MAX_MAG_DIFF
-    # # Identify which differences exceed the maximum allowed difference
-    # if threshold_mag*2 > MAX_MAG_DIFF:
-    #     max_diff_threshold = threshold_mag*2
-    #     exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
-    # else:
-    #     exceeds_threshold = np.abs(magnitude_differences_data) > max_diff_threshold
-
-    # # exceeds_threshold = np.abs(magnitude_differences_data) > MAX_MAG_DIFF
-
-    # if np.any(exceeds_threshold):
-    #     exceeding_values = magnitude_differences_data[exceeds_threshold]
-    #     print(f'Magnitude differences exceeding {max_diff_threshold} found: {len(exceeding_values)}')
-    #     rmsd_mag = 9999
-
-    #     # # Proceed to split and compute RMSD Find the index of the smallest value in abs_mag_data_interp
-    #     # split_index = np.argmin(abs_mag_data_interp)
-    #     # # Split the data arrays
-    #     # abs_mag_data_first_half = abs_mag_data_interp[:split_index+1]
-    #     # abs_mag_data_second_half = abs_mag_data_interp[split_index:]
-
-    #     # abs_mag_fit_first_half = abs_mag_fit_interp[:split_index+1]
-    #     # abs_mag_fit_second_half = abs_mag_fit_interp[split_index:]
-
-    #     # # Compute magnitude differences for each half
-    #     # magnitude_differences_first_half = abs_mag_data_first_half - abs_mag_fit_first_half
-    #     # magnitude_differences_second_half = abs_mag_data_second_half - abs_mag_fit_second_half
-
-    #     # # Compute RMSD for each half
-    #     # rmsd_first_half = np.sqrt(np.mean(magnitude_differences_first_half ** 2))
-    #     # rmsd_second_half = np.sqrt(np.mean(magnitude_differences_second_half ** 2))
-    #     # # Get the maximum RMSD
-    #     # rmsd_mag = max(rmsd_first_half, rmsd_second_half)
-
-    #     # print(f"RMSD of the first half: {rmsd_first_half}")
-    #     # print(f"RMSD of the second half: {rmsd_second_half}")
-    #     # print(f"Maximum RMSD among the two halves: {rmsd_mag}")                                                                     
-
+    if np.any(exceeds_threshold):
+        exceeding_values = magnitude_differences[exceeds_threshold]
+        print(f'Magnitude differences exceeding {max_diff_threshold} found: {len(exceeding_values)}')
+        rmsd_mag = 9999                                                              
 
     # Handle NaNs in RMSD calculations
     if np.isnan(rmsd_mag):

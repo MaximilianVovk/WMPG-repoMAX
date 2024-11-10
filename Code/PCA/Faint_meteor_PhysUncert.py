@@ -34,7 +34,7 @@ from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 from scipy.linalg import svd
 from wmpl.MetSim.GUI import loadConstants, saveConstants,SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, UnivariateSpline
 from matplotlib.colors import Normalize
 from scipy.optimize import minimize
 import scipy.optimize as opt
@@ -998,7 +998,7 @@ def check_axis_inversion(ax):
     return is_x_inverted, is_y_inverted
 
 
-def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals_mag='', residuals_vel='', residual_time_pos='', residual_height_pos='', residuals_lag='', fit_funct='', mag_noise='', vel_noise='',lag_noise='', label_fit='', real_lag=''):
+def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals_mag='', residuals_vel='', residual_time_pos='', residual_height_pos='', residuals_lag='', fit_funct='', mag_noise='', vel_noise='',lag_noise='', label_fit='', real_lag='', fit_lag=''):
 
     # check if data1 is None
     if data1 is None:
@@ -1022,6 +1022,12 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
     # Plot the simulation results
     if residuals_mag != '' and residuals_vel != '' and residual_time_pos!='' and residual_height_pos!='':
 
+        residual_time_pos_err=residual_time_pos
+        if len(residual_time_pos) != len(obs1['velocities']):
+            # interpolate from residual_time_pos[0] to residual_time_pos[-1] with len(obs1['velocities'])
+            residual_time_pos = obs1['time'] # np.linspace(residual_time_pos[0], residual_time_pos[-1], len(obs1['velocities'])) 
+
+
         if fig=='' and ax=='':
             fig, ax = plt.subplots(2, 3, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 1],'width_ratios': [ 3, 0.5, 3]}) #  figsize=(10, 5), dpi=300 0.5, 3, 3, 0.5
             # flat the ax
@@ -1034,8 +1040,8 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
             height_km_err=np.array(fit_funct['height'])
             vel_kms_err=np.array(fit_funct['velocities'])
             len_km_err=np.array(fit_funct['length'])
-            lag_kms_err=len_km_err - (obs1['velocities'][0]*obs_time_err)
-            lag_kms_err=lag_kms_err - lag_kms_err[0]
+            #lag_kms_err=len_km_err - (obs1['velocities'][0]/1000*obs_time_err)
+            #_err=lag_kms_err - lag_kms_err[0]
             # from list to array
             if np.mean(fit_funct['height'])>1000:
                 # convert to km/s
@@ -1049,28 +1055,31 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
             # plot noisy area around vel_kms for vel_noise for the fix height_km
             ax[1].fill_betweenx(height_km_err, -mag_noise, mag_noise, color='lightgray', alpha=0.5)
 
-            if lag_noise != '':
-                # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[2].fill_between(obs_time_err, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5)
-                ax[2].plot(obs_time_err, vel_kms_err, 'k--')
+            if lag_noise != '' and fit_lag != '':
+                lag_noise = lag_noise * 1000
+                fit_lag = fit_lag * 1000
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[3].fill_between(obs_time_err, lag_kms_err-lag_noise, lag_kms_err+lag_noise, color='lightgray', alpha=0.5, label=label_fit)
-                ax[3].plot(obs_time_err, lag_kms_err, 'k--', label='Fit')
+                ax[2].fill_between(residual_time_pos, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5)
+                ax[2].plot(residual_time_pos, vel_kms_err, 'k--')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[6].fill_between(obs_time_err, -vel_noise, vel_noise, color='lightgray', alpha=0.5)
+                ax[3].fill_between(residual_time_pos, fit_lag-lag_noise, fit_lag+lag_noise, color='lightgray', alpha=0.5, label=label_fit)
+                ax[3].plot(residual_time_pos, fit_lag, 'k--', label='Fit')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[7].fill_between(obs_time_err, -lag_noise, lag_noise, color='lightgray', alpha=0.5)
+                ax[6].fill_between(residual_time_pos, -vel_noise, vel_noise, color='lightgray', alpha=0.5)
+
+                # plot noisy area around vel_kms for vel_noise for the fix height_km
+                ax[7].fill_between(residual_time_pos, -lag_noise, lag_noise, color='lightgray', alpha=0.5)
 
             else:
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[2].fill_between(obs_time_err, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5, label=label_fit)
-                ax[2].plot(obs_time_err, vel_kms_err, 'k--', label='Fit')
+                ax[2].fill_between(residual_time_pos, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5, label=label_fit)
+                ax[2].plot(residual_time_pos, vel_kms_err, 'k--', label='Fit')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[5].fill_between(obs_time_err, -vel_noise, vel_noise, color='lightgray', alpha=0.5)
+                ax[5].fill_between(residual_time_pos, -vel_noise, vel_noise, color='lightgray', alpha=0.5)
 
         ax[0].plot(obs1['absolute_magnitudes'],obs1['height'], colorline1)
         ax[0].set_xlabel('Absolute Magnitude [-]')
@@ -1092,7 +1101,8 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
         #     ax[0].plot(obs1['absolute_magnitudes'],obs1['height'], colorline1, color='m')
 
         # plot the residuals against time
-        ax[1].plot(residuals_mag, residual_height_pos, '.', color=line_color)
+        if fit_funct=='' and mag_noise=='' and vel_noise=='':
+            ax[1].plot(residuals_mag, residual_height_pos, '.', color=line_color)
         # ax[1].set_ylabel('Height [km]')
         ax[1].set_xlabel('Res.mag [-]')
         ax[1].tick_params(axis='x', rotation=45)
@@ -1111,8 +1121,9 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
         ax[1].grid(linestyle='--',color='lightgray')
         ax[1].set_ylim(ax[0].get_ylim())
 
-        if residuals_lag!='':
 
+        if residuals_lag!='':
+            
             ax[2].plot(residual_time_pos, obs1['velocities'], colorline1, color=line_color)
 
             ax[2].set_xlabel('Time [s]')
@@ -1122,19 +1133,24 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
 
             if label1!='':
                 if real_lag!='':
-                    ax[3].plot(residual_time_pos, real_lag, colorline1, color=line_color, label=label1)
+                    ax[3].plot(residual_time_pos, real_lag*1000, colorline1, color=line_color, label=label1)
                 else:
                     ax[3].plot(residual_time_pos, obs1['lag'], colorline1, color=line_color, label=label1)
             else:
                 if real_lag!='':
-                    ax[3].plot(residual_time_pos, real_lag, colorline1, color=line_color)
+                    ax[3].plot(residual_time_pos, real_lag*1000, colorline1, color=line_color)
                 else:
                     ax[3].plot(residual_time_pos, obs1['lag'], colorline1, color=line_color)
 
             # show the legend
             if label1 != '':
                 ax[3].legend()
-                
+
+            ax[3].set_xlabel('Time [s]')
+            ax[3].set_ylabel('Lag [m]')
+            ax[3].grid(True)
+            ax[3].grid(linestyle='--',color='lightgray')
+
             # delete the plot in the middle
             ax[4].axis('off')
             
@@ -1143,7 +1159,8 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
             ax[5].axis('off')
 
             # plot the residuals against time
-            ax[6].plot(residual_time_pos, residuals_vel, '.', color=line_color)
+            if fit_funct=='' and mag_noise=='' and vel_noise=='':
+                ax[6].plot(residual_time_pos_err, residuals_vel, '.', color=line_color)
             ax[6].set_ylabel('Res.vel [km/s]')
             ax[6].grid(True)
             ax[6].grid(linestyle='--',color='lightgray')
@@ -1151,8 +1168,9 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
             ax[6].set_xlim(ax[2].get_xlim())
 
             # plot the residuals against time
-            ax[7].plot(residual_time_pos, residuals_lag, '.', color=line_color)
-            ax[7].set_ylabel('Res.lag [km]')
+            if fit_funct=='' and mag_noise=='' and vel_noise=='':
+                ax[7].plot(residual_time_pos_err, residuals_lag*1000, '.', color=line_color)
+            ax[7].set_ylabel('Res.lag [m]')
             ax[7].grid(True)
             ax[7].grid(linestyle='--',color='lightgray')
             # use the same limits of ax[3]
@@ -1181,7 +1199,8 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
             ax[4].axis('off')
 
             # plot the residuals against time
-            ax[5].plot(residual_time_pos, residuals_vel, '.', color=line_color)
+            if fit_funct=='' and mag_noise=='' and vel_noise=='':
+                ax[5].plot(residual_time_pos_err, residuals_vel, '.', color=line_color)
             ax[5].set_ylabel('Res.vel [km/s]')
             ax[5].grid(True)
             ax[5].grid(linestyle='--',color='lightgray')
@@ -3483,7 +3502,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
 
     for jj in range(len(df_obs)):
 
-        fig, ax = plt.subplots(2, 4, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 0.5],'width_ratios': [ 3, 0.5, 3]})
+        fig, ax = plt.subplots(2, 4, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 0.5],'width_ratios': [ 3, 0.5, 3, 3]})
         # fig, ax = plt.subplots(2, 4)
         # flat the ax
         ax = ax.flatten()
@@ -3504,7 +3523,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
         if total_distribution==False:
             output_dir=output_dir_OG+os.sep+SAVE_SELECTION_FOLDER+os.sep+around_meteor
 
-        # plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real/1000,3))+'km', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations')
+        # plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real/1000*1000,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations')
         # plot_side_by_side(fit_funct, fig, ax, 'k--','Fit', np.zeros(len(residual_height_pos_real)), np.zeros(len(residual_time_pos_real)), residual_time_pos_real, residual_height_pos_real)
         # # ax[0].lines[1].set_marker(None)
         # ax[1].lines[1].set_marker(None)
@@ -3549,9 +3568,10 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                         Metsim_flag=True
                         _, data_file, pd_datafram_PCA_sim = run_simulation(namefile_sel, data_file_real, fit_funct)
             
-            rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_kms_real , _ = RMSD_calc_diff(data_file, data_file_real)
+            rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_kms_real = RMSD_calc_diff(data_file, data_file_real)
+            _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(data_file, fit_funct)
 
-            plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real/1000,3))+'km', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real)
+            plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real, lag_kms_fit)
             
             color_line=next(infinite_color_cycle)
 
@@ -3560,7 +3580,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                 # plot_side_by_side(data_file, fig, ax, '-k', ii, residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
                 
                 plot_side_by_side(data_file, fig, ax, '-k', 'Metsim data event\n\
-RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'km\n\
+RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len']*1000,1))+'m\n\
         $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
         $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
         $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\
@@ -3570,28 +3590,26 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                                                                             
             else:
 
-                plot_side_by_side(data_file, fig, ax, '-','RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'km\n\
+                plot_side_by_side(data_file, fig, ax, '-','RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len']*1000,1))+'m\n\
         $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
         $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
         $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\
         $m_l$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len)
 
-                # # change first line color
-                # ax[0].lines[1].set_color(color_line)
-                # ax[1].lines[1].set_color(color_line)
-                # ax[2].lines[1].set_color(color_line)
-                # ax[5].lines[1].set_color(color_line)
                 # change first line color
                 ax[0].lines[-1].set_color(color_line)
                 ax[1].lines[-1].set_color(color_line)
                 ax[2].lines[-1].set_color(color_line)
-                ax[5].lines[-1].set_color(color_line)
+                ax[3].lines[-1].set_color(color_line)
+                ax[6].lines[-1].set_color(color_line)
+                ax[7].lines[-1].set_color(color_line)
+
             # # ax[0].lines[1].set_marker(None)
             # ax[1].lines[1].set_marker(None)
             # # ax[2].lines[1].set_marker(None)
             # ax[5].lines[1].set_marker(None)
             # pu the leggend putside the plot and adjust the plot base on the screen size
-            ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+            ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
             # the legend do not fit in the plot, so adjust the plot
             plt.subplots_adjust(right=.7)
             plt.subplots_adjust(wspace=0.2)
@@ -3840,9 +3858,12 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             if gensim_data_sim is None:
                 return pd_datafram_PCA_selected_mode_min_KDE
 
-            rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , _ = RMSD_calc_diff(gensim_data_sim, data_file_real)
+            rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_kms_real = RMSD_calc_diff(gensim_data_sim, data_file_real)
+            _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(gensim_data_sim, fit_funct)
 
-            plot_side_by_side(gensim_data_sim, fig, ax, 'r-', 'MODE : RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'km\n\
+            plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real, lag_kms_fit)
+            
+            plot_side_by_side(gensim_data_sim, fig, ax, 'r-', 'MODE : RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag*1000,1))+'m\n\
         $m_0$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+'kg $\\rho$:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+'kg/m$^3$\n\
         $\sigma$:'+str(round(pd_datafram_PCA_sim.iloc[0]['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
         $h_e$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_height_start'],1))+'km $s$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_mass_index'],2))+'\n\
@@ -3865,7 +3886,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     shutil.copy(output_dir+os.sep+around_meteor+'_mode.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_mode.json')
                 fig.suptitle(around_meteor+' '+select_mode_print+' mode selected') # , fontsize=16
                 # pu the leggend putside the plot and adjust the plot base on the screen size
-                ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+                ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
                 # the legend do not fit in the plot, so adjust the plot
                 plt.subplots_adjust(right=.7)
                 plt.subplots_adjust(wspace=0.2)
@@ -3908,7 +3929,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , _ = RMSD_calc_diff(gensim_data_sim, data_file_real)
                 # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Dens.point noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*mag_RMSD*2,3),'|| Dens.point noise len', round(rmsd_lag,3))
             
-                plot_side_by_side(gensim_data_sim, fig, ax, 'b-', 'Dens.point : RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'km\n\
+                plot_side_by_side(gensim_data_sim, fig, ax, 'b-', 'Dens.point : RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag*1000,1))+'m\n\
         $m_0$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+'kg $\\rho$:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+'kg/m$^3$\n\
         $\sigma$:'+str(round(pd_datafram_PCA_sim.iloc[0]['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
         $h_e$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_height_start'],1))+'km $s$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_mass_index'],2))+'\n\
@@ -3930,7 +3951,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                         shutil.copy(output_dir+os.sep+around_meteor+'_DensPoint.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_DensPoint.json')
                     fig.suptitle(around_meteor+' '+select_mode_print+' mode selected and '+select_kde_print+' densest point selected') # , fontsize=16
                     # pu the leggend putside the plot and adjust the plot base on the screen size
-                    ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+                    ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
                     # the legend do not fit in the plot, so adjust the plot
                     plt.subplots_adjust(right=.7)
                     plt.subplots_adjust(wspace=0.2)
@@ -3944,7 +3965,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 # put a sup title
                 fig.suptitle(around_meteor+' '+select_mode_print+' mode selected and '+select_kde_print+' densest point selected') # , fontsize=16
             # pu the leggend putside the plot and adjust the plot base on the screen size
-            ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+            ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
             # the legend do not fit in the plot, so adjust the plot
             plt.subplots_adjust(right=.7)
             plt.subplots_adjust(wspace=0.2)
@@ -4247,13 +4268,13 @@ def RMSD_calc_diff(sim_file, real_funct):
     wrong_lag = np.array(real_funct['lag']) / 1000
 
     # check if threshold_mag exists
-    if 'rmsd_mag' not in real_funct:
+    if 'rmsd_mag' in real_funct:
         threshold_mag = real_funct['rmsd_mag']
-    if 'rmsd_vel' not in real_funct:
+    if 'rmsd_vel' in real_funct:
         threshold_vel = real_funct['rmsd_vel']
-    if 'rmsd_len' not in real_funct:
+    if 'rmsd_len' in real_funct:
         threshold_lag = real_funct['rmsd_len']
-    if 'fps' not in real_funct:
+    if 'fps' in real_funct:
         fps = real_funct['fps']
     
     # Define the overlapping range for time
@@ -4503,7 +4524,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
     for ii in range(len(curr_sel)):
 
-        fig, ax = plt.subplots(2, 4, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 0.5],'width_ratios': [ 3, 0.5, 3]})
+        fig, ax = plt.subplots(2, 4, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 0.5],'width_ratios': [ 3, 0.5, 3, 3]})
         # fig, ax = plt.subplots(2, 4)
         # flat the ax
         ax = ax.flatten()
@@ -4539,9 +4560,10 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
                         Metsim_flag=True
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_kms_real = RMSD_calc_diff(data_file, data_file_real)
+            _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(data_file, fit_funct)
 
         # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*mag_RMSD*2,3),'|| Event noise len', round(rmsd_lag,3))
-        plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real/1000,3))+'km', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, residuals_len_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real)
+        plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, residuals_len_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real, lag_kms_fit)
         # plot_side_by_side(fit_funct, fig, ax, 'k--','Fit', np.zeros(len(residual_height_pos_real)), np.zeros(len(residual_time_pos_real)), residual_time_pos_real, residual_height_pos_real)
         
         color_line=next(infinite_color_cycle)
@@ -4553,7 +4575,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
             
             # plot_side_by_side(data_file, fig, ax, '-k', ii, residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
             plot_side_by_side(data_file, fig, ax, '-k', 'Metsim data event\n\
-RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'km\n\
+RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len']*1000,1))+'m\n\
     $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
     $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
     $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\
@@ -4567,7 +4589,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
 
             # plot_side_by_side(data_file, fig, ax, '-', ii, residuals_mag, residuals_vel, residual_time_pos, residual_height_pos)
 
-            plot_side_by_side(data_file, fig, ax, '-','RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'km\n\
+            plot_side_by_side(data_file, fig, ax, '-','RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len']*1000,1))+'m\n\
     $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
     $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
     $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\
@@ -4577,7 +4599,9 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             ax[0].lines[-1].set_color(color_line)
             ax[1].lines[-1].set_color(color_line)
             ax[2].lines[-1].set_color(color_line)
-            ax[5].lines[-1].set_color(color_line)
+            ax[3].lines[-1].set_color(color_line)
+            ax[6].lines[-1].set_color(color_line)
+            ax[7].lines[-1].set_color(color_line)
         # # ax[0].lines[1].set_marker(None)
         # ax[1].lines[1].set_marker(None)
         # # ax[2].lines[1].set_marker(None)
@@ -4589,7 +4613,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
         fig.suptitle(file_name_title)
         
         # pu the leggend putside the plot and adjust the plot base on the screen size
-        ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+        ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
         # the legend do not fit in the plot, so adjust the plot
         plt.subplots_adjust(right=.7)
         plt.subplots_adjust(wspace=0.2)
@@ -4643,7 +4667,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     fig.suptitle(file_name_title+' PERFECT below sigma noise')
 
                     # pu the leggend putside the plot and adjust the plot base on the screen size
-                    ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+                    ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
                     # the legend do not fit in the plot, so adjust the plot
                     plt.subplots_adjust(right=.7)
                     plt.subplots_adjust(wspace=0.2)
@@ -4707,14 +4731,14 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
 
             if Metsim_flag:
                 
-                plot_side_by_side(gensim_data_optimized, fig, ax, 'k--', 'Optimized MetSim RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'km\n\
+                plot_side_by_side(gensim_data_optimized, fig, ax, 'k--', 'Optimized MetSim RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag*1000,1))+'m\n\
     $m_0$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['mass'],1))+'kg $\\rho$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['rho']))+'kg/m$^3$\n\
     $\sigma$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
     $h_e$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_height_start'],1))+'km $s$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_index'],2))+'\n\
     $m_l$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff'],1))+'kg $m_u$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len)
 
             else:
-                plot_side_by_side(gensim_data_optimized, fig, ax, '--', 'Optimized RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'km\n\
+                plot_side_by_side(gensim_data_optimized, fig, ax, '--', 'Optimized RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag*1000,1))+'m\n\
     $m_0$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['mass'],1))+'kg $\\rho$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['rho']))+'kg/m$^3$\n\
     $\sigma$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
     $h_e$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_height_start'],1))+'km $s$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_index'],2))+'\n\
@@ -4724,11 +4748,15 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 ax[0].lines[-1].set_color(color_line)
                 ax[1].lines[-1].set_color(color_line)
                 ax[2].lines[-1].set_color(color_line)
-                ax[5].lines[-1].set_color(color_line)
+                ax[3].lines[-1].set_color(color_line)
+                ax[6].lines[-1].set_color(color_line)
+                ax[7].lines[-1].set_color(color_line)
             ax[0].lines[-1].set_marker("x")
             ax[1].lines[-1].set_marker("x")
             ax[2].lines[-1].set_marker("x")
-            ax[5].lines[-1].set_marker("x")
+            ax[3].lines[-1].set_marker("x")
+            ax[6].lines[-1].set_marker("x")
+            ax[7].lines[-1].set_marker("x")
         print(curr_sel.iloc[ii]['solution_id'],'is this valid:')
         print(rmsd_mag,'<',mag_RMSD,'and',rmsd_lag,'<',len_RMSD)
         if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
@@ -4741,7 +4769,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 print('below noise, SAVED')
                 fig.suptitle(file_name_title+' simulation SELECTED')
             # pu the leggend putside the plot and adjust the plot base on the screen size
-            ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+            ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
             # the legend do not fit in the plot, so adjust the plot
             plt.subplots_adjust(right=.7)
             plt.subplots_adjust(wspace=0.2)
@@ -4772,7 +4800,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 fig.suptitle(file_name_title+' NOT SELECTED simulation')
 
         # put the leggend putside the plot and adjust the plot base on the screen size
-        ax[2].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+        ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
         # the legend do not fit in the plot, so adjust the plot
         plt.subplots_adjust(right=.7)
         plt.subplots_adjust(wspace=0.2)
@@ -5220,9 +5248,11 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
                 ax[1].fill_between(obs_time_err, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5, label='Std.dev. realizations')
 
-
+            real_time=obs_time # np.array(data_file_real['time'])
+            real_abs_mag=abs_mag_sim
+            real_height_km=height_km
             ax[0].plot(abs_mag_sim,height_km)
-            ax[1].plot(obs_time, vel_kms,label=file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real/1000,3))+'km')
+            ax[1].plot(obs_time, vel_kms,label=file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m')
 
 
             ax[0].plot(abs_mag_sim_err, height_km_err, 'k--')
@@ -5232,14 +5262,22 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
         elif ii<=n_confront_sel:
 
             # rmsd_mag, rmsd_vel, rmsd_lag, _, _, _, _, _ , _ = RMSD_calc_diff(data_file, fit_funct)
-            rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , _ = RMSD_calc_diff(data_file, gensim_data_obs)
+            # rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , _ = RMSD_calc_diff(data_file, gensim_data_obs)
+            # make an array that goes from the first value of residual_time_pos to the last value of residual_time_pos with len(vel_kms) values
+
+            # Interpolation on the fit data's height grid
+            interp_ht_time = interp1d(real_height_km, real_time, kind='linear', bounds_error=False, fill_value='extrapolate')
+            # Interpolated fit on data grid
+            residual_time_pos = interp_ht_time(height_km)
+
+            # residual_time_pos = np.linspace(residual_time_pos[0], residual_time_pos[-1], len(vel_kms))
             # RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
             # label='RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len'],3))+'\n\
             if Metsim_flag:
                 metsim_numbs=ii
                 ax[0].plot(abs_mag_sim,height_km, 'k')
                 ax[1].plot(residual_time_pos, vel_kms, 'k', label='Metsim data reduction\n\
-RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'km\n\
+RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len']*1000,1))+'m\n\
     $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
     $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
     $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\
@@ -5254,7 +5292,7 @@ RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'km\n\
                 #     line_color='m'
                 #     ax[0].plot(abs_mag_sim,height_km, color='m')
                 
-                ax[1].plot(residual_time_pos, vel_kms, color=line_color ,label='RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag,3))+'km\n\
+                ax[1].plot(residual_time_pos, vel_kms, color=line_color ,label='RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr_sel.iloc[ii]['rmsd_len']*1000,1))+'m\n\
     $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
     $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
     $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\

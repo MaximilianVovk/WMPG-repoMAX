@@ -1552,24 +1552,25 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
     for obs in traj.observations:
         if obs.station_id == "01G" or obs.station_id == "02G" or obs.station_id == "01F" or obs.station_id == "02F" or obs.station_id == "1G" or obs.station_id == "2G" or obs.station_id == "1F" or obs.station_id == "2F":
             obs_dict = {
-                # 'v_init': obs.v_init, # m/s
-                'velocities': np.array(obs.velocities)[1:], # m/s
-                # 'height': np.array(obs.model_ht), # m
+                'v_init': obs.v_init, # m/s
+                'velocities': np.array(obs.velocities), # m/s
+                # 'velocities': np.array(obs.velocities)[1:], # m/s
+                'height': np.array(obs.model_ht), # m
                 # pick all except the first element
-                'height' : np.array(obs.model_ht)[1:],
-                # 'absolute_magnitudes': np.array(obs.absolute_magnitudes),
-                'absolute_magnitudes': np.array(obs.absolute_magnitudes)[1:],
-                # 'lag': np.array(obs.lag), # m
-                'lag': np.array(obs.lag)[1:],
-                # 'length': np.array(obs.length), # m
-                'length': np.array(obs.state_vect_dist)[1:],
-                # 'time': np.array(obs.time_data), # s
-                'time': np.array(obs.time_data)[1:]
+                # 'height' : np.array(obs.model_ht)[1:],
+                'absolute_magnitudes': np.array(obs.absolute_magnitudes),
+                # 'absolute_magnitudes': np.array(obs.absolute_magnitudes)[1:],
+                'lag': np.array(obs.lag), # m
+                # 'lag': np.array(obs.lag)[1:],
+                'length': np.array(obs.state_vect_dist), # m
+                # 'length': np.array(obs.state_vect_dist)[1:],
+                'time': np.array(obs.time_data) # s
+                # 'time': np.array(obs.time_data)[1:]
                 # 'station_id': obs.station_id
                 # 'elev_data':  np.array(obs.elev_data)
             }
             
-            # obs_dict['velocities'][0] = obs_dict['v_init']
+            obs_dict['velocities'][0] = obs_dict['v_init']
             obs_data.append(obs_dict)
 
             # obs_init_vel.append(obs.v_init)
@@ -2434,7 +2435,7 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
     scaled_sim=df_sim_shower[variable_PCA].copy()
     scaled_sim=scaled_sim.drop(['type','solution_id'], axis=1)
 
-    print(len(scaled_sim.columns),'Variables for PCA:\n',scaled_sim.columns)
+    print(len(scaled_sim.columns),'Variables :\n',scaled_sim.columns)
 
     # Standardize each column separately
     scaler = StandardScaler()
@@ -2448,7 +2449,7 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
 
     # outlier number 0 has alway to be the False
     if outliers[0]==True:
-        print('The MetSim reduction is an outlier, still keep it for the PCA analysis')
+        print('The MetSim reduction is an outlier') # , still keep it for the PCA analysis
         outliers[0]=False
 
     # Assign df_sim_shower to the version without outliers
@@ -3803,7 +3804,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             select_mode_print='No'
             if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
                 select_mode_print='Yes'
-                print('below 5 sigma noise, SAVED')
+                print('below noise, SAVED')
                 pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
 
                 if total_distribution:
@@ -5543,7 +5544,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     CONFIDENCE_LEVEL = (2 * stats.norm.cdf(z_score) - 1)*100
     print('CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
     print('mag_RMSD:',mag_RMSD)
-    print('len_RMSD:',len_RMSD)
+    print('len_RMSD:',len_RMSD,'km')
 
     print()
 
@@ -5726,7 +5727,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     mkdirP(output_folder+os.sep+save_results_folder_events_plots)
     mkdirP(output_folder+os.sep+SAVE_SELECTION_FOLDER)
 
-    flag_MODE_KDE_below_RMSD = False
     pca_N_comp = 0
 
     _,_,_=process_pca_variables(cml_args.YesPCA, cml_args.NoPCA, pd_dataframe_PCA_obs_real, pd_datafram_PCA_sim, output_folder, file_name, True)
@@ -5772,7 +5772,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         # PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, pca_N_comp, output_folder, file_name)
 
 
-        flag_MODE_KDE_below_RMSD = False
         # print(pd_datafram_PCA_selected_lowRMSD)
         # split in directory and filename
         filename_list = []
@@ -5809,7 +5808,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
         else:
             print('No Mode and Densest point solutions for the selected simulations')
-            flag_MODE_KDE_below_RMSD  = False
 
         print()
 
@@ -5841,7 +5839,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             index = i
             break
     
-    if index==0 and flag_MODE_KDE_below_RMSD==False:
+    if index==0 and not 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
         cml_args.optimize=True
         if cml_args.number_optimized==0:
             cml_args.number_optimized=5            
@@ -5859,7 +5857,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         shutil.copy(cml_args.ref_opt_path, output_folder+os.sep+'AutoRefineFit_options.txt')
     else:
         # take the head of the dataframe with the index
-        pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.head(index)
+        pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.head(index+1)
+    
+    print('index:',index)
 
     # Drop the auxiliary columns if they are no longer needed
     pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
@@ -6220,7 +6220,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     if rmsd_pol_mag==CAMERA_SENSITIVITY_LVL_MAG:
         print('real data RMSD mag at the limit of sensistivity, automatically set to '+str(CAMERA_SENSITIVITY_LVL_MAG)+'[-]')
     if rmsd_t0_lag==CAMERA_SENSITIVITY_LVL_LEN:
-        print('real data RMSD len at the limit of sensistivity, automatically set to '+str(CAMERA_SENSITIVITY_LVL_LEN)+'[-]')
+        print('real data RMSD len at the limit of sensistivity, automatically set to '+str(CAMERA_SENSITIVITY_LVL_LEN)+'[m]')
     print('Confidence level: '+str(CONFIDENCE_LEVEL)+'% and z-factor: '+str(z_score))
     print('real data RMSD * z-factor = RMSD')
     print('RMSD mag:'+str(mag_RMSD)+'[-] RMSD len:'+str(len_RMSD)+'[km]')
@@ -6286,7 +6286,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers/20241008-003707.055955', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers/20230811-082648.931419', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
         # help="Path were are store both simulated and observed shower .csv file.")

@@ -11,6 +11,8 @@ import copy
 import re
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 from numpy.linalg import inv
 import numpy as np
 import subprocess
@@ -4472,35 +4474,30 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
 
 
 
-
 def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, n_PC_in_PCA, output_dir, file_name, Min_KDE_point='', save_log=True):
-    
-    df_sim_shower_small=df_sim_shower.copy()
+    df_sim_shower_small = df_sim_shower.copy()
+    df_sel_shower = df_sel_shower_real.copy()
 
-    df_sel_shower=df_sel_shower_real.copy()
-
-    if len(df_sim_shower_small)>10000: # w/o takes forever to plot
+    if len(df_sim_shower_small) > 10000:  # w/o takes forever to plot
         # pick randomly 10000 events
-        df_sim_shower_small=df_sim_shower_small.sample(n=10000)
+        df_sim_shower_small = df_sim_shower_small.sample(n=10000)
         if 'MetSim' not in df_sim_shower_small['type'].values and 'Real' not in df_sim_shower_small['type'].values:
             df_sim_shower_small = pd.concat([df_sim_shower_small.iloc[[0]], df_sim_shower_small])
-        
+
     if save_log:
         # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-        if os.path.exists(output_dir+os.sep+"log_"+file_name[:15]+"_CI"+str(n_PC_in_PCA)+"PC.txt"):
+        if os.path.exists(output_dir + os.sep + "log_" + file_name[:15] + "_CI" + str(n_PC_in_PCA) + "PC.txt"):
             # remove the file
-            os.remove(output_dir+os.sep+"log_"+file_name[:15]+"_CI"+str(n_PC_in_PCA)+"PC.txt")
-        sys.stdout = Logger(output_dir,"log_"+file_name[:15]+"_CI"+str(n_PC_in_PCA)+"PC.txt") # _30var_99%_13PC
+            os.remove(output_dir + os.sep + "log_" + file_name[:15] + "_CI" + str(n_PC_in_PCA) + "PC.txt")
+        sys.stdout = Logger(output_dir, "log_" + file_name[:15] + "_CI" + str(n_PC_in_PCA) + "PC.txt")  # _30var_99%_13PC
 
-
-
-    curr_df_sim_sel = pd.concat([df_sim_shower_small,df_sel_shower], axis=0)
+    curr_df_sim_sel = pd.concat([df_sim_shower_small, df_sel_shower], axis=0)
 
     # multiply the erosion coeff by 1000000 to have it in km/s
-    curr_df_sim_sel['erosion_coeff']=curr_df_sim_sel['erosion_coeff']*1000000
-    curr_df_sim_sel['sigma']=curr_df_sim_sel['sigma']*1000000
-    curr_df_sim_sel['erosion_energy_per_unit_cross_section']=curr_df_sim_sel['erosion_energy_per_unit_cross_section']/1000000
-    curr_df_sim_sel['erosion_energy_per_unit_mass']=curr_df_sim_sel['erosion_energy_per_unit_mass']/1000000
+    curr_df_sim_sel['erosion_coeff'] = curr_df_sim_sel['erosion_coeff'] * 1000000
+    curr_df_sim_sel['sigma'] = curr_df_sim_sel['sigma'] * 1000000
+    curr_df_sim_sel['erosion_energy_per_unit_cross_section'] = curr_df_sim_sel['erosion_energy_per_unit_cross_section'] / 1000000
+    curr_df_sim_sel['erosion_energy_per_unit_mass'] = curr_df_sim_sel['erosion_energy_per_unit_mass'] / 1000000
 
     group_mapping = {
         'Simulation_sel': 'selected',
@@ -4517,245 +4514,219 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, n_PC_in_PCA, output_
     curr_df_sim_sel['weight_type'] = 1 / curr_df_sim_sel['num_type']
 
     curr_sel = curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'].copy()
-    # curr_sim = curr_df_sim_sel[curr_df_sim_sel['group'] == 'simulated'].copy()
 
-    # with color based on the shower but skip the first 2 columns (shower_code, shower_id)
-    to_plot=['mass','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max','erosion_range','erosion_energy_per_unit_mass','erosion_energy_per_unit_cross_section','erosion_energy_per_unit_cross_section']
-    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s$^2$/km$^2$]','erosion height start [km]','erosion coeff [s$^2$/km$^2$]','erosion mass index [-]','log eros. mass min [kg]','log eros. mass max [kg]','log eros. mass range [-]','erosion energy per unit mass [MJ/kg]','erosion energy per unit cross section [MJ/m^2]','erosion energy per unit cross section [MJ/m^2]']
-    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]',r'log($m_{u}$)-log($m_{l}$) [-]']
-
+    to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range']
+    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]', r'log($m_{u}$)-log($m_{l}$) [-]']
 
     fig, axs = plt.subplots(3, 3)
-    # from 2 numbers to one numbr for the subplot axs
     axs = axs.flatten()
 
-
-    
     print('\\hline')
-    if len(Min_KDE_point) > 0:    
-        # print('var & $real$ & $1D_{KDE}$ & $1D_{KDE}\\%_{dif}$ & $allD_{KDE}$ & $allD_{KDE}\\%_{dif}$\\\\')
-        # print('var & real & mode & min$_{KDE}$ & -1\\sigma/+1\\sigma & -2\\sigma/+2\\sigma \\\\')
-        print('Variables & '+str(df_sim_shower['type'].iloc[0])+' & Mode & Dens.Point $ & 95\\%CIlow & 95\\%CIup \\\\')
+    if len(Min_KDE_point) > 0:
+        print('Variables & ' + str(df_sim_shower['type'].iloc[0]) + ' & Mode & Dens.Point $ & 95\\%CIlow & 95\\%CIup \\\\')
     else:
-        print('Variables & '+str(df_sim_shower['type'].iloc[0])+' & Mode & 95\\%CIlow & 95\\%CIup \\\\')
+        print('Variables & ' + str(df_sim_shower['type'].iloc[0]) + ' & Mode & 95\\%CIlow & 95\\%CIup \\\\')
 
-    ii_densest=0        
+    ii_densest = 0
     for i in range(9):
-        # put legendoutside north
-        plotvar=to_plot[i]
+        plotvar = to_plot[i]
+
+        if i == 8:
+            # Plot only the legend
+            axs[i].axis('off')  # Turn off the axis
+
+            # Create custom legend entries
+            import matplotlib.patches as mpatches
+            from matplotlib.lines import Line2D
+
+            # Define the legend elements
+            # Define the legend elements
+            prior_patch = mpatches.Patch(color='blue', label='Priors', alpha=0.5, edgecolor='black')
+            sel_events_patch = mpatches.Patch(color='darkorange', label='Selected Events', alpha=0.5, edgecolor='red')
+            if 'MetSim' in curr_df_sim_sel['type'].values:
+                metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+            else:
+                metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+            mode_line = Line2D([0], [0], color='red', linestyle='-.', label='Mode')
+            if len(Min_KDE_point) > 0:
+                dens_point_line = Line2D([0], [0], color='blue', linestyle='-.', label='Densest Point')
+                # Create the legend
+                legend_elements = [prior_patch, sel_events_patch, metsim_line, mode_line, dens_point_line]
+            else:
+                # Create the legend
+                legend_elements = [prior_patch, sel_events_patch, metsim_line, mode_line]
+            
+            axs[i].legend(handles=legend_elements, loc='upper right', fontsize='small')
+
+            # Remove axes ticks and labels
+            axs[i].set_xticks([])
+            axs[i].set_yticks([])
+            axs[i].set_xlabel('')
+            axs[i].set_ylabel('')
+            continue  # Skip to next iteration
 
         if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
             # take the log of the erosion_mass_min and erosion_mass_max
-            curr_df_sim_sel[plotvar]=np.log10(curr_df_sim_sel[plotvar])
-            curr_sel[plotvar]=np.log10(curr_sel[plotvar])
+            curr_df_sim_sel[plotvar] = np.log10(curr_df_sim_sel[plotvar])
+            curr_sel[plotvar] = np.log10(curr_sel[plotvar])
             if len(Min_KDE_point) > 0:
-                Min_KDE_point[ii_densest]=np.log10(Min_KDE_point[ii_densest])
-                # Min_KDE_point[ii_densest-1]=np.log10(Min_KDE_point[ii_densest-1])
-        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='shower_code', ax=axs[i], kde=True, palette='bright', bins=20)
+                Min_KDE_point[ii_densest] = np.log10(Min_KDE_point[ii_densest])
+
         sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20)
         unique_values_count = curr_sel[plotvar].nunique()
         if unique_values_count > 1:
-            # # add the kde to the plot probability density function
-            sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
+            # Add the KDE to the plot
+            sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]), np.max(curr_df_sim_sel[plotvar])])
             kde_line = axs[i].lines[-1]
             axs[i].lines[-1].remove()
         else:
             kde_line = None
 
-        # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
-        # check if curr_df_sim_sel['type']=='MetSim' is in the curr_df_sim_sel['type'].values
         if 'MetSim' in curr_df_sim_sel['type'].values:
-            # get the value of the observed event
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='MetSim'][plotvar].values[0], color='k', linewidth=2)
+            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)
         elif 'Real' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
+            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
 
         if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
-            # put it back as it was
-            curr_df_sim_sel[plotvar]=10**curr_df_sim_sel[plotvar]
-            curr_sel[plotvar]=10**curr_sel[plotvar]    
+            # Convert back from log scale
+            curr_df_sim_sel[plotvar] = 10 ** curr_df_sim_sel[plotvar]
+            curr_sel[plotvar] = 10 ** curr_sel[plotvar]
 
-        # get te 97.72nd percentile and the 2.28th percentile of curr_sel[plotvar] and call them sigma_97 and sigma_2
-        sigma_95=np.percentile(curr_sel[plotvar], 95)
-        sigma_84=np.percentile(curr_sel[plotvar], 84.13)
-        sigma_15=np.percentile(curr_sel[plotvar], 15.87)
-        sigma_5=np.percentile(curr_sel[plotvar], 5)
+        # Calculate percentiles
+        sigma_95 = np.percentile(curr_sel[plotvar], 95)
+        sigma_5 = np.percentile(curr_sel[plotvar], 5)
 
         if kde_line is not None:
             # Get the x and y data from the KDE line
             kde_line_Xval = kde_line.get_xdata()
             kde_line_Yval = kde_line.get_ydata()
 
-            # Find the index of the maximum y value
+            # Find the index of the maximum y value (mode)
             max_index = np.argmax(kde_line_Yval)
-            if i!=8:
-                # Plot a dot at the maximum point
-                # axs[i].plot(kde_line_Xval[max_index], kde_line_Yval[max_index], 'ro')  # 'ro' for red dot
-                axs[i].axvline(x=kde_line_Xval[max_index], color='red', linestyle='-.')
+            # Plot a vertical line at the mode
+            axs[i].axvline(x=kde_line_Xval[max_index], color='red', linestyle='-.')
 
-            x_10mode=kde_line_Xval[max_index]
+            x_10mode = kde_line_Xval[max_index]
             if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
-                x_10mode=10**kde_line_Xval[max_index]
+                x_10mode = 10 ** kde_line_Xval[max_index]
 
-            if len(Min_KDE_point) > 0:     
-                if len(Min_KDE_point)>ii_densest:                    
-
-                    # Find the index with the closest value to densest_point[ii_dense] to all y values
+            if len(Min_KDE_point) > 0:
+                if len(Min_KDE_point) > ii_densest:
                     densest_index = find_closest_index(kde_line_Xval, [Min_KDE_point[ii_densest]])
-
-                    # add also the densest_point[i] as a blue dot
-                    # axs[i].plot(Min_KDE_point[ii_densest], kde_line_Yval[densest_index[0]], 'bo')
                     axs[i].axvline(x=Min_KDE_point[ii_densest], color='blue', linestyle='-.')
-
                     if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
-                        Min_KDE_point[ii_densest]=10**(Min_KDE_point[ii_densest])
-                    
-                    if i<9:
-                        print('\\hline') #df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]
-                        # print(f"{to_plot_unit[i]} & ${'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])}$ & ${'{:.4g}'.format(x_10mode)}$ & $ {'{:.2g}'.format(percent_diff_1D[i])}$\\% & $ {'{:.4g}'.format(densest_point[i])}$ & $ {'{:.2g}'.format(percent_diff_allD[i])}$\\% \\\\")
-                        # print(to_plot_unit[i]+'& $'+str(x[max_index])+'$ & $'+str(percent_diff_1D[i])+'$\\% & $'+str(densest_point[ii_densest])+'$ & $'+str(percent_diff_allD[i])+'\\% \\\\')
-                        # print(f"{to_plot_unit[i]} & ${'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])}$ & ${'{:.4g}'.format(x_10mode)}$ & $ {'{:.2g}'.format(percent_diff_1D[i])}$\\% & $ {'{:.4g}'.format(densest_point[i])}$ & $ {'{:.2g}'.format(percent_diff_allD[i])}$\\% \\\\")
-                        # print(f"{to_plot_unit[i]} & {'{:.4g}'.format(df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0])} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(densest_point[i])} & {'{:.4g}'.format(sigma_15)} / {'{:.4g}'.format(sigma_84)} & {'{:.4g}'.format(sigma_2)} / {'{:.4g}'.format(sigma_97)} \\\\")
-                        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[plotvar].iloc[0])} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(Min_KDE_point[i])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(sigma_95)} \\\\")
-                    ii_densest=ii_densest+1 
+                        Min_KDE_point[ii_densest] = 10 ** (Min_KDE_point[ii_densest])
+
+                    if i < 9:
+                        print('\\hline') 
+                        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[plotvar].iloc[0])} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(Min_KDE_point[ii_densest])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(sigma_95)} \\\\")
+                    ii_densest += 1
             else:
-                if i<9:
-                    print('\\hline') 
+                if i < 9:
+                    print('\\hline')
                     print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[plotvar].iloc[0])} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(sigma_95)} \\\\")
-        else:   
-            if i<9:
-                print('\\hline') 
+        else:
+            if i < 9:
+                print('\\hline')
                 print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[plotvar].iloc[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(sigma_95)} \\\\")
 
-        axs[i].set_ylabel('probability')
+        axs[i].set_ylabel('Probability')
         axs[i].set_xlabel(to_plot_unit[i])
 
-        # check if y axis is above 1 if so set_ylim(0,1)
-        if axs[i].get_ylim()[1]>1:
-            axs[i].set_ylim(0,1)
-        
-        # # plot the legend outside the plot
-        # axs[i].legend()
-        axs[i].get_legend().remove()
-            
+        # Adjust y-axis limit
+        if axs[i].get_ylim()[1] > 1:
+            axs[i].set_ylim(0, 1)
 
-        if i==0:
-            # place the xaxis exponent in the bottom right corner
+        # Remove individual legends
+        axs[i].get_legend().remove()
+
+        if i == 0:
+            # Adjust x-axis offset text
             axs[i].xaxis.get_offset_text().set_x(1.10)
 
-    # # more space between the subplots erosion_coeff sigma
     plt.tight_layout()
-
     print('\\hline')
-    
 
-    # save the figure maximized and with the right name
-    fig.savefig(output_dir+os.sep+file_name+'_PhysicProp'+str(n_PC_in_PCA)+'PC_'+str(len(curr_sel))+'ev.png', dpi=300) # _dist'+str(np.round(np.min(curr_sel['distance_meteor']),2))+'-'+str(np.round(np.max(curr_sel['distance_meteor']),2))+'
-
-    # close the figure
+    # Save the figure
+    fig.savefig(output_dir + os.sep + file_name + '_PhysicProp' + str(n_PC_in_PCA) + 'PC_' + str(len(curr_sel)) + 'ev.png', dpi=300)
     plt.close()
 
     if save_log:
-        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
         sys.stdout.close()
-
-        # Reset sys.stdout to its original value if needed
         sys.stdout = sys.__stdout__
 
-    ii_densest=0
+    # Additional plotting for realizations (if applicable)
+    ii_densest = 0
     if 'solution_id_dist' in df_sel_shower_real.columns:
-        # the plot can get suck if too many reliazations
-        if len(df_sel_shower_real['solution_id_dist'].unique())<60:
-            if len(df_sel_shower_real['solution_id_dist'].unique())>1:
-                print('plot the distribution of the Realization',len(df_sel_shower_real['solution_id_dist'].unique()))
-                fig, axs = plt.subplots(3, 3)
-                # from 2 numbers to one numbr for the subplot axs
-                axs = axs.flatten()
+        if len(df_sel_shower_real['solution_id_dist'].unique()) < 60 and len(df_sel_shower_real['solution_id_dist'].unique()) > 1:
+            print('Plot the distribution of the Realizations', len(df_sel_shower_real['solution_id_dist'].unique()))
+            fig, axs = plt.subplots(3, 3)
+            axs = axs.flatten()
 
-                # ii_densest=0        
-                for i in range(9):
-                    # put legendoutside north
-                    plotvar=to_plot[i]
+            for i in range(9):
+                plotvar = to_plot[i]
 
-                    if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+                if i == 8:
+                    # Plot only the legend
+                    axs[i].axis('off')
 
-                        sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
-                        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-                        sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
-                        # # add the kde to the plot as a probability density function
-                        sns.histplot(curr_sel, x=np.log10(curr_sel[plotvar]), weights=curr_sel['weight'], bins=20, ax=axs[i],  multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
-                        
-                        kde_line = axs[i].lines[-1]
-                        # delete from the plot the axs[i].lines[-1]
-                        axs[i].lines[-1].remove()
-                        
-                        # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
-                        if 'MetSim' in curr_df_sim_sel['type'].values:
-                            # get the value of the observed event
-                            axs[i].axvline(x=np.log10(curr_df_sim_sel[curr_df_sim_sel['type']=='MetSim'][plotvar].values[0]), color='k', linewidth=2)
-                        elif 'Real' in curr_df_sim_sel['type'].values:
-                            axs[i].axvline(x=np.log10(curr_df_sim_sel[curr_df_sim_sel['type']=='Real'][plotvar].values[0]), color='g', linewidth=2, linestyle='--')
+                    import matplotlib.patches as mpatches
+                    from matplotlib.lines import Line2D
 
-                        # if len(Min_KDE_point) > 0:
-                        #     Min_KDE_point[ii_densest]=np.log10(Min_KDE_point[ii_densest])
-                        #     # Min_KDE_point[ii_densest-1]=np.log10(Min_KDE_point[ii_densest-1])
-                    
+                    prior_patch = mpatches.Patch(color='blue', label='Priors')
+                    sel_events_patch = mpatches.Patch(color='orange', label='Selected Events')
+                    if 'MetSim' in curr_df_sim_sel['type'].values:
+                        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
                     else:
+                        metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+                    mode_line = Line2D([0], [0], color='red', linestyle='--', label='Mode')
 
-                        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
-                        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-                        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='solution_id_dist', ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
-                        # # add the kde to the plot as a probability density function
-                        sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i],  multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
-                        
-                        kde_line = axs[i].lines[-1]
+                    legend_elements = [prior_patch, sel_events_patch, metsim_line, mode_line]
+                    axs[i].legend(handles=legend_elements, loc='center')
 
-                        # delete from the plot the axs[i].lines[-1]
-                        axs[i].lines[-1].remove()
+                    axs[i].set_xticks([])
+                    axs[i].set_yticks([])
+                    axs[i].set_xlabel('')
+                    axs[i].set_ylabel('')
+                    continue
 
-                        # if the only_select_meteors_from is equal to any curr_df_sim_sel plot the observed event value as a vertical red line
-                        if 'MetSim' in curr_df_sim_sel['type'].values:
-                            # get the value of the observed event
-                            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='MetSim'][plotvar].values[0], color='k', linewidth=2)
-                        elif 'Real' in curr_df_sim_sel['type'].values:
-                            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type']=='Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
-                        # put the value of diff_percent_1d at th upper left of the line
+                if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+                    sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])), np.log10(np.max(curr_df_sim_sel[plotvar]))])
+                    sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'], hue='solution_id_dist', ax=axs[i], multiple="stack", bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])), np.log10(np.max(curr_df_sim_sel[plotvar]))])
+                    sns.histplot(curr_sel, x=np.log10(curr_sel[plotvar]), weights=curr_sel['weight'], bins=20, ax=axs[i], multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])), np.log10(np.max(curr_df_sim_sel[plotvar]))])
 
-                    axs[i].set_ylabel('probability')
-                    axs[i].set_xlabel(to_plot_unit[i])
-                    # check if y axis is above 1 if so set_ylim(0,1)
-                    if axs[i].get_ylim()[1]>1:
-                        axs[i].set_ylim(0,1)
-                    
-                    # # plot the legend outside the plot
-                    # axs[i].legend()
-                    axs[i].get_legend().remove()
+                    kde_line = axs[i].lines[-1]
+                    axs[i].lines[-1].remove()
 
-                    # # Get the x and y data from the KDE line
-                    # kde_line_Xval = kde_line.get_xdata()
-                    # kde_line_Yval = kde_line.get_ydata()
+                    if 'MetSim' in curr_df_sim_sel['type'].values:
+                        axs[i].axvline(x=np.log10(curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0]), color='k', linewidth=2)
+                    elif 'Real' in curr_df_sim_sel['type'].values:
+                        axs[i].axvline(x=np.log10(curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0]), color='g', linewidth=2, linestyle='--')
 
-                    # if i != 8:
-                    #     axs[i].plot(kde_line_Xval[max_index], kde_line_Yval[max_index], 'ro')
+                else:
+                    sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]), np.max(curr_df_sim_sel[plotvar])])
+                    sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='solution_id_dist', ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]), np.max(curr_df_sim_sel[plotvar])])
+                    sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i], multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]), np.max(curr_df_sim_sel[plotvar])])
 
-                    # if i==0:
-                    #     # place the xaxis exponent in the bottom right corner
-                    #     axs[i].xaxis.get_offset_text().set_x(1.10)
-                    # if len(Min_KDE_point) > 0:     
-                    #     if len(Min_KDE_point)>ii_densest:                    
+                    kde_line = axs[i].lines[-1]
+                    axs[i].lines[-1].remove()
 
-                    #         # Find the index with the closest value to densest_point[ii_dense] to all y values
-                    #         densest_index = find_closest_index(kde_line_Xval, [Min_KDE_point[ii_densest]])
+                    if 'MetSim' in curr_df_sim_sel['type'].values:
+                        axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)
+                    elif 'Real' in curr_df_sim_sel['type'].values:
+                        axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
 
-                    #         # add also the densest_point[i] as a blue dot
-                    #         axs[i].plot(Min_KDE_point[ii_densest], kde_line_Yval[densest_index[0]], 'bo')
-                    #         ii_densest=ii_densest+1
-                # # more space between the subplots erosion_coeff sigma
-                plt.tight_layout()
+                axs[i].set_ylabel('Probability')
+                axs[i].set_xlabel(to_plot_unit[i])
 
-                # save the figure maximized and with the right name
-                fig.savefig(output_dir+os.sep+file_name+'_PhysicProp_Reliazations_'+str(n_PC_in_PCA)+'PC_'+str(len(curr_sel))+'ev.png', dpi=300)
+                if axs[i].get_ylim()[1] > 1:
+                    axs[i].set_ylim(0, 1)
 
+                axs[i].get_legend().remove()
+
+            plt.tight_layout()
+
+            fig.savefig(output_dir + os.sep + file_name + '_PhysicProp_Reliazations_' + str(n_PC_in_PCA) + 'PC_' + str(len(curr_sel)) + 'ev.png', dpi=300)
 
 
 def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real= 0.1, len_noise_real = 20.0, fps=32, file_name_obs='', trajectory_Metsim_file='', output_folder_of_csv=''):
@@ -5073,252 +5044,6 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
     else:
         # save df_sel_shower_real to disk add the RMSD
         df_sel_shower_real.to_csv(output_folder_of_csv, index=False)
-
-
-def modify_rmsd_confidence_old(pd_datafram_PCA_sim_real, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag, output_path_distrib_rmsd=''):
-
-    # deep copy pd_datafram_PCA_sim
-    pd_datafram_PCA_sim = pd_datafram_PCA_sim_real.copy()
-
-    MAG_RMSD_conf_old= (2 * stats.norm.cdf(mag_RMSD/rmsd_pol_mag) - 1)*100 
-    LEN_RMSD_conf_old= (2 * stats.norm.cdf(len_RMSD/rmsd_t0_lag) - 1)*100
-
-    if output_path_distrib_rmsd != '':
-        # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-        if os.path.exists(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt"):
-            # remove the file
-            os.remove(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt")
-        sys.stdout = Logger(output_path_distrib_rmsd,"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt") # _30var_99%_13PC
-
-    print('mag RMSD Observation - Fit : ',rmsd_pol_mag)
-    print('len RMSD Observation - Fit : ',rmsd_t0_lag)
-
-    print('mag RMSD:'+str(np.round(mag_RMSD,3))+' Confidence interval MAG:'+str(MAG_RMSD_conf_old)+'%') # +str(np.round(MAG_RMSD_conf_old,3))+'%')
-    print('len RMSD:'+str(np.round(len_RMSD,3))+' Confidence interval LEN:'+str(LEN_RMSD_conf_old)+'%') # +str(np.round(LEN_RMSD_conf_old,3))+'%')
-
-    # Normalize the columns to bring them to the same scale
-    pd_datafram_PCA_sim['rmsd_mag_norm'] = pd_datafram_PCA_sim['rmsd_mag'] / pd_datafram_PCA_sim['rmsd_mag'].max()
-    pd_datafram_PCA_sim['rmsd_len_norm'] = pd_datafram_PCA_sim['rmsd_len'] / pd_datafram_PCA_sim['rmsd_len'].max()
-
-    # Compute the combined metric (e.g., sum of absolute normalized values)
-    pd_datafram_PCA_sim['combined_RMSD_metric'] = abs(pd_datafram_PCA_sim['rmsd_mag_norm']) + abs(pd_datafram_PCA_sim['rmsd_len_norm'])
-
-    # Alternative metric using Euclidean distance If you want to penalize large deviations more severely especially for gaussian distribution (not the case)
-    # pd_datafram_PCA_sim['combined_metric'] = (pd_datafram_PCA_sim['rmsd_mag_norm']**2 + pd_datafram_PCA_sim['rmsd_len_norm']**2)**0.5
-
-    # Sort the DataFrame based on the combined metric
-    pd_datafram_PCA_sim = pd_datafram_PCA_sim.sort_values(by='combined_RMSD_metric')
-
-    # Reset index if needed
-    pd_datafram_PCA_sim = pd_datafram_PCA_sim.reset_index(drop=True)
-
-    # # Drop the auxiliary columns if they are no longer needed
-    # pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
-
-    # check first if any is smaller than mag_RMSD and len_RMSD
-    if pd_datafram_PCA_sim['rmsd_mag'].iloc[0] <= mag_RMSD and pd_datafram_PCA_sim['rmsd_len'].iloc[0] <= len_RMSD:
-
-        # check if the following values are also smaller than mag_RMSD and len_RMSD and save the index
-        for i in range(1, len(pd_datafram_PCA_sim)):
-            if pd_datafram_PCA_sim['rmsd_mag'].iloc[i] > mag_RMSD or pd_datafram_PCA_sim['rmsd_len'].iloc[i] > len_RMSD:
-                index = i-1
-                break
-        
-        # take the head of the dataframe with the index
-        pd_datafram_PCA_sim = pd_datafram_PCA_sim.head(index+1)
-
-        # find the highest value rmsd_mag .head(index)
-        MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].head(index+1).max()+0.0001
-        # find the highest value rmsd_len .head(index)
-        LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].head(index+1).max()+0.0001
-
-        print('Number of simulations below the more stringent RMSD :',index+1)
-
-        # print all the 'solution_id' of all from 0 to index
-        print('File of all the simulations below the new RMSD :')
-        for i in range(index+1):
-            print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
-
-    else:
-        # print there are values smaller than mag_RMSD and len_RMSD
-        print('NO values smaller than mag_RMSD and len_RMSD')
-        # find the knee of 'rmsd_mag', 'rmsd_len' and use it as the MAG_RMSD_new and LEN_RMSD_new, no smoothing use want a conservative estimate
-        index = find_knee_dist_index(pd_datafram_PCA_sim.head(50), output_path=output_path_distrib_rmsd, around_meteor='Combined RMSD metric', data_meteor_pd_sel='combined_RMSD_metric', window_of_smothing_avg=1, find_closest_results=True)# , window_of_smothing_avg=1
-        
-        # find the highest value rmsd_mag .head(index)
-        MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].head(index+1).max()+0.0001
-        # find the highest value rmsd_len .head(index)
-        LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].head(index+1).max()+0.0001
-
-        print('Number of simulations below the new RMSD :',index+1)
-        # print all the 'solution_id' of all from 0 to index
-        print('File of all the simulations below the new RMSD :')
-        for i in range(index+1):
-            print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
-
-    print('initial MAG RMSD',mag_RMSD,'the new rmsd_mag',MAG_RMSD_new)
-    print('initial LEN RMSD',len_RMSD,'the new rmsd_len',LEN_RMSD_new)
-
-    # find the z_score for the new MAG_RMSD_new and LEN_RMSD_new
-    MAG_z_score_new = MAG_RMSD_new / rmsd_pol_mag
-    LEN_z_score_new = LEN_RMSD_new / rmsd_t0_lag
-
-    # Drop the auxiliary columns if they are no longer needed
-    pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
-
-    CONF_MAG_new = (2 * stats.norm.cdf(MAG_z_score_new) - 1)*100
-    CONF_LEN_new = (2 * stats.norm.cdf(LEN_z_score_new) - 1)*100
-
-    print('NEW mag RMSD:'+str(np.round(MAG_RMSD_new,3))+' NEW Confidence interval MAG:'+str(CONF_MAG_new)+'%') # +str(np.round(CONF_MAG_new,3))+'%')
-    print('NEW len RMSD:'+str(np.round(LEN_RMSD_new,3))+' NEW Confidence interval LEN:'+str(CONF_LEN_new)+'%') # +str(np.round(CONF_LEN_new,3))+'%')
-
-
-    if output_path_distrib_rmsd != '':
-        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-        sys.stdout.close()
-
-        # Reset sys.stdout to its original value if needed
-        sys.stdout = sys.__stdout__
-
-    return MAG_RMSD_new, LEN_RMSD_new, MAG_z_score_new, LEN_z_score_new, CONF_MAG_new, CONF_LEN_new
-
-
-
-def modify_rmsd_confidence(pd_datafram_PCA_sim_real, mag_RMSD, vel_RMSD, rmsd_pol_mag, rmsd_t0_lag, output_path_distrib_rmsd=''):
-
-    # deep copy pd_datafram_PCA_sim
-    pd_datafram_PCA_sim = pd_datafram_PCA_sim_real.copy()
-
-    MAG_RMSD_conf_old= (2 * stats.norm.cdf(mag_RMSD/rmsd_pol_mag) - 1)*100 
-    LEN_RMSD_conf_old= (2 * stats.norm.cdf(len_RMSD/rmsd_t0_lag) - 1)*100
-
-    if output_path_distrib_rmsd != '':
-        # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-        if os.path.exists(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt"):
-            # remove the file
-            os.remove(output_path_distrib_rmsd+os.sep+"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt")
-        sys.stdout = Logger(output_path_distrib_rmsd,"log_RMSD_CImag"+str(np.round(MAG_RMSD_conf_old,3))+"%_CIlen"+str(np.round(LEN_RMSD_conf_old,3))+"%.txt") # _30var_99%_13PC
-
-    print('mag RMSD Observation - Fit : ',rmsd_pol_mag)
-    print('len RMSD Observation - Fit : ',rmsd_t0_lag)
-
-    print('mag RMSD:'+str(np.round(mag_RMSD,3))+' Confidence interval MAG:'+str(MAG_RMSD_conf_old)+'%') # +str(np.round(MAG_RMSD_conf_old,3))+'%')
-    print('len RMSD:'+str(np.round(len_RMSD,3))+' Confidence interval LEN:'+str(LEN_RMSD_conf_old)+'%') # +str(np.round(LEN_RMSD_conf_old,3))+'%')
-
-    # Normalize the columns to bring them to the same scale
-    pd_datafram_PCA_sim['rmsd_mag_norm'] = pd_datafram_PCA_sim['rmsd_mag'] / pd_datafram_PCA_sim['rmsd_mag'].max()
-    pd_datafram_PCA_sim['rmsd_len_norm'] = pd_datafram_PCA_sim['rmsd_len'] / pd_datafram_PCA_sim['rmsd_len'].max()
-
-    # Compute the combined metric (e.g., sum of absolute normalized values)
-    pd_datafram_PCA_sim['combined_RMSD_metric'] = abs(pd_datafram_PCA_sim['rmsd_mag_norm']) + abs(pd_datafram_PCA_sim['rmsd_len_norm'])
-
-    # Alternative metric using Euclidean distance If you want to penalize large deviations more severely especially for gaussian distribution (not the case)
-    # pd_datafram_PCA_sim['combined_metric'] = (pd_datafram_PCA_sim['rmsd_mag_norm']**2 + pd_datafram_PCA_sim['rmsd_len_norm']**2)**0.5
-
-    # Sort the DataFrame based on the combined metric
-    pd_datafram_PCA_sim = pd_datafram_PCA_sim.sort_values(by='combined_RMSD_metric')
-
-    # Reset index if needed
-    pd_datafram_PCA_sim = pd_datafram_PCA_sim.reset_index(drop=True)
-
-    # # Drop the auxiliary columns if they are no longer needed
-    # pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
-
-    # check first if any is smaller than mag_RMSD and len_RMSD
-    if pd_datafram_PCA_sim['rmsd_mag'].iloc[0] <= mag_RMSD and pd_datafram_PCA_sim['rmsd_len'].iloc[0] <= len_RMSD:
-
-        # check if the following values are also smaller than mag_RMSD and len_RMSD and save the index
-        for i in range(1, len(pd_datafram_PCA_sim)):
-            if pd_datafram_PCA_sim['rmsd_mag'].iloc[i] > mag_RMSD or pd_datafram_PCA_sim['rmsd_len'].iloc[i] > len_RMSD:
-                index = i-1
-                break
-        
-        # take the head of the dataframe with the index
-        pd_datafram_PCA_sim = pd_datafram_PCA_sim.head(index+1)
-
-        # find the highest value rmsd_mag .head(index)
-        MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].head(index+1).max()+0.0001
-        # find the highest value rmsd_len .head(index)
-        LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].head(index+1).max()+0.0001
-
-        print('Number of simulations below the more stringent RMSD :',index+1)
-
-        # print all the 'solution_id' of all from 0 to index
-        print('File of all the simulations below the new RMSD :')
-        for i in range(index+1):
-            print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
-
-    else:
-
-        # print there are values smaller than mag_RMSD and vel_RMSD
-        print('NO values smaller than mag_RMSD and vel_RMSD')
-
-        # write the closest 5 events
-        print('File of the 5 closest simulations to the new RMSD :')
-        for i in range(5):
-            print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
-        
-        # find the z_score for the new MAG_RMSD_new and VEL_RMSD_new
-        MAG_z_score = MAG_RMSD / rmsd_pol_mag
-        VEL_z_score = VEL_RMSD / rmsd_t0_lag
-
-        CONF_MAG = (2 * stats.norm.cdf(MAG_z_score) - 1)*100
-        CONF_VEL = (2 * stats.norm.cdf(VEL_z_score) - 1)*100
-
-        if output_path_distrib_rmsd != '':
-            # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-            sys.stdout.close()
-
-            # Reset sys.stdout to its original value if needed
-            sys.stdout = sys.__stdout__
-
-        return mag_RMSD, vel_RMSD, MAG_z_score, VEL_z_score, CONF_MAG, CONF_VEL
-    
-
-        # # print there are values smaller than mag_RMSD and len_RMSD
-        # print('NO values smaller than mag_RMSD and len_RMSD')
-        # # find the knee of 'rmsd_mag', 'rmsd_len' and use it as the MAG_RMSD_new and LEN_RMSD_new, no smoothing use want a conservative estimate
-        # index = find_knee_dist_index(pd_datafram_PCA_sim.head(50), output_path=output_path_distrib_rmsd, around_meteor='Combined RMSD metric', data_meteor_pd_sel='combined_RMSD_metric', window_of_smothing_avg=1, find_closest_results=True)# , window_of_smothing_avg=1
-        
-        # # find the highest value rmsd_mag .head(index)
-        # MAG_RMSD_new = pd_datafram_PCA_sim['rmsd_mag'].head(index+1).max()+0.0001
-        # # find the highest value rmsd_len .head(index)
-        # LEN_RMSD_new = pd_datafram_PCA_sim['rmsd_len'].head(index+1).max()+0.0001
-
-        # print('Number of simulations below the new RMSD :',index+1)
-        # # print all the 'solution_id' of all from 0 to index
-        # print('File of all the simulations below the new RMSD :')
-        # for i in range(index+1):
-        #     print(pd_datafram_PCA_sim['solution_id'].iloc[i-1])
-
-    print('initial MAG RMSD',mag_RMSD,'the new rmsd_mag',MAG_RMSD_new)
-    print('initial LEN RMSD',len_RMSD,'the new rmsd_len',LEN_RMSD_new)
-
-    # find the z_score for the new MAG_RMSD_new and LEN_RMSD_new
-    MAG_z_score_new = MAG_RMSD_new / rmsd_pol_mag
-    LEN_z_score_new = LEN_RMSD_new / rmsd_t0_lag
-
-    # Drop the auxiliary columns if they are no longer needed
-    pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
-
-    CONF_MAG_new = (2 * stats.norm.cdf(MAG_z_score_new) - 1)*100
-    CONF_LEN_new = (2 * stats.norm.cdf(LEN_z_score_new) - 1)*100
-
-    print('NEW mag RMSD:'+str(np.round(MAG_RMSD_new,3))+' NEW Confidence interval MAG:'+str(CONF_MAG_new)+'%') # +str(np.round(CONF_MAG_new,3))+'%')
-    print('NEW len RMSD:'+str(np.round(LEN_RMSD_new,3))+' NEW Confidence interval LEN:'+str(CONF_LEN_new)+'%') # +str(np.round(CONF_LEN_new,3))+'%')
-
-
-    if output_path_distrib_rmsd != '':
-        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-        sys.stdout.close()
-
-        # Reset sys.stdout to its original value if needed
-        sys.stdout = sys.__stdout__
-
-    return MAG_RMSD_new, LEN_RMSD_new, MAG_z_score_new, LEN_z_score_new, CONF_MAG_new, CONF_LEN_new
-
-
-
 
 
 

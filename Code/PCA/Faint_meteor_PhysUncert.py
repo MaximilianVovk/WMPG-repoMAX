@@ -205,105 +205,6 @@ def fit_mag_polin2_RMSD(data_mag, time_data):
     return fit1, residuals_pol, rmsd_pol,'Polinomial Fit'
 
 
-def fit_lag_t0_RMSD_lag_mean_wrong(lag_data, time_data, velocity_data, lenght_data, obs1_time, obs2_time, obs1_length, obs2_length):
-    v_init = velocity_data[0]
-    # # find all the index of the velocity_data == v_init and delete them
-    # index_v_init = [i for i, x in enumerate(velocity_data) if x == v_init]
-    # print('initila vel',v_init)
-    # print(velocity_data)
-    # print('index_v_init',index_v_init)
-    # # put 3 to the list of index
-    # index_v_init.append(3)
-    # print('index_v_init',index_v_init)
-    
-    # # delete the index_v_init from the velocity_data and time_data
-    # velocity_data = [i for j, i in enumerate(velocity_data) if j not in index_v_init]
-    # time_data_vel = [i for j, i in enumerate(time_data) if j not in index_v_init]
-    # # time_data = [i for j, i in enumerate(time_data) if j not in index_v_init]
-    # # lag_data = [i for j, i in enumerate(lag_data) if j not in index_v_init]
-
-    # initial guess of deceleration decel equal to linear fit of velocity
-    p0 = [np.mean(lag_data), 0, 0, np.mean(time_data)]
-    opt_res = opt.minimize(lag_residual, p0, args=(np.array(time_data), np.array(lag_data)), method='Nelder-Mead')
-    a_t0, b_t0, c_t0, t0 = opt_res.x
-    fitted_lag_t0 = cubic_lag(np.array(time_data), a_t0, b_t0, c_t0, t0)
-    
-    # Optimize velocity residual based on initial guess from lag residual
-    opt_res_vel = opt.minimize(vel_residual, [a_t0, b_t0, v_init, t0], args=(np.array(time_data), np.array(velocity_data)), method='Nelder-Mead')
-    a_t0_vel, b_t0_vel, v_init_vel, t0_vel = opt_res_vel.x
-    fitted_vel_t0_vel = cubic_velocity(np.array(time_data), a_t0_vel, b_t0_vel, v_init_vel, t0_vel)
-
-    # find the lag again with the optimized velocity lag_sampled=len_sampled-(vel_sampled[0]*time_sampled+len_sampled[0])
-    lag_data = np.array(obs1_length) - (v_init_vel*np.array(obs1_time)+np.array(obs1_length[0]))
-    lag_data = np.concatenate((lag_data, np.array(obs2_length) - (v_init_vel*np.array(obs2_time)+np.array(obs2_length[0]))))
-    # order them base on the time
-    time_data = np.concatenate((obs1_time, obs2_time))
-    # order lag_data base on time_data
-    lag_data = [x for _,x in sorted(zip(time_data,lag_data))]
-    time_data = sorted(time_data)
-
-
-    print('t0_vel',t0_vel)
-    print('t0',t0)
-    print('a_t0_vel',a_t0_vel)
-    print('a_t0',a_t0)
-    print('b_t0_vel',b_t0_vel)
-    print('b_t0',b_t0)
-    print('v_init_vel',v_init_vel)
-    print('v_init',v_init)
-    print('c_t0',c_t0)
-    
-    # # Compute fitted velocity from original lag optimization
-    fitted_vlag_t0_vel = cubic_lag(np.array(time_data), a_t0_vel, b_t0_vel, c_t0, t0_vel)
-
-    # Compute fitted velocity from original lag optimization
-    fitted_vel_t0_lag = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init_vel, t0)
-    fitted_vel_t0_lag_res = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init_vel, t0)
-
-    # # Compute fitted velocity from original lag optimization
-    # fitted_vel_t0_lag_vel = cubic_velocity(np.array(time_data), a_t0, b_t0, v_init_vel, t0)
-    
-    # Calculate residuals
-    residuals_vel_vel = velocity_data - fitted_vel_t0_vel
-    residuals_vel_lag = velocity_data - fitted_vel_t0_lag_res
-    
-    rmsd_vel_vel = np.sqrt(np.mean(residuals_vel_vel ** 2))
-    rmsd_vel_lag = np.sqrt(np.mean(residuals_vel_lag ** 2))
-    
-    # Choose the best fitted velocity based on RMSD
-    if rmsd_vel_vel < rmsd_vel_lag:
-        best_fitted_vel_t0 = fitted_vel_t0_vel
-        best_a_t0, best_b_t0, best_t0 = a_t0_vel, b_t0_vel, t0_vel
-    else:
-        best_fitted_vel_t0 = fitted_vel_t0_lag
-        best_a_t0, best_b_t0, best_t0 = a_t0, b_t0, t0
-    
-    fitted_acc_t0 = cubic_acceleration(np.array(time_data), best_a_t0, best_b_t0, best_t0)
-    residuals_t0 = lag_data - fitted_lag_t0
-    rmsd_t0 = np.sqrt(np.mean(residuals_t0 ** 2))
-
-    # plot the two curves of lag and velocity
-    fig, ax = plt.subplots(1, 2, figsize=(14, 6), dpi=300)
-    # flat the ax
-    ax = ax.flatten()
-    ax[0].plot(time_data, lag_data, 'go', label='Observation')
-    ax[0].plot(time_data, fitted_lag_t0, 'k--', label='Cubic Fit lag')
-    ax[0].plot(time_data, fitted_vlag_t0_vel, 'r--', label='Cubic Fit vel')
-    ax[0].set_xlabel('Time (s)')
-    ax[0].set_ylabel('Lag (m)')
-    ax[0].legend()
-    ax[1].plot(time_data, velocity_data, 'go', label='Observation')
-    ax[1].plot(time_data, fitted_vel_t0_lag, 'k--', label='Cubic Fit lag')
-    ax[1].plot(time_data, fitted_vel_t0_vel, 'r--', label='Cubic Fit vel')
-    ax[1].set_ylabel('Velocity (m/s)')
-    ax[1].set_xlabel('Time (s)')
-    ax[1].legend()
-    plt.show()
-
-
-    return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', best_fitted_vel_t0, fitted_acc_t0
-
-
 def fit_lag_t0_RMSD(lag_data, time_data, velocity_data):
     v_init = velocity_data[0]
     # initial guess of deceleration decel equal to linear fit of velocity
@@ -369,15 +270,17 @@ def fit_lag_t0_RMSD(lag_data, time_data, velocity_data):
     # # lag can be wrong for short meteors where velocity drops suddenly
     # fitted_lag_t0 = cubic_lag(np.array(time_data), best_a_t0, best_b_t0, c_t0, best_t0)
 
-    return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', best_fitted_vel_t0, fitted_acc_t0
+    return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', best_fitted_vel_t0, residuals_vel_vel, fitted_acc_t0
 
 
-def find_noise_of_data(data, fps=32, plot_case=False):
+def find_noise_of_data(data, fps=32, plot_case=False, output_folder='', file_name=''):
+    '''
+        Find the noise of the data
+    '''
     # make a copy of data_obs
     data_obs = copy.deepcopy(data)
 
-    # fitted_lag_t0_lag, residuals_t0_lag, rmsd_t0_lag, fit_type_lag, fitted_vel_t0, fitted_acc_t0 = fit_lag_t0_RMSD(data_obs['lag'],data_obs['time'], data_obs['velocities'], data_obs['length'], data_obs['obs1_time'], data_obs['obs2_time'], data_obs['obs1_length'], data_obs['obs2_length'])
-    fitted_lag_t0_lag, residuals_t0_lag, rmsd_t0_lag, fit_type_lag, fitted_vel_t0, fitted_acc_t0 = fit_lag_t0_RMSD(data_obs['lag'],data_obs['time'], data_obs['velocities'])
+    fitted_lag_t0_lag, residuals_t0_lag, rmsd_t0_lag, fit_type_lag, fitted_vel_t0, residuals_t0_vel, fitted_acc_t0 = fit_lag_t0_RMSD(data_obs['lag'],data_obs['time'], data_obs['velocities'])
     # now do it for fit_mag_polin2_RMSD
     fit_pol_mag, residuals_pol_mag, rmsd_pol_mag, fit_type_mag = fit_mag_polin2_RMSD(data_obs['absolute_magnitudes'],data_obs['time'])
 
@@ -398,6 +301,27 @@ def find_noise_of_data(data, fps=32, plot_case=False):
         'rmsd_vel' : rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps),
         'fps': fps
     }
+
+    fig, ax = plt.subplots(2, 4, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 0.5],'width_ratios': [ 3, 0.5, 3, 3]})
+    ax = ax.flatten()
+    plot_side_by_side(data_obs, fig, ax, 'go', file_name[:15]+'\nRMSDmag '+str(round(rmsd_pol_mag,3))+' RMSDlen '+str(round(rmsd_t0_lag,1))+'m', residuals_pol_mag, residuals_t0_vel, data_obs['time'], data_obs['height'], residuals_t0_lag, fit_funct, rmsd_pol_mag, rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps), rmsd_t0_lag/1000,'Std.dev. realizations', data_obs['lag']/1000, fitted_lag_t0_lag/1000)
+    
+    ax[1].plot(residuals_pol_mag, data_obs['height']/1000, 'go')
+    ax[6].plot(data_obs['time'], residuals_t0_vel/1000, 'go')
+    ax[7].plot(data_obs['time'], residuals_t0_lag, 'go')
+
+    # pu the leggend putside the plot and adjust the plot base on the screen size
+    ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+    # the legend do not fit in the plot, so adjust the plot
+    plt.subplots_adjust(right=.7)
+    plt.subplots_adjust(wspace=0.2)
+
+    # make more space
+    plt.tight_layout()
+
+    plt.savefig(output_folder+os.sep+file_name[:15]+'_fit_t0_polin_curve.png')
+
+    plt.close()
 
     if plot_case:
         fig, ax = plt.subplots(1, 2, figsize=(14, 6), dpi=300)
@@ -1319,7 +1243,7 @@ def read_GenerateSimulations_output(file_path, real_event):
             return None
         try:   
             index_abs_mag_sim_end = next(i for i, val in enumerate(abs_mag_sim[::-1]) if val <= mag_obs[-1])
-            index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end - 1        
+            index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end + 1        
         except StopIteration:
             print("The first observation height is not within the simulation data range.")
             return None
@@ -1532,7 +1456,7 @@ def read_RunSim_output(simulation_MetSim_object, real_event, MetSim_phys_file_pa
         return None
     try:   
         index_abs_mag_sim_end = next(i for i, val in enumerate(abs_mag_sim[::-1]) if val <= mag_obs[-1])
-        index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end # - 1           
+        index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end + 1 # - 1           
     except StopIteration:
         print("The first observation height is not within the simulation data range.")
         return None
@@ -3569,7 +3493,8 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                         _, data_file, pd_datafram_PCA_sim = run_simulation(namefile_sel, data_file_real, fit_funct)
             
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_kms_real = RMSD_calc_diff(data_file, data_file_real)
-            _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(data_file, fit_funct)
+            # _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(data_file, fit_funct)
+            lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
 
             plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real, lag_kms_fit)
             
@@ -3859,7 +3784,8 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                 return pd_datafram_PCA_selected_mode_min_KDE
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_kms_real = RMSD_calc_diff(gensim_data_sim, data_file_real)
-            _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(gensim_data_sim, fit_funct)
+            # _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(gensim_data_sim, fit_funct)
+            lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
 
             plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real, lag_kms_fit)
             
@@ -4526,7 +4452,8 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
                         Metsim_flag=True
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_kms_real = RMSD_calc_diff(data_file, data_file_real)
-            _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(data_file, fit_funct)
+            # _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(data_file, fit_funct)
+            lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
 
         # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*mag_RMSD*2,3),'|| Event noise len', round(rmsd_lag,3))
         plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, residuals_len_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real, lag_kms_fit)
@@ -5721,7 +5648,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             # raise an error if the file is not a csv, pickle or json file
             raise ValueError('File format not supported. Please provide a csv, pickle or json file.')
 
-        rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps)
+        rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, False, output_folder, file_name)
 
         print('read the csv file:',trajectory_file)
 
@@ -5742,7 +5669,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
         if cml_args.save_test_plot:
             # run generate observation realization with the gensim_data_obs
-            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs, cml_args.fps, cml_args.save_test_plot)
+            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs, cml_args.fps, cml_args.save_test_plot, output_folder, file_name)
             # make the results_list to incorporate all rows of pd_dataframe_PCA_obs_real
             results_list = []
             for ii in range(cml_args.nobs):
@@ -5765,7 +5692,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             plt.close()
 
         else:      
-            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps)       
+            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, False, output_folder, file_name)       
             input_list_obs = [[gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fps] for ii in range(cml_args.nobs)]
             results_list = domainParallelizer(input_list_obs, generate_observation_realization, cores=cml_args.cores)
         
@@ -6603,7 +6530,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/20210813_061453_emccd_skyfit2_CAMO/20210813-061452.941123', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers/20241008-003707.055955', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
         # help="Path were are store both simulated and observed shower .csv file.")

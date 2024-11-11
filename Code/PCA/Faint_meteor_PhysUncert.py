@@ -5504,7 +5504,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
     pca_N_comp = 0
 
-    _,_,_=process_pca_variables(cml_args.YesPCA, cml_args.NoPCA, pd_dataframe_PCA_obs_real, pd_datafram_PCA_sim, output_folder, file_name, True)
+    _,_,_=process_pca_variables(cml_args.YesPCA, cml_args.NoPCA, pd_dataframe_PCA_obs_real, pd_datafram_PCA_sim, output_folder+os.sep+save_results_folder, file_name, True)
     
 
     if cml_args.use_PCA:

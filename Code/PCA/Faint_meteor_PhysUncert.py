@@ -53,7 +53,7 @@ import itertools
 import time
 from multiprocessing import Pool
 import multiprocessing
-from functools import partial
+from contextlib import closing
 
 # CONSTANTS ###########################################################################################
 
@@ -95,34 +95,68 @@ HEIGHT_THRESHOLD = 1  # km
 
 
 def domainParallelizer(domain, function, cores=None, kwarg_dict=None):
-    """Runs functions in parallel with given arguments.
+    """Runs N (cores) functions as separate processes with parameters given in the domain list.
 
     Arguments:
-        domain: list of tuples containing arguments for the function.
-        function: the function to execute.
-    
+        domain: [list] a list of separate data (arguments) to feed individual function calls
+        function: [function object] function that will be called with one entry from the domain
+
     Keyword arguments:
-        cores: Number of CPU cores to use. If None, uses all available cores.
-        kwarg_dict: Dictionary of keyword arguments to pass to the function.
-    
-    Returns:
-        List of results from the function executions.
+        cores: [int] Number of CPU cores, or number of parallel processes to run simultaneously. None by 
+            default, in which case all available cores will be used.
+        kwarg_dict: [dictionary] a dictionary of keyword arguments to be passed to the function, None by default
+
+    Return:
+        results: [list] a list of function results
+
     """
 
     if kwarg_dict is None:
         kwarg_dict = {}
 
+    # If the number of cores was not given, use all available cores
     if cores is None:
         cores = multiprocessing.cpu_count()
 
+    results = []
+
+    # Special case when running on only one core, run without multiprocessing
     if cores == 1:
-        # Run without multiprocessing
-        results = [function(*args, **kwarg_dict) for args in domain]
+        for args in domain:
+            results.append(function(*args, **kwarg_dict))
+
+    # Run real multiprocessing if more than one core
+    elif cores > 1:
+
+        # Generate a pool of workers
+        with closing(multiprocessing.Pool(cores)) as pool:
+
+            job_list = []
+
+            # Give workers things to do
+            for args in domain:
+                # Give job to worker
+                job = pool.apply_async(function, args, kwarg_dict)
+                job_list.append(job)
+
+            # Close the pool
+            pool.close()
+
+            # Wait for all jobs to finish
+            pool.join()
+
+            # Extract results from the pool
+            for job in job_list:
+                try:
+                    result = job.get()
+                    results.append(result)
+                except Exception as e:
+                    print(f"An error occurred: {e}")
+                    results.append(None)
+
     else:
-        with multiprocessing.Pool(cores) as pool:
-            # Use starmap to pass multiple arguments to the function
-            func = partial(function, **kwarg_dict)
-            results = pool.starmap(func, domain)
+        print('The number of CPU cores defined is not in an expected range (1 or more.)')
+        print('Use cpu_cores = 1 as a fallback value.')
 
     return results
 
@@ -6061,7 +6095,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers/20230811-082648.931419', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
         # help="Path were are store both simulated and observed shower .csv file.")

@@ -1,9 +1,9 @@
 """
-The code is used to extract the physical properties of the simulated showers from EMCCD observations
-by selecting the most similar simulated events in the PC space using:
-- Mode of the siumulated events
-- The min of the KDE esults
-- Principal Component Regression (PCR)
+The code is used to extract the physical properties of the simulated showers from observations
+by selecting the most similar simulated events using a montecarlo method. 
+The code is used to :
+- Generate the simulated meteors for given observations
+- Extract the physical properties of the most similar simulated showers from observations
 """
 
 import json
@@ -6053,7 +6053,7 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
 
     # Init the command line arguments parser
-    arg_parser = argparse.ArgumentParser(description="Fom Observation and simulated data weselect the most likely through PCA, run it, and store results to disk.")
+    arg_parser = argparse.ArgumentParser(description="From Observation and simulated data we select the most likely through Montecarlo method and store results to disk.")
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'

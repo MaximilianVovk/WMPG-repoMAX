@@ -28,7 +28,7 @@ from matplotlib.ticker import ScalarFormatter
 import math
 from scipy.stats import gaussian_kde
 from scipy.stats import norm
-from wmpl.Utils.PyDomainParallelizer import domainParallelizer
+# from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 from scipy.linalg import svd
 from wmpl.MetSim.GUI import loadConstants, saveConstants,SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
@@ -52,7 +52,8 @@ import warnings
 import itertools
 import time
 from multiprocessing import Pool
-
+import multiprocessing
+from functools import partial
 
 # CONSTANTS ###########################################################################################
 
@@ -88,6 +89,44 @@ HEIGHT_THRESHOLD = 1  # km
 
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000
 # python -m EMCCD_PCA_Shower_PhysProp "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation\TEST" "PER" "C:\Users\maxiv\Documents\UWO\Papers\1)PCA\PCA_Error_propagation" 1000 > output.txt    
+
+# MULTIPROCESSING ###########################################################################################
+
+
+
+def domainParallelizer(domain, function, cores=None, kwarg_dict=None):
+    """Runs functions in parallel with given arguments.
+
+    Arguments:
+        domain: list of tuples containing arguments for the function.
+        function: the function to execute.
+    
+    Keyword arguments:
+        cores: Number of CPU cores to use. If None, uses all available cores.
+        kwarg_dict: Dictionary of keyword arguments to pass to the function.
+    
+    Returns:
+        List of results from the function executions.
+    """
+
+    if kwarg_dict is None:
+        kwarg_dict = {}
+
+    if cores is None:
+        cores = multiprocessing.cpu_count()
+
+    if cores == 1:
+        # Run without multiprocessing
+        results = [function(*args, **kwarg_dict) for args in domain]
+    else:
+        with multiprocessing.Pool(cores) as pool:
+            # Use starmap to pass multiple arguments to the function
+            func = partial(function, **kwarg_dict)
+            results = pool.starmap(func, domain)
+
+    return results
+
+
 
 # MATH FUNCTIONS ###########################################################################################
 
@@ -4365,8 +4404,23 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     text=True
                 )
 
-                # save the 20230811_082648_sim_fit_fitted.json as a json file in the output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_sim_fit_fitted.json'
-                shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
+                # # save the 20230811_082648_sim_fit_fitted.json as a json file in the output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_sim_fit_fitted.json'
+                # shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
+
+                # Check if the output file exists before copying
+                if os.path.exists(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json'):
+                    try:
+                        shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
+                    except Exception as e:
+                        # logging.exception(f"Failed to copy {optimized_file} to {file_json_save_phys}")
+                        print(f"Failed to copy optimized file: {e}")
+                        plt.close()
+                        continue
+                else:
+                    # logging.warning(f"Optimized file {optimized_file} not found.")
+                    print(f"Optimized file not found. Skipping copy for {file_json_save_phys}")
+                    plt.close()
+                    continue
             else:
                 print('file '+file_json_save_phys+' already exist, read it...')
 
@@ -5719,7 +5773,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     ii_repeat = 0
     pd_results = pd.DataFrame()
     # while cml_args.min_nresults > result_number:
-    print(cml_args.min_nresults,'simulatd to find:')
+    print(cml_args.min_nresults,'simulated to find:')
     while cml_args.min_nresults > result_number:
 
         # reset index

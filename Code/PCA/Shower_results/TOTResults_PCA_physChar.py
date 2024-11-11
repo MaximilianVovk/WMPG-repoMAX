@@ -7,8 +7,8 @@ import sys
 import matplotlib.artist as Artist
 
 # Usage
-directory = r'C:\Users\maxiv\Desktop\solvCAP'  # Change this to the directory you want to process
-shower = 'CAP'
+directory = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER\Solutions_10000\PER'  # Change this to the directory you want to process
+shower = 'PER'
 
 # create a txt file where you save averithing that has been printed
 class Logger(object):

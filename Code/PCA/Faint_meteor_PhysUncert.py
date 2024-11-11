@@ -28,7 +28,7 @@ from matplotlib.ticker import ScalarFormatter
 import math
 from scipy.stats import gaussian_kde
 from scipy.stats import norm
-# from wmpl.Utils.PyDomainParallelizer import domainParallelizer
+from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 from scipy.linalg import svd
 from wmpl.MetSim.GUI import loadConstants, saveConstants,SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
@@ -52,8 +52,8 @@ import warnings
 import itertools
 import time
 from multiprocessing import Pool
-import multiprocessing
-from functools import partial
+# import multiprocessing
+# from functools import partial
 
 # CONSTANTS ###########################################################################################
 
@@ -94,37 +94,37 @@ HEIGHT_THRESHOLD = 1  # km
 
 
 
-def domainParallelizer(domain, function, cores=None, kwarg_dict=None):
-    """Runs functions in parallel with given arguments.
+# def domainParallelizer(domain, function, cores=None, kwarg_dict=None):
+#     """Runs functions in parallel with given arguments.
 
-    Arguments:
-        domain: list of tuples containing arguments for the function.
-        function: the function to execute.
+#     Arguments:
+#         domain: list of tuples containing arguments for the function.
+#         function: the function to execute.
     
-    Keyword arguments:
-        cores: Number of CPU cores to use. If None, uses all available cores.
-        kwarg_dict: Dictionary of keyword arguments to pass to the function.
+#     Keyword arguments:
+#         cores: Number of CPU cores to use. If None, uses all available cores.
+#         kwarg_dict: Dictionary of keyword arguments to pass to the function.
     
-    Returns:
-        List of results from the function executions.
-    """
+#     Returns:
+#         List of results from the function executions.
+#     """
 
-    if kwarg_dict is None:
-        kwarg_dict = {}
+#     if kwarg_dict is None:
+#         kwarg_dict = {}
 
-    if cores is None:
-        cores = multiprocessing.cpu_count()
+#     if cores is None:
+#         cores = multiprocessing.cpu_count()
 
-    if cores == 1:
-        # Run without multiprocessing
-        results = [function(*args, **kwarg_dict) for args in domain]
-    else:
-        with multiprocessing.Pool(cores) as pool:
-            # Use starmap to pass multiple arguments to the function
-            func = partial(function, **kwarg_dict)
-            results = pool.starmap(func, domain)
+#     if cores == 1:
+#         # Run without multiprocessing
+#         results = [function(*args, **kwarg_dict) for args in domain]
+#     else:
+#         with multiprocessing.Pool(cores) as pool:
+#             # Use starmap to pass multiple arguments to the function
+#             func = partial(function, **kwarg_dict)
+#             results = pool.starmap(func, domain)
 
-    return results
+#     return results
 
 
 
@@ -5105,7 +5105,6 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
 
 
 
-
 def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file, cml_args_user):
     #copy cml_args_user
     cml_args = copy.deepcopy(cml_args_user)
@@ -5118,6 +5117,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
     # add to save_res_fin_folder the file_name
     save_res_fin_folder=SAVE_RESULTS_FINAL_FOLDER+file_name
+    save_results_folder=save_res_fin_folder
+    save_results_folder_events_plots = save_results_folder+os.sep+'events_plots'
 
     flag_manual_metsim=True
     # check if it ends with _first_guess.json
@@ -5158,6 +5159,10 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     ######################### OBSERVATION ###############################
     print('--- OBSERVATION ---')
 
+    mkdirP(output_folder+os.sep+save_results_folder)
+    mkdirP(output_folder+os.sep+save_results_folder_events_plots)
+    mkdirP(output_folder+os.sep+SAVE_SELECTION_FOLDER)
+
     # check the extension of the file if it already present the csv file meas it has been aleady processed
     if trajectory_file.endswith('.csv'):
         # read the csv file
@@ -5180,7 +5185,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             # raise an error if the file is not a csv, pickle or json file
             raise ValueError('File format not supported. Please provide a csv, pickle or json file.')
 
-        rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, False, output_folder, file_name)
+        rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, False, output_folder+os.sep+save_results_folder, file_name)
 
         print('read the csv file:',trajectory_file)
 
@@ -5201,7 +5206,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
         if cml_args.save_test_plot:
             # run generate observation realization with the gensim_data_obs
-            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs, cml_args.fps, cml_args.save_test_plot, output_folder, file_name)
+            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs, cml_args.fps, cml_args.save_test_plot, output_folder+os.sep+save_results_folder, file_name)
             # make the results_list to incorporate all rows of pd_dataframe_PCA_obs_real
             results_list = []
             for ii in range(cml_args.nobs):
@@ -5224,7 +5229,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             plt.close()
 
         else:      
-            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, False, output_folder, file_name)       
+            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, False, output_folder+os.sep+save_results_folder, file_name)       
             input_list_obs = [[gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fps] for ii in range(cml_args.nobs)]
             results_list = domainParallelizer(input_list_obs, generate_observation_realization, cores=cml_args.cores)
         
@@ -5253,7 +5258,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         # print saved csv file
         print()
         print('saved obs csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_OBS)
-    
+
     gensim_data_obs['fps'] = cml_args.fps
     gensim_data_obs['rmsd_mag'] = rmsd_pol_mag
     gensim_data_obs['rmsd_len'] = rmsd_t0_lag/1000
@@ -5476,18 +5481,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     files = [f for f in os.listdir(output_folder) if f.endswith('_good_files.txt')]
     for file in files:
         os.remove(os.path.join(output_folder, file))
-
-    # mag_RMSD_new, len_RMSD_new, MAG_z_score_new, LEN_z_score_new, conf_mag_new, conf_len_new = modify_rmsd_confidence(pd_datafram_PCA_sim, mag_RMSD, len_RMSD, rmsd_pol_mag, rmsd_t0_lag/1000, output_folder)
-
-    flag_preliminary_results = False
-    save_results_folder=save_res_fin_folder
-    save_results_folder_events_plots = save_results_folder+os.sep+'events_plots'
-    # if conf_mag>CONFIDENCE_LEVEL or conf_len>CONFIDENCE_LEVEL:
-    #     print('New RMSD above the CONFIDENCE LEVEL required : '+str(np.round(CONFIDENCE_LEVEL,3))+'%')
-    #     print('save the initial results in the Preliminary_Result folder')
-    #     save_results_folder=SAVE_PRELIMINARY_RESULTS_FOLDER
-    #     save_results_folder_events_plots = save_results_folder+os.sep+'events_plots'
-    #     flag_preliminary_results = True
     
     print()
         
@@ -5497,10 +5490,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
     pd_datafram_PCA_selected_lowRMSD = pd.DataFrame()
     pd_datafram_PCA_selected_before_knee_NO_repetition = pd.DataFrame()
-
-    mkdirP(output_folder+os.sep+save_results_folder)
-    mkdirP(output_folder+os.sep+save_results_folder_events_plots)
-    mkdirP(output_folder+os.sep+SAVE_SELECTION_FOLDER)
 
     pca_N_comp = 0
 
@@ -5901,7 +5890,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
         result_number = len(pd_results)
 
-        if cml_args.min_nresults <= result_number and flag_preliminary_results==False:
+        if cml_args.min_nresults <= result_number:
             # print the number of results found
             print('SUCCES: Number of results found:',result_number)
             break
@@ -5976,14 +5965,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     print()
 
     if flag_fail == False:
-        if flag_preliminary_results == False:
-            print('Save RESULTS!')
-            print('Number of RESULTS found:',result_number)
-            print('SUCCES: Number of RESULTS found:',result_number)
-        else:
-            print('Only PRELIMINARY RESULTS found')
-            print('Number of PRELIMINARY RESULTS found:',result_number)
-            print('SUCCES: Number of PRELIMINARY RESULTS found:',result_number)
+        print('Save RESULTS!')
+        print('Number of RESULTS found:',result_number)
+        print('SUCCES: Number of RESULTS found:',result_number)
     else:
         print('FAIL: Not found any result below magRMSD',mag_RMSD,'and lenRMSD',len_RMSD)
         print('FAIL: Number of results found:',result_number)
@@ -6035,6 +6019,18 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     # print('Elapsed time in seconds:',elapsed_time)
     print(f"Elapsed time: {int(hours):02}:{int(minutes):02}:{int(seconds):02}")
 
+    if cml_args.save_results_dir != '':
+        # check that cml_args.save_results_dir exist
+        if os.path.exists(cml_args.save_results_dir):
+            # Ensure the destination path includes the same folder name as the source
+            dest_path_with_name = os.path.join(cml_args.save_results_dir, save_results_folder)
+            
+            # Copy the entire directory to the destination
+            shutil.copytree(output_folder+os.sep+save_results_folder, dest_path_with_name)
+            print(f"Directory copied from {output_folder+os.sep+save_results_folder} to {dest_path_with_name}")
+        else:
+            print(f"Directory {cml_args.save_results_dir} does not exist, results not copied")
+
     # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
     sys.stdout.close()
 
@@ -6064,7 +6060,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers/20230811-082648.931419', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
-        # help="Path were are store both simulated and observed shower .csv file.")
+    #     help="Path were are store both simulated and observed shower .csv file.")
+    
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'',\
+        help="Path were to store the results, by default the same as the input_dir.")
         
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
@@ -6084,7 +6083,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=10, \
         help="Minimum number of results that are in the CI that have to be found.")
     
-    arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=3, \
+    arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \
         help="Number of failed attemp allowed to generate the set number of similar simulations, by default 3.")
 
     arg_parser.add_argument('--fix_n_sim', metavar='FIX_NUM_SIM', type=bool, default=True, \
@@ -6167,7 +6166,7 @@ if __name__ == "__main__":
     input_folder_file=Class_folder_files.input_folder_file
 
     # print only the file name in the directory split the path and take the last element
-    print('Number of trajectory.pickle files find',len(input_folder_file))
+    print('Number of trajectory.pickle files found:',len(input_folder_file))
     # print every trajectory_file 
     print('List of trajectory files:')
     # print them line by line and not in a single array [trajectory_file for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file]

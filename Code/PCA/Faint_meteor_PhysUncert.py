@@ -6017,17 +6017,25 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     # Reset sys.stdout to its original value if needed
     sys.stdout = sys.__stdout__
 
+    # Check if the destination directory exists
     if cml_args.save_results_dir != '':
-        # check that cml_args.save_results_dir exist
-        if os.path.exists(cml_args.save_results_dir):
-            # Ensure the destination path includes the same folder name as the source
-            dest_path_with_name = os.path.join(cml_args.save_results_dir, save_results_folder)
-            
-            # Copy the entire directory to the destination
-            shutil.copytree(output_folder+os.sep+save_results_folder, dest_path_with_name)
-            print(f"Directory copied from {output_folder+os.sep+save_results_folder} to {dest_path_with_name}")
-        else:
-            print(f"Directory {cml_args.save_results_dir} does not exist, results not copied")
+        # Ensure the destination path includes the same folder name as the source
+        dest_path_with_name = os.path.join(cml_args.save_results_dir, save_results_folder)
+
+        if os.path.exists(dest_path_with_name):
+            print(f"Directory {dest_path_with_name} already exists.")
+            # Generate a unique name by appending a counter if the folder already exists
+            counter = 1
+            while os.path.exists(dest_path_with_name + f"_n{counter}"):
+                counter += 1
+            dest_path_with_name += f"_n{counter}"
+            print(f"Using new directory name: {dest_path_with_name}")
+
+        # Copy the entire directory to the new destination
+        shutil.copytree(os.path.join(output_folder, save_results_folder), dest_path_with_name)
+        print(f"Directory copied from {os.path.join(output_folder, save_results_folder)} to {dest_path_with_name}")
+    else:
+        print(f"Directory {cml_args.save_results_dir} does not exist, results not copied")
 
     print()
 

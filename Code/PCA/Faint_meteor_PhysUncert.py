@@ -4621,7 +4621,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
         else:
             kde_line = None
 
-        axs[i].axvline(x=np.mean(curr_df_sim_sel[plotvar]), color='blue', linestyle='--')
+        axs[i].axvline(x=np.mean(curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'][plotvar]), color='blue', linestyle='--')
 
         if 'MetSim' in curr_df_sim_sel['type'].values:
             axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)

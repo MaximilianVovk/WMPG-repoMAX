@@ -3607,15 +3607,22 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                         mean_guess = np.mean(curr_sel_data, axis=0)
                         median_guess = np.median(curr_sel_data, axis=0)
 
-                        # KMeans centroids as additional guesses
+                        # KMeans centroids as additional guesses 
+                        # # might be better not to get stuck in loops kmeans = KMeans(n_clusters=2, n_init=10).fit(curr_sel_data)
                         kmeans = KMeans(n_clusters=5, n_init='auto').fit(curr_sel_data)  # Adjust n_clusters based on your understanding of the curr_sel_data
                         centroids = kmeans.cluster_centers_
 
                         # Combine all initial guesses
                         initial_guesses = [mean_guess, median_guess] + centroids.tolist()
 
-                        # Perform optimization from each initial guess
-                        results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
+                        # # Perform optimization from each initial guess
+                        # results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
+
+                        # Set options for the optimizer
+                        options = {'maxiter': 1000}  # Adjust maxiter as needed
+
+                        # Modify the minimize calls to include options so to not getting stuck in infinite loops
+                        results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds, options=options) for x0 in initial_guesses]
 
                         # Filter out unsuccessful optimizations and find the best result
                         successful_results = [res for res in results if res.success]
@@ -3917,7 +3924,6 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
         print(f"An error occurred in PCA_physicalProp_KDE_MODE_PLOT: {e}")
         return None
             
-
 
 
 def RMSD_calc_diff(sim_file, real_funct):

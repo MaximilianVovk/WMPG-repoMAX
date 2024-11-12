@@ -1,9 +1,9 @@
 """
-The code is used to extract the physical properties of the simulated showers from EMCCD observations
-by selecting the most similar simulated events in the PC space using:
-- Mode of the siumulated events
-- The min of the KDE esults
-- Principal Component Regression (PCR)
+The code is used to extract the physical properties of the simulated showers from observations
+by selecting the most similar simulated events using a montecarlo method. 
+The code is used to :
+- Generate the simulated meteors for given observations
+- Extract the physical properties of the most similar simulated showers from observations
 """
 
 import json

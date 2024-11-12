@@ -3566,6 +3566,14 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
 
             plt.savefig(output_dir+os.sep+file_name_obs+'_'+around_meteor+'_Heigh_MagVelCoef.png')
 
+            plt.close()
+
+            var_kde = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
+            for var_i in range(len(var_kde)):
+                # Update const_nominal_1D_KDE and const_nominal_allD_KDE based on variable
+                if var_cost[var_i] == 'sigma' or var_cost[var_i] == 'erosion_coeff':
+                    curr_sel[var_i] = curr_sel[var_i] / 1000000
+
             PCA_PhysicalPropPLOT(curr_sel, df_sim, output_dir, file_name_obs, densest_point, save_log)
 
             # return pd_datafram_PCA_selected_mode_min_KDE    

@@ -985,8 +985,8 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
                 ax[2].plot(residual_time_pos, vel_kms_err, 'k--')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                # ax[3].fill_between(residual_time_pos, fit_lag-lag_noise, fit_lag+lag_noise, color='lightgray', alpha=0.5, label=label_fit)
-                # ax[3].plot(residual_time_pos, fit_lag, 'k--', label='Fit')
+                ax[3].fill_between(residual_time_pos, fit_lag-lag_noise, fit_lag+lag_noise, color='lightgray', alpha=0.5, label=label_fit)
+                ax[3].plot(residual_time_pos, fit_lag, 'k--', label='Fit')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
                 ax[6].fill_between(residual_time_pos, -vel_noise, vel_noise, color='lightgray', alpha=0.5)
@@ -1345,7 +1345,7 @@ def Old_GenSym_json_get_vel_lag(data, fps=32):
     
     lag_sim=len_sampled-(vel_sim[0]*time_sampled+len_sampled[0])
 
-    data['lag_sampled']=lag_sim
+    data['lag_sampled']=lag_sim.tolist()
 
     return data
 
@@ -1382,12 +1382,12 @@ def read_with_noise_GenerateSimulations_output(file_path, fps=32):
         'type': 'Observation_sim',
         'v_init_180km': data['params']['v_init']['val'], # m/s
         'v_init': data['vel_sampled'][0], # m/s
-        'velocities': data['vel_sampled'], # m/s
-        'height': data['ht_sampled'], # m
-        'absolute_magnitudes': data['mag_sampled'],
-        'lag': data['lag_sampled'], # m
-        'length': data['len_sampled'], # m
-        'time': data['time_sampled'], # s
+        'velocities': np.array(data['vel_sampled']), # m/s
+        'height': np.array(data['ht_sampled']), # m
+        'absolute_magnitudes': np.array(data['mag_sampled']),
+        'lag': np.array(data['lag_sampled']), # m
+        'length': np.array(data['len_sampled']), # m
+        'time': np.array(data['time_sampled']), # s
         'v_avg': np.mean(data['vel_sampled']), # m/s
         'Dynamic_pressure_peak_abs_mag': Dynamic_pressure[np.argmin(data['mag_sampled'])],
         'zenith_angle': data['params']['zenith_angle']['val']*180/np.pi,
@@ -2015,15 +2015,16 @@ class SetUpObservationFolders:
         output_folder = os.path.splitext(filepath)[0] + '_GenSim'
 
         # Get the MetSim file path, or create it if the input is a JSON file
-        metsim_path = self._get_metsim_file(input_folder, file_name)
         if filepath.endswith('.json'):
             with open(filepath) as json_file:
                 const_part = json.load(json_file)['const']
-                metsim_path = os.path.join(input_folder, f'{file_name}_const.json')
+                metsim_path = os.path.join(input_folder, f'{file_name}{self.metsim_json}')
                 with open(metsim_path, 'w') as outfile:
                     json.dump(const_part, outfile, indent=4)
-
-        return [[trajectory_files[0], file_name, input_folder, output_folder, metsim_path]]
+            return [[trajectory_files[0], file_name, input_folder, output_folder, metsim_path]]
+        else:
+            metsim_path = self._get_metsim_file(input_folder, file_name)
+            return [[trajectory_files[0], file_name, input_folder, output_folder, metsim_path]]
 
     def _find_trajectory_files(self, directory):
         """
@@ -4612,10 +4613,14 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
         else:
             kde_line = None
 
+        axs[i].axvline(x=np.mean(curr_df_sim_sel[plotvar]), color='blue', linestyle='--')
+
         if 'MetSim' in curr_df_sim_sel['type'].values:
             axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)
+            find_type = 'MetSim'
         elif 'Real' in curr_df_sim_sel['type'].values:
             axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
+            find_type = 'Real'
 
         if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
             # Convert back from log scale
@@ -4627,7 +4632,6 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
         sigma_5 = np.percentile(curr_sel[plotvar], 5)
 
         mean_values_sel = np.mean(curr_sel[plotvar])
-        axs[i].axvline(x=mean_values_sel, color='blue', linestyle='--')
 
         if kde_line is not None:
             # Get the x and y data from the KDE line
@@ -4652,16 +4656,16 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
 
                     if i < 9:
                         print('\\hline') 
-                        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(Min_KDE_point[ii_densest])} & {'{:.4g}'.format(sigma_95)} \\\\")
+                        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(Min_KDE_point[ii_densest])} & {'{:.4g}'.format(sigma_95)} \\\\")
                     ii_densest += 1
             else:
                 if i < 9:
                     print('\\hline')
-                    print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
+                    print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
         else:
             if i < 9:
                 print('\\hline')
-                print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(sigma_95)} \\\\")
+                print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(sigma_95)} \\\\")
 
         axs[i].set_ylabel('Probability')
         axs[i].set_xlabel(to_plot_unit[i])
@@ -6048,7 +6052,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers/20230811-082648.931419', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
@@ -6137,9 +6141,9 @@ if __name__ == "__main__":
     #########################
     warnings.filterwarnings('ignore')
 
-    # set up observation folder
-    Class_folder_files=SetUpObservationFolders(cml_args.input_dir, cml_args.MetSim_json)
-    input_folder_file=Class_folder_files.input_folder_file
+    # # set up observation folder
+    # Class_folder_files=SetUpObservationFolders(cml_args.input_dir, cml_args.MetSim_json)
+    # input_folder_file=Class_folder_files.input_folder_file
 
     if cml_args.optimize:
         # check if the file exist

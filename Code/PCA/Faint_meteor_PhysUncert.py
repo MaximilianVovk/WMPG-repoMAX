@@ -1,9 +1,9 @@
 """
-The code is used to extract the physical properties of the simulated showers from EMCCD observations
-by selecting the most similar simulated events in the PC space using:
-- Mode of the siumulated events
-- The min of the KDE esults
-- Principal Component Regression (PCR)
+The code is used to extract the physical properties of the simulated showers from observations
+by selecting the most similar simulated events using a montecarlo method. 
+The code is used to :
+- Generate the simulated meteors for given observations
+- Extract the physical properties of the most similar simulated showers from observations
 """
 
 import json
@@ -985,8 +985,8 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
                 ax[2].plot(residual_time_pos, vel_kms_err, 'k--')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                # ax[3].fill_between(residual_time_pos, fit_lag-lag_noise, fit_lag+lag_noise, color='lightgray', alpha=0.5, label=label_fit)
-                # ax[3].plot(residual_time_pos, fit_lag, 'k--', label='Fit')
+                ax[3].fill_between(residual_time_pos, fit_lag-lag_noise, fit_lag+lag_noise, color='lightgray', alpha=0.5, label=label_fit)
+                ax[3].plot(residual_time_pos, fit_lag, 'k--', label='Fit')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
                 ax[6].fill_between(residual_time_pos, -vel_noise, vel_noise, color='lightgray', alpha=0.5)

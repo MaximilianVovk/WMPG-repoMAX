@@ -303,9 +303,9 @@ def find_noise_of_data(data, fps=32, plot_case=False, output_folder='', file_nam
     ax = ax.flatten()
     plot_side_by_side(data_obs, fig, ax, 'go', file_name[:15]+'\nRMSDmag '+str(round(rmsd_pol_mag,3))+' RMSDlen '+str(round(rmsd_t0_lag,1))+'m', residuals_pol_mag, residuals_t0_vel, data_obs['time'], data_obs['height'], residuals_t0_lag, fit_funct, rmsd_pol_mag, rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps), rmsd_t0_lag/1000,'Std.dev. realizations', data_obs['lag']/1000, fitted_lag_t0_lag/1000)
     
-    ax[1].plot(residuals_pol_mag, data_obs['height']/1000, 'go')
-    ax[6].plot(data_obs['time'], residuals_t0_vel/1000, 'go')
-    ax[7].plot(data_obs['time'], residuals_t0_lag, 'go')
+    ax[1].plot(residuals_pol_mag, data_obs['height']/1000, 'g.')
+    ax[6].plot(data_obs['time'], residuals_t0_vel/1000, 'g.')
+    ax[7].plot(data_obs['time'], residuals_t0_lag, 'g.')
 
     # pu the leggend putside the plot and adjust the plot base on the screen size
     ax[3].legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
@@ -3474,12 +3474,14 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                 # Handle the error
                 print(f"Index {ii} is out of bounds for 'solution_id' in curr_sel.")
                 namefile_sel = None
+                plt.close()
                 continue
             # namefile_sel = curr_sel['solution_id'].iloc[ii]
             
             # chec if the file exist
             if not os.path.isfile(namefile_sel):
                 print('file '+namefile_sel+' not found')
+                plt.close()
                 continue
 
             else:
@@ -3571,7 +3573,7 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             var_kde = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
             for var_i in range(len(var_kde)):
                 # Update const_nominal_1D_KDE and const_nominal_allD_KDE based on variable
-                if var_cost[var_i] == 'sigma' or var_cost[var_i] == 'erosion_coeff':
+                if var_i == 'sigma' or var_i == 'erosion_coeff':
                     curr_sel[var_i] = curr_sel[var_i] / 1000000
 
             PCA_PhysicalPropPLOT(curr_sel, df_sim, output_dir, file_name_obs, densest_point, save_log)
@@ -3588,30 +3590,6 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
 
             if len(curr_sel) > 8:
                 try:
-
-                    # def density_function(x):
-                    #     # Insert the logic of your objective function here
-                    #     # This example uses a simple sum of squares of x
-                    #     # Replace it with the actual function you want to minimize
-                    #     return np.sum(np.square(x))
-                    
-                    # # Objective function for maximization (negative density for minimization)
-                    # def objective_function(x):
-                    #     return -density_function(x)
-                    
-                    # # Bounds for optimization within all the sim space
-                    # bounds = [(np.min(curr_sel_data[:, i]), np.max(curr_sel_data[:, i])) for i in range(curr_sel_data.shape[1])]
-
-                    # # Perform global optimization using differential evolution
-                    # print('Starting global optimization using differential evolution.')
-                    # result = differential_evolution(objective_function, bounds)
-
-                    # if result.success:
-                    #     densest_point = result.x
-                    #     print(f"Densest point found using differential evolution:\n {densest_point}")
-                    # else:
-                    #     print('Optimization was unsuccessful.')
-                    #     densest_point = ''
 
                     kde = gaussian_kde(dataset=curr_sel_data.T)  # Note the transpose to match the expected input shape
 
@@ -3794,8 +3772,10 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
                     _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_mode.json', data_file_real, fit_funct)
 
             if pd_datafram_PCA_sim is None:
+                plt.close()
                 return pd_datafram_PCA_selected_mode_min_KDE
             if gensim_data_sim is None:
+                plt.close()
                 return pd_datafram_PCA_selected_mode_min_KDE
 
             rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_kms_real = RMSD_calc_diff(gensim_data_sim, data_file_real)
@@ -3926,7 +3906,9 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
             curr_sel['sigma']=curr_sel['sigma']/1000000
 
             PCA_PhysicalPropPLOT(curr_sel, df_sim, output_dir, file_name_obs, densest_point, save_log)
-
+    # # check if plot is still open
+    # if plt.fignum_exists(fig.number):
+    #     plt.close()
     return pd_datafram_PCA_selected_mode_min_KDE
             
 
@@ -4199,6 +4181,9 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
             # chec if the file exist
             if not os.path.isfile(namefile_sel):
                 print('file '+namefile_sel+' not found')
+                if ii == len(curr_sel)-1:
+                    print('no more files to optimize')
+                    plt.close()
                 continue
             else:
                 if namefile_sel.endswith('.pickle'):
@@ -4214,6 +4199,10 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
                     else:
                         if gen_Metsim == '':
                             print('no data for the Metsim file')
+                            # check if ii is the last element
+                            if ii == len(curr_sel)-1:
+                                print('no more files to optimize')
+                                plt.close()
                             continue
 
                         else:
@@ -6060,7 +6049,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/TRUEerosion_sim_v57.50_m5.91e-04g_rho0795_z45.6_abl0.014_eh118.3_er0.868_s2.42.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")

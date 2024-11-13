@@ -4841,7 +4841,7 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     # else:
     #     n_confront_sel=9
     
-    n_confront_sel=9
+    n_confront_sel=7
 
     # number of PC in PCA
     with_noise=True
@@ -4974,7 +4974,7 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
                 ax[1].fill_between(obs_time_err, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='darkgray', alpha=0.2, label='1$\sigma$')
-                ax[1].fill_between(obs_time_err, vel_kms_err-vel_noise*1.96, vel_kms_err+vel_noise*1.96, color='lightgray', alpha=0.2)
+                ax[1].fill_between(obs_time_err, vel_kms_err-vel_noise*1.96, vel_kms_err+vel_noise*1.96, color='lightgray', alpha=0.2, label='2$\sigma$')
 
             real_time=obs_time # np.array(data_file_real['time'])
             real_abs_mag=abs_mag_sim
@@ -4984,8 +4984,8 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
 
             ax[0].plot(abs_mag_sim_err, height_km_err, 'k--')
-            ax[1].plot(obs_time_err, vel_kms_err, 'k--')
-            # ax[1].plot(obs_time_err, vel_kms_err, 'k--', label='Fit')
+            # ax[1].plot(obs_time_err, vel_kms_err, 'k--')
+            ax[1].plot(obs_time_err, vel_kms_err, 'k--', label='Fit')
 
         elif ii<=n_confront_sel:
 

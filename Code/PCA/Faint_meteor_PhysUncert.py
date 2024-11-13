@@ -11,8 +11,8 @@ import copy
 import re
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('Agg')
+# import matplotlib
+# matplotlib.use('Agg')
 from numpy.linalg import inv
 import numpy as np
 import subprocess
@@ -303,7 +303,7 @@ def find_noise_of_data(data, fps=32, plot_case=False, output_folder='', file_nam
 
     fig, ax = plt.subplots(2, 4, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 0.5],'width_ratios': [ 3, 0.5, 3, 3]})
     ax = ax.flatten()
-    plot_side_by_side(data_obs, fig, ax, 'go', file_name[:15]+'\nRMSDmag '+str(round(rmsd_pol_mag,3))+' RMSDlen '+str(round(rmsd_t0_lag,1))+'m', residuals_pol_mag, residuals_t0_vel, data_obs['time'], data_obs['height'], residuals_t0_lag, fit_funct, rmsd_pol_mag, rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps), rmsd_t0_lag/1000,'Std.dev. realizations', data_obs['lag']/1000, fitted_lag_t0_lag/1000)
+    plot_side_by_side(data_obs, fig, ax, 'go', file_name[:15]+'\nRMSDmag '+str(round(rmsd_pol_mag,3))+' RMSDlen '+str(round(rmsd_t0_lag,1))+'m', residuals_pol_mag, residuals_t0_vel, data_obs['time'], data_obs['height'], residuals_t0_lag, fit_funct, rmsd_pol_mag, rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps), rmsd_t0_lag/1000)
     
     ax[1].plot(residuals_pol_mag, data_obs['height']/1000, 'g.')
     ax[6].plot(data_obs['time'], residuals_t0_vel/1000, 'g.')
@@ -551,7 +551,7 @@ class ErosionSimParametersEMCCD_Comet(object):
         self.param_list.append("zenith_angle") # change
 
         # Density range (kg/m^3)
-        self.rho = MetParam(100, 2000)
+        self.rho = MetParam(100, 1000)
         self.param_list.append("rho")
 
         # Intrinsic ablation coeff range (s^2/m^2)
@@ -722,14 +722,18 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
         # erosion_sim_params.m_init = MetParam(mass_sim/2, mass_sim*2)
         v_init_180km = simulation_MetSim_object.const.v_init # in m/s
         # Initial velocity range (m/s) 
-        erosion_sim_params.v_init = MetParam(v_init_180km-1000, v_init_180km+1000) # 60091.41691
+        erosion_sim_params.v_init = MetParam(v_init_180km-real_data['rmsd_len'].iloc[0]*np.sqrt(2)/(1/fps)*1000, v_init_180km+real_data['rmsd_len'].iloc[0]*np.sqrt(2)/(1/fps)*1000) # 60091.41691
+        # erosim_sim_params.erosion_height_start
+        erosion_sim_params.erosion_height_start = MetParam(simulation_MetSim_object.const.erosion_height_start-2000, simulation_MetSim_object.const.erosion_height_start+2000)
             
     else:
         v_init_180km = real_data['vel_init_norot']
         # Initial velocity range (m/s) 
-        erosion_sim_params.v_init = MetParam(real_data['vel_init_norot']-2000, real_data['vel_init_norot']+2000)
+        erosion_sim_params.v_init = MetParam(real_data['vel_init_norot']-real_data['rmsd_len'].iloc[0]*np.sqrt(2)/(1/fps)*2, real_data['vel_init_norot']+real_data['rmsd_len'].iloc[0]*np.sqrt(2)/(1/fps)*2)
         # Mass range (kg)
         erosion_sim_params.m_init = MetParam(10**(-7), 10**(-4))
+        # erosim_sim_params.erosion_height_start
+        erosion_sim_params.erosion_height_start = MetParam(real_data['begin_height'].iloc[0]*1000-1000, real_data['begin_height'].iloc[0]*1000+9000)
         
     erosion_sim_params.dt = 0.005
     # if v_init_180km>60000:
@@ -742,9 +746,10 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
 
     # Zenith angle range
     erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'].iloc[0]-0.01), np.radians(real_data['zenith_angle'].iloc[0]+0.01)) # 43.466538
+    
+    # # erosion_sim_params.erosion_height_start = MetParam(real_data['peak_mag_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2, real_data['begin_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2) # 43.466538
+    # erosion_sim_params.erosion_height_start = MetParam(real_data['begin_height'].iloc[0]*1000-1000, real_data['begin_height'].iloc[0]*1000+4000) # 43.466538
 
-    # erosion_sim_params.erosion_height_start = MetParam(real_data['peak_mag_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2, real_data['begin_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2) # 43.466538
-    erosion_sim_params.erosion_height_start = MetParam(real_data['begin_height'].iloc[0]*1000-1000, real_data['begin_height'].iloc[0]*1000+4000) # 43.466538
 
     if CI_physical_param!='':
         erosion_sim_params.v_init = MetParam(CI_physical_param['v_init_180km'][0], CI_physical_param['v_init_180km'][1]) # 60091.41691
@@ -921,7 +926,7 @@ def check_axis_inversion(ax):
     return is_x_inverted, is_y_inverted
 
 
-def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals_mag='', residuals_vel='', residual_time_pos='', residual_height_pos='', residuals_lag='', fit_funct='', mag_noise='', vel_noise='',lag_noise='', label_fit='', real_lag='', fit_lag=''):
+def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals_mag='', residuals_vel='', residual_time_pos='', residual_height_pos='', residuals_lag='', fit_funct='', mag_noise='', vel_noise='',lag_noise='', sim_lag=''):
 
     # check if data1 is None
     if data1 is None:
@@ -963,6 +968,7 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
             height_km_err=np.array(fit_funct['height'])
             vel_kms_err=np.array(fit_funct['velocities'])
             len_km_err=np.array(fit_funct['length'])
+            lag_km_err=np.array(fit_funct['lag'])
             #lag_kms_err=len_km_err - (obs1['velocities'][0]/1000*obs_time_err)
             #_err=lag_kms_err - lag_kms_err[0]
             # from list to array
@@ -972,23 +978,25 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
                 vel_kms_err=np.array(fit_funct['velocities'])/1000
 
             # plot noisy area around vel_kms for vel_noise for the fix height_km
-            ax[0].fill_betweenx(height_km_err, abs_mag_sim_err-mag_noise, abs_mag_sim_err+mag_noise, color='lightgray', alpha=0.5)
+            ax[0].fill_betweenx(height_km_err, abs_mag_sim_err-mag_noise, abs_mag_sim_err+mag_noise, color='darkgray', alpha=0.2)
+            ax[0].fill_betweenx(height_km_err, abs_mag_sim_err-mag_noise*1.96, abs_mag_sim_err+mag_noise*1.96, color='lightgray', alpha=0.2)
             ax[0].plot(abs_mag_sim_err,height_km_err, 'k--')
 
             # plot noisy area around vel_kms for vel_noise for the fix height_km
             ax[1].fill_betweenx(height_km_err, -mag_noise, mag_noise, color='lightgray', alpha=0.5)
 
-            if lag_noise != '' and fit_lag != '':
+            if lag_noise != '':
                 lag_noise = lag_noise * 1000
-                fit_lag = fit_lag * 1000
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[2].fill_between(residual_time_pos, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5)
+                ax[2].fill_between(residual_time_pos, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='darkgray', alpha=0.2)
+                ax[2].fill_between(residual_time_pos, vel_kms_err-vel_noise*1.96, vel_kms_err+vel_noise*1.96, color='lightgray', alpha=0.2)
                 ax[2].plot(residual_time_pos, vel_kms_err, 'k--')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[3].fill_between(residual_time_pos, fit_lag-lag_noise, fit_lag+lag_noise, color='lightgray', alpha=0.5, label=label_fit)
-                ax[3].plot(residual_time_pos, fit_lag, 'k--', label='Fit')
+                ax[3].fill_between(residual_time_pos, lag_km_err-lag_noise, lag_km_err+lag_noise, color='darkgray', alpha=0.2, label='1$\sigma$')
+                ax[3].fill_between(residual_time_pos, lag_km_err-lag_noise*1.96, lag_km_err+lag_noise*1.96, color='lightgray', alpha=0.2, label='2$\sigma$')
+                ax[3].plot(residual_time_pos, lag_km_err, 'k--', label='Fit')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
                 ax[6].fill_between(residual_time_pos, -vel_noise, vel_noise, color='lightgray', alpha=0.5)
@@ -998,7 +1006,8 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
 
             else:
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[2].fill_between(residual_time_pos, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5, label=label_fit)
+                ax[2].fill_between(residual_time_pos, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='darkgray', alpha=0.2, label='1$\sigma$')
+                ax[2].fill_between(residual_time_pos, vel_kms_err-vel_noise*1.96, vel_kms_err+vel_noise*1.96, color='lightgray', alpha=0.2, label='2$\sigma$')
                 ax[2].plot(residual_time_pos, vel_kms_err, 'k--', label='Fit')
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
@@ -1055,13 +1064,13 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
             ax[2].grid(linestyle='--',color='lightgray')
 
             if label1!='':
-                if real_lag!='':
-                    ax[3].plot(residual_time_pos, real_lag*1000, colorline1, color=line_color, label=label1)
+                if sim_lag!='':
+                    ax[3].plot(residual_time_pos, sim_lag*1000, colorline1, color=line_color, label=label1)
                 else:
                     ax[3].plot(residual_time_pos, obs1['lag'], colorline1, color=line_color, label=label1)
             else:
-                if real_lag!='':
-                    ax[3].plot(residual_time_pos, real_lag*1000, colorline1, color=line_color)
+                if sim_lag!='':
+                    ax[3].plot(residual_time_pos, sim_lag*1000, colorline1, color=line_color)
                 else:
                     ax[3].plot(residual_time_pos, obs1['lag'], colorline1, color=line_color)
 
@@ -1206,7 +1215,7 @@ def read_GenerateSimulations_output(file_path, real_event):
         ht_sim=data['simulation_results']['leading_frag_height_arr'][:-1]#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
         time_sim=data['simulation_results']['time_arr'][:-1]#['main_time_arr']
         abs_mag_sim=data['simulation_results']['abs_magnitude'][:-1]
-        len_sim=data['simulation_results']['brightest_length_arr'][:-1]#['brightest_length_arr']
+        len_sim=data['simulation_results']['leading_frag_length_arr'][:-1]#['brightest_length_arr']
         Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr'][:-1]
         
         # ht_obs=data['ht_sampled']
@@ -1231,12 +1240,12 @@ def read_GenerateSimulations_output(file_path, real_event):
 
         mag_obs=real_event['absolute_magnitudes']
 
-        print('read_GenerateSimulations_output mag',mag_obs[0],'-',mag_obs[-1])
+        # print('read_GenerateSimulations_output mag',mag_obs[0],'-',mag_obs[-1])
 
         try:
             # find the index of the first element of abs_mag_sim that is smaller than the first element of mag_obs
             index_abs_mag_sim_start = next(i for i, val in enumerate(abs_mag_sim) if val <= mag_obs[0])
-            index_abs_mag_sim_start = index_abs_mag_sim_start # + np.random.randint(2)
+            index_abs_mag_sim_start = index_abs_mag_sim_start - 1 # + np.random.randint(2)
         except StopIteration:
             print("The first observation height is not within the simulation data range.")
             return None
@@ -1296,7 +1305,7 @@ def read_GenerateSimulations_output(file_path, real_event):
         'velocities': vel_sim, # m/s
         'height': ht_sim, # m
         'absolute_magnitudes': abs_mag_sim,
-        'lag': len_sim-(vel_sim[0]*np.array(time_sim)+len_sim[0]), # m
+        'lag': len_sim-(vel_sim[0]*np.array(time_sim)), # m +len_sim[0]
         'length': len_sim, # m
         'time': time_sim, # s
         'v_avg': np.mean(vel_sim), # m/s
@@ -1345,7 +1354,7 @@ def Old_GenSym_json_get_vel_lag(data, fps=32):
 
     data['vel_sampled']=vel_sim
     
-    lag_sim=len_sampled-(vel_sim[0]*time_sampled+len_sampled[0])
+    lag_sim=len_sampled-(vel_sim[0]*time_sampled) #+len_sampled[0]
 
     data['lag_sampled']=lag_sim.tolist()
 
@@ -1444,12 +1453,12 @@ def read_RunSim_output(simulation_MetSim_object, real_event, MetSim_phys_file_pa
     
     mag_obs=real_event['absolute_magnitudes']
 
-    print('read_RunSim_output mag',mag_obs[0],'-',mag_obs[-1])
+    # print('read_RunSim_output mag',mag_obs[0],'-',mag_obs[-1])
 
     try:
         # find the index of the first element of abs_mag_sim that is smaller than the first element of mag_obs
         index_abs_mag_sim_start = next(i for i, val in enumerate(abs_mag_sim) if val <= mag_obs[0])
-        index_abs_mag_sim_start = index_abs_mag_sim_start # + np.random.randint(2)
+        index_abs_mag_sim_start = index_abs_mag_sim_start - 1 # + np.random.randint(2)
     except StopIteration:
         print("The first observation height is not within the simulation data range.")
         return None
@@ -1515,7 +1524,7 @@ def read_RunSim_output(simulation_MetSim_object, real_event, MetSim_phys_file_pa
         'v_init_180km': simulation_MetSim_object.const.v_init, # m/s
         'height': ht_sim, # m
         'absolute_magnitudes': abs_mag_sim,
-        'lag': len_sim-(vel_sim[0]*np.array(time_sim)+len_sim[0]), # m
+        'lag': len_sim-(vel_sim[0]*np.array(time_sim)), # m +len_sim[0]
         'length': len_sim, # m
         'time': time_sim, # s
         'v_avg': np.mean(vel_sim), # m/s
@@ -2548,6 +2557,7 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
 
     df_sim_shower, variable_PCA, outliers = process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower, OUT_PUT_PATH, file_name_obs, False)
 
+    variable_PCA_initial = variable_PCA.copy()
 
     ##################################### delete var that are not in the 5 and 95 percentile of the simulated shower #####################################
 
@@ -2573,16 +2583,18 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
                 # check if the variable is in the df_sim_shower
                 if var in df_sim_shower.columns:
 
+                    print(var)
+
                     ii_all=0
                     for i_var in range(len(df_obs_shower[var])):
                         # check if all the values are outside the 5 and 95 percentile of the df_sim_shower if so delete the variable from the variable_PCA
                         if df_obs_shower[var][i_var] < np.percentile(df_sim_shower[var], 1) or df_obs_shower[var][i_var] > np.percentile(df_sim_shower[var], 99):
-                            ii_all=+ii_all
-
-                    print(var)
+                            ii_all=ii_all+1
 
                     if ii_all==len(df_obs_shower[var]):
                         print('The observed and all realization',var,'are not within the 1 and 99 percentile of the simulated meteors')
+                        print('The variable',var,'is deleted from the PCA analysis!!!')
+
                         # delete the variable from the variable_PCA
                         variable_PCA.remove(var)
                         # save the var deleted in a variable
@@ -2620,12 +2632,19 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
 
                         shapiro_test = stats.shapiro(df_all[var])
                         print("NEW Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
-                        
+                    
+                    print()
+
                 else:
                     print('Variable ',var,' is not in the simulated shower')
             else:
                 print('Variable ',var,' is not in the observed shower')
 
+    # check if the variable_PCA is empty FAILSAFE
+    if variable_PCA == []:
+        print('All the variables are not within the 1 and 99 percentile of the simulated meteors!!!')
+        # add the variable_PCA_initial
+        variable_PCA=variable_PCA_initial
 
 
     # if PCA_pairplot:
@@ -3422,6 +3441,14 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
         elif folder_file_name_real.endswith('.json'):
             data_file_real = read_with_noise_GenerateSimulations_output(folder_file_name_real, fps)
 
+        # add mag_noise to data_file_real
+        data_file_real['rmsd_mag'] = mag_noise
+        data_file_real['rmsd_len'] = len_noise
+        data_file_real['rmsd_vel'] = vel_noise
+        data_file_real['fps'] = fps
+
+        copy_data_file_real = data_file_real.copy()
+
         _, _, _, residuals_mag_real, residuals_vel_real, lag_differences_real, residual_time_pos_real, residual_height_pos_real , _ = RMSD_calc_diff(fit_funct, data_file_real)
 
         if total_distribution:
@@ -3456,12 +3483,6 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
             if total_distribution==False:
                 output_dir=output_dir_OG+os.sep+SAVE_SELECTION_FOLDER+os.sep+around_meteor
 
-            # plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real/1000*1000,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations')
-            # plot_side_by_side(fit_funct, fig, ax, 'k--','Fit', np.zeros(len(residual_height_pos_real)), np.zeros(len(residual_time_pos_real)), residual_time_pos_real, residual_height_pos_real)
-            # # ax[0].lines[1].set_marker(None)
-            # ax[1].lines[1].set_marker(None)
-            # # ax[2].lines[1].set_marker(None)
-            # ax[5].lines[1].set_marker(None)
             densest_point = ''
 
             print('Number of selected events:',len(curr_sel))
@@ -3503,11 +3524,11 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                             Metsim_flag=True
                             _, data_file, pd_datafram_PCA_sim = run_simulation(namefile_sel, data_file_real, fit_funct)
                 
-                rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_kms_real = RMSD_calc_diff(data_file, data_file_real)
+                rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_km_sim = RMSD_calc_diff(data_file, data_file_real)
                 # _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(data_file, fit_funct)
-                lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
+                # lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
 
-                plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real, lag_kms_fit)
+                plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise)
                 
                 color_line=next(infinite_color_cycle)
 
@@ -3520,7 +3541,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
             $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
             $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
             $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\
-            $m_l$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len)
+            $m_l$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len, sim_lag=lag_km_sim)
                 
                 
                                                                                 
@@ -3530,7 +3551,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
             $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
             $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
             $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\
-            $m_l$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len)
+            $m_l$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len, sim_lag=lag_km_sim)
 
                     # change first line color
                     ax[0].lines[-1].set_color(color_line)
@@ -3756,6 +3777,8 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                             const_nominal_allD_KDE.__dict__[var_cost[i]] = densest_point[i]
 
 
+                ##### MODE ########## MODE ########## MODE ########## MODE ########## MODE ########## MODE ########
+
                 # check if the file output_folder+os.sep+file_name+'_sim_sel_optimized.csv' exists then read
                 if os.path.exists(output_dir+os.sep+file_name_obs+'_sim_sel_optimized.csv'):
                     df_sel_optimized_check = pd.read_csv(output_dir+os.sep+file_name_obs+'_sim_sel_optimized.csv')
@@ -3787,17 +3810,17 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                     plt.close()
                     return pd_datafram_PCA_selected_mode_min_KDE
 
-                rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_kms_real = RMSD_calc_diff(gensim_data_sim, data_file_real)
+                rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data_sim, data_file_real)
                 # _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(gensim_data_sim, fit_funct)
-                lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
+                # lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
 
-                plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real, lag_kms_fit)
+                plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise)
                 
                 plot_side_by_side(gensim_data_sim, fig, ax, 'r-', 'MODE : RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag*1000,1))+'m\n\
             $m_0$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+'kg $\\rho$:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+'kg/m$^3$\n\
             $\sigma$:'+str(round(pd_datafram_PCA_sim.iloc[0]['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
             $h_e$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_height_start'],1))+'km $s$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_mass_index'],2))+'\n\
-            $m_l$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len)
+            $m_l$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len, sim_lag=lag_km_sim)
                 
                 # to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]',r'log($m_{u}$)-log($m_{l}$) [-]']
                 # pd_datafram_PCA_sim['erosion_coeff']=pd_datafram_PCA_sim['erosion_coeff']/1000000
@@ -3823,11 +3846,13 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                     # make more space
                     plt.tight_layout()
                     if is_real:
-                        plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                        plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_MODE_DensPoint.png')
                     else:
-                        plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                        plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint.png')
 
                 fig.suptitle(around_meteor+' '+select_mode_print+' mode selected') # , fontsize=16
+
+                ##### DENSEST POINT ########## DENSEST POINT ########## DENSEST POINT ########## DENSEST POINT ########
 
                 if densest_point!='':
 
@@ -3850,20 +3875,22 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                     # saveConstants(const_nominal_allD_KDE,output_dir_OG,file_name_obs+'_sim_fit.json')
                     # check if pd_datafram_PCA_sim is empty
                     if pd_datafram_PCA_sim is None:
+                        plt.close()
                         return pd_datafram_PCA_selected_mode_min_KDE
                     if gensim_data_sim is None:
+                        plt.close()
                         return pd_datafram_PCA_selected_mode_min_KDE
 
                     # _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir_OG+os.sep+file_name_obs+'_sim_fit.json', data_file_real)
 
-                    rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , _ = RMSD_calc_diff(gensim_data_sim, data_file_real)
+                    rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data_sim, copy_data_file_real)
                     # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Dens.point noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*mag_RMSD*2,3),'|| Dens.point noise len', round(rmsd_lag,3))
                 
                     plot_side_by_side(gensim_data_sim, fig, ax, 'b-', 'Dens.point : RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag*1000,1))+'m\n\
             $m_0$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+'kg $\\rho$:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+'kg/m$^3$\n\
             $\sigma$:'+str(round(pd_datafram_PCA_sim.iloc[0]['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
             $h_e$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_height_start'],1))+'km $s$:'+str(round(pd_datafram_PCA_sim.iloc[0]['erosion_mass_index'],2))+'\n\
-            $m_l$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len)
+            $m_l$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len, sim_lag=lag_km_sim)
                     
                     # to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]',r'log($m_{u}$)-log($m_{l}$) [-]']
                     # pd_datafram_PCA_sim['erosion_coeff']=pd_datafram_PCA_sim['erosion_coeff']/1000000
@@ -3888,9 +3915,9 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                         # make more space
                         plt.tight_layout()
                         if is_real:
-                            plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                            plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_MODE_DensPoint.png')
                         else:
-                            plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                            plt.savefig(output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint.png')
 
                     # put a sup title
                     fig.suptitle(around_meteor+' '+select_mode_print+' mode selected and '+select_kde_print+' densest point selected') # , fontsize=16
@@ -3904,9 +3931,9 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
                 plt.tight_layout()
 
                 if is_real:
-                    plt.savefig(output_dir+os.sep+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                    plt.savefig(output_dir+os.sep+around_meteor+'_MODE_DensPoint.png')
                 else:
-                    plt.savefig(output_dir+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint_Heigh_MagVelCoef.png')
+                    plt.savefig(output_dir+os.sep+file_name_obs+'_'+around_meteor+'_MODE_DensPoint.png')
 
                 # close the plot
                 plt.close()
@@ -3926,7 +3953,11 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, n_PC_in_PCA, fit_func
             
 
 
-def RMSD_calc_diff(sim_file, real_funct):
+def RMSD_calc_diff(sim_file_data, real_funct_data):
+
+    # copy the data
+    sim_file = copy.deepcopy(sim_file_data)
+    real_funct = copy.deepcopy(real_funct_data)
     
     # Check if data_file and fit_funct are not None
     if sim_file is None or real_funct is None:
@@ -3945,18 +3976,25 @@ def RMSD_calc_diff(sim_file, real_funct):
     abs_mag_sim = np.array(sim_file['absolute_magnitudes'])
     time_sim= np.array(sim_file['time'])
     vel_kms_sim = np.array(sim_file['velocities']) / 1000
-    # len_km_sim = np.array(sim_file['length']) / 1000
+    len_km_sim = np.array(sim_file['length']) / 1000
     lag_kms_sim = np.array(sim_file['lag']) / 1000
+
 
     height_km_real = np.array(real_funct['height']) / 1000
     abs_mag_real = np.array(real_funct['absolute_magnitudes'])
     time_real = np.array(real_funct['time'])
     vel_kms_real = np.array(real_funct['velocities']) / 1000
     len_km_real = np.array(real_funct['length']) / 1000
-    lag_kms_real = len_km_real - (vel_kms_sim[0] * time_real)
-    # start from 0
-    lag_kms_real = lag_kms_real - lag_kms_real[0]
-    wrong_lag = np.array(real_funct['lag']) / 1000
+    # lag_kms_real = len_km_real - (vel_kms_sim[0] * time_real)
+    # wrong_lag = np.array(real_funct['lag']) / 1000
+    lag_kms_real = np.array(real_funct['lag']) / 1000
+    # # start from 0
+    # lag_kms_real = lag_kms_real - lag_kms_real[0]
+
+    if 'v_init' in sim_file:
+        lag_kms_sim = len_km_sim - (real_funct['v_init']/1000 * time_sim)
+    else:
+        lag_kms_sim = len_km_sim - (vel_kms_real[0] * time_sim)
 
     # Define the overlapping range for time
     common_height_min = max(height_km_sim.min(), height_km_real.min())
@@ -3971,7 +4009,6 @@ def RMSD_calc_diff(sim_file, real_funct):
     if not np.any(valid_fit_indices):
         print('No valid fit data in overlapping time range')
         return 9999, 9999, 9999, 9999, 9999, 9999, time_real[0], height_km_real[0], 0
-
 
 
     # Interpolation on the fit data's height grid
@@ -4012,6 +4049,13 @@ def RMSD_calc_diff(sim_file, real_funct):
         threshold_vel = 0
     if 'rmsd_len' in real_funct:
         threshold_lag = real_funct['rmsd_len']
+        # print('threshold_lag',threshold_lag)
+        # print('lag_differences',lag_differences)
+        # exceeds_threshold = np.abs(lag_differences) > threshold_lag*3
+        # if np.any(exceeds_threshold):
+        #     exceeding_values = lag_differences[exceeds_threshold]
+        #     print(f'Lag differences exceeding {threshold_lag*3} found: {len(exceeding_values)}')
+        #     rmsd_lag = 9999  
     else:
         threshold_lag = 0
     if 'fps' in real_funct:
@@ -4040,6 +4084,10 @@ def RMSD_calc_diff(sim_file, real_funct):
     if np.isnan(rmsd_lag):
         rmsd_lag = 9999
 
+
+    # print(f'RMSD Magnitude: {rmsd_mag:.4f}')
+    # print(f'RMSD Velocity: {rmsd_vel:.4f}')
+    # print(f'RMSD Lag: {rmsd_lag:.4f}')
     # # Plotting the results
     # plt.figure(figsize=(10, 5))
     # # create 3 subplots
@@ -4095,7 +4143,7 @@ def RMSD_calc_diff(sim_file, real_funct):
     # # plt.plot(time_data, lag_sampled_adj, 'k-', label='lag_sampled_adj')
     # plt.plot(time_real, lag_kms_sim_interp, 'k-', label='simulated')
     # plt.plot(time_real, lag_kms_real, 'b.', label='new_real')
-    # plt.plot(time_real, wrong_lag, 'rx', label='old_real')
+    # # plt.plot(time_real, wrong_lag, 'rx', label='old_real')
     # # put also the range of the threshold_lag 
     # plt.plot(time_real, lag_kms_sim_interp-threshold_lag, 'g--', label='threshold_lag')
     # plt.plot(time_real, lag_kms_sim_interp+threshold_lag, 'g--')
@@ -4109,7 +4157,7 @@ def RMSD_calc_diff(sim_file, real_funct):
     # # show the plot
     # plt.show()
 
-    return rmsd_mag, rmsd_vel, rmsd_lag, magnitude_differences, velocity_differences, lag_differences, residual_time_pos, residual_height_pos, lag_kms_real
+    return rmsd_mag, rmsd_vel, rmsd_lag, magnitude_differences, velocity_differences, lag_differences, residual_time_pos, residual_height_pos, lag_kms_sim
 
 
 
@@ -4168,8 +4216,14 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
             data_file_real = read_pickle_reduction_file(df_obs_shower.iloc[0]['solution_id'])
         elif df_obs_shower.iloc[0]['solution_id'].endswith('.json'):
             data_file_real = read_with_noise_GenerateSimulations_output(df_obs_shower.iloc[0]['solution_id'], fps)
-            print('json file NO optimization possible:', data_file_real)
+            print('json file NO optimization possible:', df_obs_shower.iloc[0]['solution_id'])
             run_optimization=False
+
+        # add mag_noise to data_file_real
+        data_file_real['rmsd_mag'] = mag_noise
+        data_file_real['rmsd_len'] = len_noise
+        data_file_real['rmsd_vel'] = vel_noise
+        data_file_real['fps'] = fps
 
         _, _, _, residuals_mag_real, residuals_vel_real, residuals_len_real, residual_time_pos_real, residual_height_pos_real , _ = RMSD_calc_diff(fit_funct, data_file_real)
 
@@ -4223,12 +4277,12 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
                             # file metsim
                             Metsim_flag=True
 
-                rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_kms_real = RMSD_calc_diff(data_file, data_file_real)
+                rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_km_sim = RMSD_calc_diff(data_file, data_file_real)
                 # _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(data_file, fit_funct)
-                lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
+                # lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
 
             # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*mag_RMSD*2,3),'|| Event noise len', round(rmsd_lag,3))
-            plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, residuals_len_real, fit_funct, mag_noise, vel_noise, len_noise,'Std.dev. realizations', lag_kms_real, lag_kms_fit)
+            plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' RMSDlen '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos, residual_height_pos_real, residuals_len_real, fit_funct, mag_noise, vel_noise, len_noise)
             # plot_side_by_side(fit_funct, fig, ax, 'k--','Fit', np.zeros(len(residual_height_pos_real)), np.zeros(len(residual_time_pos_real)), residual_time_pos_real, residual_height_pos_real)
             
             color_line=next(infinite_color_cycle)
@@ -4244,7 +4298,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
         $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
         $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
         $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\
-        $m_l$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len)
+        $m_l$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len, sim_lag=lag_km_sim)
             
                                                                             
             else:
@@ -4258,7 +4312,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
         $m_0$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['mass'],1))+'kg $\\rho$:'+str(round(curr_sel.iloc[ii]['rho']))+'kg/m$^3$\n\
         $\sigma$:'+str(round(curr_sel.iloc[ii]['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(curr_sel.iloc[ii]['erosion_coeff'],3))+'s$^2$/km$^2$\n\
         $h_e$:'+str(round(curr_sel.iloc[ii]['erosion_height_start'],1))+'km $s$:'+str(round(curr_sel.iloc[ii]['erosion_mass_index'],2))+'\n\
-        $m_l$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len)
+        $m_l$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(curr_sel.iloc[ii]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len, sim_lag=lag_km_sim)
 
                 # change first line color
                 ax[0].lines[-1].set_color(color_line)
@@ -4338,10 +4392,10 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
                         plt.subplots_adjust(wspace=0.2)
                         # make more space
                         plt.tight_layout()
-                        plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+                        plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
                         shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_results)
 
-                        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+                        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
 
                         # close the plot
                         plt.close()
@@ -4364,7 +4418,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
 
                         fig.suptitle(file_name_title+' BAD no optimization and no save')
 
-                        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+                        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
 
                         # close the plot
                         plt.close()
@@ -4406,7 +4460,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
                 _, gensim_data_optimized, pd_datafram_PCA_sim_optimized = run_simulation(file_json_save_phys, data_file_real, fit_funct)
 
 
-                rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , _ = RMSD_calc_diff(gensim_data_optimized, data_file_real)
+                rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data_optimized, data_file_real)
 
                 # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_noise_real,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*2,3),'|| Event noise len', round(rmsd_lag,3))
 
@@ -4416,14 +4470,14 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
         $m_0$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['mass'],1))+'kg $\\rho$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['rho']))+'kg/m$^3$\n\
         $\sigma$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
         $h_e$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_height_start'],1))+'km $s$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_index'],2))+'\n\
-        $m_l$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff'],1))+'kg $m_u$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len)
+        $m_l$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff'],1))+'kg $m_u$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len, sim_lag=lag_km_sim)
 
                 else:
                     plot_side_by_side(gensim_data_optimized, fig, ax, '--', 'Optimized RMSDmag '+str(round(rmsd_mag,3))+' RMSDlen '+str(round(rmsd_lag*1000,1))+'m\n\
         $m_0$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['mass'],1))+'kg $\\rho$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['rho']))+'kg/m$^3$\n\
         $\sigma$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
         $h_e$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_height_start'],1))+'km $s$:'+str(round(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_index'],2))+'\n\
-        $m_l$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff'],1))+'kg $m_u$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len) 
+        $m_l$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_coeff'],1))+'kg $m_u$:'+str('{:.2e}'.format(pd_datafram_PCA_sim_optimized.iloc[0]['erosion_mass_max'],1))+'kg', residuals_mag, residuals_vel, residual_time_pos, residual_height_pos, residuals_len, sim_lag=lag_km_sim)
                     # to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]',r'log($m_{u}$)-log($m_{l}$) [-]']
                     # change first line color
                     ax[0].lines[-1].set_color(color_line)
@@ -4456,7 +4510,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
                 plt.subplots_adjust(wspace=0.2)
                 # make more space
                 plt.tight_layout()
-                plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:23]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+                plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
                 
                 if run_optimization:
                     if not os.path.isfile(file_json_save_phys):
@@ -4489,7 +4543,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, output_dir, fi
             # make more space
             plt.tight_layout()
 
-            plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'_RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+            plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
 
             # close the plot
             plt.close()
@@ -4773,6 +4827,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             plt.tight_layout()
 
             fig.savefig(output_dir + os.sep + file_name + '_PhysicProp_Reliazations_' + str(len(curr_sel)) + 'ev.png', dpi=300)
+            plt.close()
 
 
 
@@ -4781,10 +4836,12 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
     # number to confront
     n_confront_obs=1
-    if output_folder_of_csv=='':
-        n_confront_sel=7
-    else:
-        n_confront_sel=9
+    # if output_folder_of_csv=='':
+    #     n_confront_sel=7
+    # else:
+    #     n_confront_sel=9
+    
+    n_confront_sel=9
 
     # number of PC in PCA
     with_noise=True
@@ -4909,13 +4966,15 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
                 
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[0].fill_betweenx(height_km_err, abs_mag_sim_err-mag_noise, abs_mag_sim_err+mag_noise, color='lightgray', alpha=0.5)
+                ax[0].fill_betweenx(height_km_err, abs_mag_sim_err-mag_noise, abs_mag_sim_err+mag_noise, color='darkgray', alpha=0.2)
+                ax[0].fill_betweenx(height_km_err, abs_mag_sim_err-mag_noise*1.96, abs_mag_sim_err+mag_noise*1.96, color='lightgray', alpha=0.2)
 
                 obs_time_err=np.array(fit_funct['time'])
                 vel_kms_err=np.array(fit_funct['velocities'])/1000
 
                 # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[1].fill_between(obs_time_err, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='lightgray', alpha=0.5, label='Std.dev. realizations')
+                ax[1].fill_between(obs_time_err, vel_kms_err-vel_noise, vel_kms_err+vel_noise, color='darkgray', alpha=0.2, label='1$\sigma$')
+                ax[1].fill_between(obs_time_err, vel_kms_err-vel_noise*1.96, vel_kms_err+vel_noise*1.96, color='lightgray', alpha=0.2)
 
             real_time=obs_time # np.array(data_file_real['time'])
             real_abs_mag=abs_mag_sim
@@ -5010,9 +5069,9 @@ RMSDmag '+str(round(curr_sel.iloc[ii]['rmsd_mag'],3))+' RMSDlen '+str(round(curr
     ax[0].lines[0].set_zorder(n_confront_sel)
     ax[1].lines[0].set_zorder(n_confront_sel)
 
-    if metsim_numbs != 0:
-        ax[0].lines[metsim_numbs].set_color('black')
-        ax[1].lines[metsim_numbs].set_color('black')
+    # if metsim_numbs != 0:
+    #     ax[0].lines[metsim_numbs+1].set_color('black')
+    #     ax[1].lines[metsim_numbs+1].set_color('black')
 
 
     # change dot line color
@@ -5210,6 +5269,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             for ii in range(cml_args.nobs):
                 results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fps, fig, ax, cml_args.save_test_plot) 
                 results_list.append(results_pd)
+                print()
 
             # plot noisy area around vel_kms for vel_noise for the fix height_km
             ax[0].fill_betweenx(np.array(fit_funct['height'])/1000, np.array(fit_funct['absolute_magnitudes'])-rmsd_pol_mag, np.array(fit_funct['absolute_magnitudes'])+rmsd_pol_mag, color='lightgray', alpha=0.5)
@@ -5230,6 +5290,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, False, output_folder+os.sep+save_results_folder, file_name)       
             input_list_obs = [[gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fps] for ii in range(cml_args.nobs)]
             results_list = domainParallelizer(input_list_obs, generate_observation_realization, cores=cml_args.cores)
+            print()
         
         pd_dataframe_PCA_obs_real = array_to_pd_dataframe_PCA(gensim_data_obs)
         pd_dataframe_PCA_obs_real['type'] = 'Observation'
@@ -5982,6 +6043,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     print('real data RMSD * z-factor = RMSD')
     print('RMSD mag:'+str(mag_RMSD)+'[-] RMSD len:'+str(len_RMSD)+'[km]')
 
+    print('Number of data points for the observed meteor:',len(gensim_data_obs['time']))
+
     # if cml_args.delete_sim then delete the folder that contains the simulations
     if cml_args.delete_sim:
         # Initialize a set to store unique 'vXX' directories
@@ -6030,7 +6093,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     sys.stdout = sys.__stdout__
 
     # Check if the destination directory exists
-    if cml_args.save_results_dir != '':
+    if cml_args.save_results_dir != r'':
         # Ensure the destination path includes the same folder name as the source
         dest_path_with_name = os.path.join(cml_args.save_results_dir, save_results_folder)
 
@@ -6069,7 +6132,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/TRUEerosion_sim_v57.50_m5.91e-04g_rho0795_z45.6_abl0.014_eh118.3_er0.868_s2.42.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/TRUEerosion_sim_v61.46_m6.96e-04g_rho0240_z63.2_abl0.015_eh116.1_er0.169_s1.50.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
@@ -6079,6 +6142,9 @@ if __name__ == "__main__":
         
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
+    
+    arg_parser.add_argument('--bright_data', metavar='BRIGHT_DATA', type=bool, default=False, \
+        help="Chose to read the brightest fragment data, by default set to False so read the leading fragment data.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   

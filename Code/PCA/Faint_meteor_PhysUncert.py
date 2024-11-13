@@ -305,7 +305,7 @@ def find_noise_of_data(data, fps=32, plot_case=False, output_folder='', file_nam
 
     fig, ax = plt.subplots(2, 4, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 0.5],'width_ratios': [ 3, 0.5, 3, 3]})
     ax = ax.flatten()
-    plot_side_by_side(data_obs, fig, ax, 'go', file_name[:15]+'\nRMSDmag '+str(round(rmsd_pol_mag,3))+' len$_{RMSD}$ '+str(round(rmsd_t0_lag,1))+'m', residuals_pol_mag, residuals_t0_vel, data_obs['time'], data_obs['height'], residuals_t0_lag, fit_funct, rmsd_pol_mag, rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps), rmsd_t0_lag/1000)
+    plot_side_by_side(data_obs, fig, ax, 'go', file_name[:15]+'\nmag$_{RMSD}$ '+str(round(rmsd_pol_mag,3))+' len$_{RMSD}$ '+str(round(rmsd_t0_lag,1))+'m', residuals_pol_mag, residuals_t0_vel, data_obs['time'], data_obs['height'], residuals_t0_lag, fit_funct, rmsd_pol_mag, rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps), rmsd_t0_lag/1000)
     
     ax[1].plot(residuals_pol_mag, data_obs['height']/1000, 'g.')
     ax[6].plot(data_obs['time'], residuals_t0_vel/1000, 'g.')
@@ -3564,7 +3564,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                 # _, _, _, _, _, _, _, _, lag_kms_fit = RMSD_calc_diff(data_file, fit_funct)
                 # lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
 
-                plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' len$_{RMSD}$ '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise)
+                plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nmag$_{RMSD}$ '+str(round(mag_noise_real,3))+' len$_{RMSD}$ '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise)
                 
                 # Interpolation on the fit data's height grid
                 interp_ht_time = interp1d(data_file_real['height'], data_file_real['time'], kind='linear', bounds_error=False, fill_value='extrapolate')
@@ -3862,7 +3862,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                 sim_time_pos = interp_ht_time(gensim_data_sim['height'])
 
 
-                plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' len$_{RMSD}$ '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise)
+                plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nmag$_{RMSD}$ '+str(round(mag_noise_real,3))+' len$_{RMSD}$ '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, lag_differences_real, fit_funct, mag_noise, vel_noise, len_noise)
                 # print('MODE time', residual_time_pos)
                 plot_side_by_side(gensim_data_sim, fig, ax, 'r-', 'MODE : mag$_{RMSD}$ '+str(round(rmsd_mag,3))+' len$_{RMSD}$ '+str(round(rmsd_lag*1000,1))+'m\n\
             $m_0$:'+str('{:.2e}'.format(pd_datafram_PCA_sim.iloc[0]['mass'],1))+'kg $\\rho$:'+str(round(pd_datafram_PCA_sim.iloc[0]['rho']))+'kg/m$^3$\n\
@@ -4338,7 +4338,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
                 # lag_kms_fit, _, _, _, _, _, _ = fit_lag_t0_RMSD(lag_kms_real,data_file_real['time'], data_file_real['velocities'])
 
             # print('real noise mag', round(mag_noise_real,3),''+str(SIGMA_ERR)+'sig',round(mag_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(mag_RMSD*2,3),'|| Event noise mag', round(rmsd_mag,3), '\nreal noise len', round(len_noise_real/1000,3),''+str(SIGMA_ERR)+'sig',round(len_RMSD,3),''+str(SIGMA_ERR*2)+'sig',round(len_RMSD*mag_RMSD*2,3),'|| Event noise len', round(rmsd_lag,3))
-            plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nRMSDmag '+str(round(mag_noise_real,3))+' len$_{RMSD}$ '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, residuals_len_real, fit_funct, mag_noise, vel_noise, len_noise)
+            plot_side_by_side(data_file_real, fig, ax, 'go', file_name_obs[:15]+'\nmag$_{RMSD}$ '+str(round(mag_noise_real,3))+' len$_{RMSD}$ '+str(round(len_noise_real,1))+'m', residuals_mag_real, residuals_vel_real, residual_time_pos_real, residual_height_pos_real, residuals_len_real, fit_funct, mag_noise, vel_noise, len_noise)
             # plot_side_by_side(fit_funct, fig, ax, 'k--','Fit', np.zeros(len(residual_height_pos_real)), np.zeros(len(residual_time_pos_real)), residual_time_pos_real, residual_height_pos_real)
             
             # Interpolation on the fit data's height grid
@@ -4453,10 +4453,10 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
                         plt.subplots_adjust(wspace=0.2)
                         # make more space
                         plt.tight_layout()
-                        plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
+                        plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:-5]+'.png') # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
                         shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_results)
 
-                        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+                        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'.png') # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
 
                         # close the plot
                         plt.close()
@@ -4479,7 +4479,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
 
                         fig.suptitle(file_name_title+' BAD no optimization and no save')
 
-                        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
+                        plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'.png') # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef.png')
 
                         # close the plot
                         plt.close()
@@ -4576,7 +4576,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
                 plt.subplots_adjust(wspace=0.2)
                 # make more space
                 plt.tight_layout()
-                plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
+                plt.savefig(output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:-5]+'.png') # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
                 
                 if run_optimization:
                     if not os.path.isfile(file_json_save_phys):
@@ -4609,7 +4609,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
             # make more space
             plt.tight_layout()
 
-            plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'.png') # _RMSDmag'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
+            plt.savefig(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:-5]+'.png') # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
 
             # close the plot
             plt.close()

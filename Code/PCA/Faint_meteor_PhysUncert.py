@@ -3646,7 +3646,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                                 
             else:
 
-                print('compute the MODE and KDE for the selected meteors')
+                print('compute the MODE and KDE for the selected meteors',around_meteor)
                 var_kde = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
 
                 # create the dataframe with the selected variable
@@ -6227,8 +6227,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             shutil.copytree(os.path.join(output_folder, save_results_folder), dest_path_with_name)
             print(f"Directory copied from {os.path.join(output_folder, save_results_folder)} to {dest_path_with_name}")
         else:
-            print(f"Directory {cml_args.save_results_dir} does not exist, results not copied")
-
+            # Copy the entire directory to the new destination
+            shutil.copytree(os.path.join(output_folder, save_results_folder), dest_path_with_name)
+            print(f"Directory copied from {os.path.join(output_folder, save_results_folder)} to {dest_path_with_name}")
     print()
 
 

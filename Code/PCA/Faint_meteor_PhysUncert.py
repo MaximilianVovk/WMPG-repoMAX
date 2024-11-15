@@ -998,6 +998,7 @@ def plot_data_with_residuals_and_real(rmsd_mag, rmsd_vel, rmsd_len, fit_funct_or
 
     ax1.fill_betweenx(height_km_err, -mag_noise, mag_noise, color='darkgray', alpha=0.2)
     ax1.fill_betweenx(height_km_err, -mag_noise * 1.96, mag_noise * 1.96, color='lightgray', alpha=0.2)
+    ax1.plot([0, 0], [fit_funct['height'][0], fit_funct['height'][-1]],color='lightgray')
     # Plot 1: Height vs. Res.Mag, without y-axis tick labels    
     if data != '':
         # Plot 0: Height vs. Absolute Magnitudes with two lines
@@ -1008,7 +1009,6 @@ def plot_data_with_residuals_and_real(rmsd_mag, rmsd_vel, rmsd_len, fit_funct_or
             else:
                 ax1.plot(data_opt_or_desns['res_absolute_magnitudes'], real['height'],'.',color=color_line2)
     else:
-        # ax1.plot([0, 0], [fit_funct['height'][0], fit_funct['height'][-1]], 'k--')
         ax1.plot(real['res_absolute_magnitudes'], real['height'], 'g.')
     ax1.set_xlabel('Res.Mag [-]')
     # flip the x-axis
@@ -1079,6 +1079,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
     # Plot 6: Res.Vel vs. Time
     ax6.fill_between(residual_time_pos, -vel_noise, vel_noise, color='darkgray', alpha=0.2)
     ax6.fill_between(residual_time_pos, -vel_noise * 1.96, vel_noise * 1.96, color='lightgray', alpha=0.2)
+    ax6.plot([fit_funct['time'][0], fit_funct['time'][-1]], [0, 0], color='lightgray')
     if data != '':
         ax6.plot(real['time'], data['res_velocities'], '.', color=color_line1)
         if data_opt_or_desns!='':
@@ -1087,7 +1088,6 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
             else:
                 ax6.plot(real['time'], data_opt_or_desns['res_velocities'], '.', color=color_line2)
     else:
-        # ax6.plot([fit_funct['time'][0], fit_funct['time'][-1]], [0, 0], 'k--')
         ax6.plot(real['time'], real['res_velocities'], 'g.')
     ax6.set_xlabel('Time [s]')
     ax6.set_ylabel('Res.Vel [km/s]')
@@ -1117,6 +1117,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
     # Plot 7: Res.Vel vs. Time
     ax7.fill_between(residual_time_pos, -lag_noise, lag_noise, color='darkgray', alpha=0.2)
     ax7.fill_between(residual_time_pos, -lag_noise * 1.96, lag_noise * 1.96, color='lightgray', alpha=0.2)
+    ax7.plot([fit_funct['time'][0], fit_funct['time'][-1]], [0, 0], color='lightgray')
     if data != '':
         ax7.plot(real['time'], data['res_lag'], '.', color=color_line1)
         if data_opt_or_desns!='':
@@ -1125,7 +1126,6 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
             else:
                 ax7.plot(real['time'], data_opt_or_desns['res_lag'], '.', color=color_line2)
     else:
-        # ax7.plot([fit_funct['time'][0], fit_funct['time'][-1]], [0, 0], 'k--')
         ax7.plot(real['time'], real['res_lag'], 'g.')
     ax7.set_xlabel('Time [s]')
     ax7.set_ylabel('Res.Lag [m]')
@@ -6449,13 +6449,13 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=10000, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
         help="Number of simulations to generate.")
     
-    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \
+    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=100, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=30, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \

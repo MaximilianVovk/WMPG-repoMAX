@@ -3896,7 +3896,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                                 result = minimize(
                                     time_limited_neg_density,
                                     x0,
-                                    method='L-BFGS-B',
+                                    method='Powell', #  L-BFGS-B
                                     bounds=bounds,
                                     options={'maxfun': 1000}  # maxfun ensures function evaluations are capped
                                 )

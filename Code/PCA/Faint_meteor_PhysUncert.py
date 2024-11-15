@@ -3710,7 +3710,19 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, output_dir='', pca_N_comp=0)
     ##########################################################################
 
 
+# Custom objective function with time-based limit
+class TimeLimitedObjective:
+    def __init__(self, func, time_limit):
+        self.func = func
+        self.start_time = None
+        self.time_limit = time_limit
 
+    def __call__(self, x):
+        if self.start_time is None:
+            self.start_time = time.time()
+        elif time.time() - self.start_time > self.time_limit:
+            raise TimeoutError("Time limit exceeded during optimization.")
+        return self.func(x)
 
 
 def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_funct, mag_noise_real, len_noise_real, mag_RMSD, len_RMSD, fps=32, Metsim_folderfile_json='', file_name_obs='', folder_file_name_real='', output_dir='', save_results_folder_events_plots='', total_distribution=False, save_log=False):
@@ -3854,53 +3866,56 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                 curr_sel_data = curr_sel[var_kde].values
 
                 if len(curr_sel) > 10:
-                    try:
 
+                    try:
                         kde = gaussian_kde(dataset=curr_sel_data.T)  # Note the transpose to match the expected input shape
 
                         # Negative of the KDE function for optimization
                         def neg_density(x):
                             return -kde(x)
 
-                        # Bounds for optimization within all the sim space
-                        # data_sim = df_sim[var_kde].values
+                        # Bounds for optimization within the simulation space
                         bounds = [(np.min(curr_sel_data[:, i]), np.max(curr_sel_data[:, i])) for i in range(curr_sel_data.shape[1])]
 
-                        # Initial guesses: curr_sel_data mean, curr_sel_data median, and KMeans centroids
+                        # Initial guesses: mean, median, and KMeans centroids
                         mean_guess = np.mean(curr_sel_data, axis=0)
                         median_guess = np.median(curr_sel_data, axis=0)
-
-                        # KMeans centroids as additional guesses 
-                        # # might be better not to get stuck in loops kmeans = KMeans(n_clusters=2, n_init=10).fit(curr_sel_data)
-                        kmeans = KMeans(n_clusters=5, n_init='auto').fit(curr_sel_data)  # Adjust n_clusters based on your understanding of the curr_sel_data
+                        kmeans = KMeans(n_clusters=5, n_init='auto').fit(curr_sel_data)
                         centroids = kmeans.cluster_centers_
 
-                        # Combine all initial guesses
                         initial_guesses = [mean_guess, median_guess] + centroids.tolist()
 
-                        # # Perform optimization from each initial guess
-                        # results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
+                        # Time limit in seconds
+                        time_limit = 1  # Set to 1 second per optimization
 
-                        # Set options for the optimizer
-                        options = {'maxiter': 1000}  # Adjust maxiter as needed
+                        results = []
+                        for x0 in initial_guesses:
+                            try:
+                                # Wrap the neg_density function to enforce the time limit
+                                time_limited_neg_density = TimeLimitedObjective(neg_density, time_limit)
+                                result = minimize(
+                                    time_limited_neg_density,
+                                    x0,
+                                    method='L-BFGS-B',
+                                    bounds=bounds,
+                                    options={'maxfun': 1000}  # maxfun ensures function evaluations are capped
+                                )
+                                results.append(result)
+                            except TimeoutError:
+                                print(f"Optimization for initial guess {x0} stopped due to time limit.")
 
-                        # Modify the minimize calls to include options so to not getting stuck in infinite loops
-                        results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds, options=options) for x0 in initial_guesses]
-
-                        # Filter out unsuccessful optimizations and find the best result
+                        # Filter out successful optimizations
                         successful_results = [res for res in results if res.success]
 
                         if successful_results:
                             best_result = min(successful_results, key=lambda x: x.fun)
                             densest_point = best_result.x
-                            print("Densest point using KMeans centroid:\n", densest_point)
+                            print("Densest point found using optimization:\n", densest_point)
                         else:
-                            # raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
-                            print('Optimization was unsuccessful. Consider revising the strategy.')
-                            # revise the optimization strategy
-                            print('Primary optimization strategies were unsuccessful. Trying fallback strategy (Grid Search).')
+                            print('Optimization was unsuccessful. Trying fallback strategy (Grid Search).')
+
                             # Fallback strategy: Grid Search
-                            grid_size = 5  # Define the grid size for the search
+                            grid_size = 5
                             grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
                             grid_combinations = list(itertools.product(*grid_points))
 
@@ -3917,9 +3932,77 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                                 densest_point = np.array(best_grid_point)
                                 print("Densest point found using Grid Search:\n", densest_point)
                             else:
-                                print("None of the strategy worked no KDE result, change the selected simulations")
+                                print("None of the strategies worked. No KDE result. Change the selected simulations.")
                     except np.linalg.LinAlgError as e:
                         print(f"LinAlgError: {str(e)}")
+
+
+                    # try:
+
+                    #     kde = gaussian_kde(dataset=curr_sel_data.T)  # Note the transpose to match the expected input shape
+
+                    #     # Negative of the KDE function for optimization
+                    #     def neg_density(x):
+                    #         return -kde(x)
+
+                    #     # Bounds for optimization within all the sim space
+                    #     # data_sim = df_sim[var_kde].values
+                    #     bounds = [(np.min(curr_sel_data[:, i]), np.max(curr_sel_data[:, i])) for i in range(curr_sel_data.shape[1])]
+
+                    #     # Initial guesses: curr_sel_data mean, curr_sel_data median, and KMeans centroids
+                    #     mean_guess = np.mean(curr_sel_data, axis=0)
+                    #     median_guess = np.median(curr_sel_data, axis=0)
+
+                    #     # KMeans centroids as additional guesses 
+                    #     # # might be better not to get stuck in loops kmeans = KMeans(n_clusters=2, n_init=10).fit(curr_sel_data)
+                    #     kmeans = KMeans(n_clusters=5, n_init='auto').fit(curr_sel_data)  # Adjust n_clusters based on your understanding of the curr_sel_data
+                    #     centroids = kmeans.cluster_centers_
+
+                    #     # Combine all initial guesses
+                    #     initial_guesses = [mean_guess, median_guess] + centroids.tolist()
+
+                    #     # # Perform optimization from each initial guess
+                    #     # results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
+
+                    #     # Set options for the optimizer
+                    #     options = {'maxiter': 1000}  # Adjust maxiter as needed
+
+                    #     # Modify the minimize calls to include options so to not getting stuck in infinite loops
+                    #     results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds, options=options) for x0 in initial_guesses]
+
+                    #     # Filter out unsuccessful optimizations and find the best result
+                    #     successful_results = [res for res in results if res.success]
+
+                    #     if successful_results:
+                    #         best_result = min(successful_results, key=lambda x: x.fun)
+                    #         densest_point = best_result.x
+                    #         print("Densest point using KMeans centroid:\n", densest_point)
+                    #     else:
+                    #         # raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
+                    #         print('Optimization was unsuccessful. Consider revising the strategy.')
+                    #         # revise the optimization strategy
+                    #         print('Primary optimization strategies were unsuccessful. Trying fallback strategy (Grid Search).')
+                    #         # Fallback strategy: Grid Search
+                    #         grid_size = 5  # Define the grid size for the search
+                    #         grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
+                    #         grid_combinations = list(itertools.product(*grid_points))
+
+                    #         best_grid_point = None
+                    #         best_grid_density = -np.inf
+
+                    #         for point in grid_combinations:
+                    #             density = kde(point)
+                    #             if density > best_grid_density:
+                    #                 best_grid_density = density
+                    #                 best_grid_point = point
+
+                    #         if best_grid_point is not None:
+                    #             densest_point = np.array(best_grid_point)
+                    #             print("Densest point found using Grid Search:\n", densest_point)
+                    #         else:
+                    #             print("None of the strategy worked no KDE result, change the selected simulations")
+                    # except np.linalg.LinAlgError as e:
+                    #     print(f"LinAlgError: {str(e)}")
                 else:
                     print('Not enough data to perform the KDE need more than 10 meteors')
         

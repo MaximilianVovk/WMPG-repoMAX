@@ -3847,7 +3847,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                                 
             else:
 
-                print('compute the MODE and KDE for the selected meteors')
+                print('compute the MODE and KDE for the selected meteors',around_meteor)
                 var_kde = ['v_init_180km','zenith_angle','mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
 
                 # create the dataframe with the selected variable
@@ -4701,6 +4701,12 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
             # Append the data and color
             row_colors.append(line_color)
             table_data.append(curve_data)
+
+    # Check if table_data is empty
+    if not table_data:
+        print("No data available to display in the table.")
+        plt.close()  # Close the plot
+        return  # Exit the function or skip table creation
 
     # Adjust the plot styles and axes
     ax0.invert_xaxis()
@@ -6259,8 +6265,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             shutil.copytree(os.path.join(output_folder, save_results_folder), dest_path_with_name)
             print(f"Directory copied from {os.path.join(output_folder, save_results_folder)} to {dest_path_with_name}")
         else:
-            print(f"Directory {cml_args.save_results_dir} does not exist, results not copied")
-
+            # Copy the entire directory to the new destination
+            shutil.copytree(os.path.join(output_folder, save_results_folder), dest_path_with_name)
+            print(f"Directory copied from {os.path.join(output_folder, save_results_folder)} to {dest_path_with_name}")
     print()
 
 

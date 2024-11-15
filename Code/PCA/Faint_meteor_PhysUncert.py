@@ -3911,28 +3911,53 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                             best_result = min(successful_results, key=lambda x: x.fun)
                             densest_point = best_result.x
                             print("Densest point found using optimization:\n", densest_point)
-                        else:
-                            print('Optimization was unsuccessful. Trying fallback strategy (Grid Search).')
 
-                            # Fallback strategy: Grid Search
-                            grid_size = 5
-                            grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
-                            grid_combinations = list(itertools.product(*grid_points))
+                        # else:
+                        #     print('Optimization was unsuccessful. Trying fallback strategy (Grid Search).')
 
-                            best_grid_point = None
-                            best_grid_density = -np.inf
+                        #     # Fallback strategy: Grid Search
+                        #     grid_size = 5
+                        #     grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
+                        #     grid_combinations = list(itertools.product(*grid_points))
 
-                            for point in grid_combinations:
-                                density = kde(point)
-                                if density > best_grid_density:
-                                    best_grid_density = density
-                                    best_grid_point = point
+                        #     best_grid_point = None
+                        #     best_grid_density = -np.inf
 
-                            if best_grid_point is not None:
-                                densest_point = np.array(best_grid_point)
-                                print("Densest point found using Grid Search:\n", densest_point)
-                            else:
-                                print("None of the strategies worked. No KDE result. Change the selected simulations.")
+                        #     for point in grid_combinations:
+                        #         density = kde(point)
+                        #         if density > best_grid_density:
+                        #             best_grid_density = density
+                        #             best_grid_point = point
+
+                        #     if best_grid_point is not None:
+                        #         densest_point = np.array(best_grid_point)
+                        #         print("Densest point found using Grid Search:\n", densest_point)
+                        #     else:
+                        #         print("None of the strategies worked. No KDE result. Change the selected simulations.")
+                        # else:
+                        #     print('Optimization was unsuccessful. Trying fallback strategy (Grid Search).')
+
+                        #############################################
+
+                        #     # Fallback strategy: Grid Search
+                        #     grid_size = 5
+                        #     grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
+                        #     grid_combinations = list(itertools.product(*grid_points))
+
+                        #     best_grid_point = None
+                        #     best_grid_density = -np.inf
+
+                        #     for point in grid_combinations:
+                        #         density = kde(point)
+                        #         if density > best_grid_density:
+                        #             best_grid_density = density
+                        #             best_grid_point = point
+
+                        #     if best_grid_point is not None:
+                        #         densest_point = np.array(best_grid_point)
+                        #         print("Densest point found using Grid Search:\n", densest_point)
+                        #     else:
+                        #         print("None of the strategies worked. No KDE result. Change the selected simulations.")
                     except np.linalg.LinAlgError as e:
                         print(f"LinAlgError: {str(e)}")
 
@@ -6395,7 +6420,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")

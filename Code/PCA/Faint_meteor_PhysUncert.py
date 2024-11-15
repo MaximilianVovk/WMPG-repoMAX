@@ -5162,6 +5162,12 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
             row_colors.append(line_color)
             table_data.append(curve_data)
 
+    # Check if table_data is empty
+    if not table_data:
+        print("No data available to display in the table.")
+        plt.close()  # Close the plot
+        return  # Exit the function or skip table creation
+
     # Adjust the plot styles and axes
     ax0.invert_xaxis()
     ax1.grid(linestyle='--', color='lightgray')

@@ -5421,7 +5421,13 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     print(output_folder)
     print(trajectory_Metsim_file)
 
-    if cml_args.delete_old:
+    if cml_args.delete_all:
+        # if presen the output_folder then delete all the files in the folder
+        if os.path.isdir(output_folder):
+            # remove all the files in the folder
+            shutil.rmtree(output_folder)
+            print('All files in the output folder have been deleted.')
+    elif cml_args.delete_old:
 
         # Regex pattern for folders named vXX
         folder_pattern = re.compile(r"^v\d{2}$")
@@ -6420,16 +6426,19 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/showers', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Results',\
         help="Path were to store the results, by default the same as the input_dir.")
         
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
+    
+    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=True, \
+        help="By default set to False, if set to True delete all directories and files.")
     
     arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=True, \
         help="By default set to False, if set to True delete Slected and Results directory and all files except for the sim and obs csv file and the Simulations folder.")
@@ -6440,13 +6449,13 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=10000, \
         help="Number of simulations to generate.")
     
-    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=100, \
+    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=3, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \
@@ -6470,7 +6479,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \
@@ -6512,10 +6521,6 @@ if __name__ == "__main__":
     #########################
     warnings.filterwarnings('ignore')
 
-    # # set up observation folder
-    # Class_folder_files=SetUpObservationFolders(cml_args.input_dir, cml_args.MetSim_json)
-    # input_folder_file=Class_folder_files.input_folder_file
-
     if cml_args.optimize:
         # check if the file exist
         if not os.path.isfile(cml_args.ref_opt_path):
@@ -6527,18 +6532,27 @@ if __name__ == "__main__":
                 print("You need to specify the correct path and name of the AutoRefineFit_options.txt file in --ref_opt_path, like: C:\\path\\AutoRefineFit_options.txt")
                 sys.exit()
 
-    # set up observation folder
-    Class_folder_files=SetUpObservationFolders(cml_args.input_dir, cml_args.MetSim_json)
-    input_folder_file=Class_folder_files.input_folder_file
+    # check if the input_dir has a comma if so split the string and create a list
+    if ',' in cml_args.input_dir:
+        cml_args.input_dir = cml_args.input_dir.split(',')
+        print('Number of input directories or files:',len(cml_args.input_dir))
+    else:
+        cml_args.input_dir = [cml_args.input_dir]
+    
+    for input_dir_or_file in cml_args.input_dir:
 
-    # print only the file name in the directory split the path and take the last element
-    print('Number of trajectory.pickle files found:',len(input_folder_file))
-    # print every trajectory_file 
-    print('List of trajectory files:')
-    # print them line by line and not in a single array [trajectory_file for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file]
-    print('\n'.join([trajectory_file for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file]))
-    print()
+        # set up observation folder
+        Class_folder_files=SetUpObservationFolders(input_dir_or_file, cml_args.MetSim_json)
+        input_folder_file=Class_folder_files.input_folder_file
 
-    for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file:
-        # run the main function
-        main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file, cml_args)
+        # print only the file name in the directory split the path and take the last element
+        print('Number of trajectory.pickle files found:',len(input_folder_file))
+        # print every trajectory_file 
+        print('List of trajectory files:')
+        # print them line by line and not in a single array [trajectory_file for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file]
+        print('\n'.join([trajectory_file for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file]))
+        print()
+
+        for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file:
+            # run the main function
+            main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file, cml_args)

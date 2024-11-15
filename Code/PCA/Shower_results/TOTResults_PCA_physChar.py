@@ -7,7 +7,7 @@ import sys
 import matplotlib.artist as Artist
 
 # Usage
-directory = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER\Solutions_10000\PER'  # Change this to the directory you want to process
+directory = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\Solutions_10000\PER'  # Change this to the directory you want to process
 shower = 'PER'
 
 # create a txt file where you save averithing that has been printed
@@ -121,7 +121,8 @@ to_plot_unit = [r'log($m_0$) [-]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2
 print(shower,'distribution of',len(df_sel_shower['meteor'].unique()),'mteors\n')
 
 print('\\hline')
-print('Variables & 95\\%CIlow & Mode & & Mean & Median 95\\%CIup \\\\')
+# print('Variables & 95\\%CIlow & Mode & & Mean & Median & 95\\%CIup \\\\')
+print('Variables & 95\\%CIlow & Mode & & Mean & 95\\%CIup \\\\')
 
 fig, axs = plt.subplots(4, 3, figsize=(15, 15)) 
 # from 2 numbers to one numbr for the subplot axs
@@ -147,7 +148,7 @@ for i in range(12):
 
         # find the mean and median
         mean = np.mean(np.log10(curr_sel[plotvar]))
-        median = np.median(np.log10(curr_sel[plotvar]))
+        # median = np.median(np.log10(curr_sel[plotvar]))
 
     elif plotvar == 'vel_init_norot':
 
@@ -183,7 +184,7 @@ for i in range(12):
 
         # find the mean and median
         mean = np.mean(curr_sel[plotvar])
-        median = np.median(curr_sel[plotvar])
+        # median = np.median(curr_sel[plotvar])
 
 
     axs[i].set_ylabel('probability')
@@ -222,13 +223,13 @@ for i in range(12):
 
     # plot the mean and median
     axs[i].axvline(x=mean, color='blue', linestyle='--', linewidth=2, label='Mean')
-    axs[i].axvline(x=median, color='orange', linestyle='--', linewidth=2, label='Median')
+    # axs[i].axvline(x=median, color='orange', linestyle='--', linewidth=2, label='Median')
 
     x_10mode = kde_line_Xval[max_index]
     if plotvar == 'mass' or plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
         x_10mode = 10**kde_line_Xval[max_index]
         mean = 10**mean
-        median = 10**median
+        # median = 10**median
     if plotvar == 'mass':
         to_plot_unit[i] = r'$m_0$ [kg]'
     if plotvar == 'erosion_mass_min':
@@ -239,7 +240,8 @@ for i in range(12):
 
     if i < 11:
         print('\\hline')
-        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(mean)} & {'{:.4g}'.format(median)} & {'{:.4g}'.format(sigma_95)} \\\\")
+        # print(f"{to_plot_unit[i]} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(mean)} & {'{:.4g}'.format(median)} & {'{:.4g}'.format(sigma_95)} \\\\")
+        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(mean)} & {'{:.4g}'.format(sigma_95)} \\\\")
 
 print('\\hline')
 

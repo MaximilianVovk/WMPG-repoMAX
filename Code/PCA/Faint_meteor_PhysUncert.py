@@ -4227,7 +4227,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
     if len(Min_KDE_point) > 0:
         # delete the first two elements
         Min_KDE_point = Min_KDE_point[2:]
-        print('flag_',Min_KDE_point)
+        # print('flag_',Min_KDE_point)
         print('Variables & ' + str(df_sim_shower['type'].iloc[0]) + ' & 95\\%CIlow & Mean & Mode & Dens.Point & 95\\%CIup \\\\')
     else:
         print('Variables & ' + str(df_sim_shower['type'].iloc[0]) + ' & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')

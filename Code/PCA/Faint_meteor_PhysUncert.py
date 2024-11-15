@@ -4451,10 +4451,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
 
 
 
-def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct,
-                           gensim_data_obs='', mag_noise_real=0.1, len_noise_real=20.0,
-                           fps=32, file_name_obs='', trajectory_Metsim_file='',
-                           output_folder_of_csv='', pca_N_comp=0):
+def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real=0.1, len_noise_real=20.0, fps=32, file_name_obs='', trajectory_Metsim_file='', output_folder_of_csv='', pca_N_comp=0):
     """
     Plots the light curve coefficients and includes a table with parameters for each colored curve.
 
@@ -4522,14 +4519,14 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
         '',  # This will be the color column
         r'$\mathbf{mag_{RMSD}}$',
         r'$\mathbf{len_{RMSD} \ [m]}$',
-        r'$\mathbf{m_0 \ (kg)}$',
-        r'$\mathbf{\rho \ (kg/m^3)}$',
-        r'$\mathbf{\sigma \ (s^2/km^2)}$',
-        r'$\mathbf{\eta \ (s^2/km^2)}$',
-        r'$\mathbf{h_e \ (km)}$',
+        r'$\mathbf{m_0 \ [kg]}$',
+        r'$\mathbf{\rho \ [kg/m^3]}$',
+        r'$\mathbf{\sigma \ [s^2/km^2]}$',
+        r'$\mathbf{\eta \ [s^2/km^2]}$',
+        r'$\mathbf{h_e \ [km]}$',
         r'$\mathbf{s}$',
-        r'$\mathbf{m_l \ (kg)}$',
-        r'$\mathbf{m_u \ (kg)}$'
+        r'$\mathbf{m_l \ [kg]}$',
+        r'$\mathbf{m_u \ [kg]}$'
     ]
 
     # Loop over the observations and selected simulations
@@ -4814,7 +4811,7 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 # OPTIMIZATION ####################################################################################
 
 def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real, output_dir, fit_funct='', gen_Metsim='', mag_noise_real = 0.1, len_noise_real = 20.0, mag_RMSD = 0.1, len_RMSD = 20.0, fps=32, file_name_obs='', save_results_folder_events_plots='', run_optimization=True):
-    # try:
+    try:
         # merge curr_sel and curr_obs
         curr_sel = df_sel_shower.copy()
 
@@ -5072,16 +5069,16 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
 
         return pd_datafram_PCA_selected_optimized
 
-    # except FileNotFoundError as fnf_error:
-    #     print(f"File not found: {fnf_error}")
-    #     # Handle the error or log it
-    #     # Optionally, continue or exit the function
-    #     return pd.DataFrame()
+    except FileNotFoundError as fnf_error:
+        print(f"File not found: {fnf_error}")
+        # Handle the error or log it
+        # Optionally, continue or exit the function
+        return pd.DataFrame()
 
-    # except Exception as e:
-    #     print(f"An unexpected error occurred: {e}")
-    #     # Handle other exceptions
-    #     return pd.DataFrame()
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        # Handle other exceptions
+        return pd.DataFrame()
 
 
 
@@ -5312,6 +5309,31 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     print(input_folder)
     print(output_folder)
     print(trajectory_Metsim_file)
+
+    if cml_args.delete_old:
+
+        # Regex pattern for folders named vXX
+        folder_pattern = re.compile(r"^v\d{2}$")
+
+        # Patterns for files to keep
+        file_patterns = ["_obs.csv", "_sim.csv"]
+
+        # Traverse the directory
+        for item in os.listdir(output_folder):
+            item_path = os.path.join(output_folder, item)
+            
+            # Check if the item is a folder and matches the pattern
+            if os.path.isdir(item_path):
+                if not folder_pattern.match(item):
+                    # Delete folder if it doesn't match the pattern
+                    shutil.rmtree(item_path)
+            elif os.path.isfile(item_path):
+                # Check if the file ends with any of the allowed patterns
+                if not any(item.endswith(pattern) for pattern in file_patterns):
+                    # Delete file if it doesn't match the allowed patterns
+                    os.remove(item_path)
+
+        print("Cleanup completed!")
 
     # add to save_res_fin_folder the file_name
     save_res_fin_folder=SAVE_RESULTS_FINAL_FOLDER+file_name
@@ -6251,7 +6273,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     if cml_args.save_results_dir != r'':
         # Ensure the destination path includes the same folder name as the source
         dest_path_with_name = os.path.join(cml_args.save_results_dir, save_results_folder)
-
         if os.path.exists(dest_path_with_name):
             print(f"Directory {dest_path_with_name} already exists.")
             # Generate a unique name by appending a counter if the folder already exists
@@ -6263,11 +6284,11 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
             # Copy the entire directory to the new destination
             shutil.copytree(os.path.join(output_folder, save_results_folder), dest_path_with_name)
-            print(f"Directory copied from {os.path.join(output_folder, save_results_folder)} to {dest_path_with_name}")
         else:
             # Copy the entire directory to the new destination
             shutil.copytree(os.path.join(output_folder, save_results_folder), dest_path_with_name)
-            print(f"Directory copied from {os.path.join(output_folder, save_results_folder)} to {dest_path_with_name}")
+        print(f"Directory copied from {os.path.join(output_folder, save_results_folder)} to {dest_path_with_name}")
+
     print()
 
 
@@ -6299,8 +6320,8 @@ if __name__ == "__main__":
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
     
-    # arg_parser.add_argument('--bright_data', metavar='BRIGHT_DATA', type=bool, default=False, \
-    #     help="Chose to read the brightest fragment data, by default set to False so read the leading fragment data.")
+    arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=True, \
+        help="By default set to False, if set to True delete Slected and Results directory and all files except for the sim and obs csv file and the Simulations folder.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   

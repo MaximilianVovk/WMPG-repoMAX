@@ -4225,6 +4225,9 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
 
     print('\\hline')
     if len(Min_KDE_point) > 0:
+        # delete the first two elements
+        Min_KDE_point = Min_KDE_point[2:]
+        print('flag_',Min_KDE_point)
         print('Variables & ' + str(df_sim_shower['type'].iloc[0]) + ' & 95\\%CIlow & Mean & Mode & Dens.Point & 95\\%CIup \\\\')
     else:
         print('Variables & ' + str(df_sim_shower['type'].iloc[0]) + ' & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
@@ -6335,7 +6338,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=30, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=3, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \

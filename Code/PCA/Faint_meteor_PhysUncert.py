@@ -6434,7 +6434,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Results',\
         help="Path were to store the results, by default the same as the input_dir.")
 
-    arg_parser.add_argument('--repeating_num', metavar='REPEATING_NUM', type=int, default=8, \
+    arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=8, \
         help="By default 1 (no re computation), check the consistency of the result by re-trying multiple times creating new simulation to test the precision of the results, this set delete_all to True.")
 
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
@@ -6542,12 +6542,13 @@ if __name__ == "__main__":
     else:
         cml_args.input_dir = [cml_args.input_dir]
     
-    if cml_args.repeating_num <= 0:
-        cml_args.repeating_num = 1
+    if cml_args.repeate_research <= 1:
+        cml_args.repeate_research = 1
     else:
-        print('Number of repeating results search:',cml_args.repeating_num)
+        print('Number of repeating results search:',cml_args.repeate_research)
+        cml_args.delete_all = True
 
-    for ii in range(cml_args.repeating_num):
+    for ii in range(cml_args.repeate_research):
 
         for input_dir_or_file in cml_args.input_dir:
 

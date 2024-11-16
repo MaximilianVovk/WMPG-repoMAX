@@ -6433,7 +6433,10 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Results',\
         help="Path were to store the results, by default the same as the input_dir.")
-        
+
+    arg_parser.add_argument('--repeating_num', metavar='REPEATING_NUM', type=int, default=8, \
+        help="By default 1 (no re computation), check the consistency of the result by re-trying multiple times creating new simulation to test the precision of the results, this set delete_all to True.")
+
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
     
@@ -6539,20 +6542,27 @@ if __name__ == "__main__":
     else:
         cml_args.input_dir = [cml_args.input_dir]
     
-    for input_dir_or_file in cml_args.input_dir:
+    if cml_args.repeating_num <= 0:
+        cml_args.repeating_num = 1
+    else:
+        print('Number of repeating results search:',cml_args.repeating_num)
 
-        # set up observation folder
-        Class_folder_files=SetUpObservationFolders(input_dir_or_file, cml_args.MetSim_json)
-        input_folder_file=Class_folder_files.input_folder_file
+    for ii in range(cml_args.repeating_num):
 
-        # print only the file name in the directory split the path and take the last element
-        print('Number of trajectory.pickle files found:',len(input_folder_file))
-        # print every trajectory_file 
-        print('List of trajectory files:')
-        # print them line by line and not in a single array [trajectory_file for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file]
-        print('\n'.join([trajectory_file for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file]))
-        print()
+        for input_dir_or_file in cml_args.input_dir:
 
-        for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file:
-            # run the main function
-            main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file, cml_args)
+            # set up observation folder
+            Class_folder_files=SetUpObservationFolders(input_dir_or_file, cml_args.MetSim_json)
+            input_folder_file=Class_folder_files.input_folder_file
+
+            # print only the file name in the directory split the path and take the last element
+            print('Number of trajectory.pickle files found:',len(input_folder_file))
+            # print every trajectory_file 
+            print('List of trajectory files:')
+            # print them line by line and not in a single array [trajectory_file for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file]
+            print('\n'.join([trajectory_file for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file]))
+            print()
+
+            for trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file in input_folder_file:
+                # run the main function
+                main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, trajectory_Metsim_file, cml_args)

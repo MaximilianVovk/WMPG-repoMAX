@@ -680,7 +680,7 @@ def run_simulation(path_and_file_MetSim, real_event, fit_funct):
 def safe_generate_erosion_sim(params):
     try:
         return generateErosionSim(*params)
-    except TypeError as e:
+    except Exception as e:
         print(f"Error in generateErosionSim: {e}")
         return None
 

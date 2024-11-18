@@ -6388,6 +6388,13 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
     # Check if the destination directory exists
     if cml_args.save_results_dir != r'':
+
+        # check if cml_args.save_results_dir exist if not create it
+        if not os.path.exists(cml_args.save_results_dir):
+            print(f"Directory {cml_args.save_results_dir} does not exist, create it.")
+            # os.makedirs(cml_args.save_results_dir)
+            mkdirP(cml_args.save_results_dir)
+
         # Ensure the destination path includes the same folder name as the source
         dest_path_with_name = os.path.join(cml_args.save_results_dir, save_results_folder)
         if os.path.exists(dest_path_with_name):

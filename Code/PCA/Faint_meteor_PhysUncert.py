@@ -6452,13 +6452,13 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=10000, \
         help="Number of simulations to generate.")
     
-    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=100, \
+    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=30, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \
@@ -6535,18 +6535,18 @@ if __name__ == "__main__":
                 print("You need to specify the correct path and name of the AutoRefineFit_options.txt file in --ref_opt_path, like: C:\\path\\AutoRefineFit_options.txt")
                 sys.exit()
 
+    if cml_args.repeate_research <= 1:
+        cml_args.repeate_research = 1
+    else:
+        print('Number of repeating results search:',cml_args.repeate_research)
+        cml_args.delete_all = True
+
     # check if the input_dir has a comma if so split the string and create a list
     if ',' in cml_args.input_dir:
         cml_args.input_dir = cml_args.input_dir.split(',')
         print('Number of input directories or files:',len(cml_args.input_dir))
     else:
         cml_args.input_dir = [cml_args.input_dir]
-    
-    if cml_args.repeate_research <= 1:
-        cml_args.repeate_research = 1
-    else:
-        print('Number of repeating results search:',cml_args.repeate_research)
-        cml_args.delete_all = True
 
     for ii in range(cml_args.repeate_research):
 

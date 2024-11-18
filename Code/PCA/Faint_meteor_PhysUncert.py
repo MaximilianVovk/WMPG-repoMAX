@@ -2797,7 +2797,7 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
         if len(df_sim_var_sel) > 10000:
             print('Number of events in the simulated:', len(df_sim_var_sel))
             df_sim_var_sel = df_sim_var_sel.sample(n=10000)
-        
+
         # Setup the plot grid
         fig, axs = plt.subplots(int(np.ceil(len(latex_labels) / 5)), 5, figsize=(20, 15))
         axs = axs.flatten()
@@ -3390,9 +3390,20 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
         for var_phys in physical_vars:
             var_phys_values[var_phys] = df_sim_shower[var_phys].values[0]
 
-        if len(df_sim_shower_small) >10000:  # Avoid long plotting times
-            # Randomly sample 10,000 events
-            df_sim_shower_small = df_sim_shower_small.sample(n=10000)
+        # if len(df_sim_shower_small) >10000:  # Avoid long plotting times
+        #     # Randomly sample 10,000 events
+        #     df_sim_shower_small = df_sim_shower_small.sample(n=10000)
+
+        if len(df_sim_shower_small) > 10000:  # Limit to 10,000 rows for performance
+            # Separate rows with 'MetSim' or 'Real' types
+            metsim_or_real_rows = df_sim_shower_small[df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
+
+            # Sample the remaining rows excluding 'MetSim' and 'Real'
+            other_rows = df_sim_shower_small[~df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
+            sampled_other_rows = other_rows.sample(n=10000 - len(metsim_or_real_rows), random_state=42)
+
+            # Combine the sampled rows with 'MetSim' or 'Real' rows
+            df_sim_shower_small = pd.concat([metsim_or_real_rows, sampled_other_rows], axis=0)
 
         print('Generating selected simulation histogram plot...')
 
@@ -3588,10 +3599,22 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
 def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, output_dir='', pca_N_comp=0):
 
     curr_sim=curr_sim_init.copy()
-    if len(curr_sim)>10000:
-        # pick randomly 10000 events
-        print('Number of events in the simulated :',len(curr_sim))
-        curr_sim=curr_sim.sample(n=10000).copy()
+    # if len(curr_sim)>10000:
+    #     # pick randomly 10000 events
+    #     print('Number of events in the simulated :',len(curr_sim))
+    #     curr_sim=curr_sim.sample(n=10000).copy()
+
+    if len(curr_sim) > 10000:  # Limit to 10,000 rows for performance
+        # Separate rows with 'MetSim' or 'Real' types
+        metsim_or_real_rows = curr_sim[curr_sim['type'].isin(['MetSim', 'Real'])]
+
+        # Sample the remaining rows excluding 'MetSim' and 'Real'
+        other_rows = curr_sim[~curr_sim['type'].isin(['MetSim', 'Real'])]
+        sampled_other_rows = other_rows.sample(n=10000 - len(metsim_or_real_rows), random_state=42)
+
+        # Combine the sampled rows with 'MetSim' or 'Real' rows
+        curr_sim = pd.concat([metsim_or_real_rows, sampled_other_rows], axis=0)
+        
 
     curr_sel=curr_sel.copy()
     curr_sel = curr_sel.drop_duplicates(subset='solution_id')
@@ -4288,11 +4311,22 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
     df_sim_shower_small = df_sim_shower.copy()
     df_sel_shower = df_sel_shower_real.copy()
 
-    if len(df_sim_shower_small) > 10000:  # w/o takes forever to plot
-        # pick randomly 10000 events
-        df_sim_shower_small = df_sim_shower_small.sample(n=10000)
-        if 'MetSim' not in df_sim_shower_small['type'].values and 'Real' not in df_sim_shower_small['type'].values:
-            df_sim_shower_small = pd.concat([df_sim_shower_small.iloc[[0]], df_sim_shower_small])
+    # if len(df_sim_shower_small) > 10000:  # w/o takes forever to plot
+    #     # pick randomly 10000 events
+    #     df_sim_shower_small = df_sim_shower_small.sample(n=10000)
+    #     if 'MetSim' not in df_sim_shower_small['type'].values and 'Real' not in df_sim_shower_small['type'].values:
+    #         df_sim_shower_small = pd.concat([df_sim_shower_small.iloc[[0]], df_sim_shower_small])
+    
+    if len(df_sim_shower_small) > 10000:  # Limit to 10,000 rows for performance
+        # Separate rows with 'MetSim' or 'Real' types
+        metsim_or_real_rows = df_sim_shower_small[df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
+
+        # Sample the remaining rows excluding 'MetSim' and 'Real'
+        other_rows = df_sim_shower_small[~df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
+        sampled_other_rows = other_rows.sample(n=10000 - len(metsim_or_real_rows), random_state=42)
+
+        # Combine the sampled rows with 'MetSim' or 'Real' rows
+        df_sim_shower_small = pd.concat([metsim_or_real_rows, sampled_other_rows], axis=0)
 
     if save_log:
         # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist

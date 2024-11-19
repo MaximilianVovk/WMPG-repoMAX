@@ -161,17 +161,27 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             from matplotlib.lines import Line2D
 
             # Define the legend elements
-            # Define the legend elements
-            prior_patch = mpatches.Patch(color='blue', label='Priors', alpha=0.5, edgecolor='black')
-            sel_events_patch = mpatches.Patch(color='darkorange', label='Selected Events', alpha=0.5, edgecolor='red')
+            # prior_patch = mpatches.Patch(color='blue', label='Priors', alpha=0.5, edgecolor='black')
+            # sel_events_patch = mpatches.Patch(color='darkorange', label='Selected Events', alpha=0.5, edgecolor='red')
+
+            # Add legend elements for result_number
+            result_numbers = curr_df_sim_sel['result_number'].unique()
+            colors = sns.color_palette("deep", len(result_numbers))
+            
+            # Add legend elements for result_number
+            legend_elements = [
+                mpatches.Patch(color=colors[j], label=result_number, alpha=0.5)
+                for j, result_number in enumerate(result_numbers)
+            ]
+
             if 'MetSim' in curr_df_sim_sel['type'].values:
                 metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
             else:
                 metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
             mode_line = Line2D([0], [0], color='red', linestyle='-.', label='Mode')
             mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
-            legend_elements = [prior_patch, sel_events_patch, metsim_line, mean_line, mode_line]
-            
+            legend_elements += [metsim_line, mean_line, mode_line]
+
             axs[i].legend(handles=legend_elements, loc='upper right', fontsize='small')
 
             # Remove axes ticks and labels

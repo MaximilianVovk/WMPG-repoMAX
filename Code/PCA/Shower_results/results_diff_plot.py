@@ -6,6 +6,12 @@ import seaborn as sns
 import re
 import sys
 
+output_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_10000_100'
+input_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_10000_100'
+type_result = 'Real'
+
+
+
 # create a txt file where you save averithing that has been printed
 class Logger(object):
     def __init__(self, directory=".", filename="log.txt"):
@@ -29,10 +35,10 @@ class Logger(object):
         # Close the log file when done
         self.log.close()
 
-def read_csv_files(base_folder, result_type='Real'):
+def read_csv_files(input_dir, result_type='Real'):
     data_frames = []
     
-    for root, dirs, files in os.walk(base_folder):
+    for root, dirs, files in os.walk(input_dir):
         for file in files:
             if file.endswith("results.csv"):
                 file_path = os.path.join(root, file)
@@ -171,9 +177,9 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             ]
 
             if 'MetSim' in curr_df_sim_sel['type'].values:
-                metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+                metsim_line = Line2D([0], [0], color='black', label='Metsim Solution') # , linewidth=2
             else:
-                metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+                metsim_line = Line2D([0], [0], color='green', linestyle='--', label='Real Solution') # , linewidth=2
             mode_line = Line2D([0], [0], color='red', linestyle='-.', label='Mode')
             mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
             legend_elements += [metsim_line, mean_line, mode_line]
@@ -264,10 +270,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
 
 
 
-output_dir = '/home/mvovk/Documents/json_test'
-base_folder = '/home/mvovk/Documents/json_test/Results_1000_30'
-type_result = 'Real'
-result_df = read_csv_files(base_folder, type_result)
+result_df = read_csv_files(input_dir, type_result)
 # print(result_df)    
 # save csv file
 # result_df.to_csv('/home/mvovk/Documents/json_test/results_1000.csv', index=False)
@@ -327,26 +330,21 @@ for result in result_df['result'].unique():
         ignore_index=True
     )
 
-    # substitute to the value of -2 and -1 of  'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range' for each max and min
-    df_sel_shower_real.loc[df_sel_shower_real['mass'] == -2, 'mass'] = df_sel_shower_real['mass'].min()
-    df_sel_shower_real.loc[df_sel_shower_real['mass'] == -1, 'mass'] = df_sel_shower_real['mass'].max()
-    df_sel_shower_real.loc[df_sel_shower_real['rho'] == -2, 'rho'] = df_sel_shower_real['rho'].min()
-    df_sel_shower_real.loc[df_sel_shower_real['rho'] == -1, 'rho'] = df_sel_shower_real['rho'].max()
-    df_sel_shower_real.loc[df_sel_shower_real['sigma'] == -2, 'sigma'] = df_sel_shower_real['sigma'].min()
-    df_sel_shower_real.loc[df_sel_shower_real['sigma'] == -1, 'sigma'] = df_sel_shower_real['sigma'].max()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_height_start'] == -2, 'erosion_height_start'] = df_sel_shower_real['erosion_height_start'].min()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_height_start'] == -1, 'erosion_height_start'] = df_sel_shower_real['erosion_height_start'].max()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_coeff'] == -2, 'erosion_coeff'] = df_sel_shower_real['erosion_coeff'].min()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_coeff'] == -1, 'erosion_coeff'] = df_sel_shower_real['erosion_coeff'].max()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_mass_index'] == -2, 'erosion_mass_index'] = df_sel_shower_real['erosion_mass_index'].min
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_mass_index'] == -1, 'erosion_mass_index'] = df_sel_shower_real['erosion_mass_index'].max
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_mass_min'] == -2, 'erosion_mass_min'] = df_sel_shower_real['erosion_mass_min'].min()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_mass_min'] == -1, 'erosion_mass_min'] = df_sel_shower_real['erosion_mass_min'].max()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_mass_max'] == -2, 'erosion_mass_max'] = df_sel_shower_real['erosion_mass_max'].min()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_mass_max'] == -1, 'erosion_mass_max'] = df_sel_shower_real['erosion_mass_max'].max()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_range'] == -2, 'erosion_range'] = df_sel_shower_real['erosion_range'].min()
-    df_sel_shower_real.loc[df_sel_shower_real['erosion_range'] == -1, 'erosion_range'] = df_sel_shower_real['erosion_range'].max()
-    
+    # Update second-to-last (-2) and last (-1) rows for specified columns
+    columns_to_update = [
+        'mass', 'rho', 'sigma', 'erosion_height_start', 
+        'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 
+        'erosion_mass_max', 'erosion_range'
+    ]
+
+    # Update second-to-last row (-2)
+    for col in columns_to_update:
+        df_sel_shower_real.iloc[-2, df_sel_shower_real.columns.get_loc(col)] = df_sel_shower_real[col].min()
+
+    # Update last row (-1)
+    for col in columns_to_update:
+        df_sel_shower_real.iloc[-1, df_sel_shower_real.columns.get_loc(col)] = df_sel_shower_real[col].max()
+        
     # Save or process df_sel_shower_real further
     # df_sel_shower_real.to_csv(f'/home/mvovk/Documents/json_test/{result}_updated.csv', index=False)
 

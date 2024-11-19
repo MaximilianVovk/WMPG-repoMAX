@@ -186,7 +186,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             curr_df_sim_sel[plotvar] = np.log10(curr_df_sim_sel[plotvar])
             curr_sim[plotvar] = np.log10(curr_sim[plotvar])
 
-        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='result_number', ax=axs[i], multiple="stack", palette='bright', bins=20, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
+        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='result_number', ax=axs[i], multiple="stack", palette='deep', bins=20, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
         sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
         kde_line = axs[i].lines[-1]
         axs[i].lines[-1].remove()

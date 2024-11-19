@@ -185,7 +185,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             # take the log of the erosion_mass_min and erosion_mass_max
             curr_df_sim_sel[plotvar] = np.log10(curr_df_sim_sel[plotvar])
 
-        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='result_number', ax=axs[i], palette='bright', bins=20, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
+        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='result_number', ax=axs[i], multiple="stack", palette='bright', bins=20, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
         sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
         kde_line = axs[i].lines[-1]
         axs[i].lines[-1].remove()
@@ -344,6 +344,6 @@ for result in result_df['result'].unique():
     # df_sel_shower_real.to_csv(f'/home/mvovk/Documents/json_test/{result}_updated.csv', index=False)
 
     # plot the results
-    PhysicalPropPLOT_results(df_sel_shower_real, output_dir, result, save_log=True, pca_N_comp=0)
+    PhysicalPropPLOT_results(df_sel_shower_real, output_dir, result, save_log=True)
 
     

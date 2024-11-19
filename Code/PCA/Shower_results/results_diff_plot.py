@@ -29,13 +29,6 @@ class Logger(object):
         # Close the log file when done
         self.log.close()
 
-def find_closest_index(time_arr, time_sampled):
-    closest_indices = []
-    for sample in time_sampled:
-        closest_index = min(range(len(time_arr)), key=lambda i: abs(time_arr[i] - sample))
-        closest_indices.append(closest_index)
-    return closest_indices
-
 def read_csv_files(base_folder, result_type='Real'):
     data_frames = []
     
@@ -169,7 +162,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
 
             # Add legend elements for result_number
             result_numbers = curr_df_sim_sel['result_number'].unique()
-            colors = sns.color_palette("deep", len(result_numbers))
+            colors = sns.color_palette("flare", len(result_numbers))
             
             # Add legend elements for result_number
             legend_elements = [
@@ -185,7 +178,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
             legend_elements += [metsim_line, mean_line, mode_line]
 
-            axs[i].legend(handles=legend_elements, loc='upper left', fontsize=5)
+            axs[i].legend(handles=legend_elements, loc='upper left', fontsize=5, bbox_to_anchor=(0, 1.2))
 
             # Remove axes ticks and labels
             axs[i].set_xticks([])
@@ -199,7 +192,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             curr_df_sim_sel[plotvar] = np.log10(curr_df_sim_sel[plotvar])
             curr_sim[plotvar] = np.log10(curr_sim[plotvar])
 
-        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='result_number', ax=axs[i], multiple="stack", palette='deep', bins=20, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
+        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='result_number', ax=axs[i], multiple="stack", palette='flare', bins=20, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
         sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
         kde_line = axs[i].lines[-1]
         axs[i].lines[-1].remove()
@@ -219,15 +212,6 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             x_10mode = kde_line_Xval[max_index]
             if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
                 x_10mode = 10 ** kde_line_Xval[max_index]
-
-            if i < 9:
-                print('\\hline')
-                print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
-        else:
-            if i < 9:
-                print('\\hline')
-                print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(sigma_95)} \\\\")
-
 
         if 'MetSim' in curr_df_sim_sel['type'].values:
             axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)
@@ -261,11 +245,15 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             # Adjust x-axis offset text
             axs[i].xaxis.get_offset_text().set_x(1.10)
 
-    plt.tight_layout()
-    print('\\hline')
+        if i < 9:
+            print('\\hline')
+            print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
+
 
     # add the super title
-    plt.suptitle(file_name+' Physical Properties', fontsize=16)
+    # plt.suptitle(file_name+' Physical Properties') #  fontsize=16
+    plt.tight_layout()
+    print('\\hline')
 
     fig.savefig(output_dir + os.sep + file_name + '_PhysicProp_' + str(len(curr_df_sim_sel)) + 'ev.png', dpi=300)
     plt.close()
@@ -282,7 +270,7 @@ type_result = 'Real'
 result_df = read_csv_files(base_folder, type_result)
 # print(result_df)    
 # save csv file
-result_df.to_csv('/home/mvovk/Documents/json_test/results_1000.csv', index=False)
+# result_df.to_csv('/home/mvovk/Documents/json_test/results_1000.csv', index=False)
 # Define the parameter ranges
 param_ranges = {
     'erosion_coeff': (0.0, 1/1e6),  # s^2/m^2

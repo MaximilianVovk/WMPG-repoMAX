@@ -206,24 +206,6 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
 
         axs[i].axvline(x=np.mean(curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'][plotvar]), color='blue', linestyle='--')
 
-        if 'MetSim' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)
-            find_type = 'MetSim'
-        elif 'Real' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
-            find_type = 'Real'
-
-        if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
-            # Convert back from log scale
-            curr_df_sim_sel[plotvar] = 10 ** curr_df_sim_sel[plotvar]
-            curr_sim[plotvar] = 10 ** curr_sim[plotvar]
-
-        # Calculate percentiles
-        sigma_95 = np.percentile(curr_df_sim_sel[plotvar], 95)
-        sigma_5 = np.percentile(curr_df_sim_sel[plotvar], 5)
-
-        mean_values_sel = np.mean(curr_df_sim_sel[plotvar])
-
         if kde_line is not None:
             # Get the x and y data from the KDE line
             kde_line_Xval = kde_line.get_xdata()
@@ -246,6 +228,25 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
                 print('\\hline')
                 print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(sigma_95)} \\\\")
 
+
+        if 'MetSim' in curr_df_sim_sel['type'].values:
+            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)
+            find_type = 'MetSim'
+        elif 'Real' in curr_df_sim_sel['type'].values:
+            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
+            find_type = 'Real'
+
+        if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
+            # Convert back from log scale
+            curr_df_sim_sel[plotvar] = 10 ** curr_df_sim_sel[plotvar]
+            curr_sim[plotvar] = 10 ** curr_sim[plotvar]
+
+        # Calculate percentiles
+        sigma_95 = np.percentile(curr_df_sim_sel[plotvar], 95)
+        sigma_5 = np.percentile(curr_df_sim_sel[plotvar], 5)
+
+        mean_values_sel = np.mean(curr_df_sim_sel[plotvar])
+
         axs[i].set_ylabel('Probability')
         axs[i].set_xlabel(to_plot_unit[i])
 
@@ -262,6 +263,9 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
 
     plt.tight_layout()
     print('\\hline')
+
+    # add the super title
+    plt.suptitle(file_name+' Physical Properties', fontsize=16)
 
     fig.savefig(output_dir + os.sep + file_name + '_PhysicProp_' + str(len(curr_df_sim_sel)) + 'ev.png', dpi=300)
     plt.close()

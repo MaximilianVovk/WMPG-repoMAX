@@ -113,9 +113,9 @@ curr_df_sim_sel['weight'] = 1 / curr_df_sim_sel['num_type']
 
 curr_sel = curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'].copy()
 
-to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_mass', 'erosion_energy_per_unit_cross_section','vel_init_norot']
+to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_mass', 'erosion_energy_per_unit_cross_section']
 # to_plot_unit = ['mass [kg]', 'rho [kg/m^3]', 'sigma [s^2/km^2]', 'erosion height start [km]', 'erosion coeff [s^2/km^2]', 'erosion mass index [-]', 'log eros. mass min [kg]', 'log eros. mass max [kg]', 'log eros. mass range [-]', 'erosion energy per unit mass [MJ/kg]', 'erosion energy per unit cross section [MJ/m^2]', 'erosion energy per unit cross section [MJ/m^2]']
-to_plot_unit = [r'log($m_0$) [-]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]',r'log($m_{u}$)-log($m_{l}$) [-]', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]','']
+to_plot_unit = [r'log($m_0$) [-]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]',r'log($m_{u}$)-log($m_{l}$) [-]', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]']
 
 
 print(shower,'distribution of',len(df_sel_shower['meteor'].unique()),'mteors\n')
@@ -132,6 +132,45 @@ axs = axs.flatten()
 for i in range(12):
     # put legendoutside north
     plotvar=to_plot[i]
+
+    if i == 11:
+        # Plot only the legend
+        axs[i].axis('off')  # Turn off the axis
+
+        # Create custom legend entries
+        import matplotlib.patches as mpatches
+        from matplotlib.lines import Line2D
+
+        # Define the legend elements
+        # prior_patch = mpatches.Patch(color='blue', label='Priors', alpha=0.5, edgecolor='black')
+        # sel_events_patch = mpatches.Patch(color='darkorange', label='Selected Events', alpha=0.5, edgecolor='red')
+
+        # Add legend elements for result_number
+        result_numbers = curr_df_sim_sel['meteor'].unique()
+        colors = sns.color_palette("", len(result_numbers))
+        
+        # Add legend elements for result_number
+        legend_elements = [
+            mpatches.Patch(color=colors[j], label=result_number, alpha=0.5)
+            for j, result_number in enumerate(result_numbers)
+        ]
+
+        # if 'MetSim' in curr_df_sim_sel['type'].values:
+        #     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+        # elif 'Real' in curr_df_sim_sel['type'].values:
+        #     metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+        mode_line = Line2D([0], [0], color='red', linestyle='-.', label='Mode')
+        mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
+        legend_elements += [mean_line, mode_line]
+
+        axs[i].legend(handles=legend_elements, loc='upper left', fontsize=5)
+
+        # Remove axes ticks and labels
+        axs[i].set_xticks([])
+        axs[i].set_yticks([])
+        axs[i].set_xlabel('')
+        axs[i].set_ylabel('')
+        continue  # Skip to next iteration
 
     if plotvar == 'mass' or plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
 
@@ -150,14 +189,6 @@ for i in range(12):
         mean = np.mean(np.log10(curr_sel[plotvar]))
         # median = np.median(np.log10(curr_sel[plotvar]))
 
-    elif plotvar == 'vel_init_norot':
-
-        # axs[i].get_legend().remove()
-        # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='group', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
-        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar]*0, weights=curr_df_sim_sel['weight'], hue='meteor', ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
-        # delete the axis
-        axs[i].set_axis_off()        
-        
     else:
 
         # if plotvar == 'rho':

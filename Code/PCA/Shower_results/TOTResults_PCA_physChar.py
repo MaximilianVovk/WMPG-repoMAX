@@ -130,8 +130,6 @@ axs = axs.flatten()
 
 # ii_densest=0        
 for i in range(12):
-    # put legendoutside north
-    plotvar=to_plot[i]
 
     if i == 11:
         # Plot only the legend
@@ -147,11 +145,11 @@ for i in range(12):
 
         # Add legend elements for result_number
         result_numbers = curr_df_sim_sel['meteor'].unique()
-        colors = sns.color_palette("", len(result_numbers))
+        colors = sns.color_palette("muted", len(result_numbers))
         
         # Add legend elements for result_number
         legend_elements = [
-            mpatches.Patch(color=colors[j], label=result_number, alpha=0.5)
+            mpatches.Patch(color=colors[j], label=result_number, alpha=0.8) # , alpha=0.5
             for j, result_number in enumerate(result_numbers)
         ]
 
@@ -163,7 +161,7 @@ for i in range(12):
         mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
         legend_elements += [mean_line, mode_line]
 
-        axs[i].legend(handles=legend_elements, loc='upper left', fontsize=5)
+        axs[i].legend(handles=legend_elements, loc='upper left') # , fontsize=5
 
         # Remove axes ticks and labels
         axs[i].set_xticks([])
@@ -171,6 +169,10 @@ for i in range(12):
         axs[i].set_xlabel('')
         axs[i].set_ylabel('')
         continue  # Skip to next iteration
+    else:
+        # put legendoutside north
+        plotvar=to_plot[i]
+
 
     if plotvar == 'mass' or plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
 
@@ -179,7 +181,7 @@ for i in range(12):
         sns.histplot(curr_sel, x=np.log10(curr_sel[plotvar]), weights=curr_sel['weight'], bins=20, ax=axs[i],  multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
         # axs[i].get_legend().remove()
         # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-        sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'],hue='meteor', ax=axs[i], multiple="stack", bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
+        sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'],hue='meteor', ax=axs[i], palette="muted", multiple="stack", bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
 
         kde_line = axs[i].lines[-1]
         # activate the grid
@@ -207,7 +209,7 @@ for i in range(12):
         sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i],  multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
         # axs[i].get_legend().remove()
         # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='meteor', ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
+        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='meteor', palette="muted", ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
         
         kde_line = axs[i].lines[-1]
         # activate the grid
@@ -253,7 +255,7 @@ for i in range(12):
         axs[i].lines[-1].remove()
 
     # plot the mean and median
-    axs[i].axvline(x=mean, color='blue', linestyle='--', linewidth=2, label='Mean')
+    axs[i].axvline(x=mean, color='blue', linestyle='--', linewidth=3, label='Mean')
     # axs[i].axvline(x=median, color='orange', linestyle='--', linewidth=2, label='Median')
 
     x_10mode = kde_line_Xval[max_index]
@@ -285,7 +287,10 @@ sys.stdout = sys.__stdout__
 # # make backgound of the legend is white
 # axs[i].legend().get_frame().set_facecolor('white')
 
+# add the super title
+fig.suptitle(f'{shower}', fontsize=16)
+
 fig.tight_layout()
-plt.savefig(os.path.join(output_dir, f"{shower}_CI_PCA.png"), dpi=300)
+plt.savefig(os.path.join(output_dir, f"{shower}_CI_shower.png"), dpi=300)
 # plt.show()
 plt.close()

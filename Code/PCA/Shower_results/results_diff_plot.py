@@ -166,7 +166,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             
             # Add legend elements for result_number
             legend_elements = [
-                mpatches.Patch(color=colors[j], label=result_number, alpha=0.5)
+                mpatches.Patch(color=colors[j], label=result_number) # , alpha=0.5
                 for j, result_number in enumerate(result_numbers)
             ]
 

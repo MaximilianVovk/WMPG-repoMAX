@@ -149,6 +149,9 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
     elif 'Real' in curr_df_sim_sel['type'].values:
         print('Variables & Real & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
 
+    # order by 'result_number'
+    curr_df_sim_sel = curr_df_sim_sel.sort_values(by='result_number')
+
     for i in range(9):
         plotvar = to_plot[i]
 
@@ -182,7 +185,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
             legend_elements += [metsim_line, mean_line, mode_line]
 
-            axs[i].legend(handles=legend_elements, loc='upper right', fontsize='small')
+            axs[i].legend(handles=legend_elements, loc='upper left', fontsize=5)
 
             # Remove axes ticks and labels
             axs[i].set_xticks([])

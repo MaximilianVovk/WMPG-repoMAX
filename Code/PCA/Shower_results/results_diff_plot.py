@@ -184,6 +184,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
         if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
             # take the log of the erosion_mass_min and erosion_mass_max
             curr_df_sim_sel[plotvar] = np.log10(curr_df_sim_sel[plotvar])
+            curr_sim[plotvar] = np.log10(curr_sim[plotvar])
 
         sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='result_number', ax=axs[i], multiple="stack", palette='bright', bins=20, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
         sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
@@ -202,6 +203,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
         if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
             # Convert back from log scale
             curr_df_sim_sel[plotvar] = 10 ** curr_df_sim_sel[plotvar]
+            curr_sim[plotvar] = 10 ** curr_sim[plotvar]
 
         # Calculate percentiles
         sigma_95 = np.percentile(curr_df_sim_sel[plotvar], 95)

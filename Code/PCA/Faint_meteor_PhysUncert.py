@@ -2057,56 +2057,67 @@ def array_to_pd_dataframe_PCA(data, test_data=[]):
 
 
     kc_par = begin_height + (2.86 - 2*np.log(data_array['v_init']))/0.0612
+    
+    try:
+        # fit a line to the throught the vel_sim and ht_sim
+        a, b = np.polyfit(data_array['time'],data_array['velocities'], 1)
+        acceleration_lin = a
 
-    # fit a line to the throught the vel_sim and ht_sim
-    a, b = np.polyfit(data_array['time'],data_array['velocities'], 1)
-    acceleration_lin = a
+        t0 = np.mean(data_array['time'])
 
-    t0 = np.mean(data_array['time'])
+        # initial guess of deceleration decel equal to linear fit of velocity
+        p0 = [a, 0, 0, t0]
 
-    # initial guess of deceleration decel equal to linear fit of velocity
-    p0 = [a, 0, 0, t0]
+        opt_res = opt.minimize(lag_residual, p0, args=(np.array(data_array['time']), np.array(data_array['lag'])), method='Nelder-Mead')
 
-    opt_res = opt.minimize(lag_residual, p0, args=(np.array(data_array['time']), np.array(data_array['lag'])), method='Nelder-Mead')
+        # sample the fit for the velocity and acceleration
+        a_t0, b_t0, c_t0, t0 = opt_res.x
 
-    # sample the fit for the velocity and acceleration
-    a_t0, b_t0, c_t0, t0 = opt_res.x
+        # compute reference decelearation
+        t_decel_ref = (t0 + np.max(data_array['time']))/2
+        decel_t0 = cubic_acceleration(t_decel_ref, a_t0, b_t0, t0)[0]
 
-    # compute reference decelearation
-    t_decel_ref = (t0 + np.max(data_array['time']))/2
-    decel_t0 = cubic_acceleration(t_decel_ref, a_t0, b_t0, t0)[0]
+        a_t0=-abs(a_t0)
+        b_t0=-abs(b_t0)
 
-    a_t0=-abs(a_t0)
-    b_t0=-abs(b_t0)
+        acceleration_parab_t0=a_t0*6 + b_t0*2
 
-    acceleration_parab_t0=a_t0*6 + b_t0*2
+        a3, b3, c3 = np.polyfit(data_array['time'],data_array['velocities'], 2)
+        acceleration_parab=a3*2 + b3
 
-    a3, b3, c3 = np.polyfit(data_array['time'],data_array['velocities'], 2)
-    acceleration_parab=a3*2 + b3
+        # Assuming the jacchiaVel function is defined as:
+        def jacchiaVel(t, a1, a2, v_init):
+            return v_init - np.abs(a1) * np.abs(a2) * np.exp(np.abs(a2) * t)
 
-    # Assuming the jacchiaVel function is defined as:
-    def jacchiaVel(t, a1, a2, v_init):
-        return v_init - np.abs(a1) * np.abs(a2) * np.exp(np.abs(a2) * t)
+        # Generating synthetic observed data for demonstration
+        t_observed = np.array(data_array['time'])  # Observed times
 
-    # Generating synthetic observed data for demonstration
-    t_observed = np.array(data_array['time'])  # Observed times
+        # Residuals function for optimization
+        def residuals(params):
+            a1, a2 = params
+            predicted_velocity = jacchiaVel(t_observed, a1, a2, v0)
+            return np.sum((data_array['velocities'] - predicted_velocity)**2)
 
-    # Residuals function for optimization
-    def residuals(params):
-        a1, a2 = params
-        predicted_velocity = jacchiaVel(t_observed, a1, a2, v0)
-        return np.sum((data_array['velocities'] - predicted_velocity)**2)
+        # Initial guess for a1 and a2
+        initial_guess = [0.005,	10]
 
-    # Initial guess for a1 and a2
-    initial_guess = [0.005,	10]
+        # Apply minimize to the residuals
+        result = minimize(residuals, initial_guess)
 
-    # Apply minimize to the residuals
-    result = minimize(residuals, initial_guess)
+        # Results
+        jac_a1, jac_a2 = abs(result.x)
 
-    # Results
-    jac_a1, jac_a2 = abs(result.x)
-
-    acc_jacchia = abs(jac_a1)*abs(jac_a2)**2
+        acc_jacchia = abs(jac_a1)*abs(jac_a2)**2
+    except Exception as e:
+        # Handle exceptions and provide default values
+        print(f"Error in computation: {e}, filling with default zeros.")
+        acceleration_lin = 0
+        a_t0 = b_t0 = c_t0 = t0 = 0
+        decel_t0 = 0
+        acceleration_parab_t0 = 0
+        a3 = b3 = c3 = 0
+        acceleration_parab = 0
+        jac_a1 = jac_a2 = acc_jacchia = 0
 
     try:
         # fit a line to the throught the obs_vel and ht_sim

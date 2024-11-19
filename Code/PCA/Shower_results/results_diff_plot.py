@@ -6,8 +6,8 @@ import seaborn as sns
 import re
 import sys
 
-output_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_10000_100'
-input_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_10000_100'
+output_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_1000_100'
+input_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_1000_100'
 type_result = 'Real'
 
 

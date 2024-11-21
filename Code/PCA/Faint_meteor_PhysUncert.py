@@ -1024,11 +1024,16 @@ def plot_data_with_residuals_and_real(rmsd_mag, rmsd_vel, rmsd_len, fit_funct_or
     ax4.axis('off')
     if data_opt_or_desns!='':
         label_line1= label_data+' mag$_{RMSD}$ '+str(round(data['rmsd_mag'],3))+' len$_{RMSD}$ '+str(round(data['rmsd_len']*1000,1))+'m\n\
+mag$\chi^2_{red}$'+str(round(data['chi2_red_mag'],2))+' mag$_{p-val}$'+str(round(data['p_mag'],3))+'\n\
+mag$\chi^2_{red}$'+str(round(data['chi2_red_len'],2))+' len$_{p-val}$'+str(round(data['p_len'],3))+'\n\
+$\chi$'+str(round(data['chi2_red_mag'],3))+' $\lambda$'+str(round(data['chi2_red_len'],3))+'\n\
 $m_0$:'+str('{:.2e}'.format(data['mass'],1))+'kg $\\rho$:'+str(round(data['rho']))+'kg/m$^3$\n\
 $\sigma$:'+str(round(data['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(data['erosion_coeff'],3))+'s$^2$/km$^2$\n\
 $h_e$:'+str(round(data['erosion_height_start'],1))+'km $s$:'+str(round(data['erosion_mass_index'],2))+'\n\
 $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(data['erosion_mass_max'],1))+'kg'
         label_line2 = label_opt_or_desns+' mag$_{RMSD}$ '+str(round(data_opt_or_desns['rmsd_mag'],3))+' len$_{RMSD}$ '+str(round(data_opt_or_desns['rmsd_len']*1000,1))+'m\n\
+mag$\chi^2_{red}$'+str(round(data_opt_or_desns['chi2_red_mag'],2))+' mag$_{p-val}$'+str(round(data_opt_or_desns['p_mag'],3))+'\n\
+mag$\chi^2_{red}$'+str(round(data_opt_or_desns['chi2_red_len'],2))+' len$_{p-val}$'+str(round(data_opt_or_desns['p_len'],3))+'\n\
 $m_0$:'+str('{:.2e}'.format(data_opt_or_desns['mass'],1))+'kg $\\rho$:'+str(round(data_opt_or_desns['rho']))+'kg/m$^3$\n\
 $\sigma$:'+str(round(data_opt_or_desns['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(data_opt_or_desns['erosion_coeff'],3))+'s$^2$/km$^2$\n\
 $h_e$:'+str(round(data_opt_or_desns['erosion_height_start'],1))+'km $s$:'+str(round(data_opt_or_desns['erosion_mass_index'],2))+'\n\
@@ -1036,12 +1041,19 @@ $m_l$:'+str('{:.2e}'.format(data_opt_or_desns['erosion_mass_min'],1))+'kg $m_u$:
         ax4.legend([line1, line2], [label_line1, label_line2], loc='center', ncol=2, fontsize=7)
     elif data!='':
         label_line1=label_data+' mag$_{RMSD}$ '+str(round(data['rmsd_mag'],3))+' len$_{RMSD}$ '+str(round(data['rmsd_len']*1000,1))+'m\n\
+mag$\chi^2_{red}$'+str(round(data['chi2_red_mag'],2))+' mag$_{p-val}$'+str(round(data['p_mag'],3))+'\n\
+mag$\chi^2_{red}$'+str(round(data['chi2_red_len'],2))+' len$_{p-val}$'+str(round(data['p_len'],3))+'\n\
 $m_0$:'+str('{:.2e}'.format(data['mass'],1))+'kg $\\rho$:'+str(round(data['rho']))+'kg/m$^3$\n\
 $\sigma$:'+str(round(data['sigma'],4))+'s$^2$/km$^2$ $\eta$:'+str(round(data['erosion_coeff'],3))+'s$^2$/km$^2$\n\
 $h_e$:'+str(round(data['erosion_height_start'],1))+'km $s$:'+str(round(data['erosion_mass_index'],2))+'\n\
 $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(data['erosion_mass_max'],1))+'kg'
         ax4.legend([line1], [label_line1], loc='center left', ncol=1)
-        
+
+        # 'p_mag': [p_value_mag],
+        # 'p_len': [p_value_lag],
+        # 'chi2_red_mag': [chi2_red_mag],
+        # 'chi2_red_len': [chi2_red_len],
+
     # Plot 5: Custom legend with green dot, dashed line, and shaded areas
     ax5 = fig.add_subplot(gs_main[1, 1])
     ax5.axis('off')
@@ -2151,11 +2163,20 @@ def array_to_pd_dataframe_PCA(data, test_data=[]):
     ######## RMSD ###############
     # print('fit_funct RMSD mag',fit_funct['rmsd_mag'],' vel',fit_funct['rmsd_vel'], ' lag',fit_funct['rmsd_len'])
     if test_data == []:
-        rmsd_lag = 0
-        rmsd_mag = 0
+        rmsd_lag = 9999
+        rmsd_mag = 9999
+        p_value_mag = 9999
+        p_value_len = 9999
+        chi2_red_mag = 9999
+        chi2_red_len = 9999
     else:
         # Compute the residuals
-        rmsd_mag, rmsd_vel, rmsd_lag, magnitude_differences, velocity_differences, lag_differences, residual_time_pos, residual_height_pos, _ = RMSD_calc_diff(data, test_data) 
+        rmsd_mag, rmsd_vel, rmsd_lag, _, _, _, _, _, _ = RMSD_calc_diff(data, test_data)
+        _, _, res_chi_p, _, _, _, _, _, _ = chiSquare_test_sim_real(data, test_data) 
+        p_value_mag = res_chi_p['p_value_mag']
+        p_value_len = res_chi_p['p_value_lag']
+        chi2_red_mag = res_chi_p['chi2_red_mag']
+        chi2_red_len = res_chi_p['chi2_red_lag']
 
     # print(data_array['name'],'rmsd_mag',rmsd_mag,'rmsd_vel',rmsd_vel,'rmsd_len',rmsd_lag)
 
@@ -2169,6 +2190,10 @@ def array_to_pd_dataframe_PCA(data, test_data=[]):
         'type': [data_array['type']],
         'rmsd_mag': [rmsd_mag],
         'rmsd_len': [rmsd_lag],
+        'p_mag': [p_value_mag],
+        'p_len': [p_value_lag],
+        'chi2_red_mag': [chi2_red_mag],
+        'chi2_red_len': [chi2_red_len],
         'vel_init_norot': [data_array['v_init']],
         'vel_avg_norot': [data_array['v_avg']],
         'v_init_180km': [data_array['v_init_180km']],
@@ -5180,6 +5205,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
 
 
                 rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data_optimized, data_file_real)
+                BOOLchi_p_mag, BOOLchi_p_lag, chi_p_results, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = chiSquare_test_sim_real(gensim_data_optimized, data_file_real)
 
                 # Interpolation on the fit data's height grid
                 interp_ht_time = interp1d(data_file_real['height'], data_file_real['time'], kind='linear', bounds_error=False, fill_value='extrapolate')
@@ -5202,7 +5228,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
                 else:
                     plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+SAVE_SELECTION_FOLDER, data_file_sim,'', data_file_sim_opt, 'Optimized')
 
-            if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
+            if BOOLchi_p_mag and BOOLchi_p_lag: # rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD:
 
                 shutil.copy(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+image_name , output_dir+os.sep+save_results_folder_events_plots+os.sep+image_name) # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
                 
@@ -5353,18 +5379,18 @@ def RMSD_calc_diff(sim_file_data, real_funct_data):
     else:
         fps = 32
     
-    max_diff_threshold = MAX_MAG_DIFF
-    # Identify which differences exceed the maximum allowed difference
-    if threshold_mag*2 > MAX_MAG_DIFF:
-        max_diff_threshold = threshold_mag*2
-        exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
-    else:
-        exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
+    # max_diff_threshold = MAX_MAG_DIFF
+    # # Identify which differences exceed the maximum allowed difference
+    # if threshold_mag*2 > MAX_MAG_DIFF:
+    #     max_diff_threshold = threshold_mag*2
+    #     exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
+    # else:
+    #     exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
 
-    if np.any(exceeds_threshold):
-        exceeding_values = magnitude_differences[exceeds_threshold]
-        print(f'Magnitude differences exceeding {max_diff_threshold} found: {len(exceeding_values)}')
-        rmsd_mag = 9999                                                              
+    # if np.any(exceeds_threshold):
+    #     exceeding_values = magnitude_differences[exceeds_threshold]
+    #     print(f'Magnitude differences exceeding {max_diff_threshold} found: {len(exceeding_values)}')
+    #     rmsd_mag = 9999                                                              
 
     # Handle NaNs in RMSD calculations
     if np.isnan(rmsd_mag):
@@ -5450,6 +5476,23 @@ def RMSD_calc_diff(sim_file_data, real_funct_data):
     return rmsd_mag, rmsd_vel, rmsd_lag, magnitude_differences, velocity_differences, lag_differences, residual_time_pos, residual_height_pos, lag_kms_sim
 
 
+def compute_chi2_red_thresholds(confidence_level, degrees_of_freedom): # 0.95, len(residuals_mag)
+    # Significance level
+    alpha = 1 - confidence_level  # e.g., 0.10 for 90% confidence level
+    
+    # Lower and upper percentiles
+    lower_percentile = alpha / 2
+    upper_percentile = 1 - (alpha / 2)
+    
+    # Critical chi-squared values
+    chi2_lower = chi2.ppf(lower_percentile, degrees_of_freedom)
+    chi2_upper = chi2.ppf(upper_percentile, degrees_of_freedom)
+    
+    # Thresholds for reduced chi-squared
+    chi2_red_threshold_lower = chi2_lower / degrees_of_freedom
+    chi2_red_threshold_upper = chi2_upper / degrees_of_freedom
+    
+    return chi2_red_threshold_lower, chi2_red_threshold_upper
 
 
 def chiSquare_test_sim_real(sim_file_data, real_funct_data):
@@ -5569,6 +5612,20 @@ def chiSquare_test_sim_real(sim_file_data, real_funct_data):
     chi2_red_threshold_lower = 0.5  # Lower bound for reduced chi-squared
     chi2_red_threshold_upper = 1.5  # Upper bound for reduced chi-squared
 
+    # check if any is nan and if so substitute tha with 9999
+    if np.isnan(chi2_red_mag):
+        chi2_red_mag = 9999
+    if np.isnan(chi2_red_vel):
+        chi2_red_vel = 9999
+    if np.isnan(chi2_red_lag):
+        chi2_red_lag = 9999
+    if np.isnan(p_value_mag):
+        p_value_mag = 9999
+    if np.isnan(p_value_vel):
+        p_value_vel = 9999
+    if np.isnan(p_value_lag):
+        p_value_lag = 9999
+
     # Initialize results dictionary
     test_results = {
         'chi2_mag': chi2_mag,
@@ -5580,99 +5637,26 @@ def chiSquare_test_sim_real(sim_file_data, real_funct_data):
         'chi2_lag': chi2_lag,
         'chi2_red_lag': chi2_red_lag,
         'p_value_lag': p_value_lag,
-        'fit_quality_mag': '',
-        'fit_quality_vel': '',
-        'fit_quality_lag': ''
+        'fit_quality_mag': False,
+        # 'fit_quality_vel': False,
+        'fit_quality_lag': False
     }
 
     # Function to evaluate fit quality
     def evaluate_fit(chi2_red, p_value):
         if (chi2_red >= chi2_red_threshold_lower and chi2_red <= chi2_red_threshold_upper) and (p_value >= alpha):
-            return 'Good Fit'
+            return True
         else:
-            return 'Bad Fit'
+            return False
 
     # Evaluate fit quality for magnitude
     test_results['fit_quality_mag'] = evaluate_fit(chi2_red_mag, p_value_mag)
-    # Evaluate fit quality for velocity
-    test_results['fit_quality_vel'] = evaluate_fit(chi2_red_vel, p_value_vel)
+    # # Evaluate fit quality for velocity
+    # test_results['fit_quality_vel'] = evaluate_fit(chi2_red_vel, p_value_vel)
     # Evaluate fit quality for lag
     test_results['fit_quality_lag'] = evaluate_fit(chi2_red_lag, p_value_lag)
 
-
-    # print(f'RMSD Magnitude: {rmsd_mag:.4f}')
-    # print(f'RMSD Velocity: {rmsd_vel:.4f}')
-    # print(f'RMSD Lag: {rmsd_lag:.4f}')
-    # # Plotting the results
-    # plt.figure(figsize=(10, 5))
-    # # create 3 subplots
-    # plt.subplot(1, 3, 1)
-    # # plot both the abs_mag_data_interp against the height and the vel_kms_data_interp angainst time and the lag_sampled_adj gainst time
-    # plt.plot(abs_mag_sim_interp, height_km_real, 'k-', label='simulated')
-    # # against the abs_mag_fit and the height_km_fit
-    # plt.plot(abs_mag_real, height_km_real, 'b.', label='real')
-    # # put also the range of the threshold_mag
-    # plt.plot(abs_mag_sim_interp-threshold_mag, height_km_real, 'g--', label='threshold_mag')
-    # plt.plot(abs_mag_sim_interp+threshold_mag, height_km_real, 'g--')
-    # plt.ylabel('Height [km]')
-    # plt.xlabel('Absolute Magnitude')
-    # plt.grid()
-    # plt.legend()
-
-    # # plt.subplot(1, 3, 2)
-    # # plt.plot(vel_kms_sim, height_km_sim, 'k-', label='simulated')
-    # # plt.plot(vel_kms_real, height_km_real, 'b.', label='real')
-    # # # Plot the range of the threshold_vel
-    # # plt.plot(vel_kms_sim - threshold_vel, height_km_sim, 'g--', label='threshold_vel')
-    # # plt.plot(vel_kms_sim + threshold_vel, height_km_sim, 'g--')
-    # # plt.xlabel('Velocity [km/s]')
-    # # plt.ylabel('Height [s]')
-    # # plt.grid()
-    # # plt.legend()
-
-    # # plt.subplot(1, 3, 3)
-    # # plt.plot(lag_kms_sim, height_km_sim, 'k-', label='simulated')
-    # # plt.plot(lag_kms_real, height_km_real, 'b.', label='new_real')
-    # # plt.plot(wrong_lag, height_km_real, 'rx', label='old_real')
-    # # # Plot the range of the threshold_lag
-    # # plt.plot(lag_kms_sim - threshold_lag, height_km_sim, 'g--', label='threshold_lag')
-    # # plt.plot(lag_kms_sim + threshold_lag, height_km_sim, 'g--')
-    # # plt.xlabel('Lag [km]')
-    # # plt.ylabel('Height [s]')
-    # # plt.grid()
-    # # plt.legend()
-
-
-    # plt.subplot(1, 3, 2)
-    # plt.plot(time_real, vel_kms_sim_interp,'k-', label='simulated')
-    # plt.plot(time_real, vel_kms_real, 'b.', label='real')
-    # # put also the range of the threshold_vel
-    # plt.plot(time_real, vel_kms_sim_interp-threshold_vel, 'g--', label='threshold_vel')
-    # plt.plot(time_real, vel_kms_sim_interp+threshold_vel, 'g--')
-    # plt.xlabel('Time [s]')
-    # plt.ylabel('Velocity [km/s]')
-    # plt.grid()
-    # plt.legend()
-
-    # plt.subplot(1, 3, 3)
-    # # plt.plot(time_data, lag_sampled_adj, 'k-', label='lag_sampled_adj')
-    # plt.plot(time_real, lag_kms_sim_interp, 'k-', label='simulated')
-    # plt.plot(time_real, lag_kms_real, 'b.', label='new_real')
-    # # plt.plot(time_real, wrong_lag, 'rx', label='old_real')
-    # # put also the range of the threshold_lag 
-    # plt.plot(time_real, lag_kms_sim_interp-threshold_lag, 'g--', label='threshold_lag')
-    # plt.plot(time_real, lag_kms_sim_interp+threshold_lag, 'g--')
-    # plt.xlabel('Time [s]')
-    # plt.ylabel('Lag [km]')
-    # plt.grid()
-    # plt.legend()
-
-    # # more space between the plots
-    # plt.tight_layout()
-    # # show the plot
-    # plt.show()
-
-    return p_mag, p_vel, p_lag, magnitude_differences, velocity_differences, lag_differences, residual_time_pos, residual_height_pos, lag_kms_sim
+    return test_results['fit_quality_mag'], test_results['fit_quality_lag'], test_results, magnitude_differences, velocity_differences, lag_differences, residual_time_pos, residual_height_pos, lag_kms_sim
 
 
 

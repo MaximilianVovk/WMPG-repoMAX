@@ -599,7 +599,7 @@ class ErosionSimParametersEMCCD_Comet(object):
         ### Added noise ###
 
         # Standard deviation of the magnitude Gaussian noise
-        self.mag_noise = 0.1
+        self.mag_noise = 0.2
 
         # SD of noise in length [m]
         self.len_noise = 20.0
@@ -1656,6 +1656,13 @@ def read_with_noise_GenerateSimulations_output(file_path, fps=32):
 
         ht_obs=data['ht_sampled']
 
+        try:
+            index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[0])
+        except StopIteration:
+            # index_ht_sim = None
+            print('The first element of the observation is not in the simulation')
+            return None
+
         closest_indices = find_closest_index(ht_sim, ht_obs)
 
         Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr']
@@ -1676,7 +1683,7 @@ def read_with_noise_GenerateSimulations_output(file_path, fps=32):
         'name': file_path,
         'type': 'Observation_sim',
         'v_init_180km': data['params']['v_init']['val'], # m/s
-        'v_init': data['vel_sampled'][0], # m/s
+        'v_init': data['simulation_results']['leading_frag_vel_arr'][index_ht_sim], # m/s
         'velocities': np.array(data['vel_sampled']), # m/s
         'height': np.array(data['ht_sampled']), # m
         'absolute_magnitudes': np.array(data['mag_sampled']),
@@ -5354,11 +5361,11 @@ def RMSD_calc_diff(sim_file_data, real_funct_data):
     if 'rmsd_mag' in real_funct:
         threshold_mag = real_funct['rmsd_mag']
     else:
-        threshold_mag = 0
+        threshold_mag = 9999
     if 'rmsd_vel' in real_funct:
         threshold_vel = real_funct['rmsd_vel']
     else:
-        threshold_vel = 0
+        threshold_vel = 9999
     if 'rmsd_len' in real_funct:
         threshold_lag = real_funct['rmsd_len']
         # print('threshold_lag',threshold_lag)
@@ -5369,7 +5376,7 @@ def RMSD_calc_diff(sim_file_data, real_funct_data):
         #     print(f'Lag differences exceeding {threshold_lag*3} found: {len(exceeding_values)}')
         #     rmsd_lag = 9999  
     else:
-        threshold_lag = 0
+        threshold_lag = 9999
     if 'fps' in real_funct:
         fps = real_funct['fps']
     else:
@@ -5398,9 +5405,9 @@ def RMSD_calc_diff(sim_file_data, real_funct_data):
 
 
     # sigma values estimate from the data
-    sigma_abs_mag = np.std(abs_mag_real - abs_mag_sim_interp)
-    sigma_vel = np.std(vel_kms_real - vel_kms_sim_interp)
-    sigma_lag = np.std(lag_kms_real - lag_kms_sim_interp)
+    sigma_abs_mag = threshold_mag # np.std(abs_mag_real - abs_mag_sim_interp)
+    sigma_vel = threshold_vel # np.std(vel_kms_real - vel_kms_sim_interp)
+    sigma_lag = threshold_lag # np.std(lag_kms_real - lag_kms_sim_interp)
         
     # Compute the chi-squared statistics
     chi2_mag = np.sum((magnitude_differences / sigma_abs_mag) ** 2)
@@ -5737,6 +5744,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         # add to all the rows the rmsd_mag_obs, rmsd_lag_obs, RMSD cannot work for noisy simulations because of interp
         pd_dataframe_PCA_obs_real['rmsd_mag'] = rmsd_pol_mag
         pd_dataframe_PCA_obs_real['rmsd_len'] = rmsd_t0_lag/1000
+        pd_dataframe_PCA_obs_real['chi2_red_mag'] = 1
+        pd_dataframe_PCA_obs_real['chi2_red_len'] = 1
         if flag_manual_metsim:
             simulation_MetSim_object, gensim_data_Metsim, pd_datafram_PCA_sim_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
             # add pd_datafram_PCA_sim_Metsim['v_init_180km'] to pd_dataframe_PCA_obs_real
@@ -6562,7 +6571,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
@@ -6576,10 +6585,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
     
-    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=False, \
+    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=True, \
         help="By default set to False, if set to True delete all directories and files.")
     
-    arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=False, \
+    arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=True, \
         help="By default set to False, if set to True delete Slected and Results directory and all files except for the sim and obs csv file and the Simulations folder.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
@@ -6591,10 +6600,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=100, \
         help="Number of simulations to generate.")
     
-    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \
+    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=1, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=2, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \

@@ -5382,18 +5382,18 @@ def RMSD_calc_diff(sim_file_data, real_funct_data):
     else:
         fps = 32
     
-    max_diff_threshold = MAX_MAG_DIFF
-    # Identify which differences exceed the maximum allowed difference
-    if threshold_mag*4 < MAX_MAG_DIFF:
-        max_diff_threshold = threshold_mag*4
-        exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
-    else:
-        exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
+    # max_diff_threshold = MAX_MAG_DIFF
+    # # Identify which differences exceed the maximum allowed difference
+    # if threshold_mag*4 < MAX_MAG_DIFF:
+    #     max_diff_threshold = threshold_mag*4
+    #     exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
+    # else:
+    #     exceeds_threshold = np.abs(magnitude_differences) > max_diff_threshold
 
-    if np.any(exceeds_threshold):
-        exceeding_values = magnitude_differences[exceeds_threshold]
-        print(f'Magnitude differences exceeding {max_diff_threshold} found: {len(exceeding_values)}')
-        rmsd_mag = 9999                                                              
+    # if np.any(exceeds_threshold):
+    #     exceeding_values = magnitude_differences[exceeds_threshold]
+    #     print(f'Magnitude differences exceeding {max_diff_threshold} found: {len(exceeding_values)}')
+    #     rmsd_mag = 9999                                                              
 
     # Handle NaNs in RMSD calculations
     if np.isnan(rmsd_mag):

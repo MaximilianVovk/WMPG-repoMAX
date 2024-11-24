@@ -1056,7 +1056,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
     # Plot 5: Custom legend with green dot, dashed line, and shaded areas
     ax5 = fig.add_subplot(gs_main[1, 1])
     ax5.axis('off')
-    ax5.plot([], [], 'go', label=label_real[:15]+'\nmag$_{RMSD}$ '+str(round(rmsd_mag/1.96,3))+'\nvel$_{RMSD}$ '+str(round(rmsd_vel/1.96,3))+'km/s\nlen$_{RMSD}$ '+str(round(rmsd_len/1.96*1000,1))+'m')  # Green dot
+    ax5.plot([], [], 'go', label=label_real[:15]+'\nmag$_{RMSD}$ '+str(round(rmsd_mag/1.96,3))+'\nvel$_{RMSD}$ '+str(round(rmsd_vel/1.96,3))+'km/s\nlag$_{RMSD}$ '+str(round(rmsd_len/1.96*1000,1))+'m')  # Green dot
     if data == '':
         ax5.plot([], [], 'k--', label='Fit')  # Black dashed line
     ax5.fill_between([], [], [], color='darkgray', alpha=0.2, label='1$\sigma$')
@@ -1148,12 +1148,12 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
 
     select_data=''
     if data!='':
-        if data['rmsd_mag']<rmsd_mag and data['rmsd_len']<rmsd_len and data['chi2_red_mag'] >= 0.5 and data['chi2_red_mag'] <= 1.5 and data['chi2_red_len'] >= 0.5 and data['chi2_red_len'] <= 1.5:
+        if data['rmsd_mag']<rmsd_mag and data['rmsd_len']<rmsd_len: # and data['chi2_red_mag'] >= 0.5 and data['chi2_red_mag'] <= 1.5 and data['chi2_red_len'] >= 0.5 and data['chi2_red_len'] <= 1.5
             select_data=label_data+' SELECTED'
         else:
             select_data=label_data+' NOT SELECTED'
     if data_opt_or_desns !='':
-        if data_opt_or_desns['rmsd_mag']<rmsd_mag and data_opt_or_desns['rmsd_len']<rmsd_len and data_opt_or_desns['chi2_red_mag'] >= 0.5 and data_opt_or_desns['chi2_red_mag'] <= 1.5 and data_opt_or_desns['chi2_red_len'] >= 0.5 and data_opt_or_desns['chi2_red_len'] <= 1.5:
+        if data_opt_or_desns['rmsd_mag']<rmsd_mag: # and data_opt_or_desns['rmsd_len']<rmsd_len and data_opt_or_desns['chi2_red_mag'] >= 0.5 and data_opt_or_desns['chi2_red_mag'] <= 1.5 and data_opt_or_desns['chi2_red_len'] >= 0.5 and data_opt_or_desns['chi2_red_len'] <= 1.5
             select_data=select_data+' '+label_opt_or_desns+' SELECTED'
         else:
             select_data=select_data+' '+label_opt_or_desns+' NOT SELECTED'
@@ -3899,7 +3899,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                     plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir, data_file_sim)
 
                 _, name_file = os.path.split(curr_sel['solution_id'].iloc[ii])
-                if curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD and curr_sel.iloc[ii]['rmsd_len']<len_RMSD and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5:
+                if curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD and curr_sel.iloc[ii]['rmsd_len']<len_RMSD: # and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
                     shutil.copy(curr_sel['solution_id'].iloc[ii], output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+name_file)
 
                     pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
@@ -4243,7 +4243,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
 
                 plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir, gensim_data_sim_mode, 'Mode')
 
-                if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5:
+                if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD: # and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
                     print(around_meteor,'below noise MODE, SAVED')
                     pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
 
@@ -4310,7 +4310,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
 
                     plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir, gensim_data_sim_mode, 'Mode', gensim_data_sim_densest, 'Dens.point')
 
-                    if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5:
+                    if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD: # and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
                         print(around_meteor,'below noise DENSEST POINT, SAVED')
                         pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
 
@@ -4397,9 +4397,9 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
     curr_sel = curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'].copy()
 
     to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range']
-    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]', r'log($m_{u}$)-log($m_{l}$) [-]']
+    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]', r'log($m_{u}$)-log($m_{l}$) [-]', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]', r'']
 
-    fig, axs = plt.subplots(3, 3)
+    fig, axs = plt.subplots(3, 4, figsize=(15, 10))
     axs = axs.flatten()
 
     print('\\hline')
@@ -4412,10 +4412,10 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
         print('Variables & ' + str(df_sim_shower['type'].iloc[0]) + ' & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
 
     ii_densest = 0
-    for i in range(9):
+    for i in range(12):
         plotvar = to_plot[i]
 
-        if i == 8:
+        if i == 11:
             # Plot only the legend
             axs[i].axis('off')  # Turn off the axis
 
@@ -4441,7 +4441,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
                 # Create the legend
                 legend_elements = [prior_patch, sel_events_patch, metsim_line, mean_line, mode_line]
             
-            axs[i].legend(handles=legend_elements, loc='upper right', fontsize='small')
+            axs[i].legend(handles=legend_elements, loc='upper center') # , fontsize='small'
 
             # Remove axes ticks and labels
             axs[i].set_xticks([])
@@ -4467,13 +4467,13 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
         else:
             kde_line = None
 
-        axs[i].axvline(x=np.mean(curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'][plotvar]), color='blue', linestyle='--')
+        axs[i].axvline(x=np.mean(curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'][plotvar]), color='blue', linestyle='--', linewidth=3)
 
         if 'MetSim' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)
+            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=3)
             find_type = 'MetSim'
         elif 'Real' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
+            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=3, linestyle='--')
             find_type = 'Real'
 
         if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
@@ -4495,7 +4495,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             # Find the index of the maximum y value (mode)
             max_index = np.argmax(kde_line_Yval)
             # Plot a vertical line at the mode
-            axs[i].axvline(x=kde_line_Xval[max_index], color='red', linestyle='-.')
+            axs[i].axvline(x=kde_line_Xval[max_index], color='red', linestyle='-.', linewidth=3)
 
             x_10mode = kde_line_Xval[max_index]
             if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
@@ -4504,20 +4504,20 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             if len(Min_KDE_point) > 0:
                 if len(Min_KDE_point) > ii_densest:
                     densest_index = find_closest_index(kde_line_Xval, [Min_KDE_point[ii_densest]])
-                    axs[i].axvline(x=Min_KDE_point[ii_densest], color='blue', linestyle='-.')
+                    axs[i].axvline(x=Min_KDE_point[ii_densest], color='blue', linestyle='-.', linewidth=3)
                     if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
                         Min_KDE_point[ii_densest] = 10 ** (Min_KDE_point[ii_densest])
 
-                    if i < 9:
+                    if i < 12:
                         print('\\hline') 
                         print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(Min_KDE_point[ii_densest])} & {'{:.4g}'.format(sigma_95)} \\\\")
                     ii_densest += 1
             else:
-                if i < 9:
+                if i < 12:
                     print('\\hline')
                     print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
         else:
-            if i < 9:
+            if i < 12:
                 print('\\hline')
                 print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(sigma_95)} \\\\")
 
@@ -4967,7 +4967,7 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
     fig.suptitle(
         file_name_only + r' - mag$_{RMSD}$ ' + str(round(curr_sel.iloc[0]['rmsd_mag'], 3)) +
-        r' len$_{RMSD}$ ' + str(round(curr_sel.iloc[0]['rmsd_len']*1000, 1)) + ' m',
+        r' lag$_{RMSD}$ ' + str(round(curr_sel.iloc[0]['rmsd_len']*1000, 1)) + ' m',
         fontsize=12,     # Adjust font size as needed
         ha='left',       # Align text to the left
         x=0.05,           # Adjust x to move it to the left (0 is far left, 1 is far right)
@@ -5231,7 +5231,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
                 else:
                     plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+SAVE_SELECTION_FOLDER, data_file_sim,'', data_file_sim_opt, 'Optimized')
 
-            if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5:
+            if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD: # and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
 
                 shutil.copy(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+image_name , output_dir+os.sep+save_results_folder_events_plots+os.sep+image_name) # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
                 
@@ -6211,7 +6211,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
                 
                 chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, _, _, _, _, _ , _ = RMSD_calc_diff(data_file, gensim_data_obs)
                 # Add the simulation results that have a rmsd_mag and rmsd_len that is below RMSD to pd_datafram_PCA_selected_lowRMSD
-                if rmsd_mag <= mag_RMSD_real and rmsd_lag <= len_RMSD_real and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5:
+                if rmsd_mag <= mag_RMSD_real and rmsd_lag <= len_RMSD_real: #  and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
                     # print to added to the selected simulations pd_datafram_PCA_sim_resulsts['solution_id'].values[0]
                     print('Added to the selected simulations:',output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file)
                     pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
@@ -6571,7 +6571,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")

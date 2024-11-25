@@ -4396,7 +4396,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
 
     curr_sel = curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'].copy()
 
-    to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range']
+    to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass', '']
     to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]', r'log($m_{u}$)-log($m_{l}$) [-]', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]', r'']
 
     fig, axs = plt.subplots(3, 4, figsize=(15, 10))
@@ -6597,13 +6597,13 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=100, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
         help="Number of simulations to generate.")
     
     arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=2, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=30, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \
@@ -6627,7 +6627,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \

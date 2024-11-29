@@ -52,6 +52,7 @@ import scipy.stats as stats
 from sklearn.preprocessing import PowerTransformer
 from wmpl.MetSim.ML.GenerateSimulations import generateErosionSim,saveProcessedList,MetParam
 from wmpl.Utils.TrajConversions import J2000_JD, date2JD
+from wmpl.Utils.Math import meanAngle
 import warnings
 import itertools
 import time
@@ -693,7 +694,7 @@ def safe_generate_erosion_sim(params):
         print(f"Error in generateErosionSim: {e}")
         return None
 
-def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim,output_folder,file_name, fps, plot_case=False, flag_manual_metsim=True, CI_physical_param=''):
+def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim,output_folder,file_name, fps, dens_co, plot_case=False, flag_manual_metsim=True, CI_physical_param=''):
     '''
         Generate simulations for the given real data
     '''
@@ -702,6 +703,8 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     erosion_sim_params = SIM_CLASSES[SIM_CLASSES_NAMES.index('ErosionSimParametersEMCCD_Comet')]()
 
     erosion_sim_params.fps = fps
+
+    erosion_sim_params.dens_co = dens_co
 
     # get from real_data the beg_abs_mag value of the first row and set it as the lim_mag_faintest value
     erosion_sim_params.lim_mag_faintest = real_data['beg_abs_mag'].iloc[0]+0.01
@@ -1682,6 +1685,7 @@ def read_with_noise_GenerateSimulations_output(file_path, fps=32):
         gensim_data = {
         'name': file_path,
         'type': 'Observation_sim',
+        'dens_co': np.array(const.dens_co),
         'v_init_180km': data['params']['v_init']['val'], # m/s
         'v_init': data['simulation_results']['leading_frag_vel_arr'][index_ht_sim], # m/s
         'velocities': np.array(data['vel_sampled']), # m/s
@@ -1735,6 +1739,7 @@ def read_RunSim_output(simulation_MetSim_object, real_event, MetSim_phys_file_pa
     'mass_at_erosion_change', 'energy_per_cs_before_erosion', 'energy_per_mass_before_erosion', 'main_mass_exhaustion_ht', 'main_bottom_ht'])
     '''
 
+    dens_co=simulation_MetSim_object.const.dens_co
     vel_sim=simulation_MetSim_object.leading_frag_vel_arr #main_vel_arr
     ht_sim=simulation_MetSim_object.leading_frag_height_arr #main_height_arr
     time_sim=simulation_MetSim_object.time_arr
@@ -1810,6 +1815,7 @@ def read_RunSim_output(simulation_MetSim_object, real_event, MetSim_phys_file_pa
     gensim_data = {
         'name': MetSim_phys_file_path,
         'type': 'MetSim',
+        'dens_co': dens_co,
         'v_init': vel_sim[0], # m/s
         'velocities': np.array(vel_sim), # m/s
         'v_init_180km': simulation_MetSim_object.const.v_init, # m/s
@@ -1845,7 +1851,6 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
 
     v_avg = traj.v_avg
     v_init=traj.orbit.v_init
-    jd_dat=traj.jdt_ref
     obs_data = []
     # obs_init_vel = []
     for obs in traj.observations:
@@ -1872,15 +1877,9 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
             obs_dict['velocities'][0] = obs_dict['v_init']
             obs_data.append(obs_dict)
 
-            # obs_init_vel.append(obs.v_init)
-                
-            lat_dat=obs.lat
-            lon_dat=obs.lon
-
         else:
             print(obs.station_id,'Station not in the list of stations')
             continue
-    
     
     
     # Save distinct values for the two observations
@@ -1920,7 +1919,19 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
     # delete any values above 10 absolute_magnitudes and delete the corresponding values in the other arrays
     combined_obs = {key: combined_obs[key][combined_obs['absolute_magnitudes'] < 8] for key in combined_obs.keys()}
 
-    Dynamic_pressure_peak_abs_mag=(wmpl.Utils.Physics.dynamicPressure(lat_dat, lon_dat, combined_obs['height'][np.argmin(combined_obs['absolute_magnitudes'])], jd_dat, combined_obs['velocities'][np.argmin(combined_obs['absolute_magnitudes'])]))
+    dens_fit_ht_beg = 180000
+    dens_fit_ht_end = traj.rend_ele - 5000
+    if dens_fit_ht_end < 14000:
+        dens_fit_ht_end = 14000
+
+    lat_mean = np.mean([traj.rbeg_lat, traj.rend_lat])
+    lon_mean = meanAngle([traj.rbeg_lon, traj.rend_lon])
+    jd_dat=traj.jdt_ref
+
+    # Fit the polynomail describing the density
+    dens_co = fitAtmPoly(lat_mean, lon_mean, dens_fit_ht_end, dens_fit_ht_beg, jd_dat)
+
+    Dynamic_pressure_peak_abs_mag=(wmpl.Utils.Physics.dynamicPressure(lat_mean, lon_mean, combined_obs['height'][np.argmin(combined_obs['absolute_magnitudes'])], jd_dat, combined_obs['velocities'][np.argmin(combined_obs['absolute_magnitudes'])])) # , gamma=traj.const.gamma
     const=Constants()
     zenith_angle=zenithAngleAtSimulationBegin(const.h_init, traj.rbeg_ele, traj.orbit.zc, const.r_earth)
 
@@ -1955,6 +1966,8 @@ def read_pickle_reduction_file(file_path, MetSim_phys_file_path='', obs_sep=Fals
     combined_obs['name'] = file_path    
     combined_obs['v_init'] = v_init
     combined_obs['v_init_180km'] = output_phys[11]
+    combined_obs['lag'] = combined_obs['lag']-combined_obs['lag'][0]
+    combined_obs['dens_co'] = dens_co
     combined_obs['obs1_time'] = obs1_time
     combined_obs['obs2_time'] = obs2_time
     combined_obs['obs1_length'] = obs1_length   
@@ -4374,6 +4387,9 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
 
     curr_df_sim_sel = pd.concat([df_sim_shower_small, df_sel_shower], axis=0)
 
+    # Reset the index to ensure uniqueness
+    curr_df_sim_sel = curr_df_sim_sel.reset_index(drop=True)
+
     # multiply the erosion coeff by 1000000 to have it in km/s
     curr_df_sim_sel['erosion_coeff'] = curr_df_sim_sel['erosion_coeff'] * 1000000
     curr_df_sim_sel['sigma'] = curr_df_sim_sel['sigma'] * 1000000
@@ -4700,7 +4716,7 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     headers = [
         '',  # This will be the color column
         r'$\mathbf{mag_{RMSD}}$',
-        r'$\mathbf{len_{RMSD} \ [m]}$',
+        r'$\mathbf{lag_{RMSD} \ [m]}$',
         r'$\mathbf{m_0 \ [kg]}$',
         r'$\mathbf{\rho \ [kg/m^3]}$',
         r'$\mathbf{\sigma \ [s^2/km^2]}$',
@@ -5590,21 +5606,21 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
         # Patterns for files to keep
         file_patterns = ["_obs.csv", "_sim.csv"]
-
-        # Traverse the directory
-        for item in os.listdir(output_folder):
-            item_path = os.path.join(output_folder, item)
-            
-            # Check if the item is a folder and matches the pattern
-            if os.path.isdir(item_path):
-                if not folder_pattern.match(item):
-                    # Delete folder if it doesn't match the pattern
-                    shutil.rmtree(item_path)
-            elif os.path.isfile(item_path):
-                # Check if the file ends with any of the allowed patterns
-                if not any(item.endswith(pattern) for pattern in file_patterns):
-                    # Delete file if it doesn't match the allowed patterns
-                    os.remove(item_path)
+        if os.path.isdir(output_folder):
+            # Traverse the directory
+            for item in os.listdir(output_folder):
+                item_path = os.path.join(output_folder, item)
+                
+                # Check if the item is a folder and matches the pattern
+                if os.path.isdir(item_path):
+                    if not folder_pattern.match(item):
+                        # Delete folder if it doesn't match the pattern
+                        shutil.rmtree(item_path)
+                elif os.path.isfile(item_path):
+                    # Check if the file ends with any of the allowed patterns
+                    if not any(item.endswith(pattern) for pattern in file_patterns):
+                        # Delete file if it doesn't match the allowed patterns
+                        os.remove(item_path)
 
         print("Cleanup completed!")
 
@@ -5761,14 +5777,14 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     print('z_score:',z_score)
     if cml_args.mag_rmsd != 0:
         # set the value of rmsd_pol_mag=rmsd_mag_obs and len_RMSD=rmsd_lag_obs*conf_lvl
-        rmsd_pol_mag = cml_args.mag_rmsd
+        rmsd_pol_mag = np.array(cml_args.mag_rmsd)/z_score
     if cml_args.len_rmsd != 0:
         if rmsd_t0_lag>1:
             # set the value of rmsd_t0_lag=rmsd_mag_obs and len_RMSD=rmsd_lag_obs*conf_lvl
-            rmsd_t0_lag = cml_args.len_rmsd
+            rmsd_t0_lag = np.array(cml_args.len_rmsd)/z_score
         else:
             # keep it in m instead of km
-            rmsd_t0_lag = cml_args.len_rmsd*1000
+            rmsd_t0_lag = np.array(cml_args.len_rmsd*1000)
 
     if rmsd_pol_mag<CAMERA_SENSITIVITY_LVL_MAG:
         # rmsd_pol_mag if below 0.1 print the value and set it to 0.1
@@ -5814,6 +5830,13 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     print('Run MetSim file:',trajectory_Metsim_file)
 
     simulation_MetSim_object, gensim_data_Metsim, pd_datafram_PCA_sim_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
+
+    print('metsim',gensim_data_Metsim['dens_co'])
+    print('obs',gensim_data_obs['dens_co'])
+    if flag_manual_metsim:
+        dens_co = gensim_data_Metsim['dens_co']
+    else:
+        dens_co = gensim_data_obs['dens_co']
 
     # open the folder and extract all the json files
     os.chdir(input_folder)
@@ -5875,7 +5898,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             
             # run the new simulations
             if cml_args.save_test_plot:
-                fig, ax = generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,fps,cml_args.save_test_plot, flag_manual_metsim)
+                fig, ax = generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,fps,dens_co,cml_args.save_test_plot, flag_manual_metsim)
                 
                 if flag_manual_metsim:
                     # plot gensim_data_Metsim
@@ -5905,7 +5928,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
                 all_jsonfiles = [file for file in all_jsonfiles if 'Selection' not in file and 'Results' not in file and 'mode' not in file and 'DensPoint' not in file]
 
             else:
-                generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,fps,cml_args.save_test_plot, flag_manual_metsim)
+                generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,fps,dens_co,cml_args.save_test_plot, flag_manual_metsim)
                 # walk thorought the directories and find all the json files inside each folder inside the directory
                 all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
 
@@ -6076,13 +6099,13 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
     # Reset index if needed
     pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.reset_index(drop=True)
-
+    index=0
     # check if the following values are also smaller than mag_RMSD_real and len_RMSD_real and save the index
     for i in range(0, len(pd_datafram_check_below_RMSD)):
         if pd_datafram_check_below_RMSD['rmsd_mag'].iloc[i] > mag_RMSD_real or pd_datafram_check_below_RMSD['rmsd_len'].iloc[i] > len_RMSD_real:
-            index = i
+            index = i+1
             break
-    
+
     if index==0 and not 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
         cml_args.optimize=True
         if cml_args.number_optimized==0:
@@ -6101,7 +6124,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         shutil.copy(cml_args.ref_opt_path, output_folder+os.sep+'AutoRefineFit_options.txt')
     else:
         # take the head of the dataframe with the index
-        pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.head(index+1)
+        pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.head(index)
     
     print('index:',index)
 
@@ -6114,7 +6137,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     ##############################
 
     # check if in pd_datafram_PCA_sim there are any where rmsd_mag and rmsd_len are below mag$_{RMSD}$ and len$_{RMSD}$
-    print('Number of simulations below RMSD:', len(pd_datafram_check_below_RMSD))
+    print('Number of simulations below RMSD:', len(pd_datafram_check_below_RMSD)-1)
     print('Threshold mag_RMSD:', mag_RMSD_real,'len_RMSD:', len_RMSD_real)
     # print the first mag_RMSD and len_RMSD
     print('Best simulation mag_RMSD:', pd_datafram_check_below_RMSD['rmsd_mag'].iloc[0],'len_RMSD:', pd_datafram_check_below_RMSD['rmsd_len'].iloc[0])
@@ -6358,7 +6381,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         if CI_physical_param['mass'][0] == CI_physical_param['mass'][1]:
             CI_physical_param['mass'] = [CI_physical_param['mass'][0] - CI_physical_param['mass'][0]/10, CI_physical_param['mass'][1] + CI_physical_param['mass'][1]/10]
         if np.round(CI_physical_param['rho'][0]/100) == np.round(CI_physical_param['rho'][1]/100):
-            CI_physical_param['rho'] = [CI_physical_param['rho'][0] - CI_physical_param['rho'][0]/5, CI_physical_param['rho'][1] + CI_physical_param['rho'][1]/5]
+            CI_physical_param['rho'] = [CI_physical_param['rho'][0] - CI_physical_param['rho'][0]-100, CI_physical_param['rho'][1] + CI_physical_param['rho'][1]+100]
         if CI_physical_param['sigma'][0] == CI_physical_param['sigma'][1]:
             CI_physical_param['sigma'] = [CI_physical_param['sigma'][0] - CI_physical_param['sigma'][0]/10, CI_physical_param['sigma'][1] + CI_physical_param['sigma'][1]/10]
         if CI_physical_param['erosion_height_start'][0] == CI_physical_param['erosion_height_start'][1]:
@@ -6396,7 +6419,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
                 break
             old_results_number = result_number
             print('regenerate new simulation in the CI range')
-            generate_simulations(pd_dataframe_PCA_obs_real, simulation_MetSim_object, gensim_data_obs, cml_args.nsim_refine_step, output_folder, file_name,fps, False, True, CI_physical_param)
+            generate_simulations(pd_dataframe_PCA_obs_real, simulation_MetSim_object, gensim_data_obs, cml_args.nsim_refine_step, output_folder, file_name,fps,dens_co, False, True, CI_physical_param)
             
             # look for the good_files = glob.glob(os.path.join(output_folder, '*_good_files.txt'))
             good_files = [f for f in os.listdir(output_folder) if f.endswith('_good_files.txt')]                
@@ -6431,11 +6454,21 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             # print saved csv file
             print('saved sim csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM_NEW)
 
-            input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, gensim_data_obs, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_NEWsim_good))]
-            results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
+            # delete from pd_datafram_NEWsim_good the one with a RMSD above the threshold
+            pd_datafram_NEWsim_good = pd_datafram_NEWsim_good[(pd_datafram_NEWsim_good['rmsd_mag'] <= mag_RMSD_real) & (pd_datafram_NEWsim_good['rmsd_len'] <= len_RMSD_real)]
 
-            # base on the one selected
-            pd_datafram_PCA_selected_lowRMSD = pd.concat(results_list)
+            # check if pd_datafram_NEWsim_good is not empty
+            if pd_datafram_NEWsim_good.empty:
+                print('No new simulation below RMSD')
+                pd_datafram_PCA_selected_lowRMSD = pd.DataFrame()
+
+            else:
+                print('Number of new simulations below RMSD:',len(pd_datafram_NEWsim_good))
+                input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, gensim_data_obs, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_NEWsim_good))]
+                results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
+
+                # base on the one selected
+                pd_datafram_PCA_selected_lowRMSD = pd.concat(results_list)
 
     print()
 
@@ -6465,14 +6498,18 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
     print('The results are in the folder:',output_folder+os.sep+save_results_folder)
     # print the RMSD and the rmsd_pol_mag, rmsd_t0_lag/1000 and the CONFIDENCE_LEVEL
-    print('real data RMSD mag:'+str(rmsd_pol_mag)+'[-] RMSD len:'+str(rmsd_t0_lag/1000)+'[km]')
+    if cml_args.mag_rmsd != 0 or cml_args.len_rmsd != 0:
+        print('Given threshold RMSD mag:'+str(rmsd_pol_mag*z_score)+'[-] RMSD len:'+str(rmsd_t0_lag/1000*z_score)+'[km]')
+    else:
+        print('real data RMSD mag:'+str(rmsd_pol_mag)+'[-] RMSD len:'+str(rmsd_t0_lag/1000)+'[km]')
+        print('real data RMSD * z-factor = RMSD')
+        print('RMSD mag:'+str(mag_RMSD_real)+'[-] RMSD len:'+str(len_RMSD_real)+'[km]')
+
     if rmsd_pol_mag==CAMERA_SENSITIVITY_LVL_MAG:
-        print('real data RMSD mag at the limit of sensistivity, automatically set to '+str(CAMERA_SENSITIVITY_LVL_MAG)+'[-]')
+        print('RMSD mag at the limit of sensistivity, automatically set to '+str(CAMERA_SENSITIVITY_LVL_MAG)+'[-]')
     if rmsd_t0_lag==CAMERA_SENSITIVITY_LVL_LEN:
-        print('real data RMSD len at the limit of sensistivity, automatically set to '+str(CAMERA_SENSITIVITY_LVL_LEN)+'[m]')
+        print('RMSD len at the limit of sensistivity, automatically set to '+str(CAMERA_SENSITIVITY_LVL_LEN)+'[m]')
     print('Confidence level: '+str(CONFIDENCE_LEVEL)+'% and z-factor: '+str(z_score))
-    print('real data RMSD * z-factor = RMSD')
-    print('RMSD mag:'+str(mag_RMSD_real)+'[-] RMSD len:'+str(len_RMSD_real)+'[km]')
 
     print(len(gensim_data_obs['time']),'data points for the observed meteor')
 
@@ -6571,15 +6608,15 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/Test_cases', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Results',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Desktop/Test_cases/Results',\
         help="Path were to store the results, by default the same as the input_dir.")
 
-    arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \
+    arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=10, \
         help="By default 1 (no re computation), check the consistency of the result by re-trying multiple times creating new simulation to test the precision of the results, this set delete_all to True.")
 
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
@@ -6627,7 +6664,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \

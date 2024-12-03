@@ -600,10 +600,10 @@ class ErosionSimParametersEMCCD_Comet(object):
         ### Added noise ###
 
         # Standard deviation of the magnitude Gaussian noise
-        self.mag_noise = 0.15
+        self.mag_noise = 0.06
 
         # SD of noise in length [m]
-        self.len_noise = 20.0
+        self.len_noise = 40.0
 
         ### ###
 
@@ -1033,15 +1033,16 @@ def plot_data_with_residuals_and_real(rmsd_mag, rmsd_vel, rmsd_len, fit_funct_or
     # Plot 4: Custom legend for Plot 0 with two columns
     ax4 = fig.add_subplot(gs_main[1, 0])
     ax4.axis('off')
+    # mag$\chi^2_{red}$'+str(round(data['chi2_red_mag'],2))+' lag$\chi^2_{red}$'+str(round(data['chi2_red_len'],2))+'\n\
+    # mag$\chi^2_{red}$'+str(round(data_opt_or_desns['chi2_red_mag'],2))+' lag$\chi^2_{red}$'+str(round(data_opt_or_desns['chi2_red_len'],2))+'\n\
+    # mag$\chi^2_{red}$'+str(round(data['chi2_red_mag'],2))+' lag$\chi^2_{red}$'+str(round(data['chi2_red_len'],2))+'\n\
     if data_opt_or_desns!='':
         label_line1= label_data+' mag$_{RMSD}$ '+str(round(data['rmsd_mag'],3))+' lag$_{RMSD}$ '+str(round(data['rmsd_len']*1000,1))+'m\n\
-mag$\chi^2_{red}$'+str(round(data['chi2_red_mag'],2))+' lag$\chi^2_{red}$'+str(round(data['chi2_red_len'],2))+'\n\
 $m_0$:'+str('{:.2e}'.format(data['mass'],1))+'kg $\\rho$:'+str(round(data['rho']))+'kg/m$^3$\n\
 $\sigma$:'+str(round(data['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(data['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
 $h_e$:'+str(round(data['erosion_height_start'],1))+'km $s$:'+str(round(data['erosion_mass_index'],2))+'\n\
 $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(data['erosion_mass_max'],1))+'kg'
         label_line2 = label_opt_or_desns+' mag$_{RMSD}$ '+str(round(data_opt_or_desns['rmsd_mag'],3))+' lag$_{RMSD}$ '+str(round(data_opt_or_desns['rmsd_len']*1000,1))+'m\n\
-mag$\chi^2_{red}$'+str(round(data_opt_or_desns['chi2_red_mag'],2))+' lag$\chi^2_{red}$'+str(round(data_opt_or_desns['chi2_red_len'],2))+'\n\
 $m_0$:'+str('{:.2e}'.format(data_opt_or_desns['mass'],1))+'kg $\\rho$:'+str(round(data_opt_or_desns['rho']))+'kg/m$^3$\n\
 $\sigma$:'+str(round(data_opt_or_desns['sigma']*1000000,1))+'s$^2$/km$^2$ $\eta$:'+str(round(data_opt_or_desns['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
 $h_e$:'+str(round(data_opt_or_desns['erosion_height_start'],1))+'km $s$:'+str(round(data_opt_or_desns['erosion_mass_index'],2))+'\n\
@@ -1049,7 +1050,6 @@ $m_l$:'+str('{:.2e}'.format(data_opt_or_desns['erosion_mass_min'],1))+'kg $m_u$:
         ax4.legend([line1, line2], [label_line1, label_line2], loc='center', ncol=2, fontsize=7)
     elif data!='':
         label_line1=label_data+' mag$_{RMSD}$ '+str(round(data['rmsd_mag'],3))+' lag$_{RMSD}$ '+str(round(data['rmsd_len']*1000,1))+'m\n\
-mag$\chi^2_{red}$'+str(round(data['chi2_red_mag'],2))+' lag$\chi^2_{red}$'+str(round(data['chi2_red_len'],2))+'\n\
 $m_0$:'+str('{:.2e}'.format(data['mass'],1))+'kg $\\rho$:'+str(round(data['rho']))+'kg/m$^3$\n\
 $\sigma$:'+str(round(data['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(data['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
 $h_e$:'+str(round(data['erosion_height_start'],1))+'km $s$:'+str(round(data['erosion_mass_index'],2))+'\n\
@@ -2755,130 +2755,10 @@ def mahalanobis_distance(x, mean, cov_inv):
 
 
 
-def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower, OUT_PUT_PATH, file_name_obs, PCA_pairplot=False):
-    # if variable_PCA is not empty
-    if variable_PCA != []:
-        # add to variable_PCA array 'type','solution_id'
-        variable_PCA = ['solution_id','type'] + variable_PCA
-        if No_var_PCA != []:
-            # remove from variable_PCA the variables in No_var_PCA
-            for var in No_var_PCA:
-                variable_PCA.remove(var)
-
-    else:
-        # put in variable_PCA all the variables except mass
-        variable_PCA = list(df_obs_shower.columns)
-        # check if mass is in the variable_PCA
-        if 'mass' in variable_PCA:
-            # remove mass from variable_PCA
-            variable_PCA.remove('mass')
-        # if No_var_PCA is not empty
-        if No_var_PCA != []:
-            # remove from variable_PCA the variables in No_var_PCA
-            for var in No_var_PCA:
-                # check if the variable is in the variable_PCA
-                if var in variable_PCA:
-                    variable_PCA.remove(var)
-
-    scaled_sim=df_sim_shower[variable_PCA].copy()
-    scaled_sim=scaled_sim.drop(['type','solution_id'], axis=1)
-
-    print(len(scaled_sim.columns),'Variables :\n',scaled_sim.columns)
-
-    # Standardize each column separately
-    scaler = StandardScaler()
-    df_sim_var_sel_standardized = scaler.fit_transform(scaled_sim)
-    df_sim_var_sel_standardized = pd.DataFrame(df_sim_var_sel_standardized, columns=scaled_sim.columns)
-
-    # Identify outliers using Z-score method on standardized data
-    z_scores = np.abs(zscore(df_sim_var_sel_standardized))
-    threshold = 3
-    outliers = (z_scores > threshold).any(axis=1)
-
-    # outlier number 0 has alway to be the False
-    if outliers[0]==True:
-        print('The MetSim reduction is an outlier') # , still keep it for the PCA analysis
-        outliers[0]=False
-
-    # Assign df_sim_shower to the version without outliers
-    df_sim_shower = df_sim_shower[~outliers].copy()
-
-
-    if PCA_pairplot:
-        # Mapping of original variable names to LaTeX-style labels
-        variable_map = {
-            'vel_init_norot': r"$v_i$ [km/s]",
-            'vel_avg_norot': r"$v_{avg}[km/s]$",
-            'v_init_180km': r"$v_{180km}$ [km/s]",
-            'duration': r"$t$ [s]",
-            'peak_mag_height': r"$h_{p}$ [km]",
-            'begin_height': r"$h_{beg}$ [km]",
-            'end_height': r"$h_{end}$ [km]",
-            'peak_abs_mag': r"$M_{p}$",
-            'beg_abs_mag': r"$M_{beg}$",
-            'end_abs_mag': r"$M_{end}$",
-            'F': r"$F$",
-            'trail_len': r"$L$ [km]",
-            't0': r"$t_0$ [s]",
-            'deceleration_lin': r"$dAcc_{lin}$ [m/s$^2$]",
-            'deceleration_parab': r"$dAcc_{par}$ [m/s$^2$]",
-            'decel_parab_t0': r"$dAcc_{p_{t_0}}$ [m/s$^2$]",
-            'decel_t0': r"$dAcc_{p1_{t_0}}$ [m/s$^2$]",
-            'decel_jacchia': r"$dAcc_{jac}$ [m/s$^2$]",
-            'zenith_angle': r"$\zeta$ [deg]",
-            'avg_lag': r"$lag_{avg}$ [km]",
-            'kc': r"$k_c$",
-            'Dynamic_pressure_peak_abs_mag': r"$P_p$ [Pa]",
-            'a_mag_init': r"$Mfit_{a_{int}}$",
-            'b_mag_init': r"$Mfit_{b_{int}}$",
-            'a_mag_end': r"$Mfit_{a_{fin}}$",
-            'b_mag_end': r"$Mfit_{b_{fin}}$"
-        }
-        
-        # Convert variable names to LaTeX-style labels
-        latex_labels = [variable_map.get(var, var) for var in variable_PCA[2:]]
-        
-        # Prepare data for plotting
-        df_sim_var_sel = df_sim_shower[variable_PCA].copy().drop(['type', 'solution_id'], axis=1)
-        
-        # Sample 10,000 events if the dataset is large
-        if len(df_sim_var_sel) > 10000:
-            print('Number of events in the simulated:', len(df_sim_var_sel))
-            df_sim_var_sel = df_sim_var_sel.sample(n=10000)
-
-        # Setup the plot grid
-        fig, axs = plt.subplots(int(np.ceil(len(latex_labels) / 5)), 5, figsize=(20, 15))
-        axs = axs.flatten()
-
-        for i, (var, label) in enumerate(zip(variable_PCA[2:], latex_labels)):
-            if var == 'v_init_180km' or var == 'trail_len':
-                sns.histplot(df_sim_var_sel[var]/1000, kde=True, ax=axs[i], color='b', alpha=0.5, bins=20)
-                axs[i].axvline(df_obs_shower[var].values[0]/1000, color='limegreen', linestyle='--', linewidth=5)
-            else:
-                sns.histplot(df_sim_var_sel[var], kde=True, ax=axs[i], color='b', alpha=0.5, bins=20)
-                axs[i].axvline(df_obs_shower[var].values[0], color='limegreen', linestyle='--', linewidth=5)
-            axs[i].set_xlabel(label)
-            if i % 5 != 0:
-                axs[i].set_ylabel('N.events')
-
-        # Remove unused subplots
-        for i in range(len(latex_labels), len(axs)):
-            fig.delaxes(axs[i])
-
-        plt.tight_layout()
-        
-        # Save and close the figure
-        plt.savefig(os.path.join(OUT_PUT_PATH, f"{file_name_obs}_var_hist_real.png"))
-        plt.close()
-
-    return df_sim_shower, variable_PCA, outliers
-
-
-
 
 # PCA ####################################################################################
 
-def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel=0, variable_PCA=[], No_var_PCA=['rmsd_mag', 'rmsd_len', 'avg_lag','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], file_name_obs='', cores_parallel=None, PCA_pairplot=False, esclude_real_solution_from_selection=False):
+def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, PCA_percent=99, N_sim_sel=0, variable_PCA=[], No_var_PCA=['rmsd_mag', 'rmsd_len', 'avg_lag','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], file_name_obs='', cores_parallel=None, PCA_pairplot=False, esclude_real_solution_from_selection=False):
     '''
     This function generate the simulated shower from the erosion model and apply PCA.
     The function read the json file in the folder and create a csv file with the simulated shower and take the data from GenerateSimulation.py folder.
@@ -2903,10 +2783,10 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
     ##################################### delete var that are not in the 5 and 95 percentile of the simulated shower #####################################
 
     # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-    if os.path.exists(OUT_PUT_PATH+os.sep+"log_"+file_name_obs[:15]+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt"):
+    if os.path.exists(save_results_folder_PCA+os.sep+"log_"+file_name_obs[:15]+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt"):
         # remove the file
-        os.remove(OUT_PUT_PATH+os.sep+"log_"+file_name_obs[:15]+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt")
-    sys.stdout = Logger(OUT_PUT_PATH,"log_"+file_name_obs[:15]+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt") # _30var_99%_13PC
+        os.remove(save_results_folder_PCA+os.sep+"log_"+file_name_obs[:15]+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt")
+    sys.stdout = Logger(save_results_folder_PCA,"log_"+file_name_obs[:15]+"_"+str(len(variable_PCA)-2)+"var_"+str(PCA_percent)+"%.txt") # _30var_99%_13PC
 
     df_all = pd.concat([df_sim_shower[variable_PCA],df_obs_shower[variable_PCA]], axis=0, ignore_index=True)
     # delete nan
@@ -3157,18 +3037,13 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
     plt.ylabel('Percentance of Variance Explained')
     plt.xlabel('Principal Component')
     # save the figure
-    plt.savefig(OUT_PUT_PATH+os.sep+file_name_obs+'PCAexplained_variance_ratio_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
+    plt.savefig(save_results_folder_PCA+os.sep+file_name_obs+'PCAexplained_variance_ratio_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
     # close the figure
     plt.close()
     # plt.show()
 
     ### plot covariance matrix
 
-    # make the image big as the screen
-    # plt.figure(figsize=(20, 20))
-
-    # Compute the correlation coefficients
-    # cov_data = pca.components_.T
     # varimax rotation
     cov_data = rotated_loadings
 
@@ -3205,7 +3080,6 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
         'a_mag_end': r"$Mfit_{a_{fin}}$",
         'b_mag_end': r"$Mfit_{b_{fin}}$"
     }
-    
     # Convert the given array to LaTeX-style labels
     latex_labels = [variable_map.get(var, var) for var in variable_PCA]
 
@@ -3224,10 +3098,74 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
         for j in range(cov_data.shape[1]):
             plt.text(i, j, "{:.1f}".format(cov_data[i, j]), size=5, color='black', ha="center", va="center")   
     # save the figure
-    plt.savefig(OUT_PUT_PATH+os.sep+file_name_obs+'PCAcovariance_matrix_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
+    plt.savefig(save_results_folder_PCA+os.sep+file_name_obs+'PCAcovariance_matrix_'+str(len(variable_PCA)-2)+'var_'+str(PCA_percent)+'%_'+str(pca.n_components_)+'PC.png')
     # close the figure
     plt.close()
     # plt.show()
+
+    ### Denis Plot ####################################################################################################
+
+    # Assuming cov_data is your loadings matrix with shape (n_variables, n_PCs)
+    n_variables, n_PCs = cov_data.shape
+
+    # Create LaTeX-style labels for your variables using variable_PCA_no_info
+    latex_labels = [variable_map.get(var, var) for var in variable_PCA_no_info]
+
+    # Initialize a list to keep track of selected variable indices
+    selected_vars = []
+
+    # Step 1: For each PC, create a list of variable indices sorted by absolute loading
+    sorted_indices_per_pc = []
+    for pc_idx in range(n_PCs):
+        # Get the loadings for PC pc_idx
+        pc_loadings = cov_data[:, pc_idx]
+        # Get indices sorted by absolute value of loadings, from highest to lowest
+        sorted_indices = np.argsort(-np.abs(pc_loadings))
+        sorted_indices_per_pc.append(sorted_indices)
+
+    # Step 2: Initialize a list to keep track of positions in each PC's sorted indices
+    positions_in_pc = [0] * n_PCs  # This will keep track of the next variable to consider in each PC
+
+    # Step 3: While not all variables are selected, select variables in round-robin fashion
+    while len(selected_vars) < n_variables:
+        for pc_idx in range(n_PCs):
+            # Get the sorted indices for this PC
+            sorted_indices = sorted_indices_per_pc[pc_idx]
+            # Find the next variable not yet selected
+            while positions_in_pc[pc_idx] < n_variables:
+                var_idx = sorted_indices[positions_in_pc[pc_idx]]
+                positions_in_pc[pc_idx] += 1  # Move to next position for this PC
+                if var_idx not in selected_vars:
+                    selected_vars.append(var_idx)
+                    break  # Move to next PC
+            if len(selected_vars) == n_variables:
+                break  # All variables have been selected
+
+    # Step 4: Rearrange cov_data and labels according to selected_vars
+    cov_data_selected = cov_data[selected_vars, :]
+    latex_labels_selected = [latex_labels[i] for i in selected_vars]
+
+    # Step 5: Plot the rearranged covariance matrix
+    img = plt.matshow(cov_data_selected.T, cmap=plt.cm.coolwarm, vmin=-1, vmax=1)
+    plt.colorbar(img)
+
+    # Add variable names as labels on the x-axis
+    plt.xticks(range(len(latex_labels_selected)), latex_labels_selected, rotation=90)
+
+    # Add PCs with variance explained as labels on the y-axis
+    columns_PC_with_var = ['PC' + str(x) + ' (' + str(percent_variance[x-1]) + '%)' for x in range(1, pca.n_components_+1)]
+    plt.yticks(range(len(columns_PC_with_var)), columns_PC_with_var)
+
+    # Annotate each cell with the covariance value
+    for i in range(cov_data_selected.shape[0]):
+        for j in range(cov_data_selected.shape[1]):
+            plt.text(i, j, "{:.1f}".format(cov_data_selected[i, j]), size=5, color='black', ha="center", va="center")
+
+    # Save and close the figure
+    plt.savefig(save_results_folder_PCA + os.sep + file_name_obs + 'PCA_Den_covariance_matrix_' + str(len(variable_PCA_no_info)-2) + 'var_' + str(PCA_percent) + '%_' + str(pca.n_components_) + 'PC.png')
+    plt.close()
+
+
     ###
 
     # print the number of simulation selected
@@ -3641,6 +3579,123 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, PCA_percent=99, N_sim_sel
 
 
 
+def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower, OUT_PUT_PATH, file_name_obs, PCA_pairplot=False):
+    # if variable_PCA is not empty
+    if variable_PCA != []:
+        # add to variable_PCA array 'type','solution_id'
+        variable_PCA = ['solution_id','type'] + variable_PCA
+        if No_var_PCA != []:
+            # remove from variable_PCA the variables in No_var_PCA
+            for var in No_var_PCA:
+                variable_PCA.remove(var)
+
+    else:
+        # put in variable_PCA all the variables except mass
+        variable_PCA = list(df_obs_shower.columns)
+        # check if mass is in the variable_PCA
+        if 'mass' in variable_PCA:
+            # remove mass from variable_PCA
+            variable_PCA.remove('mass')
+        # if No_var_PCA is not empty
+        if No_var_PCA != []:
+            # remove from variable_PCA the variables in No_var_PCA
+            for var in No_var_PCA:
+                # check if the variable is in the variable_PCA
+                if var in variable_PCA:
+                    variable_PCA.remove(var)
+
+    scaled_sim=df_sim_shower[variable_PCA].copy()
+    scaled_sim=scaled_sim.drop(['type','solution_id'], axis=1)
+
+    print(len(scaled_sim.columns),'Variables :\n',scaled_sim.columns)
+
+    # Standardize each column separately
+    scaler = StandardScaler()
+    df_sim_var_sel_standardized = scaler.fit_transform(scaled_sim)
+    df_sim_var_sel_standardized = pd.DataFrame(df_sim_var_sel_standardized, columns=scaled_sim.columns)
+
+    # Identify outliers using Z-score method on standardized data
+    z_scores = np.abs(zscore(df_sim_var_sel_standardized))
+    threshold = 3
+    outliers = (z_scores > threshold).any(axis=1)
+
+    # outlier number 0 has alway to be the False
+    if outliers[0]==True:
+        print('The MetSim reduction is an outlier') # , still keep it for the PCA analysis
+        outliers[0]=False
+
+    # Assign df_sim_shower to the version without outliers
+    df_sim_shower = df_sim_shower[~outliers].copy()
+
+
+    if PCA_pairplot:
+        # Mapping of original variable names to LaTeX-style labels
+        variable_map = {
+            'vel_init_norot': r"$v_i$ [km/s]",
+            'vel_avg_norot': r"$v_{avg}[km/s]$",
+            'v_init_180km': r"$v_{180km}$ [km/s]",
+            'duration': r"$t$ [s]",
+            'peak_mag_height': r"$h_{p}$ [km]",
+            'begin_height': r"$h_{beg}$ [km]",
+            'end_height': r"$h_{end}$ [km]",
+            'peak_abs_mag': r"$M_{p}$",
+            'beg_abs_mag': r"$M_{beg}$",
+            'end_abs_mag': r"$M_{end}$",
+            'F': r"$F$",
+            'trail_len': r"$L$ [km]",
+            't0': r"$t_0$ [s]",
+            'deceleration_lin': r"$dAcc_{lin}$ [m/s$^2$]",
+            'deceleration_parab': r"$dAcc_{par}$ [m/s$^2$]",
+            'decel_parab_t0': r"$dAcc_{p_{t_0}}$ [m/s$^2$]",
+            'decel_t0': r"$dAcc_{p1_{t_0}}$ [m/s$^2$]",
+            'decel_jacchia': r"$dAcc_{jac}$ [m/s$^2$]",
+            'zenith_angle': r"$\zeta$ [deg]",
+            'avg_lag': r"$lag_{avg}$ [km]",
+            'kc': r"$k_c$",
+            'Dynamic_pressure_peak_abs_mag': r"$P_p$ [Pa]",
+            'a_mag_init': r"$Mfit_{a_{int}}$",
+            'b_mag_init': r"$Mfit_{b_{int}}$",
+            'a_mag_end': r"$Mfit_{a_{fin}}$",
+            'b_mag_end': r"$Mfit_{b_{fin}}$"
+        }
+        
+        # Convert variable names to LaTeX-style labels
+        latex_labels = [variable_map.get(var, var) for var in variable_PCA[2:]]
+        
+        # Prepare data for plotting
+        df_sim_var_sel = df_sim_shower[variable_PCA].copy().drop(['type', 'solution_id'], axis=1)
+        
+        # Sample 10,000 events if the dataset is large
+        if len(df_sim_var_sel) > 10000:
+            print('Number of events in the simulated:', len(df_sim_var_sel))
+            df_sim_var_sel = df_sim_var_sel.sample(n=10000)
+
+        # Setup the plot grid
+        fig, axs = plt.subplots(int(np.ceil(len(latex_labels) / 5)), 5, figsize=(20, 15))
+        axs = axs.flatten()
+
+        for i, (var, label) in enumerate(zip(variable_PCA[2:], latex_labels)):
+            if var == 'v_init_180km' or var == 'trail_len':
+                sns.histplot(df_sim_var_sel[var]/1000, ax=axs[i], color='b', alpha=0.5, bins=20) # kde=True, 
+                axs[i].axvline(df_obs_shower[var].values[0]/1000, color='limegreen', linestyle='--', linewidth=5)
+            else:
+                sns.histplot(df_sim_var_sel[var], ax=axs[i], color='b', alpha=0.5, bins=20) # kde=True, 
+                axs[i].axvline(df_obs_shower[var].values[0], color='limegreen', linestyle='--', linewidth=5)
+            axs[i].set_xlabel(label)
+            if i % 5 != 0:
+                axs[i].set_ylabel('N.events')
+
+        # Remove unused subplots
+        for i in range(len(latex_labels), len(axs)):
+            fig.delaxes(axs[i])
+
+        plt.tight_layout()
+        
+        # Save and close the figure
+        plt.savefig(os.path.join(OUT_PUT_PATH, f"{file_name_obs}_var_hist_real.png"))
+        plt.close()
+
+    return df_sim_shower, variable_PCA, outliers
 
 
 
@@ -4649,7 +4704,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
 
 
 
-def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real=0.1, len_noise_real=20.0, fps=32, file_name_obs='', trajectory_Metsim_file='', output_folder_of_csv='', pca_N_comp=0):
+def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real=0.1, len_noise_real=20.0, fps=32, file_name_obs='', trajectory_Metsim_file='', output_folder_of_csv='', vel_lagplot='vel', pca_N_comp=0):
     """
     Plots the light curve coefficients and includes a table with parameters for each colored curve.
 
@@ -4680,6 +4735,7 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     mag_fit = False
 
     # Convert length noise to km and calculate velocity noise
+    lag_noise = len_noise_real
     len_noise = len_noise_real / 1000
     vel_noise = (len_noise * np.sqrt(2) / (1 / fps))
 
@@ -4776,7 +4832,11 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
             abs_mag_sim = np.array(data_file['absolute_magnitudes'])
             obs_time = np.array(data_file['time'])
             vel_kms = np.array(data_file['velocities']) / 1000
-            lag_km = np.array(data_file['lag']) / 1000
+            if ii == 0:
+                lag_m = np.array(data_file['lag'])
+            else: 
+                _, _, _, _, _, _, _, _, _, _, _, lag_m_sim = RMSD_calc_diff(data_file, gensim_data_obs)
+                lag_m = np.array(lag_m_sim) * 1000 # np.array(data_file['lag']) / 1000
 
         if ii == 0:
             # Plotting the observed data (green line)
@@ -4803,23 +4863,42 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
                 obs_time_err = np.array(fit_funct['time'])
                 vel_kms_err = np.array(fit_funct['velocities']) / 1000
+                lag_m_err = np.array(fit_funct['lag'])
 
-                # Plot velocity confidence intervals
-                ax1.fill_between(
-                    obs_time_err,
-                    vel_kms_err - vel_noise,
-                    vel_kms_err + vel_noise,
-                    color='darkgray',
-                    label='1$\sigma$ '+str(np.round(len_noise*1000,1))+' m',
-                    alpha=0.2
-                )
-                ax1.fill_between(
-                    obs_time_err,
-                    vel_kms_err - vel_noise * 1.96,
-                    vel_kms_err + vel_noise * 1.96,
-                    color='lightgray',
-                    alpha=0.2
-                )
+                if vel_lagplot == 'lag':
+                    # Plot velocity confidence intervals
+                    ax1.fill_between(
+                        obs_time_err,
+                        lag_m_err - lag_noise,
+                        lag_m_err + lag_noise,
+                        color='darkgray',
+                        label='1$\sigma$ '+str(np.round(len_noise*1000,1))+' m',
+                        alpha=0.2
+                    )
+                    ax1.fill_between(
+                        obs_time_err,
+                        lag_m_err - lag_noise * 1.96,
+                        lag_m_err + lag_noise * 1.96,
+                        color='lightgray',
+                        alpha=0.2
+                    )
+                else:
+                    # Plot velocity confidence intervals
+                    ax1.fill_between(
+                        obs_time_err,
+                        vel_kms_err - vel_noise,
+                        vel_kms_err + vel_noise,
+                        color='darkgray',
+                        label='1$\sigma$ '+str(np.round(len_noise*1000,1))+' m',
+                        alpha=0.2
+                    )
+                    ax1.fill_between(
+                        obs_time_err,
+                        vel_kms_err - vel_noise * 1.96,
+                        vel_kms_err + vel_noise * 1.96,
+                        color='lightgray',
+                        alpha=0.2
+                    )
 
             # Store real observation data
             real_time = obs_time
@@ -4828,7 +4907,10 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
 
             # Plot the observed data (green markers)
             ax0.plot(abs_mag_sim, height_km, 'o', color='g')
-            ax1.plot(obs_time, vel_kms, 'o', color='g')
+            if vel_lagplot == 'lag':
+                ax1.plot(obs_time, lag_m, 'o', color='g')
+            else:
+                ax1.plot(obs_time, vel_kms, 'o', color='g')
 
             # Optionally, include observed data in the table
             # Uncomment the following lines if you want to include observed data
@@ -4867,7 +4949,10 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
             if Metsim_flag:
                 # For Metsim data, plot in black
                 line_sel0, = ax0.plot(abs_mag_sim, height_km, color='k')
-                line, = ax1.plot(residual_time_pos, vel_kms, color='k')
+                if vel_lagplot == 'lag':
+                    line, = ax1.plot(residual_time_pos, lag_m, color='k')
+                else:
+                    line, = ax1.plot(residual_time_pos, vel_kms, color='k')
                 line_color = 'k'
             else:
                 line_sel0, = ax0.plot(abs_mag_sim, height_km)
@@ -4876,7 +4961,10 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
                     line_color='m'
                     # change the color of line_sel0
                     line_sel0.set_color('m')
-                line, = ax1.plot(residual_time_pos, vel_kms, color=line_color)
+                if vel_lagplot == 'lag':
+                    line, = ax1.plot(residual_time_pos, lag_m, color=line_color)
+                else:
+                    line, = ax1.plot(residual_time_pos, vel_kms, color=line_color)
 
             # Collect data for the table
             curve_data = [
@@ -4909,7 +4997,11 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     ax0.grid(linestyle='--', color='lightgray')
 
     ax1.set_xlabel('Time [s]')
-    ax1.set_ylabel('Velocity [km/s]')
+    if vel_lagplot == 'lag':
+        ax1.set_ylabel('Lag [m]')
+    else: 
+        ax1.set_ylabel('Velocity [km/s]')
+    ax1.set_ylabel('Lag [m]')
     ax0.set_xlabel('Absolute Magnitude [-]')
     ax0.set_ylabel('Height [km]')
 
@@ -4991,10 +5083,10 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     )
 
     if pca_N_comp != 0:
-        plt.savefig(output_dir + os.sep + 'PCA'+str(pca_N_comp)+'PC_'+file_name_obs + '_Heigh_MagVelCoef.png', bbox_inches='tight')
+        plt.savefig(output_dir + os.sep + 'PCA'+str(pca_N_comp)+'PC_'+file_name_obs + '_'+vel_lagplot+'_Heigh_MagVelCoef.png', bbox_inches='tight')
     else:
         # Save and close the plot
-        plt.savefig(output_dir + os.sep + file_name_obs + '_Heigh_MagVelCoef.png', bbox_inches='tight')
+        plt.savefig(output_dir + os.sep + file_name_obs + '_'+vel_lagplot+'_Heigh_MagVelCoef.png', bbox_inches='tight')
     plt.close()
 
     # Save the DataFrame with RMSD
@@ -5831,8 +5923,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
     simulation_MetSim_object, gensim_data_Metsim, pd_datafram_PCA_sim_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
 
-    print('metsim',gensim_data_Metsim['dens_co'])
-    print('obs',gensim_data_obs['dens_co'])
+    # print('metsim',gensim_data_Metsim['dens_co'])
+    # print('obs',gensim_data_obs['dens_co'])
     if flag_manual_metsim:
         dens_co = gensim_data_Metsim['dens_co']
     else:
@@ -6003,11 +6095,12 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         save_results_folder_PCA = save_results_folder+os.sep+'PCA'
         mkdirP(output_folder+os.sep+save_results_folder_PCA)
 
-        pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_selected_all, pcr_results_physical_param, PCAn_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_test_plot, cml_args.esclude_real_solution_from_selection)
+        pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_selected_all, pcr_results_physical_param, PCAn_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, output_folder+os.sep+save_results_folder_PCA, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_test_plot, cml_args.esclude_real_solution_from_selection)
 
         print('PLOT: best 10 simulations selected and add the RMSD value to csv selected')
         # plot of the best 9 selected simulations and add the RMSD value to csv selected
-        PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_folder+os.sep+save_results_folder_PCA, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, pca_N_comp=PCAn_comp)
+        PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_folder+os.sep+save_results_folder_PCA, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='lag', pca_N_comp=PCAn_comp)
+        PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_folder+os.sep+save_results_folder_PCA, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='vel', pca_N_comp=PCAn_comp)
 
         print('PLOT: the physical characteristics of the selected simulations Mode and KDE')
         PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_sim, output_folder+os.sep+save_results_folder_PCA, file_name, pca_N_comp=PCAn_comp)
@@ -6016,65 +6109,66 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         # plot correlation function of the selected simulations
         PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition, output_folder+os.sep+save_results_folder_PCA, pca_N_comp=PCAn_comp)
 
-        print('Selected simulations and generate KDE and MODE plot')
-        input_list_obs = [[pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real.iloc[[ii]].reset_index(drop=True), pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real['solution_id'].iloc[ii]], gensim_data_obs, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots] for ii in range(len(pd_dataframe_PCA_obs_real))]
-        results_list = domainParallelizer(input_list_obs, PCA_physicalProp_KDE_MODE_PLOT, cores=cml_args.cores)
+        ############################################# Mode & Dens.Point stuff ########################################################
+
+        # print('Selected simulations and generate KDE and MODE plot')
+        # input_list_obs = [[pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real.iloc[[ii]].reset_index(drop=True), pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real['solution_id'].iloc[ii]], gensim_data_obs, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots] for ii in range(len(pd_dataframe_PCA_obs_real))]
+        # results_list = domainParallelizer(input_list_obs, PCA_physicalProp_KDE_MODE_PLOT, cores=cml_args.cores)
         
-        # if no read the json files in the folder and create a new csv file
-        pd_datafram_PCA_selected_mode_min_KDE = pd.concat(results_list)
+        # # if no read the json files in the folder and create a new csv file
+        # pd_datafram_PCA_selected_mode_min_KDE = pd.concat(results_list)
 
-        pd_datafram_PCA_selected_mode_min_KDE_TOT = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, gensim_data_obs, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots,True, True)
+        # pd_datafram_PCA_selected_mode_min_KDE_TOT = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, gensim_data_obs, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots,True, True)
         
-        # concatenate the two dataframes
-        pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_mode_min_KDE_TOT, pd_datafram_PCA_selected_mode_min_KDE])
-        # reset index
-        pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
+        # # concatenate the two dataframes
+        # pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_mode_min_KDE_TOT, pd_datafram_PCA_selected_mode_min_KDE])
+        # # reset index
+        # pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
 
-        pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
-    
-        # # save df_sel_shower_real to disk add the RMSD
-        # pd_datafram_PCA_selected_lowRMSD.to_csv(output_folder+os.sep+save_results_folder+os.sep+file_name+'_sim_sel_results.csv', index=False)
+        # pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
 
-        # print('PLOT: the physical characteristics of the selected simulations with no repetitions')
-        # PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, output_folder, file_name)
-
-
-        # print(pd_datafram_PCA_selected_lowRMSD)
-        # split in directory and filename
-        filename_list = []
-        # print(pd_datafram_PCA_selected_lowRMSD['solution_id'].values)
-        if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
-            # check if in pd_datafram_PCA_selected_lowRMSD there is any json file that is not in the selected simulations
-            for solution_id in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
-                directory, filename = os.path.split(solution_id)
-                filename_list.append(filename)
-            # print(filename_list)
-            json_files = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
-            for json_file in json_files:
-                folder_and_jsonfile_result = output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file
-                if json_file not in filename_list:
-                    # print that is found a json file that is not in the selected simulations
-                    print(folder_and_jsonfile_result,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
-                    f = open(folder_and_jsonfile_result,"r")
-                    data = json.loads(f.read())
-                    if 'ht_sampled' in data:
-                        data_file = read_GenerateSimulations_output(folder_and_jsonfile_result, gensim_data_obs)
-                        pd_datafram_PCA_sim_resulsts=array_to_pd_dataframe_PCA(data_file, gensim_data_obs)
-                    else:
-                        _, _, pd_datafram_PCA_sim_resulsts = run_simulation(folder_and_jsonfile_result, gensim_data_obs, fit_funct)
+        # # print(pd_datafram_PCA_selected_lowRMSD)
+        # # split in directory and filename
+        # filename_list = []
+        # # print(pd_datafram_PCA_selected_lowRMSD['solution_id'].values)
+        # if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
+        #     # check if in pd_datafram_PCA_selected_lowRMSD there is any json file that is not in the selected simulations
+        #     for solution_id in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
+        #         directory, filename = os.path.split(solution_id)
+        #         filename_list.append(filename)
+        #     # print(filename_list)
+        #     json_files = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
+        #     for json_file in json_files:
+        #         folder_and_jsonfile_result = output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file
+        #         if json_file not in filename_list:
+        #             # print that is found a json file that is not in the selected simulations
+        #             print(folder_and_jsonfile_result,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
+        #             f = open(folder_and_jsonfile_result,"r")
+        #             data = json.loads(f.read())
+        #             if 'ht_sampled' in data:
+        #                 data_file = read_GenerateSimulations_output(folder_and_jsonfile_result, gensim_data_obs)
+        #                 pd_datafram_PCA_sim_resulsts=array_to_pd_dataframe_PCA(data_file, gensim_data_obs)
+        #             else:
+        #                 _, _, pd_datafram_PCA_sim_resulsts = run_simulation(folder_and_jsonfile_result, gensim_data_obs, fit_funct)
                     
-                    pd_datafram_PCA_sim_resulsts['type'] = 'Simulation_sel'
-                    # delete every pd_datafram_PCA_sim_resulsts with RMSD above mag_RMSD_real and len_RMSD_real
-                    if pd_datafram_PCA_sim_resulsts['rmsd_mag'].iloc[0] < mag_RMSD_real and pd_datafram_PCA_sim_resulsts['rmsd_len'].iloc[0] < len_RMSD_real:
-                        # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
-                        pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
+        #             pd_datafram_PCA_sim_resulsts['type'] = 'Simulation_sel'
+        #             # delete every pd_datafram_PCA_sim_resulsts with RMSD above mag_RMSD_real and len_RMSD_real
+        #             if pd_datafram_PCA_sim_resulsts['rmsd_mag'].iloc[0] < mag_RMSD_real and pd_datafram_PCA_sim_resulsts['rmsd_len'].iloc[0] < len_RMSD_real:
+        #                 # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
+        #                 pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
 
-                    # # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
-                    # pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
+        #             # # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
+        #             # pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
 
-            pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
-        else:
-            print('No Mode and Densest point solutions for the selected simulations')
+        #     pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
+
+            
+
+        # else:
+        #     print('No Mode and Densest point solutions for the selected simulations')
+
+        
+        ############################################# Mode & Dens.Point stuff ########################################################
 
         print()
 
@@ -6306,7 +6400,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             # Reset index if needed
             pd_results = pd_results.reset_index(drop=True)
             pd_results = pd_results.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
-            PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, output_folder+os.sep+save_results_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,output_folder+os.sep+save_results_folder+os.sep+file_name+'_sim_sel_results.csv')
+            PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, output_folder+os.sep+save_results_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,output_folder+os.sep+save_results_folder+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='lag')
+            PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, output_folder+os.sep+save_results_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,output_folder+os.sep+save_results_folder+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='vel')
             print()
             print('SUCCES: the physical characteristics range is in the results folder')
         else:
@@ -6608,15 +6703,16 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/Test_cases', \
+    # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Desktop/Test_cases/Results',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Results',\
         help="Path were to store the results, by default the same as the input_dir.")
 
-    arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=10, \
+    arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \
         help="By default 1 (no re computation), check the consistency of the result by re-trying multiple times creating new simulation to test the precision of the results, this set delete_all to True.")
 
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
@@ -6634,13 +6730,13 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=100, \
         help="Number of simulations to generate.")
     
     arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=30, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=2, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \
@@ -6664,7 +6760,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \

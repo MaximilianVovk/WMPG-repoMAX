@@ -7,7 +7,7 @@ import sys
 import matplotlib.artist as Artist
 
 # Usage
-directory = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\Solutions_10000\PER'  # Change this to the directory you want to process
+directory = r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Real_event_results\1good'  # Change this to the directory you want to process
 shower = 'PER'
 
 # create a txt file where you save averithing that has been printed
@@ -124,9 +124,12 @@ print('\\hline')
 # print('Variables & 95\\%CIlow & Mode & & Mean & Median & 95\\%CIup \\\\')
 print('Variables & 95\\%CIlow & Mode & & Mean & 95\\%CIup \\\\')
 
-fig, axs = plt.subplots(4, 3, figsize=(15, 15)) 
+fig, axs = plt.subplots(3, 4, figsize=(15, 10)) 
 # from 2 numbers to one numbr for the subplot axs
 axs = axs.flatten()
+# delete any that has a any nan values
+curr_df_sim_sel = curr_df_sim_sel.dropna(subset=to_plot)
+curr_df_sim_sel = curr_df_sim_sel.dropna(subset='meteor')
 
 # ii_densest=0        
 for i in range(12):
@@ -145,7 +148,9 @@ for i in range(12):
 
         # Add legend elements for result_number
         result_numbers = curr_df_sim_sel['meteor'].unique()
-        colors = sns.color_palette("muted", len(result_numbers))
+        # delete any nan values
+        
+        colors = sns.color_palette("husl", len(result_numbers))
         
         # Add legend elements for result_number
         legend_elements = [
@@ -181,7 +186,7 @@ for i in range(12):
         sns.histplot(curr_sel, x=np.log10(curr_sel[plotvar]), weights=curr_sel['weight'], bins=20, ax=axs[i],  multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
         # axs[i].get_legend().remove()
         # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-        sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'],hue='meteor', ax=axs[i], palette="muted", multiple="stack", bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
+        sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'],hue='meteor', ax=axs[i], palette="husl", multiple="stack", bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])),np.log10(np.max(curr_df_sim_sel[plotvar]))])
 
         kde_line = axs[i].lines[-1]
         # activate the grid
@@ -209,7 +214,7 @@ for i in range(12):
         sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i],  multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
         # axs[i].get_legend().remove()
         # sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'],hue='solution_id_dist', ax=axs[i], multiple="stack", kde=True, bins=20, binrange=[np.min(df_sel_save[plotvar]),np.max(df_sel_save[plotvar])])
-        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='meteor', palette="muted", ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
+        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='meteor', palette="husl", ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]),np.max(curr_df_sim_sel[plotvar])])
         
         kde_line = axs[i].lines[-1]
         # activate the grid

@@ -1,0 +1,11 @@
+==========================================================================
+RMS star extractor
+Cal time = FF header time plus 255/(2*framerate_Hz) seconds
+Row  Column  Intensity-Backgnd  Amplitude  (integrated values) FWHM
+==========================================================================
+FF folder = /srv/homes/EMCCD_PER/TO_DO/20210813_061453_emccd_skyfit2/elgin_G
+Cam #  = 02G
+Nrows  = 512
+Ncols  = 512
+Nstars = -1
+##########################################################################

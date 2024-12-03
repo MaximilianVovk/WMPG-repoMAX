@@ -5,9 +5,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import re
 import sys
+from scipy.stats import gaussian_kde
 
-output_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_1000_100'
-input_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_1000_100'
+output_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_1000_30'
+input_dir = r'C:\Users\maxiv\Documents\UWO\Papers\2)PCA_ORI-CAP-PER-DRA\json_test_results\Results_1000_30'
 type_result = 'Real'
 
 
@@ -36,8 +37,7 @@ class Logger(object):
         self.log.close()
 
 def read_csv_files(input_dir, result_type='Real'):
-    data_frames = []
-    
+    data_frames = []  
     for root, dirs, files in os.walk(input_dir):
         for file in files:
             if file.endswith("results.csv"):
@@ -135,26 +135,28 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
     curr_df_sim_sel = curr_df_sim_sel.iloc[:-2]
     
 
-    to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range']
-    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]', r'log($m_{u}$)-log($m_{l}$) [-]']
+    to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_mass', 'erosion_energy_per_unit_cross_section','']
+    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]', r'log($m_{u}$)-log($m_{l}$) [-]', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]',r'']
 
-    fig, axs = plt.subplots(3, 3)
+    fig, axs = plt.subplots(3, 4, figsize=(15, 10))
     axs = axs.flatten()
 
     print('\\hline')
     # check if the type is MetSim or Real exist in the dataframe
     if 'MetSim' in curr_df_sim_sel['type'].values:
-        print('Variables & Metsim & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
+        # print('Variables & 95\\%CIlow & Metsim & Mean & Mode & 95\\%CIup \\\\')
+        print('Variables & 95\\%CIlow & Metsim & Mode & 95\\%CIup \\\\')
     elif 'Real' in curr_df_sim_sel['type'].values:
-        print('Variables & Real & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
+        # print('Variables & Real & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
+        print('Variables & 95\\%CIlow & Real & Mode & 95\\%CIup \\\\')
 
     # order by 'result_number'
     curr_df_sim_sel = curr_df_sim_sel.sort_values(by='result_number')
 
-    for i in range(9):
+    for i in range(12):
         plotvar = to_plot[i]
 
-        if i == 8:
+        if i == 11:
             # Plot only the legend
             axs[i].axis('off')  # Turn off the axis
 
@@ -168,7 +170,7 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
 
             # Add legend elements for result_number
             result_numbers = curr_df_sim_sel['result_number'].unique()
-            colors = sns.color_palette("flare", len(result_numbers))
+            colors = sns.color_palette("crest", len(result_numbers))
             
             # Add legend elements for result_number
             legend_elements = [
@@ -176,15 +178,17 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
                 for j, result_number in enumerate(result_numbers)
             ]
 
-            if 'MetSim' in curr_df_sim_sel['type'].values:
-                metsim_line = Line2D([0], [0], color='black', label='Metsim Solution') # , linewidth=2
-            else:
-                metsim_line = Line2D([0], [0], color='green', linestyle='--', label='Real Solution') # , linewidth=2
+            # if 'MetSim' in curr_df_sim_sel['type'].values:
+            #     metsim_line = Line2D([0], [0], color='black', label='Metsim Solution') # , linewidth=2
+            # else:
+            #     metsim_line = Line2D([0], [0], color='green', linestyle='--', label='Real Solution') # , linewidth=2
+            metsim_line = Line2D([0], [0], color='black', label='Real Solution') # , linewidth=2
             mode_line = Line2D([0], [0], color='red', linestyle='-.', label='Mode')
-            mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
-            legend_elements += [metsim_line, mean_line, mode_line]
+            # mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
+            # legend_elements += [metsim_line, mean_line, mode_line]
+            legend_elements += [metsim_line, mode_line]
 
-            axs[i].legend(handles=legend_elements, loc='upper left', fontsize=5, bbox_to_anchor=(0, 1.2))
+            axs[i].legend(handles=legend_elements, loc='upper center') # fontsize=5, bbox_to_anchor=(0, 1.2)
 
             # Remove axes ticks and labels
             axs[i].set_xticks([])
@@ -197,13 +201,17 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             # take the log of the erosion_mass_min and erosion_mass_max
             curr_df_sim_sel[plotvar] = np.log10(curr_df_sim_sel[plotvar])
             curr_sim[plotvar] = np.log10(curr_sim[plotvar])
+            # # put the x ticks 45 degrees
+            # axs[i].tick_params(axis='x', rotation=45)
 
-        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='result_number', ax=axs[i], multiple="stack", palette='flare', bins=20, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
+        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='result_number', ax=axs[i], multiple="stack", palette="crest", bins=20, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
         sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_sim[plotvar]), np.max(curr_sim[plotvar])])
         kde_line = axs[i].lines[-1]
         axs[i].lines[-1].remove()
 
-        axs[i].axvline(x=np.mean(curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'][plotvar]), color='blue', linestyle='--')
+        # axs[i].axvline(x=np.mean(curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'][plotvar]), color='blue', linestyle='--', linewidth=3)
+        axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='k', linewidth=3)
+        find_type = 'Real'
 
         if kde_line is not None:
             # Get the x and y data from the KDE line
@@ -213,18 +221,43 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             # Find the index of the maximum y value (mode)
             max_index = np.argmax(kde_line_Yval)
             # Plot a vertical line at the mode
-            axs[i].axvline(x=kde_line_Xval[max_index], color='red', linestyle='-.')
+            axs[i].axvline(x=kde_line_Xval[max_index], color='red', linestyle='-.', linewidth=3)
+
+            if plotvar == 'rho':
+                mode = []
+                # take for eah the rh of all that have the same 'result_number'
+                for result_number in curr_df_sim_sel['result_number'].unique():
+                    x = curr_df_sim_sel[curr_df_sim_sel['result_number'] == result_number][plotvar]
+                    # Compute KDE
+                    kde = gaussian_kde(x)
+                    # Define the range for which you want to compute KDE values
+                    kde_x = np.linspace(x.min(), x.max(), 1000)
+                    kde_values = kde(kde_x)
+                    # Find the mode (x-value where the KDE curve is at its maximum)
+                    mode_index = np.argmax(kde_values)
+                    mode.append(abs(kde_x[mode_index]-curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0])/900)
+                # find the value that has the higest mode and lowest difference with the real value
+                mode = np.array(mode)
+                # find the index of the minimum and maximum value
+                min_index_mode = np.argmin(mode)
+                max_index_mode = np.argmax(mode)
+                # find the min value
+                min_mode_diff = mode[min_index_mode]
+                # find the max value
+                max_mode_diff = mode[max_index_mode]
+
+                
 
             x_10mode = kde_line_Xval[max_index]
             if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
                 x_10mode = 10 ** kde_line_Xval[max_index]
 
-        if 'MetSim' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)
-            find_type = 'MetSim'
-        elif 'Real' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
-            find_type = 'Real'
+        # if 'MetSim' in curr_df_sim_sel['type'].values:
+        #     axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=3)
+        #     find_type = 'MetSim'
+        # elif 'Real' in curr_df_sim_sel['type'].values:
+        #     axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=3, linestyle='--')
+        #     find_type = 'Real'
 
         if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
             # Convert back from log scale
@@ -251,9 +284,10 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
             # Adjust x-axis offset text
             axs[i].xaxis.get_offset_text().set_x(1.10)
 
-        if i < 9:
+        if i < 12:
             print('\\hline')
-            print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
+            # print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
+            print(f"{to_plot_unit[i]}  & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
 
 
     # add the super title
@@ -263,6 +297,13 @@ def PhysicalPropPLOT_results(df_sel_shower_real, output_dir, file_name, save_log
 
     fig.savefig(output_dir + os.sep + file_name + '_PhysicProp_' + str(len(curr_df_sim_sel)) + 'ev.png', dpi=300)
     plt.close()
+
+    print('best desnsity values', min_index_mode)
+    print('WORST desnsity values', max_index_mode)
+    print('min', min_mode_diff)
+    print('max', max_mode_diff)
+
+
 
     if save_log:
         sys.stdout.close()
@@ -334,7 +375,7 @@ for result in result_df['result'].unique():
     columns_to_update = [
         'mass', 'rho', 'sigma', 'erosion_height_start', 
         'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 
-        'erosion_mass_max', 'erosion_range'
+        'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_mass', 'erosion_energy_per_unit_cross_section'
     ]
 
     # Update second-to-last row (-2)

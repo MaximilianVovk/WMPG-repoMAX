@@ -19,18 +19,24 @@ def read_and_process_pickle(file_path):
     
     obs_data = []
     for obs in traj.observations[:2]:
-        obs_dict = {
-            'v_init': obs.v_init,
-            'velocities': np.array(obs.velocities),
-            'model_ht': np.array(obs.model_ht),
-            'absolute_magnitudes': np.array(obs.absolute_magnitudes),
-            'lag': np.array(obs.lag),
-            'length': np.array(obs.length),
-            'time_data': np.array(obs.time_data),
-            'station_id': obs.station_id
-        }
-        obs_dict['velocities'][0] = obs_dict['v_init']
-        obs_data.append(obs_dict)
+        if obs.station_id == '01G' or obs.station_id == '02G' or obs.station_id == '01F' or obs.station_id == '02F':
+            obs_dict = {
+                'v_init': obs.v_init,
+                'velocities': np.array(obs.velocities),
+                'model_ht': np.array(obs.model_ht),
+                'absolute_magnitudes': np.array(obs.absolute_magnitudes),
+                'lag': np.array(obs.lag),
+                'length': np.array(obs.length),
+                'time_data': np.array(obs.time_data),
+                'station_id': obs.station_id
+            }
+            obs_dict['velocities'][0] = obs_dict['v_init']
+            obs_data.append(obs_dict)
+            # delete any data that absolute_magnitudes is above 8
+            index_abs_mag = [i for i in range(len(obs_dict['absolute_magnitudes'])) if obs_dict['absolute_magnitudes'][i] > 8]
+            # delete from all the lists
+            for key in ['velocities', 'model_ht', 'absolute_magnitudes', 'lag', 'length', 'time_data']:
+                obs_dict[key] = np.delete(obs_dict[key], index_abs_mag)
     
     # print the station_id
     # print('station_id:', obs_data[0]['station_id'], obs_data[1]['station_id'])
@@ -62,12 +68,18 @@ def cubic_lag(t, a, b, c, t0):
     t_after = t[t > t0]
 
     # Compute the lag linearly before t0
-    l_before = np.zeros_like(t_before)+c
+    l_before = np.zeros_like(t_before) # +c
 
     # Compute the lag quadratically after t0
-    l_after = -abs(a)*(t_after - t0)**3 - abs(b)*(t_after - t0)**2 + c
+    l_after = -abs(a)*(t_after - t0)**3 - abs(b)*(t_after - t0)**2
 
-    return np.concatenate((l_before, l_after))
+    c = 0
+
+    lag_funct = np.concatenate((l_before, l_after))
+
+    lag_funct = lag_funct - lag_funct[0]
+
+    return lag_funct
 
 
 def cubic_acceleration(t, a, b, t0):
@@ -129,13 +141,27 @@ def fit_spline(data, time_data,spli=''):
     residuals_pol = data - fit1
     # avg_residual_pol = np.mean(abs(residuals_pol))
     rmsd_pol = np.sqrt(np.mean(residuals_pol**2))
+
+    # intrpoate the lag to the time_data that goes from 0 to the max time for 1000 points
+    time_data_1000_1 = np.linspace(0, max(x1), 500)
+    # Fit the first parabolic curve
+    fit1_1000 = np.polyval(coeffs1, time_data_1000_1)
+
+    time_data_1000_2 = np.linspace(min(x2), max(x2), 500)
+    # Fit the second parabolic curve
+    fit2_1000 = np.polyval(coeffs2, time_data_1000_2)
+
+    # concatenate fit1 and fit2
+    fit1_1000=np.concatenate((fit1_1000, fit2_1000))
+    time_data_1000=np.concatenate((time_data_1000_1, time_data_1000_2))
+
     # if rmsd_pol<rmsd:
     #     return fit1, residuals_pol, rmsd_pol,'Polinomial Fit'
     # else:
     #     return spline_fit, residuals, rmsd,'Spline Fit'
 
     # return spline_fit, residuals, rmsd,'Spline Fit'
-    return fit1, residuals_pol, rmsd_pol,'Polinomial Fit'
+    return fit1_1000, residuals_pol, rmsd_pol, time_data_1000,'Polinomial Fit'
 
 def jacchia_Lag(t, a1, a2):
     return -np.abs(a1) * np.exp(np.abs(a2) * t)
@@ -178,6 +204,13 @@ def fit_lag(lag_data,time_data,spli = ''):
     residuals_t0 = lag_data - fitted_lag_t0
     # avg_residual = np.mean(abs(residuals))
     rmsd_t0 = np.sqrt(np.mean(residuals_t0**2))
+
+    # intrpoate the lag to the time_data that goes from 0 to the max time for 1000 points
+    time_data_1000 = np.linspace(0, max(time_data), 1000)
+    # interpolate the lag base on the new time
+    fitted_lag_t0 = cubic_lag(time_data_1000, a_t0, b_t0, c_t0, t0)
+
+
     # if rmsd_t0<rmsd:
     #     return fitted_lag_t0, residuals_t0, rmsd_t0,'Polin t0'
     # else:
@@ -200,8 +233,8 @@ def fit_lag(lag_data,time_data,spli = ''):
 
     # return y_fit, residuals_gradboost, rmsd_gradboost,'Polin t0'
 
-    return spline_fit, residuals, rmsd,'jacchia Fit'
-    # return fitted_lag_t0, residuals_t0, rmsd_t0,'Polin t0'
+    # return spline_fit, residuals, rmsd,'jacchia Fit'
+    return fitted_lag_t0, residuals_t0, rmsd_t0, time_data_1000,'Polin t0'
 
 def fit_cubic_spline(data, time_data):
     spline = CubicSpline(time_data, data)
@@ -219,7 +252,7 @@ def fit_interp_spline(data, time_data, k=3):
     rmsd = np.sqrt(np.mean(residuals**2))
     return spline_fit, residuals, rmsd
 
-def plot_side_by_side(obs1, obs2,file):
+def plot_side_by_side(obs1, obs2,file,num):
     # Plot the simulation results
     fig, ax = plt.subplots(2, 4, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 1],'width_ratios': [ 3, 0.5, 3, 0.5]}, dpi=300) #  figsize=(10, 5), dpi=300 0.5, 3, 3, 0.5
 
@@ -228,11 +261,11 @@ def plot_side_by_side(obs1, obs2,file):
 
     ax[0].plot(obs1['time_data'], obs1['lag'], 'o', label=f'{obs1["station_id"]}')
     ax[0].plot(obs2['time_data'], obs2['lag'], 'o', label=f'{obs2["station_id"]}')
-    fitted_lag, residuals_lag, avg_residual_lag, labels = fit_lag(obs1['lag'],obs1['time_data'],spli=100000)
+    fitted_lag, residuals_lag, avg_residual_lag, time_data, labels = fit_lag(obs1['lag'],obs1['time_data'],spli=100000)
     ax[0].plot(time_data, fitted_lag, 'k-', label=labels)
     # spline_fit, residuals, avg_residual_lag = fit_spline(obs1['lag'] / 1000 , obs1['time_data'])
     # plt.plot(obs1['time_data'], spline_fit*1000, 'k-', label='Spline Fit')
-    # spline_fit, residuals, avg_residual_lag = fit_cubic_spline(obs1['lag'] / 1000, obs1['time_data'])
+    # spline_fit, residuals_lag, avg_residual_lag = fit_cubic_spline(obs1['lag'] / 1000, obs1['time_data'])
     # plt.plot(obs1['time_data'], spline_fit, 'r-', label='Cubic Spline Fit')
     # spline_fit, residuals, avg_residual_lag = fit_interp_spline(obs1['lag'] / 1000, obs1['time_data'])
     # plt.plot(obs1['time_data'], spline_fit, 'g-', label='Interpolated Spline Fit')
@@ -247,8 +280,8 @@ def plot_side_by_side(obs1, obs2,file):
 
     ax[2].plot(obs1['time_data'], obs1['absolute_magnitudes'], 'o', label=f'{obs1["station_id"]}')
     ax[2].plot(obs2['time_data'], obs2['absolute_magnitudes'], 'o', label=f'{obs2["station_id"]}')
-    spline_fit, residuals_mag, avg_residual,label_fit = fit_spline(obs1['absolute_magnitudes'], obs1['time_data'])
-    ax[2].plot(obs1['time_data'], spline_fit, 'k-', label=label_fit)
+    spline_fit, residuals_mag, avg_residual,time_data,label_fit = fit_spline(obs1['absolute_magnitudes'], obs1['time_data'])
+    ax[2].plot(time_data, spline_fit, 'k-', label=label_fit)
     ax[2].set_xlabel('Time [s]')
     ax[2].set_ylabel('Absolute Magnitude [-]')
     # flip the y-axis
@@ -324,7 +357,7 @@ def plot_side_by_side(obs1, obs2,file):
     print('\hline')
 
     # Save the figure as file with instead of _trajectory.pickle it has file+std_dev.png on the desktop
-    plt.savefig(os.path.join(output, file.replace('_trajectory.pickle', 'std_dev.png')))
+    plt.savefig(os.path.join(output, file.replace('_trajectory.pickle', '_n'+str(num)+'_std_dev.png')))
 
     plt.close()
     return avg_residual_lag, avg_residual
@@ -334,6 +367,7 @@ def plot_side_by_side(obs1, obs2,file):
 # Define the directory path
 directory = r'C:\Users\maxiv\Desktop\test_pickl'
 directory = r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reductions\manual_reductions'
+directory = r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reductions\PER_EMCCD_centroid'
 # Prepare a list to store average residuals
 avg_residuals = []
 print('\hline')
@@ -342,6 +376,7 @@ print('\hline')
 
 all_residuals_lag = []
 all_residuals_mag = []
+ii=0
 # Walk through the directory and find pickle files
 for root, dirs, files in os.walk(directory):
     for file in files:
@@ -352,9 +387,9 @@ for root, dirs, files in os.walk(directory):
             combined_data, obs2 = read_and_process_pickle(file_path)
             
             time_data = combined_data['time_data']
-            
+            ii+=1
             # Plot lag and absolute magnitudes side by side
-            avg_residual_lag, avg_residual = plot_side_by_side(combined_data, obs2,file)
+            avg_residual_lag, avg_residual = plot_side_by_side(combined_data, obs2,file,ii)
             all_residuals_lag.append(avg_residual_lag)
             all_residuals_mag.append(avg_residual)
 

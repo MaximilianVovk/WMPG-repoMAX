@@ -4412,9 +4412,10 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
 
 
 
-def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_name, Min_KDE_point='', save_log=True, pca_N_comp=0):
+def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_name, Min_KDE_point='', save_log=True, pca_N_comp=0, df_sim_shower_NEW=pd.DataFrame()):
     df_sim_shower_small = df_sim_shower.copy()
     df_sel_shower = df_sel_shower_real.copy()
+    df_sim_shower_NEW_inter = df_sim_shower_NEW.copy()
 
     # if len(df_sim_shower_small) > 10000:  # w/o takes forever to plot
     #     # pick randomly 10000 events
@@ -4442,6 +4443,11 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
 
     curr_df_sim_sel = pd.concat([df_sim_shower_small, df_sel_shower], axis=0)
 
+    # check if df_sim_shower_NEW_inter is not epmty then change the type to Iteration
+    if df_sim_shower_NEW_inter!=pd.DataFrame():
+        df_sim_shower_NEW_inter['type'] = 'Iteration'
+        curr_df_sim_sel = pd.concat([curr_df_sim_sel, df_sim_shower_NEW_inter], axis=0)
+
     # Reset the index to ensure uniqueness
     curr_df_sim_sel = curr_df_sim_sel.reset_index(drop=True)
 
@@ -4455,7 +4461,8 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
         'Simulation_sel': 'selected',
         'MetSim': 'simulated',
         'Real': 'simulated',
-        'Simulation': 'simulated'
+        'Simulation': 'simulated',
+        'Iteration': 'iteration'
     }
     curr_df_sim_sel['group'] = curr_df_sim_sel['type'].map(group_mapping)
 
@@ -4498,6 +4505,8 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             # Define the legend elements
             prior_patch = mpatches.Patch(color='blue', label='Priors', alpha=0.5, edgecolor='black')
             sel_events_patch = mpatches.Patch(color='darkorange', label='Selected Events', alpha=0.5, edgecolor='red')
+            if df_sim_shower_NEW_inter!=pd.DataFrame():
+                iter_patch = mpatches.Patch(color='limegreen', label='Iterative', alpha=0.5, edgecolor='black')
             if 'MetSim' in curr_df_sim_sel['type'].values:
                 metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
             else:
@@ -4506,11 +4515,17 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
             if len(Min_KDE_point) > 0:
                 dens_point_line = Line2D([0], [0], color='blue', linestyle='-.', label='Densest Point')
-                # Create the legend
-                legend_elements = [prior_patch, sel_events_patch, metsim_line, mean_line, mode_line, dens_point_line]
+                if df_sim_shower_NEW_inter!=pd.DataFrame():
+                    # Create the legend
+                    legend_elements = [prior_patch, sel_events_patch, iter_patch, metsim_line, mean_line, mode_line, dens_point_line]
+                else:
+                    legend_elements = [prior_patch, sel_events_patch, metsim_line, mean_line, mode_line, dens_point_line]
             else:
-                # Create the legend
-                legend_elements = [prior_patch, sel_events_patch, metsim_line, mean_line, mode_line]
+                if df_sim_shower_NEW_inter!=pd.DataFrame():
+                    # Create the legend
+                    legend_elements = [prior_patch, sel_events_patch, iter_patch, metsim_line, mean_line, mode_line]
+                else:
+                    legend_elements = [prior_patch, sel_events_patch, metsim_line, mean_line, mode_line]
             
             axs[i].legend(handles=legend_elements, loc='upper center') # , fontsize='small'
 
@@ -6359,6 +6374,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     result_number = 0
     ii_repeat = 0
     pd_results = pd.DataFrame()
+    df_sim_NEW = pd.DataFrame()
     # while cml_args.min_nresults > result_number:
     print(cml_args.min_nresults,'simulated to find:')
     while cml_args.min_nresults > result_number:
@@ -6387,7 +6403,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         
         if 'solution_id' in pd_results.columns:
             print('PLOT: the physical characteristics results')
-            PCA_PhysicalPropPLOT(pd_results, pd_datafram_PCA_sim, output_folder+os.sep+save_results_folder, file_name)
+            PCA_PhysicalPropPLOT(pd_results, pd_datafram_PCA_sim, output_folder+os.sep+save_results_folder, file_name, df_sim_shower_NEW=df_sim_NEW)
             print('PLOT: correlation matrix of the results (takes a long time)')
             PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_results, output_folder+os.sep+save_results_folder)
             print('PLOT: best 10 results and add the RMSD value to csv selected')
@@ -6545,9 +6561,12 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
             input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct, gensim_data_obs] for ii in range(len(all_jsonfiles))]
             results_list = domainParallelizer(input_list, read_GenerateSimulations_output_to_PCA, cores=cml_args.cores)
-            
+
             # if no read the json files in the folder and create a new csv file
             pd_datafram_NEWsim_good = pd.concat(results_list)
+
+            # save all the new gen sim
+            df_sim_NEW = pd.concat([df_sim_NEW, pd_datafram_NEWsim_good], axis=0)
 
             pd_datafram_NEWsim_good.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM_NEW, index=False)
             # print saved csv file
@@ -6708,7 +6727,7 @@ if __name__ == "__main__":
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
@@ -6725,7 +6744,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=False, \
         help="By default set to False, if set to True delete all directories and files.")
     
-    arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=False, \
+    arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=True, \
         help="By default set to False, if set to True delete Slected and Results directory and all files except for the sim and obs csv file and the Simulations folder.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
@@ -6737,10 +6756,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=10000, \
         help="Number of simulations to generate.")
     
-    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=100, \
+    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \
         help="Minimum number of results that are in the CI that have to be found.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=1, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \

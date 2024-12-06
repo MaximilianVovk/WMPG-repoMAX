@@ -3154,6 +3154,10 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     plt.figure(figsize=(12, 6))
     bars = plt.bar(sorted_labels, sorted_importance, color=colors, alpha=0.7)
 
+    # save the labels and the importance of the variable and the colors in a csv file
+    df_variable_importance = pd.DataFrame(list(zip(sorted_labels, sorted_importance, colors)), columns=['Variable', 'Importance', 'Color'])
+    df_variable_importance.to_csv(save_results_folder_PCA+os.sep+file_name_obs+'_PCA_sorted_variable_importance_percent.csv', index=False)
+
     # Add percentage value on top of each bar
     for bar, importance in zip(bars, sorted_importance):
         plt.text(

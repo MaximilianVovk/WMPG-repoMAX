@@ -3059,7 +3059,7 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
         'vel_init_norot': r"$v_0$",
         'vel_avg_norot': r"$v_{avg}$",
         'v_init_180km': r"$v_{180km}$",
-        'duration': r"$t$",
+        'duration': r"$T$",
         'peak_mag_height': r"$h_{peak}$",
         'begin_height': r"$h_{beg}$",
         'end_height': r"$h_{end}$",
@@ -3069,19 +3069,19 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
         'F': r"$F$",
         'trail_len': r"$L$",
         't0': r"$t_0$",
-        'deceleration_lin': r"$dAcc_{lin}$",
-        'deceleration_parab': r"$dAcc_{par}$",
+        'deceleration_lin': r"$\bar{a}$",
+        'deceleration_parab': r"$a_{quad}(1~s)$",
         'decel_parab_t0': r"$\bar{a}_{poly}(1~s)$",
         'decel_t0': r"$\bar{a}_{poly}$",
         'decel_jacchia': r"$a_0 k$",
         'zenith_angle': r"$z_c$",
-        'avg_lag': r"$\bar{L}$",
+        'avg_lag': r"$$\bar{\\ell}$$",
         'kc': r"$k_c$",
         'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$",
-        'a_mag_init': r"$a_1$",
-        'b_mag_init': r"$b_1$",
-        'a_mag_end': r"$a_2$",
-        'b_mag_end': r"$b_2$"
+        'a_mag_init': r"$d_1$",
+        'b_mag_init': r"$s_1$",
+        'a_mag_end': r"$d_2$",
+        'b_mag_end': r"$s_2$"
     }
     # Convert the given array to LaTeX-style labels
     latex_labels = [variable_map.get(var, var) for var in variable_PCA]
@@ -3107,25 +3107,52 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     # plt.show()
 
     ######### importance of each variable in the PCA space ####################################################################
+    
+    # Define variable categories by their original names
+    general_trajectory_vars = {
+        'duration', 'trail_len', 'zenith_angle', 'begin_height', 
+        'peak_mag_height', 'end_height', 'kc', 'Dynamic_pressure_peak_abs_mag'
+    }
 
-    # Calculate the absolute importance of each variable in the PCA space
+    dynamics_vars = {
+        'vel_init_norot', 'vel_avg_norot', 'avg_lag', 't0',
+        'decel_t0', 'decel_parab_t0', 'deceleration_lin', 'deceleration_parab', 'decel_jacchia'
+    }
+
+    light_curve_vars = {
+        'beg_abs_mag', 'peak_abs_mag', 'end_abs_mag', 'F',
+        'a_mag_init', 'b_mag_init', 'a_mag_end', 'b_mag_end'
+    }
+
+    # Calculate variable importance
     explained_variance = pca.explained_variance_ratio_
     variable_importance = np.sum(np.abs(rotated_loadings) * explained_variance[:rotated_loadings.shape[1]], axis=1)
-
     variable_importance_percent = variable_importance * 100
 
-    # Map variable names to LaTeX-style labels
+    # Map variable names to LaTeX labels
     variable_labels = [variable_map.get(var, var) for var in variable_PCA_no_info]
-    
-    # Combine labels and importance into a list and sort by importance
-    sorted_variables = sorted(zip(variable_importance_percent, variable_labels), reverse=True)
 
-    # Unzip the sorted variables into separate lists
-    sorted_importance, sorted_labels = zip(*sorted_variables)
+    # We also want to keep track of original variable names so we can color-code by category
+    sorted_data = sorted(zip(variable_importance_percent, variable_labels, variable_PCA_no_info), 
+                        key=lambda x: x[0], reverse=True)
+    sorted_importance, sorted_labels, sorted_original_names = zip(*sorted_data)
+
+    # Assign a color based on the category
+    colors = []
+    for var_name in sorted_original_names:
+        if var_name in general_trajectory_vars:
+            colors.append('red')
+        elif var_name in dynamics_vars:
+            colors.append('green')
+        elif var_name in light_curve_vars:
+            colors.append('blue')
+        else:
+            # If not categorized, just use a default color
+            colors.append('gray')
 
     # Plot the sorted variable importance as a bar plot
     plt.figure(figsize=(12, 6))
-    bars = plt.bar(sorted_labels, sorted_importance, color='blue', alpha=0.7)
+    bars = plt.bar(sorted_labels, sorted_importance, color=colors, alpha=0.7)
 
     # Add percentage value on top of each bar
     for bar, importance in zip(bars, sorted_importance):
@@ -3142,13 +3169,12 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     plt.xticks(rotation=90)
     plt.ylabel("Variable Contribution (%)")
     plt.xlabel("Variables")
-    # plt.title("Variable Importance in PCA Space (Sorted, Absolute Values)")
     plt.tight_layout()
 
     # Save the figure
     plt.savefig(save_results_folder_PCA + os.sep + file_name_obs + '_PCA_sorted_variable_importance_percent.png')
     plt.close()
-
+    
     ### Denis Plot ####################################################################################################
 
     # Assuming cov_data is your loadings matrix with shape (n_variables, n_PCs)
@@ -3680,7 +3706,7 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
             'vel_init_norot': r"$v_0$",
             'vel_avg_norot': r"$v_{avg}$",
             'v_init_180km': r"$v_{180km}$",
-            'duration': r"$t$",
+            'duration': r"$T$",
             'peak_mag_height': r"$h_{peak}$",
             'begin_height': r"$h_{beg}$",
             'end_height': r"$h_{end}$",
@@ -3690,19 +3716,19 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
             'F': r"$F$",
             'trail_len': r"$L$",
             't0': r"$t_0$",
-            'deceleration_lin': r"$dAcc_{lin}$",
-            'deceleration_parab': r"$dAcc_{par}$",
+            'deceleration_lin': r"$\bar{a}$",
+            'deceleration_parab': r"$a_{quad}(1~s)$",
             'decel_parab_t0': r"$\bar{a}_{poly}(1~s)$",
             'decel_t0': r"$\bar{a}_{poly}$",
             'decel_jacchia': r"$a_0 k$",
             'zenith_angle': r"$z_c$",
-            'avg_lag': r"$\bar{L}$",
+            'avg_lag': r"$$\bar{\\ell}$$",
             'kc': r"$k_c$",
             'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$",
-            'a_mag_init': r"$a_1$",
-            'b_mag_init': r"$b_1$",
-            'a_mag_end': r"$a_2$",
-            'b_mag_end': r"$b_2$"
+            'a_mag_init': r"$d_1$",
+            'b_mag_init': r"$s_1$",
+            'a_mag_end': r"$d_2$",
+            'b_mag_end': r"$s_2$"
         }
         
         # Convert variable names to LaTeX-style labels

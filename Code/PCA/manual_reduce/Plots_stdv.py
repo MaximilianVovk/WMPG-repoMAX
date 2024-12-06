@@ -10,6 +10,7 @@ import numpy as np
 import numpy as np
 import scipy.optimize as opt
 from sklearn.ensemble import GradientBoostingRegressor
+import matplotlib.gridspec as gridspec
 
 def read_and_process_pickle(file_path):
     with open(file_path, 'rb') as f:
@@ -41,6 +42,14 @@ def read_and_process_pickle(file_path):
     # print the station_id
     # print('station_id:', obs_data[0]['station_id'], obs_data[1]['station_id'])
 
+    # check if any time [0] is 0 if there is no value in the time_data == 0 then find the smallest value and subtract it from all the time_data
+    if obs_data[0]['time_data'][0] != 0 and obs_data[1]['time_data'][0] != 0:
+        # find the smallest time_data
+        min_time = min([obs_data[0]['time_data'][0], obs_data[1]['time_data'][0]])
+        # subtract the smallest time from all the time_data
+        for obs in obs_data:
+            obs['time_data'] = obs['time_data'] - min_time
+
     # Save distinct values for the two observations
     obs1, obs2 = obs_data[0], obs_data[1]
     
@@ -52,6 +61,8 @@ def read_and_process_pickle(file_path):
     sorted_indices = np.argsort(obs1['time_data'])
     for key in ['time_data', 'velocities', 'model_ht', 'absolute_magnitudes', 'lag', 'length']:
         obs1[key] = obs1[key][sorted_indices]
+
+
 
     return obs1, obs2
 
@@ -138,7 +149,7 @@ def fit_spline(data, time_data,spli=''):
     # concatenate fit1 and fit2
     fit1=np.concatenate((fit1, fit2))
 
-    residuals_pol = data - fit1
+    residuals_pol = fit1 - data
     # avg_residual_pol = np.mean(abs(residuals_pol))
     rmsd_pol = np.sqrt(np.mean(residuals_pol**2))
 
@@ -252,7 +263,7 @@ def fit_interp_spline(data, time_data, k=3):
     rmsd = np.sqrt(np.mean(residuals**2))
     return spline_fit, residuals, rmsd
 
-def plot_side_by_side(obs1, obs2,file,num):
+def plot_side_by_side_old(obs1, obs2,file,num):
     # Plot the simulation results
     fig, ax = plt.subplots(2, 4, figsize=(14, 6),gridspec_kw={'height_ratios': [ 3, 1],'width_ratios': [ 3, 0.5, 3, 0.5]}, dpi=300) #  figsize=(10, 5), dpi=300 0.5, 3, 3, 0.5
 
@@ -262,7 +273,7 @@ def plot_side_by_side(obs1, obs2,file,num):
     ax[0].plot(obs1['time_data'], obs1['lag'], 'o', label=f'{obs1["station_id"]}')
     ax[0].plot(obs2['time_data'], obs2['lag'], 'o', label=f'{obs2["station_id"]}')
     fitted_lag, residuals_lag, avg_residual_lag, time_data, labels = fit_lag(obs1['lag'],obs1['time_data'],spli=100000)
-    ax[0].plot(time_data, fitted_lag, 'k-', label=labels)
+    ax[0].plot(time_data, fitted_lag, 'k-', label='Model')
     # spline_fit, residuals, avg_residual_lag = fit_spline(obs1['lag'] / 1000 , obs1['time_data'])
     # plt.plot(obs1['time_data'], spline_fit*1000, 'k-', label='Spline Fit')
     # spline_fit, residuals_lag, avg_residual_lag = fit_cubic_spline(obs1['lag'] / 1000, obs1['time_data'])
@@ -271,7 +282,7 @@ def plot_side_by_side(obs1, obs2,file,num):
     # plt.plot(obs1['time_data'], spline_fit, 'g-', label='Interpolated Spline Fit')
     ax[0].set_xlabel('Time [s]')
     ax[0].set_ylabel('Lag [m]')
-    ax[0].title.set_text(f'Lag - RMSD: {avg_residual_lag:.2f}')
+    # ax[0].title.set_text(f'Lag - RMSD: {avg_residual_lag:.2f}')
     ax[0].legend()
     ax[0].grid()
 
@@ -281,23 +292,22 @@ def plot_side_by_side(obs1, obs2,file,num):
     ax[2].plot(obs1['time_data'], obs1['absolute_magnitudes'], 'o', label=f'{obs1["station_id"]}')
     ax[2].plot(obs2['time_data'], obs2['absolute_magnitudes'], 'o', label=f'{obs2["station_id"]}')
     spline_fit, residuals_mag, avg_residual,time_data,label_fit = fit_spline(obs1['absolute_magnitudes'], obs1['time_data'])
-    ax[2].plot(time_data, spline_fit, 'k-', label=label_fit)
+    ax[2].plot(time_data, spline_fit, 'k-', label='Model')
     ax[2].set_xlabel('Time [s]')
     ax[2].set_ylabel('Absolute Magnitude [-]')
     # flip the y-axis
     ax[2].invert_yaxis()
-    ax[2].title.set_text(f'Absolute Magnitude - RMSD: {avg_residual:.2f}')
+    # ax[2].title.set_text(f'Absolute Magnitude - RMSD: {avg_residual:.2f}')
     ax[2].legend()
     ax[2].grid()
     # delete the plot in the middle
     ax[3].axis('off')
     name= file.replace('_trajectory.pickle','')
     # put as the super title the name
-    plt.suptitle(name)
-
+    # plt.suptitle(name)
 
     # plot the residuals against time
-    ax[4].plot(obs1['time_data'], residuals_lag, 'ko', label=f'{obs1["station_id"]}')
+    ax[4].plot(obs1['time_data'], residuals_lag, 'k.', label=f'{obs1["station_id"]}')
     ax[4].set_xlabel('Time [s]')
     ax[4].set_ylabel('Residual [m]')
     # ax[2].title(f'Lag Residuals')
@@ -319,7 +329,7 @@ def plot_side_by_side(obs1, obs2,file,num):
     ax[5].grid()
 
     # plot the residuals against time
-    ax[6].plot(obs1['time_data'], residuals_mag, 'ko', label=f'{obs1["station_id"]}')
+    ax[6].plot(obs1['time_data'], residuals_mag, 'k.', label=f'{obs1["station_id"]}')
     ax[6].set_xlabel('Time [s]')
     ax[6].set_ylabel('Residual [-]')
     ax[6].invert_yaxis()
@@ -362,7 +372,137 @@ def plot_side_by_side(obs1, obs2,file,num):
     plt.close()
     return avg_residual_lag, avg_residual
 
-    
+
+def plot_side_by_side(obs1, obs2, file, num):
+    fig = plt.figure(figsize=(14,6), dpi=300)
+
+    # Use the user-specified GridSpec
+    gs_main = gridspec.GridSpec(2, 4, figure=fig,
+                                height_ratios=[3, 1],
+                                width_ratios=[1, 0.3, 1, 0.3])
+
+    # Adjust subplots: give some horizontal space (wspace) so there's separation between the pairs (5 & 6)
+    # We'll later manually remove space between (4,5) and (6,7) by adjusting positions.
+    fig.subplots_adjust(wspace=0.3, hspace=0.3)
+
+    # Top row
+    ax0 = fig.add_subplot(gs_main[0,0])  # Lag
+    ax1 = fig.add_subplot(gs_main[0,1])  # Empty
+    ax2 = fig.add_subplot(gs_main[0,2])  # Magnitude
+    ax3 = fig.add_subplot(gs_main[0,3])  # Empty
+
+    # Bottom row
+    # Residual lag and hist lag
+    ax4 = fig.add_subplot(gs_main[1,0])        # Lag residual
+    ax5 = fig.add_subplot(gs_main[1,1], sharey=ax4)  # Lag hist
+
+    # Residual mag and hist mag
+    ax6 = fig.add_subplot(gs_main[1,2])        # Mag residual
+    ax7 = fig.add_subplot(gs_main[1,3], sharey=ax6)  # Mag hist
+
+    # --- Plotting Data --- #
+    fitted_lag, residuals_lag, avg_residual_lag, time_data, labels = fit_lag(obs1['lag'], obs1['time_data'], spli=100000)
+    ax0.plot(obs1['time_data'], obs1['lag'], 'o', label=f'{obs1["station_id"]}')
+    ax0.plot(obs2['time_data'], obs2['lag'], 'o', label=f'{obs2["station_id"]}')
+    ax0.plot(time_data, fitted_lag, 'k-', label='Model')
+    ax0.set_xlabel('Time [s]')
+    ax0.set_ylabel('Lag [m]')
+    ax0.legend()
+    ax0.grid(True)
+
+    # Empty plot top row
+    ax1.axis('off')
+
+    # Magnitude fit
+    spline_fit, residuals_mag, avg_residual, time_data, label_fit = fit_spline(obs1['absolute_magnitudes'], obs1['time_data'])
+    ax2.plot(obs1['time_data'], obs1['absolute_magnitudes'], 'o', label=f'{obs1["station_id"]}')
+    ax2.plot(obs2['time_data'], obs2['absolute_magnitudes'], 'o', label=f'{obs2["station_id"]}')
+    ax2.plot(time_data, spline_fit, 'k-', label='Model')
+    ax2.set_xlabel('Time [s]')
+    ax2.set_ylabel('Absolute Magnitude')
+    ax2.invert_yaxis()
+    ax2.legend()
+    ax2.grid(True)
+
+    # After all plotting is done
+    pos0 = ax0.get_position()  # returns a Bbox
+    pos2 = ax2.get_position()
+
+    # Place text near lower right corner of the first plot (ax0)
+    # For example, just to the right (0.01) of the ax0's right edge and aligned with its bottom (y0):
+    fig.text(pos0.x1 + 0.115, pos0.y0, f'RMSD lag: {avg_residual_lag:.1f} m',  ha='right', va='bottom', fontsize=12, color='black')
+
+    # Similarly for the second plot (ax2):
+    fig.text(pos2.x1 + 0.1, pos2.y0, f'RMSD mag: {avg_residual:.2f}',  ha='right', va='bottom', fontsize=12, color='black')
+
+    # Empty plot top row
+    ax3.axis('off')
+
+    # put the zer line in dark gray
+    ax4.axhline(0, color='darkgray', linewidth=1.5)
+    # Lag residual
+    ax4.plot(obs1['time_data'], residuals_lag, 'k.')
+    ax4.set_xlabel('Time [s]')
+    ax4.set_ylabel('Residual [m]')
+    ax4.grid(True)
+
+    # Lag histogram
+    ax5.hist(residuals_lag, bins=20, orientation='horizontal', color='k')
+    ax5.set_xlabel('Count')
+    ax5.set_ylabel('')  # no label
+    # We'll remove tick labels later with tick_params
+
+    ax5.spines['left'].set_visible(False)
+    ax5.grid(True)
+
+    # put the zer line in dark gray
+    ax6.axhline(0, color='darkgray', linewidth=1.5)
+    # Magnitude residual
+    ax6.plot(obs1['time_data'], residuals_mag, 'k.')
+    ax6.set_xlabel('Time [s]')
+    ax6.set_ylabel('Residual')
+    ax6.invert_yaxis()
+    ax6.grid(True)
+
+    # Magnitude histogram
+    ax7.hist(residuals_mag, bins=20, orientation='horizontal', color='k')
+    ax7.set_xlabel('Count')
+    ax7.set_ylabel('')
+    # Will remove tick labels later
+    ax7.spines['left'].set_visible(False)
+    ax7.grid(True)
+    ax7.invert_yaxis()
+
+    # --- Manually adjust positions to remove space between (4,5) and (6,7) --- #
+    pos4 = ax4.get_position()
+    pos5 = ax5.get_position()
+    ax5.set_position([pos4.x1, pos5.y0, pos5.width, pos5.height])  # no space between 4 & 5
+
+    pos6 = ax6.get_position()
+    pos7 = ax7.get_position()
+    ax7.set_position([pos6.x1, pos7.y0, pos7.width, pos7.height])  # no space between 6 & 7
+
+    # --- Adjust tick labels at the end ---
+    # For ax4 and ax6, we want y tick labels:
+    ax4.tick_params(labelleft=True)
+    ax6.tick_params(labelleft=True)
+
+    # For ax5 and ax7, no y tick labels:
+    ax5.tick_params(labelleft=False)
+    ax7.tick_params(labelleft=False)
+
+    # Output
+    output = r'C:\Users\maxiv\WMPG-repoMAX\Code\PCA\manual_reduce'
+    name = file.replace('_trajectory.pickle', '')
+    name_for_table = name.replace("_", "\\_")
+    print(f'${name_for_table}$ & {avg_residual_lag:.1f} & {avg_residual:.2f} \\\\')
+    print('\hline')
+
+    plt.savefig(os.path.join(output, file.replace('_trajectory.pickle', f'_n{num}_std_dev.png')))
+    plt.close()
+
+    return avg_residual_lag, avg_residual
+
 
 # Define the directory path
 directory = r'C:\Users\maxiv\Desktop\test_pickl'

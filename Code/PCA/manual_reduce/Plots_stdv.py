@@ -273,7 +273,7 @@ def plot_side_by_side_old(obs1, obs2,file,num):
     ax[0].plot(obs1['time_data'], obs1['lag'], 'o', label=f'{obs1["station_id"]}')
     ax[0].plot(obs2['time_data'], obs2['lag'], 'o', label=f'{obs2["station_id"]}')
     fitted_lag, residuals_lag, avg_residual_lag, time_data, labels = fit_lag(obs1['lag'],obs1['time_data'],spli=100000)
-    ax[0].plot(time_data, fitted_lag, 'k-', label='Model')
+    ax[0].plot(time_data, fitted_lag, 'k-', label='Model\nRMSD: {:.1f} m'.format(avg_residual_lag))
     # spline_fit, residuals, avg_residual_lag = fit_spline(obs1['lag'] / 1000 , obs1['time_data'])
     # plt.plot(obs1['time_data'], spline_fit*1000, 'k-', label='Spline Fit')
     # spline_fit, residuals_lag, avg_residual_lag = fit_cubic_spline(obs1['lag'] / 1000, obs1['time_data'])
@@ -292,9 +292,9 @@ def plot_side_by_side_old(obs1, obs2,file,num):
     ax[2].plot(obs1['time_data'], obs1['absolute_magnitudes'], 'o', label=f'{obs1["station_id"]}')
     ax[2].plot(obs2['time_data'], obs2['absolute_magnitudes'], 'o', label=f'{obs2["station_id"]}')
     spline_fit, residuals_mag, avg_residual,time_data,label_fit = fit_spline(obs1['absolute_magnitudes'], obs1['time_data'])
-    ax[2].plot(time_data, spline_fit, 'k-', label='Model')
+    ax[2].plot(time_data, spline_fit, 'k-', label='Model\nRMSD: {:.2f}'.format(avg_residual))
     ax[2].set_xlabel('Time [s]')
-    ax[2].set_ylabel('Absolute Magnitude [-]')
+    ax[2].set_ylabel('Absolute Magnitude ')
     # flip the y-axis
     ax[2].invert_yaxis()
     # ax[2].title.set_text(f'Absolute Magnitude - RMSD: {avg_residual:.2f}')
@@ -316,11 +316,15 @@ def plot_side_by_side_old(obs1, obs2,file,num):
 
     # plot the distribution of the residuals along the y axis
     ax[5].hist(residuals_lag, bins=20, orientation='horizontal', color='k')
-    ax[5].set_xlabel('N.data')
-    ax[5].set_ylabel('Residual [m]')
+    ax[5].set_xlabel('Count')
+    # ax[5].set_ylabel('Residual [m]')
     # delete the the the line at the top ad the right
     ax[5].spines['top'].set_visible(False)
     ax[5].spines['right'].set_visible(False)
+    # put show no ticks values
+    ax[5].tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
+    # sahere the y axis with plot 4
+    ax[5].sharey(ax[4])
     # do not show the y ticks
     # ax[5].set_yticks([])
     # # show the zero line
@@ -331,7 +335,7 @@ def plot_side_by_side_old(obs1, obs2,file,num):
     # plot the residuals against time
     ax[6].plot(obs1['time_data'], residuals_mag, 'k.', label=f'{obs1["station_id"]}')
     ax[6].set_xlabel('Time [s]')
-    ax[6].set_ylabel('Residual [-]')
+    ax[6].set_ylabel('Residual')
     ax[6].invert_yaxis()
     # ax[3].title(f'Absolute Magnitude Residuals')
     # ax[3].legend()
@@ -339,10 +343,14 @@ def plot_side_by_side_old(obs1, obs2,file,num):
 
     # plot the distribution of the residuals along the y axis
     ax[7].hist(residuals_mag, bins=20, orientation='horizontal', color='k')
-    ax[7].set_xlabel('N.data')
+    ax[7].set_xlabel('Count')
     # invert the y axis
     ax[7].invert_yaxis()
-    ax[7].set_ylabel('Residual [-]')
+    # ax[7].set_ylabel('Residual ')
+    # put in te ticks no numbers
+    ax[7].tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
+    # sahre the y axis with plot 6
+    ax[7].sharey(ax[6])
     # delete the the the line at the top ad the right
     ax[7].spines['top'].set_visible(False)
     ax[7].spines['right'].set_visible(False)
@@ -404,7 +412,7 @@ def plot_side_by_side(obs1, obs2, file, num):
     fitted_lag, residuals_lag, avg_residual_lag, time_data, labels = fit_lag(obs1['lag'], obs1['time_data'], spli=100000)
     ax0.plot(obs1['time_data'], obs1['lag'], 'o', label=f'{obs1["station_id"]}')
     ax0.plot(obs2['time_data'], obs2['lag'], 'o', label=f'{obs2["station_id"]}')
-    ax0.plot(time_data, fitted_lag, 'k-', label='Model')
+    ax0.plot(time_data, fitted_lag, 'k-', label='Model\nRMSD: {:.1f} m'.format(avg_residual_lag))
     ax0.set_xlabel('Time [s]')
     ax0.set_ylabel('Lag [m]')
     ax0.legend()
@@ -417,23 +425,23 @@ def plot_side_by_side(obs1, obs2, file, num):
     spline_fit, residuals_mag, avg_residual, time_data, label_fit = fit_spline(obs1['absolute_magnitudes'], obs1['time_data'])
     ax2.plot(obs1['time_data'], obs1['absolute_magnitudes'], 'o', label=f'{obs1["station_id"]}')
     ax2.plot(obs2['time_data'], obs2['absolute_magnitudes'], 'o', label=f'{obs2["station_id"]}')
-    ax2.plot(time_data, spline_fit, 'k-', label='Model')
+    ax2.plot(time_data, spline_fit, 'k-', label='Model\nRMSD: {:.2f}'.format(avg_residual))
     ax2.set_xlabel('Time [s]')
     ax2.set_ylabel('Absolute Magnitude')
     ax2.invert_yaxis()
     ax2.legend()
     ax2.grid(True)
 
-    # After all plotting is done
-    pos0 = ax0.get_position()  # returns a Bbox
-    pos2 = ax2.get_position()
+    # # After all plotting is done
+    # pos0 = ax0.get_position()  # returns a Bbox
+    # pos2 = ax2.get_position()
 
-    # Place text near lower right corner of the first plot (ax0)
-    # For example, just to the right (0.01) of the ax0's right edge and aligned with its bottom (y0):
-    fig.text(pos0.x1 + 0.115, pos0.y0, f'RMSD lag: {avg_residual_lag:.1f} m',  ha='right', va='bottom', fontsize=12, color='black')
+    # # Place text near lower right corner of the first plot (ax0)
+    # # For example, just to the right (0.01) of the ax0's right edge and aligned with its bottom (y0):
+    # fig.text(pos0.x1 + 0.115, pos0.y0, f'RMSD lag: {avg_residual_lag:.1f} m',  ha='right', va='bottom', fontsize=12, color='black')
 
-    # Similarly for the second plot (ax2):
-    fig.text(pos2.x1 + 0.1, pos2.y0, f'RMSD mag: {avg_residual:.2f}',  ha='right', va='bottom', fontsize=12, color='black')
+    # # Similarly for the second plot (ax2):
+    # fig.text(pos2.x1 + 0.1, pos2.y0, f'RMSD mag: {avg_residual:.2f}',  ha='right', va='bottom', fontsize=12, color='black')
 
     # Empty plot top row
     ax3.axis('off')
@@ -451,8 +459,9 @@ def plot_side_by_side(obs1, obs2, file, num):
     ax5.set_xlabel('Count')
     ax5.set_ylabel('')  # no label
     # We'll remove tick labels later with tick_params
-
-    ax5.spines['left'].set_visible(False)
+    ax5.spines['top'].set_visible(False)
+    ax5.spines['right'].set_visible(False)
+    # ax5.spines['left'].set_visible(False)
     ax5.grid(True)
 
     # put the zer line in dark gray
@@ -469,18 +478,25 @@ def plot_side_by_side(obs1, obs2, file, num):
     ax7.set_xlabel('Count')
     ax7.set_ylabel('')
     # Will remove tick labels later
-    ax7.spines['left'].set_visible(False)
+    # ax7.spines['left'].set_visible(False)
+    # delete the top and righ border
+    ax7.spines['top'].set_visible(False)
+    ax7.spines['right'].set_visible(False)
     ax7.grid(True)
     ax7.invert_yaxis()
 
     # --- Manually adjust positions to remove space between (4,5) and (6,7) --- #
     pos4 = ax4.get_position()
     pos5 = ax5.get_position()
-    ax5.set_position([pos4.x1, pos5.y0, pos5.width, pos5.height])  # no space between 4 & 5
+    # ax5.set_position([pos4.x1, pos5.y0, pos5.width, pos5.height])  # no space between 4 & 5
+    # put 0.01 space between the plots
+    ax5.set_position([pos4.x1+0.02, pos5.y0, pos5.width, pos5.height])
 
     pos6 = ax6.get_position()
     pos7 = ax7.get_position()
-    ax7.set_position([pos6.x1, pos7.y0, pos7.width, pos7.height])  # no space between 6 & 7
+    # ax7.set_position([pos6.x1, pos7.y0, pos7.width, pos7.height])  # no space between 6 & 7
+    # put 0.01 space between the plots
+    ax7.set_position([pos6.x1+0.02, pos7.y0, pos7.width, pos7.height])
 
     # --- Adjust tick labels at the end ---
     # For ax4 and ax6, we want y tick labels:
@@ -511,7 +527,7 @@ directory = r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reductions\PER_EMCCD_cen
 # Prepare a list to store average residuals
 avg_residuals = []
 print('\hline')
-print('Name & RMSD lag [m] & RMSD mag [-] \\\\')
+print('Name & RMSD lag [m] & RMSD mag  \\\\')
 print('\hline')
 
 all_residuals_lag = []

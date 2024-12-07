@@ -3075,7 +3075,7 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
         'decel_t0': r"$\bar{a}_{poly}$",
         'decel_jacchia': r"$a_0 k$",
         'zenith_angle': r"$z_c$",
-        'avg_lag': r"$$\bar{\\ell}$$",
+        'avg_lag': r"$\bar{\ell}$",
         'kc': r"$k_c$",
         'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$",
         'a_mag_init': r"$d_1$",
@@ -3726,7 +3726,7 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
             'decel_t0': r"$\bar{a}_{poly}$",
             'decel_jacchia': r"$a_0 k$",
             'zenith_angle': r"$z_c$",
-            'avg_lag': r"$$\bar{\\ell}$$",
+            'avg_lag': r"$\bar{\ell}$",
             'kc': r"$k_c$",
             'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$",
             'a_mag_init': r"$d_1$",
@@ -6838,10 +6838,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
     
-    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=True, \
+    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=False, \
         help="By default set to False, if set to True delete all directories and files.")
     
-    arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=True, \
+    arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=False, \
         help="By default set to False, if set to True delete Slected and Results directory and all files except for the sim and obs csv file and the Simulations folder.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \

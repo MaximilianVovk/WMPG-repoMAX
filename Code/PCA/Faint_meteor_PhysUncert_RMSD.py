@@ -2101,7 +2101,8 @@ def array_to_pd_dataframe_PCA(data, test_data=[]):
         t0 = np.mean(data_array['time'])
 
         # initial guess of deceleration decel equal to linear fit of velocity
-        p0 = [a, 0, 0, t0]
+        # p0 = [a, 0, 0, t0]
+        p0 = [avg_lag, 0, 0, t0] 
 
         opt_res = opt.minimize(lag_residual, p0, args=(np.array(data_array['time']), np.array(data_array['lag'])), method='Nelder-Mead')
 
@@ -2611,11 +2612,11 @@ def find_knee_dist_index(data_meteor_pd, window_of_smothing_avg=3, std_multip_th
         plt.subplot(1,2,2)
         sns.histplot(data_meteor_pd, x=data_meteor_pd_sel, hue="type", kde=True, cumulative=True, bins=len(dist_for_meteor), palette=custom_palette_orange) # , stat='density' to have probability        
         if data_meteor_pd_sel=='distance_meteor':
-            plt.title('Cumulative distance in PCA space')
+            # plt.title('Cumulative distance in PCA space')
             plt.xlabel('Distance in PCA space')
             plt.axvline(x=(dist_for_meteor[index10percent]), color="darkorange", linestyle='--', label='Knee distance')
         else:
-            plt.title('Cumulative '+data_meteor_pd_sel)
+            # plt.title('Cumulative '+data_meteor_pd_sel)
             plt.xlabel(data_meteor_pd_sel)
             plt.axvline(x=(dist_for_meteor[index10percent]), color="blue", linestyle='--', label='Knee distance')
         plt.ylabel('Number of events')            
@@ -2635,12 +2636,12 @@ def find_knee_dist_index(data_meteor_pd, window_of_smothing_avg=3, std_multip_th
         #make the bar plot 0.5 transparency
         if data_meteor_pd_sel=='distance_meteor':
             plt.bar(indices, diff_distance_meteor_normalized,color="darkorange", alpha=0.5, edgecolor='black')
-            plt.title('Distance difference Normalized')
+            # plt.title('Distance difference Normalized')
             # put a horizontal line at len(curr_sel['distance_meteor'])
             plt.axvline(x=index10percent, color="darkorange", linestyle='--') 
         else:
             plt.bar(indices, diff_distance_meteor_normalized,color="blue", alpha=0.5, edgecolor='black')
-            plt.title(data_meteor_pd_sel+' Normalized from the mean of the selected shower')
+            # plt.title(data_meteor_pd_sel+' Normalized from the mean of the selected shower')
             # put a horizontal line at len(curr_sel['distance_meteor'])
             plt.axvline(x=index10percent, color="blue", linestyle='--') 
         plt.xlabel('Number of events')
@@ -2655,7 +2656,7 @@ def find_knee_dist_index(data_meteor_pd, window_of_smothing_avg=3, std_multip_th
         # plt.axhline(y=np.std(smoothed_diff_distance_meteor), color="darkorange", linestyle='--')
 
         # set a sup title
-        plt.suptitle(around_meteor)
+        # plt.suptitle(around_meteor)
 
         # give more space
         plt.tight_layout()  

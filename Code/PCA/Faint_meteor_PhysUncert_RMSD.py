@@ -2673,7 +2673,7 @@ def find_knee_dist_index(data_meteor_pd, window_of_smothing_avg=3, std_multip_th
     return index10percent
 
 # function to use the mahaloby distance and from the mean of the selected shower
-def dist_PCA_space_select_sim(df_sim_PCA, shower_current_PCA_single, cov_inv, meanPCA_current, df_sim_shower, shower_current_single, N_sim_sel_force=0, output_dir=''):
+def dist_PCA_space_select_sim_knee(df_sim_PCA, shower_current_PCA_single, cov_inv, meanPCA_current, df_sim_shower, shower_current_single, N_sim_sel_force=0, output_dir=''):
     N_sim_sel_all=100
     print('calculate distance for',shower_current_single['solution_id'])
 
@@ -2706,6 +2706,11 @@ def dist_PCA_space_select_sim(df_sim_PCA, shower_current_PCA_single, cov_inv, me
         distance_current_mean.append(scipy.spatial.distance.euclidean(meanPCA_current, df_sim_selected_PCA[i_shower]))
     df_sim_selected['distance_mean']=distance_current_mean # from the mean of the selected shower
 
+    df_sim_selected.insert(1, 'distance_mean', df_sim_selected.pop('distance_mean'))
+    df_sim_selected.insert(1, 'distance_meteor', df_sim_selected.pop('distance_meteor'))
+    df_sim_selected.insert(1, 'solution_id_dist', df_sim_selected.pop('solution_id_dist'))
+    df_sim_selected.insert(1, 'type', df_sim_selected.pop('type'))
+
     df_curr_sel_curv = df_sim_selected.copy()
 
     around_meteor=shower_current_single['solution_id']
@@ -2728,6 +2733,52 @@ def dist_PCA_space_select_sim(df_sim_PCA, shower_current_PCA_single, cov_inv, me
         print(around_meteor,'index of the knee distance',dist_to_cut+1)
         # change of curvature print
         df_curr_sel_curv=df_curr_sel_curv.iloc[:dist_to_cut+1]
+
+    return df_sim_selected, df_curr_sel_curv
+
+
+
+def dist_PCA_spaceALL(df_sim_PCA, shower_current_PCA_single, cov_inv, meanPCA_current, df_sim_shower, shower_current_single):
+    # N_sim_sel_all=100
+    print('calculate distance for all',shower_current_single['solution_id'])
+
+    df_sim_PCA_for_now = df_sim_PCA.drop(['type'], axis=1).values
+
+    distance_current = []
+    for i_sim in range(len(df_sim_PCA_for_now)):
+        distance_current.append(mahalanobis_distance(df_sim_PCA_for_now[i_sim], shower_current_PCA_single, cov_inv))
+
+    # create an array with lenght equal to the number of simulations and set it to shower_current_PCA['solution_id'][i_shower]
+    solution_id_dist = [shower_current_single['solution_id']] * len(df_sim_PCA_for_now)
+    df_sim_shower['solution_id_dist'] = solution_id_dist
+    df_sim_shower['distance_meteor'] = distance_current
+    # sort the distance and select the n_selected closest to the meteor
+    df_sim_shower_dis = df_sim_shower.sort_values(by=['distance_meteor']).reset_index(drop=True)
+    # df_sim_selected = df_sim_shower_dis[:N_sim_sel_all].drop(['type'], axis=1)
+    df_sim_selected = df_sim_shower_dis.drop(['type'], axis=1)
+    df_sim_selected['type'] = 'Simulation_sel'
+
+    # create a dataframe with the selected simulated shower characteristics
+    df_sim_PCA_dist = df_sim_PCA
+    df_sim_PCA_dist['distance_meteor'] = distance_current
+    df_sim_PCA_dist = df_sim_PCA_dist.sort_values(by=['distance_meteor']).reset_index(drop=True)
+    # delete the shower code
+    # df_sim_selected_PCA = df_sim_PCA_dist[:N_sim_sel_all].drop(['type','distance_meteor'], axis=1)
+    df_sim_selected_PCA = df_sim_PCA_dist.drop(['type','distance_meteor'], axis=1)
+
+    # make df_sim_selected_PCA an array
+    df_sim_selected_PCA = df_sim_selected_PCA.values
+    distance_current_mean = []
+    for i_shower in range(len(df_sim_selected)):
+        distance_current_mean.append(scipy.spatial.distance.euclidean(meanPCA_current, df_sim_selected_PCA[i_shower]))
+    df_sim_selected['distance_mean']=distance_current_mean # from the mean of the selected shower
+
+    df_sim_selected.insert(1, 'distance_mean', df_sim_selected.pop('distance_mean'))
+    df_sim_selected.insert(1, 'distance_meteor', df_sim_selected.pop('distance_meteor'))
+    df_sim_selected.insert(1, 'solution_id_dist', df_sim_selected.pop('solution_id_dist'))
+    df_sim_selected.insert(1, 'type', df_sim_selected.pop('type'))
+
+    df_curr_sel_curv = df_sim_selected.copy()
 
     return df_sim_selected, df_curr_sel_curv
 
@@ -3335,17 +3386,23 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     # trasform the dataframe in an array
     shower_current_PCA = shower_current_PCA.drop(['type','group'], axis=1).values
 
-    # define the distance
-    mkdirP(OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER)      
-    if esclude_real_solution_from_selection:
-        # delete the type Real from
-        input_list_obs_dist = [[df_sim_PCA[df_sim_PCA['type'] != 'Real'], shower_current_PCA[ii], cov_inv, meanPCA_current, df_sim_shower[df_sim_shower['type'] != 'Real'], shower_current.iloc[ii], N_sim_sel, OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER] for ii in range(len(shower_current))]
-        df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim, cores=cores_parallel)
+    ### mode desnest point ####################################################################################################
 
-    else:  
-        input_list_obs_dist = [[df_sim_PCA, shower_current_PCA[ii], cov_inv, meanPCA_current, df_sim_shower, shower_current.iloc[ii], N_sim_sel, OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER] for ii in range(len(shower_current))]
-        df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim, cores=cores_parallel)
+    # # define the distance
+    # mkdirP(OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER)      
+    # if esclude_real_solution_from_selection:
+    #     # delete the type Real from
+    #     input_list_obs_dist = [[df_sim_PCA[df_sim_PCA['type'] != 'Real'], shower_current_PCA[ii], cov_inv, meanPCA_current, df_sim_shower[df_sim_shower['type'] != 'Real'], shower_current.iloc[ii], N_sim_sel, OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER] for ii in range(len(shower_current))]
+    #     df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim_knee, cores=cores_parallel)
 
+    # else:  
+    #     input_list_obs_dist = [[df_sim_PCA, shower_current_PCA[ii], cov_inv, meanPCA_current, df_sim_shower, shower_current.iloc[ii], N_sim_sel, OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER] for ii in range(len(shower_current))]
+    #     df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim_knee, cores=cores_parallel)
+
+    ###########################################################################################################################
+
+    input_list_obs_dist = [[df_sim_PCA, shower_current_PCA[ii], cov_inv, meanPCA_current, df_sim_shower, shower_current.iloc[ii]] for ii in range(len(shower_current))]
+    df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_spaceALL, cores=cores_parallel)
 
     # separet df_sim_selected the '<class 'tuple'>' to a list of dataframe called df_sim_selected_all and df_sim_selected_knee
     df_sim_selected_all = []
@@ -3358,27 +3415,19 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     df_sim_selected_all = pd.concat(df_sim_selected_all)
     df_sel_shower = pd.concat(df_sim_selected_knee)
 
+    # df_sel_shower oredr by distance_meteor
+    df_sim_selected_all = df_sim_selected_all.sort_values('distance_meteor')
+    df_sel_shower = df_sel_shower.sort_values('distance_meteor')
+
     # DELETE ALL INDEX
 
-    # Insert the column at the first position
-    df_sim_selected_all.insert(1, 'distance_mean', df_sim_selected_all.pop('distance_mean'))
-    df_sim_selected_all.insert(1, 'distance_meteor', df_sim_selected_all.pop('distance_meteor'))
-    df_sim_selected_all.insert(1, 'solution_id_dist', df_sim_selected_all.pop('solution_id_dist'))
-    df_sim_selected_all.insert(1, 'type', df_sim_selected_all.pop('type'))
+    # df_sim_selected_all.reset_index(drop=True, inplace=True)
 
-    df_sim_selected_all.reset_index(drop=True, inplace=True)
+    # df_sim_selected_all.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_sel.csv', index=False)
 
-    df_sim_selected_all.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_sel.csv', index=False)
+    # df_sel_shower.reset_index(drop=True, inplace=True)
 
-    # Insert the column at the first position
-    df_sel_shower.insert(1, 'distance_mean', df_sel_shower.pop('distance_mean'))
-    df_sel_shower.insert(1, 'distance_meteor', df_sel_shower.pop('distance_meteor'))
-    df_sel_shower.insert(1, 'solution_id_dist', df_sel_shower.pop('solution_id_dist'))
-    df_sel_shower.insert(1, 'type', df_sel_shower.pop('type'))
-
-    df_sel_shower.reset_index(drop=True, inplace=True)
-
-    df_sel_shower.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_sel_bf_knee.csv', index=False)
+    # df_sel_shower.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_sel_bf_knee.csv', index=False)
 
     if isinstance(df_sel_shower, tuple):
         df_sel_shower = df_sel_shower[0]
@@ -3403,22 +3452,32 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     df_sel_shower_no_repetitions = df_sel_shower.copy()
 
     # group by solution_id_dist and keep only n_confront_sel from each group
-    df_sel_shower_no_repetitions = df_sel_shower_no_repetitions.groupby('solution_id_dist').head(len(df_sel_shower_no_repetitions))
+    # df_sel_shower_no_repetitions = df_sel_shower_no_repetitions.groupby('solution_id_dist').head(len(df_sel_shower_no_repetitions)) # it does not work
 
     # order by distance_meteor
     df_sel_shower_no_repetitions = df_sel_shower_no_repetitions.sort_values('distance_meteor')
 
+    df_sel_shower_no_repetitions = df_sel_shower_no_repetitions[df_sel_shower_no_repetitions['distance_meteor'] <= 1]
+
     # count duplicates and add a column for the number of duplicates
     df_sel_shower_no_repetitions['num_duplicates'] = df_sel_shower_no_repetitions.groupby('solution_id')['solution_id'].transform('size') 
+    df_sel_shower_no_repetitions.insert(2, 'num_duplicates', df_sel_shower_no_repetitions.pop('num_duplicates'))
     
     df_sel_shower_no_repetitions['solution_id_dist'] = df_obs_shower['solution_id'].values[0]
 
     df_sel_shower_no_repetitions.drop_duplicates(subset='solution_id', keep='first', inplace=True)            
 
-    # save df_sel_shower_real to disk
-    df_sel_shower_no_repetitions.to_csv(OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs+'_sim_sel_to_optimize.csv', index=False)
+    # # save df_sel_shower_real to disk OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs+'_sim_sel_to_optimize.csv', index=False
+    # df_sel_shower_no_repetitions.to_csv(OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs+'_sim_sel_to_optimize.csv', index=False)
 
+    # save df_sel_shower_real to disk OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs+'_sim_sel_to_optimize.csv', index=False
+    df_sel_shower_no_repetitions.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_dist.csv', index=False)
 
+    plt.hist(df_sel_shower_no_repetitions['distance_meteor'], bins=100)
+    plt.xlabel('PC distance')
+    plt.ylabel('Count')
+    plt.savefig(OUT_PUT_PATH + os.sep + file_name_obs + '_Histograms_' + str(len(variable_PCA) - 2) + 'var_' + str(PCA_percent) + '%_' + str(pca.n_components_) + 'PC.png', dpi=300)
+    plt.close()
 
     print('\nSUCCESS: the simulated meteor have been selected\n')
 
@@ -3763,7 +3822,7 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
             if var == 'zenith_angle':
                 axs[i].set_xticks([np.round(np.min(df_sim_var_sel[var]), 3), np.round(np.max(df_sim_var_sel[var]), 3), np.round(np.mean(df_sim_var_sel[var]), 3)])
             if i % 5 != 0:
-                axs[i].set_ylabel('N.events')
+                axs[i].set_ylabel('Count')
 
         # Remove unused subplots
         for i in range(len(latex_labels), len(axs)):
@@ -6825,12 +6884,12 @@ if __name__ == "__main__":
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/Test_cases', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Desktop/Test_cases/Results',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Results',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \
@@ -6839,10 +6898,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
     
-    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=True, \
+    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=False, \
         help="By default set to False, if set to True delete all directories and files.")
     
-    arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=True, \
+    arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=False, \
         help="By default set to False, if set to True delete Slected and Results directory and all files except for the sim and obs csv file and the Simulations folder.")
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
@@ -6851,7 +6910,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=10000, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=1000, \
         help="Number of simulations to generate.")
     
     arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \

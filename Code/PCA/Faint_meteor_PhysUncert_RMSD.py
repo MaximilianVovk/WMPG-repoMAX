@@ -3717,7 +3717,7 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
 
 
 
-def  PCASim_old(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, PCA_percent=99, N_sim_sel=0, variable_PCA=[], No_var_PCA=['chi2_red_mag', 'chi2_red_len', 'rmsd_mag', 'rmsd_len', 'v_init_180km','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], file_name_obs='', cores_parallel=None, PCA_pairplot=False, esclude_real_solution_from_selection=False):
+def old_PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, PCA_percent=99, N_sim_sel=0, variable_PCA=[], No_var_PCA=['chi2_red_mag', 'chi2_red_len', 'rmsd_mag', 'rmsd_len', 'v_init_180km','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], file_name_obs='', cores_parallel=None, PCA_pairplot=False, esclude_real_solution_from_selection=False):
     '''
     This function generate the simulated shower from the erosion model and apply PCA.
     The function read the json file in the folder and create a csv file with the simulated shower and take the data from GenerateSimulation.py folder.
@@ -4295,11 +4295,11 @@ def  PCASim_old(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_
     if esclude_real_solution_from_selection:
         # delete the type Real from
         input_list_obs_dist = [[df_sim_PCA[df_sim_PCA['type'] != 'Real'], shower_current_PCA[ii], cov_inv, meanPCA_current, df_sim_shower[df_sim_shower['type'] != 'Real'], shower_current.iloc[ii], N_sim_sel, OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER] for ii in range(len(shower_current))]
-        df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim, cores=cores_parallel)
+        df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim_knee, cores=cores_parallel)
 
     else:  
         input_list_obs_dist = [[df_sim_PCA, shower_current_PCA[ii], cov_inv, meanPCA_current, df_sim_shower, shower_current.iloc[ii], N_sim_sel, OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER] for ii in range(len(shower_current))]
-        df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim, cores=cores_parallel)
+        df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim_knee, cores=cores_parallel)
 
 
     # separet df_sim_selected the '<class 'tuple'>' to a list of dataframe called df_sim_selected_all and df_sim_selected_knee
@@ -4324,15 +4324,6 @@ def  PCASim_old(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_
     df_sim_selected_all.reset_index(drop=True, inplace=True)
 
     df_sim_selected_all.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_sel.csv', index=False)
-
-    # # copy the df_sel_shower to a new dataframe 
-    # df_sim_selected_all_test = df_sim_selected_all.copy()
-    # # add a new column with the sum of each distance_meteor with identical solution_id
-    # df_sim_selected_all_test['sum_distance_meteor'] = df_sim_selected_all_test.groupby('solution_id')['distance_meteor'].transform('sum')
-
-    # df_sim_selected_all_test.insert(4, 'sum_distance_meteor', df_sim_selected_all_test.pop('sum_distance_meteor'))
-
-    # df_sim_selected_all_test.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_sel_test.csv', index=False)
 
     # Insert the column at the first position
     df_sel_shower.insert(1, 'distance_mean', df_sel_shower.pop('distance_mean'))
@@ -4618,6 +4609,8 @@ def  PCASim_old(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_
 
 
     return df_sel_shower, df_sel_shower_no_repetitions, df_sim_selected_all, pcr_results_physical_param, pca.n_components_
+
+
 
 
 

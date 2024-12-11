@@ -781,7 +781,7 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
 
 
     print('Run',numb_sim,'simulations with :')
-    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s$^2$/km$^2$]','erosion height start [km]','erosion coeff [s$^2$/km$^2$]','erosion mass index [-]','eros. mass min [kg]','eros. mass max [kg]']
+    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s$^2$/km$^2$]','erosion height start [km]','erosion coeff [s$^2$/km$^2$]','erosion mass index','eros. mass min [kg]','eros. mass max [kg]']
     print('\\hline') #df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]
     print('Variables & min.val. & MAX.val. \\\\')
 
@@ -798,12 +798,12 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     print('\\hline') 
     # - Initial mag: min 5.45949291900601 - MAX 5.43949291900601
     # print('- Initial mag: min',erosion_sim_params.lim_mag_faintest,'- MAX',erosion_sim_params.lim_mag_brightest)
-    print(f"Init. mag [-] & {'{:.4g}'.format(erosion_sim_params.lim_mag_faintest)} & {'{:.4g}'.format(erosion_sim_params.lim_mag_brightest)} \\\\")
+    print(f"Init. mag & {'{:.4g}'.format(erosion_sim_params.lim_mag_faintest)} & {'{:.4g}'.format(erosion_sim_params.lim_mag_brightest)} \\\\")
 
     print('\\hline')
     # - Final mag: min 6.0268141526507435 - MAX 6.006814152650744
     # print('- Final mag: min',erosion_sim_params.lim_mag_len_end_faintest,'- MAX',erosion_sim_params.lim_mag_len_end_brightest)
-    print(f"Fin. mag [-] & {'{:.4g}'.format(erosion_sim_params.lim_mag_len_end_faintest)} & {'{:.4g}'.format(erosion_sim_params.lim_mag_len_end_brightest)} \\\\")
+    print(f"Fin. mag & {'{:.4g}'.format(erosion_sim_params.lim_mag_len_end_faintest)} & {'{:.4g}'.format(erosion_sim_params.lim_mag_len_end_brightest)} \\\\")
 
     print('\\hline')
     # - Mass: min 5.509633400654068e-07 - MAX 1.5509633400654067e-06
@@ -833,7 +833,7 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     print('\\hline')
     # - erosion_mass_index : min 1.5 - MAX 2.5
     # print('- erosion_mass_index : min',erosion_sim_params.erosion_mass_index.min,'- MAX',erosion_sim_params.erosion_mass_index.max)
-    print(f"Eros.mass index [-] & {'{:.4g}'.format(erosion_sim_params.erosion_mass_index.min)} & {'{:.4g}'.format(erosion_sim_params.erosion_mass_index.max)} \\\\")
+    print(f"Eros.mass index & {'{:.4g}'.format(erosion_sim_params.erosion_mass_index.min)} & {'{:.4g}'.format(erosion_sim_params.erosion_mass_index.max)} \\\\")
 
     print('\\hline')
     # - erosion_mass_min : min 5e-12 - MAX 1e-10
@@ -1004,7 +1004,7 @@ def plot_data_with_residuals_and_real(rmsd_mag, rmsd_vel, rmsd_len, fit_funct_or
             line2.set_marker(line_marker2)
     else:
         ax0.plot(fit_funct['absolute_magnitudes'], fit_funct['height'], 'k--')
-    ax0.set_xlabel('Absolute Magnitudes [-]')
+    ax0.set_xlabel('Absolute Magnitudes')
     # flip the x-axis
     ax0.invert_xaxis()
     # ax0.tick_params(axis='x', rotation=45)
@@ -1025,7 +1025,7 @@ def plot_data_with_residuals_and_real(rmsd_mag, rmsd_vel, rmsd_len, fit_funct_or
                 ax1.plot(data_opt_or_desns['res_absolute_magnitudes'], real['height'],'.',color=color_line2)
     else:
         ax1.plot(real['res_absolute_magnitudes'], real['height'], 'g.')
-    ax1.set_xlabel('Res.Mag [-]')
+    ax1.set_xlabel('Res.Mag')
     # flip the x-axis
     ax1.invert_xaxis()
     # ax1.tick_params(axis='x', rotation=45)
@@ -1276,7 +1276,7 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
                 ax[5].fill_between(residual_time_pos, -vel_noise, vel_noise, color='lightgray', alpha=0.5)
 
         ax[0].plot(obs1['absolute_magnitudes'],obs1['height'], colorline1)
-        ax[0].set_xlabel('Absolute Magnitude [-]')
+        ax[0].set_xlabel('Absolute Magnitude')
         ax[0].set_ylabel('Height [km]')
         # grid on on both subplot with -- as linestyle and light gray color
         ax[0].grid(True)
@@ -1298,7 +1298,7 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
         if fit_funct=='' and mag_noise=='' and vel_noise=='':
             ax[1].plot(residuals_mag, residual_height_pos, '.', color=line_color)
         # ax[1].set_ylabel('Height [km]')
-        ax[1].set_xlabel('Res.mag [-]')
+        ax[1].set_xlabel('Res.mag')
         ax[1].tick_params(axis='x', rotation=45)
 
         # flip the y-axis
@@ -1432,7 +1432,7 @@ def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals
         # plot the magnitude curve with height
         ax[0].plot(obs1['absolute_magnitudes'],obs1['height'], colorline1)
 
-        ax[0].set_xlabel('Absolute Magnitude [-]')
+        ax[0].set_xlabel('Absolute Magnitude')
         ax[0].set_ylabel('Height [km]')
         # check if the axis is inverted
         is_x_inverted, _ =check_axis_inversion(ax[0])
@@ -1725,7 +1725,7 @@ def plot_gray_dist(pd_datafram_PCA_selected, mindist, maxdist, df_obs_shower, ou
     ax1.set_ylabel('Velocity [km/s]')
     ax3.set_xlabel('Time [s]')
     ax3.set_ylabel('Lag [m]')
-    ax0.set_xlabel('Absolute Magnitude [-]')
+    ax0.set_xlabel('Absolute Magnitude')
     ax0.set_ylabel('Height [km]')
 
     # Remove legends from both plots if any
@@ -3375,8 +3375,8 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     pcr.fit(X_train, y_train)
     # Predict using the models
     y_pred_pcr = pcr.predict(df_sim_shower_resample[variable_PCA_no_info])
-    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s$^2$/km$^2$]','erosion height start [km]','erosion coeff [s$^2$/km$^2$]','erosion mass index [-]','eros. mass min [kg]','eros. mass max [kg]']
-    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'$m_{l}$ [kg]', r'$m_{u}$ [kg]'] #,r'log($m_{u}$)-log($m_{l}$) [-]']
+    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s$^2$/km$^2$]','erosion height start [km]','erosion coeff [s$^2$/km$^2$]','erosion mass index','eros. mass min [kg]','eros. mass max [kg]']
+    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$', r'$m_{l}$ [kg]', r'$m_{u}$ [kg]'] #,r'log($m_{u}$)-log($m_{l}$)']
     # multiply y_pred_pcr that has the 'erosion_coeff'*1000000 and 'sigma'*1000000
     y_pred_pcr[:,4]=y_pred_pcr[:,4]*1000000
     y_pred_pcr[:,2]=y_pred_pcr[:,2]*1000000
@@ -4279,8 +4279,8 @@ def old_PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_P
     pcr.fit(X_train, y_train)
     # Predict using the models
     y_pred_pcr = pcr.predict(df_sim_shower_resample[variable_PCA_no_info])
-    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s$^2$/km$^2$]','erosion height start [km]','erosion coeff [s$^2$/km$^2$]','erosion mass index [-]','eros. mass min [kg]','eros. mass max [kg]']
-    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'$m_{l}$ [kg]', r'$m_{u}$ [kg]'] #,r'log($m_{u}$)-log($m_{l}$) [-]']
+    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s$^2$/km$^2$]','erosion height start [km]','erosion coeff [s$^2$/km$^2$]','erosion mass index','eros. mass min [kg]','eros. mass max [kg]']
+    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$', r'$m_{l}$ [kg]', r'$m_{u}$ [kg]'] #,r'log($m_{u}$)-log($m_{l}$)']
     # multiply y_pred_pcr that has the 'erosion_coeff'*1000000 and 'sigma'*1000000
     y_pred_pcr[:,4]=y_pred_pcr[:,4]*1000000
     y_pred_pcr[:,2]=y_pred_pcr[:,2]*1000000
@@ -5099,12 +5099,12 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, output_dir='', pca_N_comp=0)
         'sigma': '$\sigma$ [s$^2$/km$^2$]',
         'erosion_height_start': '$h_e$ [km]',
         'erosion_coeff': '$\eta$ [s$^2$/km$^2$]',
-        'erosion_mass_index': '$s$ [-]',
+        'erosion_mass_index': '$s$',
         'erosion_mass_min': '$m_{l}$ [kg]',
         'erosion_mass_max': '$m_{u}$ [kg]'
     }
 
-    # to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]',r'log($m_{u}$)-log($m_{l}$) [-]']
+    # to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$', r'log($m_{l}$)', r'log($m_{u}$)',r'log($m_{u}$)-log($m_{l}$)']
 
     # Define a custom palette
     custom_palette = {
@@ -5844,7 +5844,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
     curr_sel = curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'].copy()
 
     to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass', '']
-    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$ [-]', r'log($m_{l}$) [-]', r'log($m_{u}$) [-]', r'log($m_{u}$)-log($m_{l}$) [-]', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]', r'']
+    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$', r'log($m_{l}$)', r'log($m_{u}$)', r'log($m_{u}$)-log($m_{l}$)', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]', r'']
 
     fig, axs = plt.subplots(3, 4, figsize=(15, 10))
     axs = axs.flatten()
@@ -6385,7 +6385,7 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
         ax1.set_ylabel('Lag [m]')
     else: 
         ax1.set_ylabel('Velocity [km/s]')
-    ax0.set_xlabel('Absolute Magnitude [-]')
+    ax0.set_xlabel('Absolute Magnitude')
     ax0.set_ylabel('Height [km]')
 
     # Remove legends from both plots if any

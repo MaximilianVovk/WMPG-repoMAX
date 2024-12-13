@@ -1475,7 +1475,7 @@ def plot_histogram_PCA_dist(df_sim_selected_all, save_folder, dist, maxcutdist=0
     plt.axvline(x=dist, color='blue', linestyle='--', label='Real event distance')
     plt.xlabel('PC distance')
     plt.ylabel('Cumulative Count')
-    plt.savefig(save_folder + os.sep + 'HistogramsCUMUL_'+ str(dist) + 'PCdist.png', dpi=300)
+    plt.savefig(save_folder + os.sep + 'HistogramsCUMUL_'+ str(np.round(dist,3)) + 'PCdist.png', dpi=300)
     plt.close()
 
 
@@ -6554,12 +6554,12 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition_all, pd_datafram_PCA_selected_all, pcr_results_physical_param, PCAn_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, output_folder+os.sep+save_results_folder_PCA, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_test_plot, cml_args.esclude_real_solution_from_selection)
 
         # find the 10 percentile value of 'distance_meteor'
-        perc_10 = pd_datafram_PCA_selected_before_knee_NO_repetition_all['distance_meteor'].quantile(0.1)
-        perc_5 = pd_datafram_PCA_selected_before_knee_NO_repetition_all['distance_meteor'].quantile(0.05)
-        perc_4 = pd_datafram_PCA_selected_before_knee_NO_repetition_all['distance_meteor'].quantile(0.04)
-        perc_3 = pd_datafram_PCA_selected_before_knee_NO_repetition_all['distance_meteor'].quantile(0.03)
-        perc_2 = pd_datafram_PCA_selected_before_knee_NO_repetition_all['distance_meteor'].quantile(0.02)
-        perc_1 = pd_datafram_PCA_selected_before_knee_NO_repetition_all['distance_meteor'].quantile(0.01)
+        perc_10 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.1)
+        perc_5 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.05)
+        perc_4 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.04)
+        perc_3 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.03)
+        perc_2 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.02)
+        perc_1 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.01)
 
         output_PCA_dist = output_folder+os.sep+save_results_folder_PCA+os.sep+'Knee'
         mkdirP(output_PCA_dist)
@@ -7190,12 +7190,12 @@ if __name__ == "__main__":
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/Test_cases', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/Results_PCAreal',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/Results_PCAjson',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \
@@ -7204,7 +7204,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
     
-    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=True, \
+    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=False, \
         help="By default set to False, if set to True delete all directories and files.")
     
     arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=True, \
@@ -7216,7 +7216,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=100, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=10000, \
         help="Number of simulations to generate.")
     
     arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \
@@ -7246,7 +7246,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \

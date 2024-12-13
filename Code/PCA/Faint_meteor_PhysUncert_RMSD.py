@@ -3971,7 +3971,7 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
 
 
 
-def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower, OUT_PUT_PATH, file_name_obs, PCA_pairplot=False):
+def process_pca_variables_old(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower, OUT_PUT_PATH, file_name_obs, PCA_pairplot=False):
     # if variable_PCA is not empty
     if variable_PCA != []:
         # add to variable_PCA array 'type','solution_id'
@@ -4113,16 +4113,10 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
             axs[i].set_xlabel(label)
             # for the zenith angle put only 3 ticks one at the max and one at the min and one at the middle
             if var == 'zenith_angle':
-                # delete any outliere in the zenith angle use the zscore
-                z_scores = np.abs(zscore(df_sim_var_sel[var].values))
-                threshold = 3
-                outliers = (z_scores > threshold)
-                # delete the outliers
-                sim_data_zc = df_sim_var_sel[~outliers][var].values
                 # put all the df_sim_var_sel[var] and all df_obs_shower[var] in a single array
-                axs[i].set_xticks([np.round(np.min(sim_data_zc), 3), np.round(np.mean(sim_data_zc), 3), np.round(np.max(sim_data_zc), 3)])
-            if i % 5 != 0:
-                axs[i].set_ylabel('Density')
+                axs[i].set_xticks([np.round(np.min(min_value), 3), np.round(np.mean(mean_value), 3), np.round(np.max(max_value), 3)])
+            # if i % 5 != 0:
+            axs[i].set_ylabel('Density')
 
         # Remove unused subplots
         for i in range(len(latex_labels), len(axs)):
@@ -4131,6 +4125,131 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
         plt.tight_layout()
         
         # Save and close the figure
+        plt.savefig(os.path.join(OUT_PUT_PATH, f"{file_name_obs}_var_hist_real.png"))
+        plt.close()
+
+    return df_sim_shower, variable_PCA, outliers
+
+
+def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower, OUT_PUT_PATH, file_name_obs, PCA_pairplot=False):
+    # if variable_PCA is not empty
+    if variable_PCA != []:
+        # add to variable_PCA array 'type','solution_id'
+        variable_PCA = ['solution_id','type'] + variable_PCA
+        if No_var_PCA != []:
+            # remove from variable_PCA the variables in No_var_PCA
+            for var in No_var_PCA:
+                variable_PCA.remove(var)
+
+    else:
+        # put in variable_PCA all the variables except mass
+        variable_PCA = list(df_obs_shower.columns)
+        # check if mass is in the variable_PCA
+        if 'mass' in variable_PCA:
+            # remove mass from variable_PCA
+            variable_PCA.remove('mass')
+        # if No_var_PCA is not empty
+        if No_var_PCA != []:
+            # remove from variable_PCA the variables in No_var_PCA
+            for var in No_var_PCA:
+                # check if the variable is in the variable_PCA
+                if var in variable_PCA:
+                    variable_PCA.remove(var)
+
+    scaled_sim = df_sim_shower[variable_PCA].copy()
+    scaled_sim = scaled_sim.drop(['type', 'solution_id'], axis=1)
+
+    # Standardize each column separately
+    scaler = StandardScaler()
+    df_sim_var_sel_standardized = scaler.fit_transform(scaled_sim)
+    df_sim_var_sel_standardized = pd.DataFrame(df_sim_var_sel_standardized, columns=scaled_sim.columns)
+
+    # Identify outliers using Z-score method on standardized data
+    z_scores = np.abs(zscore(df_sim_var_sel_standardized))
+    threshold = 3
+    outliers = (z_scores > threshold).any(axis=1)
+
+    # Ensure the first element is not an outlier
+    if outliers[0]:
+        print('The MetSim reduction is an outlier')  # Still keep it for the PCA analysis
+        outliers[0] = False
+
+    # Filter out outliers
+    df_sim_shower = df_sim_shower[~outliers].copy()
+
+    if PCA_pairplot:
+        # Mapping of original variable names to LaTeX-style labels
+        variable_map = {
+            'vel_init_norot': r"$v_0$",
+            'vel_avg_norot': r"$v_{avg}$",
+            'v_init_180km': r"$v_{180km}$",
+            'duration': r"$T$",
+            'peak_mag_height': r"$h_{peak}$",
+            'begin_height': r"$h_{beg}$",
+            'end_height': r"$h_{end}$",
+            'peak_abs_mag': r"$M_{peak}$",
+            'beg_abs_mag': r"$M_{beg}$",
+            'end_abs_mag': r"$M_{end}$",
+            'F': r"$F$",
+            'trail_len': r"$L$",
+            't0': r"$t_0$",
+            'deceleration_lin': r"$\bar{a}$",
+            'deceleration_parab': r"$a_{quad}(1~s)$",
+            'decel_parab_t0': r"$\bar{a}_{poly}(1~s)$",
+            'decel_t0': r"$\bar{a}_{poly}$",
+            'decel_jacchia': r"$a_0 k$",
+            'zenith_angle': r"$z_c$",
+            'avg_lag': r"$\bar{\ell}$",
+            'kc': r"$k_c$",
+            'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$",
+            'a_mag_init': r"$d_1$",
+            'b_mag_init': r"$s_1$",
+            'a_mag_end': r"$d_2$",
+            'b_mag_end': r"$s_2$"
+        }
+
+        latex_labels = [variable_map.get(var, var) for var in variable_PCA[2:]]
+        df_sim_var_sel = df_sim_shower[variable_PCA].copy().drop(['type', 'solution_id'], axis=1)
+
+        # Sample 10,000 events if the dataset is large
+        if len(df_sim_var_sel) > 10000:
+            print('Number of events in the simulated:', len(df_sim_var_sel))
+            df_sim_var_sel = df_sim_var_sel.sample(n=10000)
+
+        # Setup the plot grid
+        fig, axs = plt.subplots(int(np.ceil(len(latex_labels) / 5)), 5, figsize=(20, 15))
+        axs = axs.flatten()
+
+        for i, (var, label) in enumerate(zip(variable_PCA[2:], latex_labels)):
+            sim_data = df_sim_var_sel[var].values
+            obs_data = df_obs_shower[var].values
+
+            # Determine bin range
+            all_values = np.concatenate([sim_data, obs_data])
+            min_value, max_value = np.min(all_values), np.max(all_values)
+
+            # Normalize simulation data
+            sim_counts, sim_bins = np.histogram(sim_data, bins=20, range=(min_value, max_value))
+            sim_norm = sim_counts / sim_counts.max()
+
+            # Normalize observation data
+            obs_counts, obs_bins = np.histogram(obs_data, bins=20, range=(min_value, max_value))
+            obs_norm = obs_counts / obs_counts.max()
+
+            # Plot simulation data
+            axs[i].bar(sim_bins[:-1], sim_norm, width=np.diff(sim_bins), align='edge', color='b', alpha=0.5, label='Simulated')
+
+            # Plot observed data
+            axs[i].bar(obs_bins[:-1], obs_norm, width=np.diff(obs_bins), align='edge', color='cyan', alpha=0.5, label='Observed')
+
+            axs[i].axvline(obs_data[0], color='black', linewidth=3)
+            axs[i].set_xlabel(label)
+            axs[i].set_ylabel('Normalized Density')
+
+        for i in range(len(latex_labels), len(axs)):
+            fig.delaxes(axs[i])
+
+        plt.tight_layout()
         plt.savefig(os.path.join(OUT_PUT_PATH, f"{file_name_obs}_var_hist_real.png"))
         plt.close()
 
@@ -6554,12 +6673,12 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition_all, pd_datafram_PCA_selected_all, pcr_results_physical_param, PCAn_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, output_folder+os.sep+save_results_folder_PCA, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_test_plot, cml_args.esclude_real_solution_from_selection)
 
         # find the 10 percentile value of 'distance_meteor'
-        perc_10 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.1)
-        perc_5 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.05)
-        perc_4 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.04)
-        perc_3 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.03)
-        perc_2 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.02)
-        perc_1 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.01)
+        perc_10 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.01)
+        perc_5 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.005)
+        perc_4 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.004)
+        perc_3 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.003)
+        perc_2 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.002)
+        perc_1 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.001)
 
         output_PCA_dist = output_folder+os.sep+save_results_folder_PCA+os.sep+'Knee'
         mkdirP(output_PCA_dist)
@@ -7190,12 +7309,12 @@ if __name__ == "__main__":
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/Test_cases', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/Results_PCAjson',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/Results_PCAreal',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \

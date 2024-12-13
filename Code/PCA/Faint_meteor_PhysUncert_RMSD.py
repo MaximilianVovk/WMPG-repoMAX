@@ -387,7 +387,7 @@ def generate_observation_realization(data, rmsd_lag, rmsd_mag, fit_funct, name='
         plot_side_by_side(data_obs,fig, ax)
 
     # compute the initial velocity
-    data_obs['v_init']=data['velocities'][0] # m/s
+    data_obs['v_init']=data['v_init'] # m/s v_init data['velocities'][0]
     # compute the average velocity
     data_obs['v_avg']=np.mean(data_obs['velocities']) # m/s
 
@@ -698,7 +698,7 @@ def safe_generate_erosion_sim(params):
         return None
 
 def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim,output_folder,file_name, fps, dens_co, plot_case=False, flag_manual_metsim=True, CI_physical_param=''):
-    '''
+    '''                 
         Generate simulations for the given real data
     '''
 
@@ -749,7 +749,7 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
 
 
     # Zenith angle range
-    erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'].iloc[0]-0.01), np.radians(real_data['zenith_angle'].iloc[0]+0.01)) # 43.466538
+    erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'].iloc[0]-0.1), np.radians(real_data['zenith_angle'].iloc[0]+0.1)) # 43.466538
     
     # # erosion_sim_params.erosion_height_start = MetParam(real_data['peak_mag_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2, real_data['begin_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2) # 43.466538
     # erosion_sim_params.erosion_height_start = MetParam(real_data['begin_height'].iloc[0]*1000-1000, real_data['begin_height'].iloc[0]*1000+4000) # 43.466538
@@ -793,7 +793,7 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     print('\\hline')
     # - zenith angle: min 28.736969960110045 - MAX 28.75696996011005
     # print('- zenith angle: min',np.degrees(erosion_sim_params.zenith_angle.min),'- MAX',np.degrees(erosion_sim_params.zenith_angle.max))
-    print(f"Zenith ang. [deg] & {'{:.4g}'.format(np.degrees(erosion_sim_params.zenith_angle.min))} & {'{:.4g}'.format(np.degrees(erosion_sim_params.zenith_angle.max))} \\\\")
+    print(f"Zenith ang. [deg] & {'{:.6g}'.format(np.degrees(erosion_sim_params.zenith_angle.min))} & {'{:.6g}'.format(np.degrees(erosion_sim_params.zenith_angle.max))} \\\\")
 
     print('\\hline') 
     # - Initial mag: min 5.45949291900601 - MAX 5.43949291900601
@@ -4113,8 +4113,14 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
             axs[i].set_xlabel(label)
             # for the zenith angle put only 3 ticks one at the max and one at the min and one at the middle
             if var == 'zenith_angle':
+                # delete any outliere in the zenith angle use the zscore
+                z_scores = np.abs(zscore(df_sim_var_sel[var].values))
+                threshold = 3
+                outliers = (z_scores > threshold)
+                # delete the outliers
+                sim_data_zc = df_sim_var_sel[~outliers][var].values
                 # put all the df_sim_var_sel[var] and all df_obs_shower[var] in a single array
-                axs[i].set_xticks([np.round(min_value, 3), np.round(mean_value, 3), np.round(max_value, 3)])
+                axs[i].set_xticks([np.round(np.min(sim_data_zc), 3), np.round(np.mean(sim_data_zc), 3), np.round(np.max(sim_data_zc), 3)])
             if i % 5 != 0:
                 axs[i].set_ylabel('Density')
 
@@ -6301,6 +6307,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         pd_dataframe_PCA_obs_real['rmsd_len'] = rmsd_t0_lag/1000
         pd_dataframe_PCA_obs_real['chi2_red_mag'] = 1
         pd_dataframe_PCA_obs_real['chi2_red_len'] = 1
+        # pd_dataframe_PCA_obs_real['vel_init_norot'] = pd_dataframe_PCA_obs_real['vel_init_norot'].iloc[0]
         if flag_manual_metsim:
             simulation_MetSim_object, gensim_data_Metsim, pd_datafram_PCA_sim_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
             # add pd_datafram_PCA_sim_Metsim['v_init_180km'] to pd_dataframe_PCA_obs_real
@@ -7183,12 +7190,12 @@ if __name__ == "__main__":
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/Test_cases', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Results_PCAjson',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/Results_PCAreal',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \
@@ -7197,7 +7204,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--fps', metavar='FPS', type=int, default=32, \
         help="Number of frames per second of the video, by default 32 like EMCCD.")
     
-    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=False, \
+    arg_parser.add_argument('--delete_all', metavar='DELETE_ALL', type=bool, default=True, \
         help="By default set to False, if set to True delete all directories and files.")
     
     arg_parser.add_argument('--delete_old', metavar='DELETE_OLD', type=bool, default=True, \
@@ -7209,7 +7216,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
         help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=10000, \
+    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=100, \
         help="Number of simulations to generate.")
     
     arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \
@@ -7239,7 +7246,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \

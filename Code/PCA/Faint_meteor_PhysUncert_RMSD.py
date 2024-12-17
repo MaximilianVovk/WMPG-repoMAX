@@ -1302,7 +1302,7 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         ax = axes[ax_index]
         # ax.set_title(var, fontsize=10)
         ax.set_xlabel(to_plot_unit[ax_index], fontsize=9)
-        ax.set_ylabel('$\sigma$', fontsize=9)
+        # ax.set_ylabel('$\sigma$', fontsize=9)
         # set thicks along y axis as lendata
         ax.set_yticks(lendata_sigma)
 

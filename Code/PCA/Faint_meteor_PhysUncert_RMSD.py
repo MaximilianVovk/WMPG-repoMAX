@@ -1304,7 +1304,8 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         ax.set_xlabel(to_plot_unit[ax_index], fontsize=9)
         # ax.set_ylabel('$\sigma$', fontsize=9)
         # set thicks along y axis as lendata
-        ax.set_yticks(lendata_sigma)
+        ax.set_yticks(range(len(lendata_sigma)))
+        ax.set_yticklabels(lendata_sigma)
 
     # The last subplot (axes[11]) is used for the legend only
     axes[11].axis('off')

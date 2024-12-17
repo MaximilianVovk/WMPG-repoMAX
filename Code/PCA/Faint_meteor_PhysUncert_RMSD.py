@@ -1185,6 +1185,134 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
     plt.close(fig)
 
 
+
+
+
+def PLOT_sigma_waterfall(df_sim, df_obs, realRMSD_mag, realRMSD_lag, output_directory, name_file, 
+                             sigma_values=[2, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0]):
+    df = df_sim.copy()
+    df_obs_real = df_obs.copy()
+    # take the first row df_obs_real
+    df_obs_real = df_obs_real.iloc[0]
+
+    # Columns to plot
+    to_plot = [
+        'mass', 
+        'rho', 
+        'sigma', 
+        'erosion_height_start', 
+        'erosion_coeff', 
+        'erosion_mass_index', 
+        'erosion_mass_min', 
+        'erosion_mass_max', 
+        'erosion_range', 
+        'erosion_energy_per_unit_cross_section', 
+        'erosion_energy_per_unit_mass'
+    ]
+    
+    # Corresponding units/labels
+    to_plot_unit = [
+        r'$m_0$ [kg]', 
+        r'$\rho$ [kg/m$^3$]', 
+        r'$\sigma$ [s$^2$/km$^2$]', 
+        r'$h_{e}$ [km]', 
+        r'$\eta$ [s$^2$/km$^2$]', 
+        r'$s$', 
+        r'log($m_{l}$)', 
+        r'log($m_{u}$)', 
+        r'log($m_{u}$)-log($m_{l}$)', 
+        r'$E_{S}$ [MJ/m$^2$]', 
+        r'$E_{V}$ [MJ/kg]'
+    ]
+
+    used_sigmas = sigma_values
+
+    fig, axs = plt.subplots(3, 4, figsize=(15, 10))
+    axes = axs.flatten()  # Flatten axes for easier iteration
+
+    sc = None  # For scatter plot reference (for the colorbar)
+
+    # Plot data for each sigma on the same set of subplots
+    for i, s in enumerate(used_sigmas):
+        # Filter the dataframe based on sigma threshold
+        filtered_df = df[
+            (df['rmsd_mag'] < s * realRMSD_mag) &
+            (df['rmsd_len'] < s * realRMSD_lag)
+        ]
+
+        # Choose a distinct alpha or marker for each sigma to differentiate them
+        # (Optional: You could also use different markers or colors per sigma.)
+        alpha_val = max(0.2, 1 - (i*0.07))  # Decrease alpha with each sigma
+        # Plot each variable in its corresponding subplot
+        for ax_index, var in enumerate(to_plot):
+            ax = axes[ax_index]
+
+            data = filtered_df[var].dropna()
+            if data.empty:
+                # No data after filtering, just continue
+                continue
+
+            # Compute density along the variable's values
+            y = data.values
+            x = data.index.values
+
+            if len(y) > 1:
+                density = gaussian_kde(y)(y)
+                # Normalize density to [0, 1]
+                density = (density - density.min()) / (density.max() - density.min())
+            else:
+                # If there's only one point, set density to mid-range
+                density = np.array([0.5])
+
+            sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
+
+    # Set titles and labels
+    for ax_index, var in enumerate(to_plot):
+        ax = axes[ax_index]
+        ax.set_title(var, fontsize=10)
+        ax.set_ylabel(to_plot_unit[ax_index], fontsize=9)
+
+    # The last subplot (axes[11]) is used for the legend only
+    axes[11].axis('off')
+
+    # Create custom legend entries
+    import matplotlib.patches as mpatches
+    from matplotlib.lines import Line2D
+
+    mode_line = Line2D([0], [0], color='red', linestyle='-.', label='Mode')
+    mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
+    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+    legend_elements = [metsim_line, mean_line, mode_line]
+
+    axes[11].legend(handles=legend_elements, loc='upper center')
+
+    # Adjust layout and add a single colorbar to the figure
+    fig.subplots_adjust(right=0.85)
+    cbar_ax = fig.add_axes([0.9, 0.15, 0.02, 0.7])
+    cbar = plt.colorbar(sc, cax=cbar_ax, label='Density (normalized)')
+
+    plt.tight_layout(rect=[0, 0, 0.9, 1])
+
+    # Save the figure instead of showing it
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+    plt.savefig(os.path.join(output_directory, name_file + 'SigmaPlot_sigma'+np.max(sigma_values)+'max'+np.min(sigma_values)+'min.png'), dpi=300)
+    plt.close(fig)
+
+
+
+
+    # if len(df_sim_shower_NEW_inter) > 0:
+    #     iter_patch = mpatches.Patch(color='limegreen', label='Iterative', alpha=0.5, edgecolor='black')
+    # if 'MetSim' in curr_df_sim_sel['type'].values:
+    #     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+    # else:
+    #     metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+
+
+
+
+
 def plot_side_by_side(data1, fig='', ax='', colorline1='.', label1='', residuals_mag='', residuals_vel='', residual_time_pos='', residual_height_pos='', residuals_lag='', fit_funct='', mag_noise='', vel_noise='',lag_noise='', sim_lag='', sim_time=''):
 
     # check if data1 is None
@@ -4256,7 +4384,6 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
     return df_sim_shower, variable_PCA, outliers
 
 
-
 def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, output_dir='', pca_N_comp=0):
 
     curr_sim=curr_sim_init.copy()
@@ -7001,6 +7128,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             pd_results = pd_results.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
             PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, outputdir_RMSD_plot, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,outputdir_RMSD_plot+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='lag')
             PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, outputdir_RMSD_plot, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,outputdir_RMSD_plot+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='vel')
+            print('PLOT: the sigma range waterfall plot')
+            PLOT_sigma_waterfall(pd_results, pd_dataframe_PCA_obs_real, rmsd_pol_mag, rmsd_t0_lag, outputdir_RMSD_plot, file_name)
             print()
             print('SUCCES: the physical characteristics range is in the results folder')
         else:

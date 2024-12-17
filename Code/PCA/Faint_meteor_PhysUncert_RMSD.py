@@ -1188,6 +1188,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
 
 
 
+
 def PLOT_sigma_waterfall(df_sim, df_obs, realRMSD_mag, realRMSD_lag, output_directory, name_file, 
                              sigma_values=[2, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0]):
     df = df_sim.copy()
@@ -1252,12 +1253,13 @@ def PLOT_sigma_waterfall(df_sim, df_obs, realRMSD_mag, realRMSD_lag, output_dire
                 # No data after filtering, just continue
                 continue
 
+            # make sigma multipy to ones
+            y = np.ones(len(data)) * s
             # Compute density along the variable's values
-            y = data.values
-            x = data.index.values
+            x = data.values
 
-            if len(y) > 1:
-                density = gaussian_kde(y)(y)
+            if len(x) > 1:
+                density = gaussian_kde(x)(x)
                 # Normalize density to [0, 1]
                 density = (density - density.min()) / (density.max() - density.min())
             else:
@@ -1265,6 +1267,12 @@ def PLOT_sigma_waterfall(df_sim, df_obs, realRMSD_mag, realRMSD_lag, output_dire
                 density = np.array([0.5])
 
             sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
+            # make a black line vertical line at the real value
+            ax.axvline(df_obs_real[var], color='black', linestyle='--', linewidth=2)
+            # put a red dot to the mode value
+            ax.plot(data.mode(), s, 'ro', markersize=5)
+            # put a blue dot to the mean value                              
+            ax.plot(data.mean(), s, 'bo', markersize=5)
 
     # Set titles and labels
     for ax_index, var in enumerate(to_plot):
@@ -1279,8 +1287,8 @@ def PLOT_sigma_waterfall(df_sim, df_obs, realRMSD_mag, realRMSD_lag, output_dire
     import matplotlib.patches as mpatches
     from matplotlib.lines import Line2D
 
-    mode_line = Line2D([0], [0], color='red', linestyle='-.', label='Mode')
-    mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
+    mode_line = Line2D([0], [0], color='red', label='Mode', markerstyle='o', linestyle=None) # , linestyle='-.',
+    mean_line = Line2D([0], [0], color='blue', label='Mean', markerstyle='o', linestyle=None) # , linestyle='--',
     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
     legend_elements = [metsim_line, mean_line, mode_line]
 
@@ -1296,7 +1304,7 @@ def PLOT_sigma_waterfall(df_sim, df_obs, realRMSD_mag, realRMSD_lag, output_dire
     # Save the figure instead of showing it
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
-    plt.savefig(os.path.join(output_directory, name_file + 'SigmaPlot_sigma'+str(np.max(sigma_values))+'max'+str(np.min(sigma_values))+'min.png'), dpi=300)
+    plt.savefig(os.path.join(output_directory, name_file + 'SigmaPlot_sigma'+np.max(sigma_values)+'max'+np.min(sigma_values)+'min.png'), dpi=300)
     plt.close(fig)
 
 
@@ -1308,6 +1316,7 @@ def PLOT_sigma_waterfall(df_sim, df_obs, realRMSD_mag, realRMSD_lag, output_dire
     #     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
     # else:
     #     metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+
 
 
 

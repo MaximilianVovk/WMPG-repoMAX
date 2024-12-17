@@ -1316,7 +1316,8 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
 
     mode_line = Line2D([0], [0], color='red', label='Mode', marker='o', linestyle='None')
     mean_line = Line2D([0], [0], color='blue', label='Mean', marker='o', linestyle='None')
-    if 'MetSim' in df_obs_real['type'].values:
+    # if 'MetSim' in df_obs_real['type'].values:
+    if 'MetSim' in df_obs_real['type']:
         metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
     else:
         metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')

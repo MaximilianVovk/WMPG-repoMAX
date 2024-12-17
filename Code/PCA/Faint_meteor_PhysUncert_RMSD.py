@@ -1268,7 +1268,7 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
 
             sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
             # make a black line vertical line at the real value
-            ax.axvline(df_obs_real[var], color='black', linestyle='--', linewidth=2)
+            ax.axvline(df_obs_real[var], color='black', linewidth=2)
             # Find the densest point (highest density)
             densest_index = np.argmax(density)
             densest_point = x[densest_index]
@@ -1281,8 +1281,9 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     # Set titles and labels
     for ax_index, var in enumerate(to_plot):
         ax = axes[ax_index]
-        ax.set_title(var, fontsize=10)
-        ax.set_ylabel(to_plot_unit[ax_index], fontsize=9)
+        # ax.set_title(var, fontsize=10)
+        ax.set_xlabel(to_plot_unit[ax_index], fontsize=9)
+        ax.set_ylabel('$\sigma$', fontsize=9)
 
     # The last subplot (axes[11]) is used for the legend only
     axes[11].axis('off')
@@ -1293,7 +1294,10 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
 
     mode_line = Line2D([0], [0], color='red', label='Mode', marker='o', linestyle='None')
     mean_line = Line2D([0], [0], color='blue', label='Mean', marker='o', linestyle='None')
-    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
+    if 'MetSim' in curr_df_sim_sel['type'].values:
+        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+    else:
+        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
     legend_elements = [metsim_line, mean_line, mode_line]
 
 

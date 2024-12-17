@@ -1257,7 +1257,7 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
             (df['rmsd_len'] < s * realRMSD_lag)
         ]
 
-        lendata_sigma.append('('+str(len(filtered_df))+') '+str(s)+'\sigma')
+        lendata_sigma.append(f'$({len(filtered_df)})~{s}\\sigma$')
 
         # Choose a distinct alpha or marker for each sigma to differentiate them
         # (Optional: You could also use different markers or colors per sigma.)

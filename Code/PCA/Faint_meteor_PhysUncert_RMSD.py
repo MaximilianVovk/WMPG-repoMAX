@@ -1302,10 +1302,10 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         ax = axes[ax_index]
         # ax.set_title(var, fontsize=10)
         ax.set_xlabel(to_plot_unit[ax_index], fontsize=9)
-        # ax.set_ylabel('$\sigma$', fontsize=9)
-        # set thicks along y axis as lendata
-        ax.set_yticks(sigma_values)
-        ax.set_yticklabels(lendata_sigma)
+        ax.set_ylabel('$\sigma$', fontsize=9)
+        # # set thicks along y axis as lendata
+        # ax.set_yticks(sigma_values)
+        # ax.set_yticklabels(lendata_sigma)
         # put the -- in the grids
         ax.grid(True, linestyle='--', color='lightgray')
 
@@ -1323,10 +1323,15 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
     else:
         metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
-    # put the len of x in the legend followed by the sigma value
-    legend_elements = [metsim_line, mean_line, mode_line]
+    # # put the len of x in the legend followed by the sigma value
+    # sigma_values = Line2D([], [], color='none', marker='', linestyle='None', label=lendata_sigma)
+    legend_elements = [metsim_line, mean_line, mode_line,
+    Line2D([], [], color='none', marker='', linestyle='None', label=lbl)
+    for lbl in lendata_sigma
+    ]
+    # legend_elements = [metsim_line, mean_line, mode_line, sigma_values]
 
-    axes[11].legend(handles=legend_elements, loc='upper center')
+    axes[11].legend(handles=legend_elements, loc='upper center', ncol=2) # , fontsize=8
 
     # Adjust layout and add a single colorbar to the figure
     fig.subplots_adjust(right=0.85)

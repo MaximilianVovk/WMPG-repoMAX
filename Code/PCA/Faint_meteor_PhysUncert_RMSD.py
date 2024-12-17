@@ -1269,8 +1269,12 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
             sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
             # make a black line vertical line at the real value
             ax.axvline(df_obs_real[var], color='black', linestyle='--', linewidth=2)
-            # put a red dot to the mode value
-            ax.plot(data.mode(), s, 'ro', markersize=5)
+            # Find the densest point (highest density)
+            densest_index = np.argmax(density)
+            densest_point = x[densest_index]
+
+            # You can now use densest_point as your "mode" or representative value
+            ax.plot(densest_point, s, 'ro', markersize=5)
             # put a blue dot to the mean value                              
             ax.plot(data.mean(), s, 'bo', markersize=5)
 
@@ -1287,10 +1291,11 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     import matplotlib.patches as mpatches
     from matplotlib.lines import Line2D
 
-    mode_line = Line2D([0], [0], color='red', label='Mode', markerstyle='o', linestyle=None) # , linestyle='-.',
-    mean_line = Line2D([0], [0], color='blue', label='Mean', markerstyle='o', linestyle=None) # , linestyle='--',
-    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+    mode_line = Line2D([0], [0], color='red', label='Mode', marker='o', linestyle='None')
+    mean_line = Line2D([0], [0], color='blue', label='Mean', marker='o', linestyle='None')
+    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
     legend_elements = [metsim_line, mean_line, mode_line]
+
 
     axes[11].legend(handles=legend_elements, loc='upper center')
 
@@ -1304,7 +1309,7 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     # Save the figure instead of showing it
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
-    plt.savefig(os.path.join(output_directory, name_file + 'SigmaPlot_sigma'+np.max(sigma_values)+'max'+np.min(sigma_values)+'min.png'), dpi=300)
+    plt.savefig(os.path.join(output_directory, name_file + 'SigmaPlot_sigma'+str(np.max(sigma_values))+'max'+str(np.min(sigma_values))+'min.png'), dpi=300)
     plt.close(fig)
 
 

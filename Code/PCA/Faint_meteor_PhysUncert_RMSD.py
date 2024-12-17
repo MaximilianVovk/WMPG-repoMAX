@@ -1189,10 +1189,10 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
 
 
 
-def PLOT_sigma_waterfall(df_sim, df_obs, realRMSD_mag, realRMSD_lag, output_directory, name_file, 
+def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_directory, name_file, 
                              sigma_values=[2, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0]):
-    df = df_sim.copy()
-    df_obs_real = df_obs.copy()
+    df = df_sel_sim.copy()
+    df_obs_real = df_sim.copy()
     # take the first row df_obs_real
     df_obs_real = df_obs_real.iloc[0]
 
@@ -7138,7 +7138,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, outputdir_RMSD_plot, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,outputdir_RMSD_plot+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='lag')
             PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, outputdir_RMSD_plot, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,outputdir_RMSD_plot+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='vel')
             print('PLOT: the sigma range waterfall plot')
-            PLOT_sigma_waterfall(pd_results, pd_dataframe_PCA_obs_real, rmsd_pol_mag, rmsd_t0_lag, outputdir_RMSD_plot, file_name)
+            PLOT_sigma_waterfall(pd_results, pd_datafram_PCA_sim, rmsd_pol_mag, rmsd_t0_lag, outputdir_RMSD_plot, file_name)
             print()
             print('SUCCES: the physical characteristics range is in the results folder')
         else:

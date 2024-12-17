@@ -1226,13 +1226,29 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         r'$E_{V}$ [MJ/kg]'
     ]
 
+    # multiply the erosion coeff by 1000000 to have it in km/s
+    df['erosion_coeff'] = df['erosion_coeff'] * 1000000
+    df['sigma'] = df['sigma'] * 1000000
+    df['erosion_energy_per_unit_cross_section'] = df['erosion_energy_per_unit_cross_section'] / 1000000
+    df['erosion_energy_per_unit_mass'] = df['erosion_energy_per_unit_mass'] / 1000000
+    df['erosion_mass_min'] = np.log10(df['erosion_mass_min'])
+    df['erosion_mass_max'] = np.log10(df['erosion_mass_max'])
+    
+    # multiply the erosion coeff by 1000000 to have it in km/s
+    df_obs_real['erosion_coeff'] = df_obs_real['erosion_coeff'] * 1000000
+    df_obs_real['sigma'] = df_obs_real['sigma'] * 1000000
+    df_obs_real['erosion_energy_per_unit_cross_section'] = df_obs_real['erosion_energy_per_unit_cross_section'] / 1000000
+    df_obs_real['erosion_energy_per_unit_mass'] = df_obs_real['erosion_energy_per_unit_mass'] / 1000000
+    df_obs_real['erosion_mass_min'] = np.log10(df_obs_real['erosion_mass_min'])
+    df_obs_real['erosion_mass_max'] = np.log10(df_obs_real['erosion_mass_max'])
+
     used_sigmas = sigma_values
 
     fig, axs = plt.subplots(3, 4, figsize=(15, 10))
     axes = axs.flatten()  # Flatten axes for easier iteration
 
     sc = None  # For scatter plot reference (for the colorbar)
-
+    lendata_sigma = []
     # Plot data for each sigma on the same set of subplots
     for i, s in enumerate(used_sigmas):
         # Filter the dataframe based on sigma threshold
@@ -1240,6 +1256,8 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
             (df['rmsd_mag'] < s * realRMSD_mag) &
             (df['rmsd_len'] < s * realRMSD_lag)
         ]
+
+        lendata_sigma.append('('+str(len(filtered_df))+') '+str(s)+'\sigma')
 
         # Choose a distinct alpha or marker for each sigma to differentiate them
         # (Optional: You could also use different markers or colors per sigma.)
@@ -1278,12 +1296,15 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
             # put a blue dot to the mean value                              
             ax.plot(data.mean(), s, 'bo', markersize=5)
 
+
     # Set titles and labels
     for ax_index, var in enumerate(to_plot):
         ax = axes[ax_index]
         # ax.set_title(var, fontsize=10)
         ax.set_xlabel(to_plot_unit[ax_index], fontsize=9)
         ax.set_ylabel('$\sigma$', fontsize=9)
+        # set thicks along y axis as lendata
+        ax.set_yticks(lendata_sigma)
 
     # The last subplot (axes[11]) is used for the legend only
     axes[11].axis('off')
@@ -1294,9 +1315,12 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
 
     mode_line = Line2D([0], [0], color='red', label='Mode', marker='o', linestyle='None')
     mean_line = Line2D([0], [0], color='blue', label='Mean', marker='o', linestyle='None')
-    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
+    if 'MetSim' in df_obs_real['type'].values:
+        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+    else:
+        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
+    # put the len of x in the legend followed by the sigma value
     legend_elements = [metsim_line, mean_line, mode_line]
-
 
     axes[11].legend(handles=legend_elements, loc='upper center')
 

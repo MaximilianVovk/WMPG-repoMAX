@@ -1242,6 +1242,8 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     df_obs_real['erosion_mass_min'] = np.log10(df_obs_real['erosion_mass_min'])
     df_obs_real['erosion_mass_max'] = np.log10(df_obs_real['erosion_mass_max'])
 
+    df_limits = df.copy()
+
     used_sigmas = sigma_values
 
     fig, axs = plt.subplots(3, 4, figsize=(15, 10))
@@ -1257,7 +1259,8 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
             (df['rmsd_len'] < s * realRMSD_lag)
         ]
 
-        lendata_sigma.append(f'$({len(filtered_df)})~{s}\\sigma$')
+        # lendata_sigma.append(f'$({len(filtered_df)})~{s}\\sigma$')
+        lendata_sigma.append(f'${s}~RMSD~-~{len(filtered_df)}$')
 
         # Choose a distinct alpha or marker for each sigma to differentiate them
         # (Optional: You could also use different markers or colors per sigma.)
@@ -1302,7 +1305,12 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         ax = axes[ax_index]
         # ax.set_title(var, fontsize=10)
         ax.set_xlabel(to_plot_unit[ax_index], fontsize=9)
-        ax.set_ylabel('$\sigma$', fontsize=9)
+        # now put the x axis range from the highest to the smallest value in df_sel_sim but 
+        ax.set_xlim([df_limits[var].min(), df_limits[var].max()])
+        # tilt thicks 45 degrees
+        ax.tick_params(axis='x', rotation=45)
+        # ax.set_ylabel('$\sigma$', fontsize=9)
+        ax.set_ylabel('RMSD', fontsize=9)
         # # set thicks along y axis as lendata
         # ax.set_yticks(sigma_values)
         # ax.set_yticklabels(lendata_sigma)
@@ -1311,6 +1319,30 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
 
     # The last subplot (axes[11]) is used for the legend only
     axes[11].axis('off')
+
+    N_sigma = len(lendata_sigma)
+    half = (N_sigma + 1) // 2  # The midpoint, rounding up if odd
+    col1 = lendata_sigma[:half]
+    col2 = lendata_sigma[half:]
+
+    # To align them neatly, you can use string formatting. For example:
+    # Left-align the first column in a fixed width so that the second column lines up
+    max_len_col1 = max(len(s) for s in col1)
+    two_col_lines = []
+    for i in range(half):
+        if i < len(col2):
+            two_col_lines.append(f"{col1[i].ljust(max_len_col1)}   {col2[i]}")
+        else:
+            # If col2 is shorter, just print col1
+            two_col_lines.append(col1[i])
+
+    # Join into a single multiline string
+    sigma_text = "\n".join(two_col_lines)
+
+    # Now place the text in the subplot 11
+    axes[11].text(0.5, 0.05, sigma_text,
+                transform=axes[11].transAxes,
+                ha='center', va='bottom', fontsize=9)
 
     # Create custom legend entries
     import matplotlib.patches as mpatches

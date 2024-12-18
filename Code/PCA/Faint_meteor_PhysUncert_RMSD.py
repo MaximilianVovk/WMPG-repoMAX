@@ -1331,7 +1331,7 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     table = axes[11].table(
         cellText=data_for_table,
         colLabels=["RMSD", "Count"],
-        loc='right'
+        loc='left'
     )
 
     # Adjust table formatting

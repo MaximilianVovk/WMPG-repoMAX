@@ -1260,7 +1260,7 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         ]
 
         # lendata_sigma.append(f'$({len(filtered_df)})~{s}\\sigma$')
-        lendata_sigma.append(f'${s}~RMSD~-~{len(filtered_df)}$')
+        lendata_sigma.append(f'${s}~$RMSD$~-~{len(filtered_df)}$')
 
         # Choose a distinct alpha or marker for each sigma to differentiate them
         # (Optional: You could also use different markers or colors per sigma.)
@@ -1320,24 +1320,26 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     # The last subplot (axes[11]) is used for the legend only
     axes[11].axis('off')
 
-    N_sigma = len(lendata_sigma)
-    half = (N_sigma + 1) // 2  # The midpoint, rounding up if odd
-    col1 = lendata_sigma[:half]
-    col2 = lendata_sigma[half:]
+    sigma_text = "\n".join(lendata_sigma)
 
-    # To align them neatly, you can use string formatting. For example:
-    # Left-align the first column in a fixed width so that the second column lines up
-    max_len_col1 = max(len(s) for s in col1)
-    two_col_lines = []
-    for i in range(half):
-        if i < len(col2):
-            two_col_lines.append(f"{col1[i].ljust(max_len_col1)}   {col2[i]}")
-        else:
-            # If col2 is shorter, just print col1
-            two_col_lines.append(col1[i])
+    # N_sigma = len(lendata_sigma)
+    # half = (N_sigma + 1) // 2  # The midpoint, rounding up if odd
+    # col1 = lendata_sigma[:half]
+    # col2 = lendata_sigma[half:]
 
-    # Join into a single multiline string
-    sigma_text = "\n".join(two_col_lines)
+    # # To align them neatly, you can use string formatting. For example:
+    # # Left-align the first column in a fixed width so that the second column lines up
+    # max_len_col1 = max(len(s) for s in col1)
+    # two_col_lines = []
+    # for i in range(half):
+    #     if i < len(col2):
+    #         two_col_lines.append(f"{col1[i].ljust(max_len_col1)}   {col2[i]}")
+    #     else:
+    #         # If col2 is shorter, just print col1
+    #         two_col_lines.append(col1[i])
+
+    # # Join into a single multiline string
+    # sigma_text = "\n".join(two_col_lines)
 
     # Now place the text in the subplot 11
     axes[11].text(0.5, 0.05, sigma_text,
@@ -1359,7 +1361,7 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     # sigma_values = Line2D([], [], color='none', marker='', linestyle='None', label=lendata_sigma)
     legend_elements = [metsim_line, mean_line, mode_line]
 
-    axes[11].legend(handles=legend_elements, loc='upper center', ncol=2) # , fontsize=8
+    axes[11].legend(handles=legend_elements, loc='upper center') # , fontsize=8
 
     # Adjust layout and add a single colorbar to the figure
     fig.subplots_adjust(right=0.85)

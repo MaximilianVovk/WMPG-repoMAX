@@ -1357,11 +1357,7 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
     # # put the len of x in the legend followed by the sigma value
     # sigma_values = Line2D([], [], color='none', marker='', linestyle='None', label=lendata_sigma)
-    legend_elements = [metsim_line, mean_line, mode_line,
-    Line2D([], [], color='none', marker='', linestyle='None', label=lbl)
-    for lbl in lendata_sigma
-    ]
-    # legend_elements = [metsim_line, mean_line, mode_line, sigma_values]
+    legend_elements = [metsim_line, mean_line, mode_line]
 
     axes[11].legend(handles=legend_elements, loc='upper center', ncol=2) # , fontsize=8
 

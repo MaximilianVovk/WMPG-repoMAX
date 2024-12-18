@@ -781,7 +781,7 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
 
 
     print('Run',numb_sim,'simulations with :')
-    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s$^2$/km$^2$]','erosion height start [km]','erosion coeff [s$^2$/km$^2$]','erosion mass index','eros. mass min [kg]','eros. mass max [kg]']
+    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [kg/MJ]','erosion height start [km]','erosion coeff [kg/MJ]','erosion mass index','eros. mass min [kg]','eros. mass max [kg]']
     print('\\hline') #df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]
     print('Variables & min.val. & MAX.val. \\\\')
 
@@ -818,7 +818,7 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     print('\\hline')
     # - sigma : min 8e-09 - MAX 3e-08
     # print('- sigma : min',erosion_sim_params.sigma.min,'- MAX',erosion_sim_params.sigma.max)
-    print(f"sigma [s^2/km^2] & {'{:.4g}'.format(erosion_sim_params.sigma.min*1000000)} & {'{:.4g}'.format(erosion_sim_params.sigma.max*1000000)} \\\\")
+    print(f"sigma [kg/MJ] & {'{:.4g}'.format(erosion_sim_params.sigma.min*1000000)} & {'{:.4g}'.format(erosion_sim_params.sigma.max*1000000)} \\\\")
 
     print('\\hline')
     # - erosion_height_start : min 107622.04437691614 - MAX 117622.04437691614
@@ -828,7 +828,7 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     print('\\hline')
     # - erosion_coeff : min 0.0 - MAX 1e-06
     # print('- erosion_coeff : min',erosion_sim_params.erosion_coeff.min,'- MAX',erosion_sim_params.erosion_coeff.max)
-    print(f"Eros.coeff. [s^2/km^2] & {'{:.4g}'.format(erosion_sim_params.erosion_coeff.min*1000000)} & {'{:.4g}'.format(erosion_sim_params.erosion_coeff.max*1000000)} \\\\")
+    print(f"Eros.coeff. [kg/MJ] & {'{:.4g}'.format(erosion_sim_params.erosion_coeff.min*1000000)} & {'{:.4g}'.format(erosion_sim_params.erosion_coeff.max*1000000)} \\\\")
 
     print('\\hline')
     # - erosion_mass_index : min 1.5 - MAX 2.5
@@ -1042,19 +1042,19 @@ def plot_data_with_residuals_and_real(rmsd_mag, rmsd_vel, rmsd_len, fit_funct_or
     if data_opt_or_desns!='':
         label_line1= label_data+' mag$_{RMSD}$ '+str(round(data['rmsd_mag'],3))+' lag$_{RMSD}$ '+str(round(data['rmsd_len']*1000,1))+'m\n\
 $m_0$:'+str('{:.2e}'.format(data['mass'],1))+'kg $\\rho$:'+str(round(data['rho']))+'kg/m$^3$\n\
-$\sigma$:'+str(round(data['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(data['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
+$\sigma$:'+str(round(data['sigma']*1000000,4))+'kg/MJ $\eta$:'+str(round(data['erosion_coeff']*1000000,3))+'kg/MJ\n\
 $h_e$:'+str(round(data['erosion_height_start'],1))+'km $s$:'+str(round(data['erosion_mass_index'],2))+'\n\
 $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(data['erosion_mass_max'],1))+'kg'
         label_line2 = label_opt_or_desns+' mag$_{RMSD}$ '+str(round(data_opt_or_desns['rmsd_mag'],3))+' lag$_{RMSD}$ '+str(round(data_opt_or_desns['rmsd_len']*1000,1))+'m\n\
 $m_0$:'+str('{:.2e}'.format(data_opt_or_desns['mass'],1))+'kg $\\rho$:'+str(round(data_opt_or_desns['rho']))+'kg/m$^3$\n\
-$\sigma$:'+str(round(data_opt_or_desns['sigma']*1000000,1))+'s$^2$/km$^2$ $\eta$:'+str(round(data_opt_or_desns['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
+$\sigma$:'+str(round(data_opt_or_desns['sigma']*1000000,1))+'kg/MJ $\eta$:'+str(round(data_opt_or_desns['erosion_coeff']*1000000,3))+'kg/MJ\n\
 $h_e$:'+str(round(data_opt_or_desns['erosion_height_start'],1))+'km $s$:'+str(round(data_opt_or_desns['erosion_mass_index'],2))+'\n\
 $m_l$:'+str('{:.2e}'.format(data_opt_or_desns['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(data_opt_or_desns['erosion_mass_max'],1))+'kg'
         ax4.legend([line1, line2], [label_line1, label_line2], loc='center', ncol=2, fontsize=7)
     elif data!='':
         label_line1=label_data+' mag$_{RMSD}$ '+str(round(data['rmsd_mag'],3))+' lag$_{RMSD}$ '+str(round(data['rmsd_len']*1000,1))+'m\n\
 $m_0$:'+str('{:.2e}'.format(data['mass'],1))+'kg $\\rho$:'+str(round(data['rho']))+'kg/m$^3$\n\
-$\sigma$:'+str(round(data['sigma']*1000000,4))+'s$^2$/km$^2$ $\eta$:'+str(round(data['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
+$\sigma$:'+str(round(data['sigma']*1000000,4))+'kg/MJ $\eta$:'+str(round(data['erosion_coeff']*1000000,3))+'s$^2$/km$^2$\n\
 $h_e$:'+str(round(data['erosion_height_start'],1))+'km $s$:'+str(round(data['erosion_mass_index'],2))+'\n\
 $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}'.format(data['erosion_mass_max'],1))+'kg'
         ax4.legend([line1], [label_line1], loc='center left', ncol=1)
@@ -1215,9 +1215,9 @@ def PLOT_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     to_plot_unit = [
         r'$m_0$ [kg]', 
         r'$\rho$ [kg/m$^3$]', 
-        r'$\sigma$ [s$^2$/km$^2$]', 
+        r'$\sigma$ [kg/MJ]', 
         r'$h_{e}$ [km]', 
-        r'$\eta$ [s$^2$/km$^2$]', 
+        r'$\eta$ [kg/MJ]', 
         r'$s$', 
         r'log($m_{l}$)', 
         r'log($m_{u}$)', 
@@ -3495,8 +3495,8 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     pcr.fit(X_train, y_train)
     # Predict using the models
     y_pred_pcr = pcr.predict(df_sim_shower_resample[variable_PCA_no_info])
-    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [s$^2$/km$^2$]','erosion height start [km]','erosion coeff [s$^2$/km$^2$]','erosion mass index','eros. mass min [kg]','eros. mass max [kg]']
-    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$', r'$m_{l}$ [kg]', r'$m_{u}$ [kg]'] #,r'log($m_{u}$)-log($m_{l}$)']
+    # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [kg/MJ]','erosion height start [km]','erosion coeff [kg/MJ]','erosion mass index','eros. mass min [kg]','eros. mass max [kg]']
+    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [kg/MJ]', r'$h_{e}$ [km]', r'$\eta$ [kg/MJ]', r'$s$', r'$m_{l}$ [kg]', r'$m_{u}$ [kg]'] #,r'log($m_{u}$)-log($m_{l}$)']
     # multiply y_pred_pcr that has the 'erosion_coeff'*1000000 and 'sigma'*1000000
     y_pred_pcr[:,4]=y_pred_pcr[:,4]*1000000
     y_pred_pcr[:,2]=y_pred_pcr[:,2]*1000000
@@ -4460,15 +4460,15 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, output_dir='', pca_N_comp=0)
     label_mappings = {
         'mass': '$m_0$ [kg]',
         'rho': '$\\rho$ [kg/m$^3$]',
-        'sigma': '$\sigma$ [s$^2$/km$^2$]',
+        'sigma': '$\sigma$ [kg/MJ]',
         'erosion_height_start': '$h_e$ [km]',
-        'erosion_coeff': '$\eta$ [s$^2$/km$^2$]',
+        'erosion_coeff': '$\eta$ [kg/MJ]',
         'erosion_mass_index': '$s$',
         'erosion_mass_min': '$m_{l}$ [kg]',
         'erosion_mass_max': '$m_{u}$ [kg]'
     }
 
-    # to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$', r'log($m_{l}$)', r'log($m_{u}$)',r'log($m_{u}$)-log($m_{l}$)']
+    # to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [kg/MJ]', r'$h_{e}$ [km]', r'$\eta$ [kg/MJ]', r'$s$', r'log($m_{l}$)', r'log($m_{u}$)',r'log($m_{u}$)-log($m_{l}$)']
 
     # Define a custom palette
     custom_palette = {
@@ -5208,7 +5208,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
     curr_sel = curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'].copy()
 
     to_plot = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass', '']
-    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [s$^2$/km$^2$]', r'$h_{e}$ [km]', r'$\eta$ [s$^2$/km$^2$]', r'$s$', r'log($m_{l}$)', r'log($m_{u}$)', r'log($m_{u}$)-log($m_{l}$)', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]', r'']
+    to_plot_unit = [r'$m_0$ [kg]', r'$\rho$ [kg/m$^3$]', r'$\sigma$ [kg/MJ]', r'$h_{e}$ [km]', r'$\eta$ [kg/MJ]', r'$s$', r'log($m_{l}$)', r'log($m_{u}$)', r'log($m_{u}$)-log($m_{l}$)', r'$E_{S}$ [MJ/m$^2$]', r'$E_{V}$ [MJ/kg]', r'']
 
     fig, axs = plt.subplots(3, 4, figsize=(15, 10))
     axs = axs.flatten()
@@ -5523,8 +5523,8 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
         r'$\mathbf{lag_{RMSD} \ [m]}$',
         r'$\mathbf{m_0 \ [kg]}$',
         r'$\mathbf{\rho \ [kg/m^3]}$',
-        r'$\mathbf{\sigma \ [s^2/km^2]}$',
-        r'$\mathbf{\eta \ [s^2/km^2]}$',
+        r'$\mathbf{\sigma \ [kg/MJ]}$',
+        r'$\mathbf{\eta \ [kg/MJ]}$',
         r'$\mathbf{h_e \ [km]}$',
         r'$\mathbf{s}$',
         r'$\mathbf{m_l \ [kg]}$',
@@ -7486,12 +7486,12 @@ if __name__ == "__main__":
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v57_slow\PER_v57_slow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v59_heavy\PER_v59_heavy.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v60_light\PER_v60_light.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v61_shallow\PER_v61_shallow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v62_steep\PER_v62_steep.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v65_fast\PER_v65_fast.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/home/mvovk/Documents/Results_PCAjson',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\/Results_PCAjson',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \

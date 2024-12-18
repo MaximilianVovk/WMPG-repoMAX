@@ -4418,9 +4418,9 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
     if PCA_pairplot:
         # Mapping of original variable names to LaTeX-style labels
         variable_map = {
-            'vel_init_norot': r"$v_0$ [km~s$^{-1}$]",
-            'vel_avg_norot': r"$v_{avg}$ [km~s$^{-1}$]",
-            'v_init_180km': r"$v_{180km}$ [m~s$^{-1}$]",
+            'vel_init_norot': r"$v_0$ [km/s]",
+            'vel_avg_norot': r"$v_{avg}$ [km/s]",
+            'v_init_180km': r"$v_{180km}$ [m/s]",
             'duration': r"$T$ [s]",
             'peak_mag_height': r"$h_{peak}$ [km]",
             'begin_height': r"$h_{beg}$ [km]",
@@ -4431,19 +4431,19 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
             'F': r"$F$",
             'trail_len': r"$L$ [km]",
             't0': r"$t_0$ [s]",
-            'deceleration_lin': r"$\bar{a}$ [km~s$^{-2}$]",
-            'deceleration_parab': r"$a_{quad}(1~s)$ [km~s$^{-2}$]",
-            'decel_parab_t0': r"$\bar{a}_{poly}(1~s)$ [km~s$^{-2}$]",
-            'decel_t0': r"$\bar{a}_{poly}$ [km~s$^{-2}$]",
-            'decel_jacchia': r"$a_0 k$ [km~s$^{-1}$]",
+            'deceleration_lin': r"$\bar{a}$ [km/s$^{2}$]",
+            'deceleration_parab': r"$a_{quad}(1~s)$ [km/s$^{2}$]",
+            'decel_parab_t0': r"$\bar{a}_{poly}(1~s)$ [km/s$^{2}$]",
+            'decel_t0': r"$\bar{a}_{poly}$ [km/s$^{2}$]",
+            'decel_jacchia': r"$a_0 k$ [km/s$^{2}$]",
             'zenith_angle': r"$z_c$ [deg]",
             'avg_lag': r"$\bar{\ell}$ [m]",
             'kc': r"$k_c$ [km]",
             'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$ [kPa]",
-            'a_mag_init': r"$d_1$ [mag~s$^{-2}$]",
-            'b_mag_init': r"$s_1$ [mag~s$^{-1}$]",
-            'a_mag_end': r"$d_2$ [mag~s$^{-2}$]",
-            'b_mag_end': r"$s_2$ [mag~s$^{-1}$]"
+            'a_mag_init': r"$d_1$ [mag/s$^{2}$]",
+            'b_mag_init': r"$s_1$ [mag/s]",
+            'a_mag_end': r"$d_2$ [mag/s$^{2}$]",
+            'b_mag_end': r"$s_2$ [mag/s]"
         }
 
         latex_labels = [variable_map.get(var, var) for var in variable_PCA[2:]]

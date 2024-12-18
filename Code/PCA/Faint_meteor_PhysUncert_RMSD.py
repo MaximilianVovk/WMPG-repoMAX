@@ -1331,7 +1331,8 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     table = axes[11].table(
         cellText=data_for_table,
         colLabels=["RMSD", "Count"],
-        loc='left'
+        loc='center left',
+        bbox=[-0.05, 0.0, 0.35, 1.0]  # Adjust these values as needed
     )
 
     # Adjust table formatting
@@ -1349,7 +1350,7 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
             if col == 0:
                 cell.set_text_props(ha='center', va='center')
             else:
-                cell.set_text_props(ha='right', va='center')
+                cell.set_text_props(ha='center', va='center')
 
 
     # sigma_text = "\n".join(lendata_sigma)
@@ -7614,7 +7615,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--conf_lvl', metavar='CONF_LVL', type=float, default=95, \
         help="Confidene level that multiply the RMSD mag and len, by default set to 95%.")
 
-    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=False, \
+    arg_parser.add_argument('--use_PCA', metavar='USE_PCA', type=bool, default=True, \
         help="Use PCA method to initially estimate possible candidates.")
 
     arg_parser.add_argument('--nsel_forced', metavar='SEL_NUM_FORCED', type=int, default=0, \

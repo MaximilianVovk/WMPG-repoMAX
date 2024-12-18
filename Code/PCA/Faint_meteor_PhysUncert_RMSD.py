@@ -15,6 +15,7 @@ from matplotlib.gridspec import GridSpec
 import matplotlib.gridspec as gridspec
 # import matplotlib
 # matplotlib.use('Agg')
+import matplotlib.ticker as ticker
 from numpy.linalg import inv
 import numpy as np
 import subprocess
@@ -1250,6 +1251,8 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     axes = axs.flatten()  # Flatten axes for easier iteration
 
     sc = None  # For scatter plot reference (for the colorbar)
+
+    data_for_table = []
     lendata_sigma = []
     # Plot data for each sigma on the same set of subplots
     for i, s in enumerate(used_sigmas):
@@ -1261,6 +1264,9 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
 
         # lendata_sigma.append(f'$({len(filtered_df)})~{s}\\sigma$')
         lendata_sigma.append(f'${s}~$RMSD$~-~{len(filtered_df)}$')
+
+        # Format RMSD with one decimal place, even for whole numbers
+        data_for_table.append([f"{s:.1f}", f"{len(filtered_df)}"])
 
         # Choose a distinct alpha or marker for each sigma to differentiate them
         # (Optional: You could also use different markers or colors per sigma.)
@@ -1308,7 +1314,8 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         # now put the x axis range from the highest to the smallest value in df_sel_sim but 
         ax.set_xlim([df_limits[var].min(), df_limits[var].max()])
         # tilt thicks 45 degrees
-        ax.tick_params(axis='x', rotation=45)
+        # ax.tick_params(axis='x', rotation=45)
+        ax.xaxis.set_major_locator(ticker.MaxNLocator(4))
         # ax.set_ylabel('$\sigma$', fontsize=9)
         ax.set_ylabel('RMSD', fontsize=9)
         # # set thicks along y axis as lendata
@@ -1320,7 +1327,32 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     # The last subplot (axes[11]) is used for the legend only
     axes[11].axis('off')
 
-    sigma_text = "\n".join(lendata_sigma)
+    # Create the table
+    table = axes[11].table(
+        cellText=data_for_table,
+        colLabels=["RMSD", "Count"],
+        loc='center'
+    )
+
+    # Adjust table formatting
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    table.auto_set_column_width(col=list(range(2)))  # Auto-adjust column widths
+
+    # Align text in cells (optional)
+    for (row, col), cell in table.get_celld().items():
+        # Make header bold and aligned center
+        if row == 0:
+            cell.set_text_props(ha='center', va='center', fontweight='bold')
+        else:
+            # Align numeric columns to the right and RMSD column center if desired
+            if col == 0:
+                cell.set_text_props(ha='center', va='center')
+            else:
+                cell.set_text_props(ha='right', va='center')
+
+
+    # sigma_text = "\n".join(lendata_sigma)
 
     # N_sigma = len(lendata_sigma)
     # half = (N_sigma + 1) // 2  # The midpoint, rounding up if odd
@@ -1341,10 +1373,10 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     # # Join into a single multiline string
     # sigma_text = "\n".join(two_col_lines)
 
-    # Now place the text in the subplot 11
-    axes[11].text(0.5, 0.05, sigma_text,
-                transform=axes[11].transAxes,
-                ha='center', va='bottom', fontsize=9)
+    # # Now place the text in the subplot 11
+    # axes[11].text(0.5, 0.05, sigma_text,
+    #             transform=axes[11].transAxes,
+    #             ha='center', va='bottom', fontsize=9)
 
     # Create custom legend entries
     import matplotlib.patches as mpatches
@@ -4386,32 +4418,32 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
     if PCA_pairplot:
         # Mapping of original variable names to LaTeX-style labels
         variable_map = {
-            'vel_init_norot': r"$v_0$",
-            'vel_avg_norot': r"$v_{avg}$",
-            'v_init_180km': r"$v_{180km}$",
-            'duration': r"$T$",
-            'peak_mag_height': r"$h_{peak}$",
-            'begin_height': r"$h_{beg}$",
-            'end_height': r"$h_{end}$",
-            'peak_abs_mag': r"$M_{peak}$",
-            'beg_abs_mag': r"$M_{beg}$",
-            'end_abs_mag': r"$M_{end}$",
+            'vel_init_norot': r"$v_0$ [km~s$^{-1}$]",
+            'vel_avg_norot': r"$v_{avg}$ [km~s$^{-1}$]",
+            'v_init_180km': r"$v_{180km}$ [m~s$^{-1}$]",
+            'duration': r"$T$ [s]",
+            'peak_mag_height': r"$h_{peak}$ [km]",
+            'begin_height': r"$h_{beg}$ [km]",
+            'end_height': r"$h_{end}$ [km]",
+            'peak_abs_mag': r"$M_{peak}$ [mag]",
+            'beg_abs_mag': r"$M_{beg}$ [mag]",
+            'end_abs_mag': r"$M_{end}$ [mag]",
             'F': r"$F$",
-            'trail_len': r"$L$",
-            't0': r"$t_0$",
-            'deceleration_lin': r"$\bar{a}$",
-            'deceleration_parab': r"$a_{quad}(1~s)$",
-            'decel_parab_t0': r"$\bar{a}_{poly}(1~s)$",
-            'decel_t0': r"$\bar{a}_{poly}$",
-            'decel_jacchia': r"$a_0 k$",
-            'zenith_angle': r"$z_c$",
-            'avg_lag': r"$\bar{\ell}$",
-            'kc': r"$k_c$",
-            'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$",
-            'a_mag_init': r"$d_1$",
-            'b_mag_init': r"$s_1$",
-            'a_mag_end': r"$d_2$",
-            'b_mag_end': r"$s_2$"
+            'trail_len': r"$L$ [km]",
+            't0': r"$t_0$ [s]",
+            'deceleration_lin': r"$\bar{a}$ [km~s$^{-2}$]",
+            'deceleration_parab': r"$a_{quad}(1~s)$ [km~s$^{-2}$]",
+            'decel_parab_t0': r"$\bar{a}_{poly}(1~s)$ [km~s$^{-2}$]",
+            'decel_t0': r"$\bar{a}_{poly}$ [km~s$^{-2}$]",
+            'decel_jacchia': r"$a_0 k$ [km~s$^{-1}$]",
+            'zenith_angle': r"$z_c$ [deg]",
+            'avg_lag': r"$\bar{\ell}$ [m]",
+            'kc': r"$k_c$ [km]",
+            'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$ [kPa]",
+            'a_mag_init': r"$d_1$ [mag~s$^{-2}$]",
+            'b_mag_init': r"$s_1$ [mag~s$^{-1}$]",
+            'a_mag_end': r"$d_2$ [mag~s$^{-2}$]",
+            'b_mag_end': r"$s_2$ [mag~s$^{-1}$]"
         }
 
         latex_labels = [variable_map.get(var, var) for var in variable_PCA[2:]]
@@ -4429,6 +4461,14 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
         for i, (var, label) in enumerate(zip(variable_PCA[2:], latex_labels)):
             sim_data = df_sim_var_sel[var].values
             obs_data = df_obs_shower[var].values
+
+            # chek if the var is trail_len or Dynamic_pressure_peak_abs_mag if so divide by 1000
+            if var in ['trail_len', 'Dynamic_pressure_peak_abs_mag']:
+                sim_data = sim_data / 1000.0
+                obs_data = obs_data / 1000.0
+            elif var == 'avg_lag':
+                sim_data = sim_data * 1000.0
+                obs_data = obs_data * 1000.0
 
             # Determine bin range
             all_values = np.concatenate([sim_data, obs_data])
@@ -4450,6 +4490,7 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
 
             axs[i].axvline(obs_data[0], color='black', linewidth=3)
             axs[i].set_xlabel(label)
+            axs[i].xaxis.set_major_locator(ticker.MaxNLocator(5))
             axs[i].set_ylabel('Normalized Density')
 
         for i in range(len(latex_labels), len(axs)):

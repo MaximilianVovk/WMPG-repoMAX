@@ -4533,6 +4533,11 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, output_dir='', pca_N_comp=0)
     curr_sel = curr_sel.drop_duplicates(subset='solution_id')
     curr_df_sim_sel=pd.concat([curr_sim,curr_sel], axis=0, ignore_index=True)
 
+    curr_sel['erosion_coeff'] = curr_sel['erosion_coeff'] * 1000000
+    curr_sel['sigma'] = curr_sel['sigma'] * 1000000
+    curr_df_sim_sel['erosion_coeff'] = curr_df_sim_sel['erosion_coeff'] * 1000000
+    curr_df_sim_sel['sigma'] = curr_df_sim_sel['sigma'] * 1000000
+    
     # Define your label mappings
     label_mappings = {
         'mass': '$m_0$ [kg]',

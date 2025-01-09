@@ -6902,6 +6902,10 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             flag_fail = True
             break
 
+        CI_physical_param = CI_range_gen_sim(pd_results, ii_repeat, old_results_number)
+
+        print('CI_physical_param:',CI_physical_param)
+
         result_number = len(pd_results)
 
         if cml_args.min_nresults <= result_number:
@@ -6918,10 +6922,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
                 print('STOP: Number of results found:',result_number)
                 flag_fail = True
                 break
-
-            CI_physical_param = CI_range_gen_sim(pd_results, ii_repeat, old_results_number)
-
-            print('CI_physical_param:',CI_physical_param)
 
             old_results_number = result_number
 

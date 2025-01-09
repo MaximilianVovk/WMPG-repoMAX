@@ -1305,10 +1305,10 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
             densest_index = np.argmax(density)
             densest_point = x[densest_index]
 
+            # put a blue dot to the mean value                              
+            ax.plot(np.mean(x), s, 'bs', markersize=5) 
             # You can now use densest_point as your "mode" or representative value
             ax.plot(densest_point, s, 'ro', markersize=5)
-            # put a blue dot to the mean value                              
-            ax.plot(data.mean(), s, 'bs', markersize=5)
 
 
     # Set titles and labels
@@ -7574,7 +7574,7 @@ if __name__ == "__main__":
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/srv/public/mvovk/1stPaper/Results_PCA-12-18',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/srv/public/mvovk/1stPaper/Results_PCA-01-09',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \

@@ -22,7 +22,7 @@ def copy_folders_with_numbered_subfolders(source_folder, target_folder):
     source_folders = [f for f in os.listdir(source_folder) if os.path.isdir(os.path.join(source_folder, f))]
 
     # Find folders with exactly one underscore in their name
-    underscore_folders = [f for f in source_folders if f.count('_') == 2]
+    underscore_folders = [f for f in source_folders if f.count('_') == 3]
 
     # Loop over the folders with one underscore
     for folder in underscore_folders:
@@ -48,6 +48,6 @@ def copy_folders_with_numbered_subfolders(source_folder, target_folder):
                 print(f"Subfolder '{subfolder}' already exists in '{target_folder}'")
 
 # Usage example
-source_folder = r'N:\eharmos\reduction\Skyfit2\Sporadics'  # Replace with your source directory path
-target_folder = r'C:\Users\maxiv\Documents\UWO\Papers\3)Montecarlo\Slow_sporadics\EMCCD'  # Replace with your target directory path
+source_folder = r'M:\reductions\emccd\EMCCD_showers\DRA'  # Replace with your source directory path
+target_folder = r'C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Reductions\DRA'  # Replace with your target directory path
 copy_folders_with_numbered_subfolders(source_folder, target_folder)

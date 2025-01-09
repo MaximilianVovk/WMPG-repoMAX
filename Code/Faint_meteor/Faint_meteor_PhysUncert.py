@@ -37,6 +37,7 @@ from wmpl.Utils.PyDomainParallelizer import domainParallelizer
 from scipy.linalg import svd
 from wmpl.MetSim.GUI import loadConstants, saveConstants,SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
+from wmpl.MetSim.AutoRefineFit import runAutoRefine
 from scipy.interpolate import interp1d
 from matplotlib.colors import Normalize
 from scipy.optimize import minimize
@@ -64,12 +65,14 @@ from multiprocessing import cpu_count
 
 NAME_SUFX_GENSIM = "_GenSim"
 NAME_SUFX_CSV_OBS = "_obs.csv"
-NAME_SUFX_CSV_SIM = "_sim.csv"
-NAME_SUFX_CSV_SIM_NEW = "_sim_new.csv"
-NAME_SUFX_CSV_CURRENT_FIT = "_fit_sim.csv"
+# NAME_SUFX_CSV_SIM = "_sim.csv"
+NAME_SUFX_CSV_RESULTS = "_results.csv"
+# NAME_SUFX_CSV_SIM_NEW = "_sim_new.csv"
+# NAME_SUFX_CSV_CURRENT_FIT = "_fit_sim.csv"
 NAME_SUFX_CSV_PHYSICAL_FIT_RESULTS = "_physical_prop.csv"
+METEOR_PLOTS_JSON_FILE_FOLDER = 'meteor_files'
 
-SAVE_SELECTION_FOLDER='Selection'
+OPTIMIZATION_FOLDER='Optimization'
 VAR_SEL_DIR_SUFX = '_sel_var_vs_physProp'
 PCA_SEL_DIR_SUFX = '_sel_PCA_vs_physProp'
 
@@ -286,7 +289,7 @@ def fit_lag_t0_RMSD(lag_data, time_data, velocity_data, v_init):
     return fitted_lag_t0, residuals_t0, rmsd_t0, 'Cubic Fit', best_fitted_vel_t0, residuals_vel_vel, fitted_acc_t0
 
 
-def find_noise_of_data(data, fps=32, plot_case=False, output_folder='', file_name=''):
+def find_noise_of_data(data, fps=32, output_folder='', file_name=''):
     '''
         Find the noise of the data
     '''
@@ -325,18 +328,7 @@ def find_noise_of_data(data, fps=32, plot_case=False, output_folder='', file_nam
     # data['name'] is a path and I need aonly the name of the file
     plot_data_with_residuals_and_real(rmsd_pol_mag*1.96, rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps)*1.96, rmsd_t0_lag/1000*1.96, fit_funct, data_obs, label_real=data['name'].split(os.sep)[-1], file_name=data['name'].split(os.sep)[-1]+'_fit_t0_polin_curve.png', output_dir = output_folder)
 
-    if plot_case:
-        fig, ax = plt.subplots(1, 2, figsize=(14, 6), dpi=300)
-        # flat the ax
-        ax = ax.flatten()
-        plot_side_by_side(data,fig, ax,'go','Obsevation')
-
-        plot_side_by_side(fit_funct,fig, ax,'k--','fit')
-
-        return rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax
-    else:
-        return rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct
-
+    return rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct
 
 #### Generate Observation #########################################################################
 
@@ -642,7 +634,7 @@ class ErosionSimParametersEMCCD_Comet(object):
 SIM_CLASSES = [ErosionSimParametersEMCCD_Comet]
 SIM_CLASSES_NAMES = [c.__name__ for c in SIM_CLASSES]
 
-def run_simulation(path_and_file_MetSim, real_event, fit_funct):
+def run_simulation(path_and_file_MetSim, real_event, fit_funct=''):
     '''
         path_and_file = must be a json file generated file from the generate_simulationsm function or from Metsim file
     '''
@@ -698,10 +690,9 @@ def safe_generate_erosion_sim(params):
         print(f"Error in generateErosionSim: {e}")
         return None
 
-def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim,output_folder,file_name, fps, dens_co, plot_case=False, flag_manual_metsim=True, CI_physical_param=''):
-    '''                 
-        Generate simulations for the given real data
-    '''
+
+
+def range_gen_simulations(real_data,simulation_MetSim_object, fps, dens_co, flag_manual_metsim=True):
 
     # Init simulation parameters with the given class name
     erosion_sim_params = SIM_CLASSES[SIM_CLASSES_NAMES.index('ErosionSimParametersEMCCD_Comet')]()
@@ -751,10 +742,55 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
 
     # Zenith angle range
     erosion_sim_params.zenith_angle = MetParam(np.radians(real_data['zenith_angle'].iloc[0]-0.1), np.radians(real_data['zenith_angle'].iloc[0]+0.1)) # 43.466538
-    
+
+    cost_path = os.path.join(simulation_MetSim_object['name'])
+
+    # Load the constants
+    const, _ = loadConstants(cost_path)
+    const.dens_co = np.array(const.dens_co)
+
+    # copy const in const_min and const_max
+    const_min = copy.deepcopy(const)
+    const_max = copy.deepcopy(const)
+
+    const_min.erosion_height_start = erosion_sim_params.erosion_height_start.min
+    const_min.v_init = erosion_sim_params.v_init.min
+    const_min.zenith_angle = erosion_sim_params.zenith_angle.min
+    const_min.m_init = erosion_sim_params.m_init.min
+    const_min.rho = erosion_sim_params.rho.min
+
+    const_max.erosion_height_start = erosion_sim_params.erosion_height_start.max
+    const_max.v_init = erosion_sim_params.v_init.max
+    const_max.zenith_angle = erosion_sim_params.zenith_angle.max
+    const_max.m_init = erosion_sim_params.m_init.max
+    const_max.rho = erosion_sim_params.rho.max
+
+    # Compute the erosion energies
+    erosion_energy_per_unit_cross_section_min, erosion_energy_per_unit_mass_min = wmpl.MetSim.MetSimErosion.energyReceivedBeforeErosion(const_min)
+    erosion_energy_per_unit_cross_section_max, erosion_energy_per_unit_mass_max = wmpl.MetSim.MetSimErosion.energyReceivedBeforeErosion(const_max)
+
+    erosion_sim_params.erosion_energy_per_unit_cross_section = MetParam(erosion_energy_per_unit_cross_section_min, erosion_energy_per_unit_cross_section_max)
+    erosion_sim_params.erosion_energy_per_unit_mass = MetParam(erosion_energy_per_unit_mass_min, erosion_energy_per_unit_mass_max)
+
+    pd_dataframe_col = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
+    pd_dataframe_ranges = pd.DataFrame(columns=pd_dataframe_col)
+    pd_dataframe_ranges.loc[0] = [erosion_sim_params.m_init.min, erosion_sim_params.rho.min, erosion_sim_params.sigma.min, erosion_sim_params.erosion_height_start.min, erosion_sim_params.erosion_coeff.min, erosion_sim_params.erosion_mass_index.min, erosion_sim_params.erosion_mass_min.min, erosion_sim_params.erosion_mass_max.min, erosion_sim_params.erosion_energy_per_unit_cross_section.min, erosion_sim_params.erosion_energy_per_unit_mass.min]
+    pd_dataframe_ranges.loc[1] = [erosion_sim_params.m_init.max, erosion_sim_params.rho.max, erosion_sim_params.sigma.max, erosion_sim_params.erosion_height_start.max, erosion_sim_params.erosion_coeff.max, erosion_sim_params.erosion_mass_index.max, erosion_sim_params.erosion_mass_min.max, erosion_sim_params.erosion_mass_max.max, erosion_sim_params.erosion_energy_per_unit_cross_section.max, erosion_sim_params.erosion_energy_per_unit_mass.max]
+
     # # erosion_sim_params.erosion_height_start = MetParam(real_data['peak_mag_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2, real_data['begin_height'].iloc[0]*1000+(real_data['begin_height'].iloc[0]-real_data['peak_mag_height'].iloc[0])*1000/2) # 43.466538
     # erosion_sim_params.erosion_height_start = MetParam(real_data['begin_height'].iloc[0]*1000-1000, real_data['begin_height'].iloc[0]*1000+4000) # 43.466538
+    return erosion_sim_params, pd_dataframe_ranges
 
+
+
+
+def generate_simulations(real_data,simulation_MetSim_object,gensim_data_obs,fit_funct,n_res_to_find,result_folder,output_folder,file_name, fps, dens_co, flag_manual_metsim=True, CI_physical_param=''):
+    '''                 
+        Generate simulations for the given real data
+    '''
+
+    # Init simulation parameters with the given class name
+    erosion_sim_params, _ = range_gen_simulations(real_data,simulation_MetSim_object, fps, dens_co, flag_manual_metsim)
 
     if CI_physical_param!='':
         erosion_sim_params.v_init = MetParam(CI_physical_param['v_init_180km'][0], CI_physical_param['v_init_180km'][1]) # 60091.41691
@@ -774,6 +810,7 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
             os.remove(output_folder+os.sep+"log_"+file_name[:15]+"_GenereateSimulations_range_NEW.txt")
         sys.stdout = Logger(output_folder,"log_"+file_name[:15]+"_GenereateSimulations_range_NEW.txt") # _30var_99perc_13PC
     else:
+
         # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
         if os.path.exists(output_folder+os.sep+"log_"+file_name[:15]+"_GenereateSimulations_range.txt"):
             # remove the file
@@ -781,7 +818,6 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
         sys.stdout = Logger(output_folder,"log_"+file_name[:15]+"GenereateSimulations_range.txt") # _30var_99perc_13PC
 
 
-    print('Run',numb_sim,'simulations with :')
     # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [kg/MJ]','erosion height start [km]','erosion coeff [kg/MJ]','erosion mass index','eros. mass min [kg]','eros. mass max [kg]']
     print('\\hline') #df_sel_save[df_sel_save['solution_id']==only_select_meteors_from][plotvar].values[0]
     print('Variables & min.val. & MAX.val. \\\\')
@@ -855,70 +891,185 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data,numb_sim
     # Reset sys.stdout to its original value if needed
     sys.stdout = sys.__stdout__
 
-    input_list = [(output_folder, copy.deepcopy(erosion_sim_params), np.random.randint(0, 2**31 - 1), MIN_FRAMES_VISIBLE) for _ in range(numb_sim)]
-    with Pool(cml_args.cores) as pool:
-        results_list = pool.map(safe_generate_erosion_sim, input_list)
 
-    count_none = sum(res is None for res in results_list)
-    saveProcessedList(output_folder, results_list, erosion_sim_params.__class__.__name__, MIN_FRAMES_VISIBLE)
+    print(range(cpu_count()))
+    input_list = [[n_res_to_find, gensim_data_obs, fit_funct, result_folder, output_folder, copy.deepcopy(erosion_sim_params), np.random.randint(0, 2**31 - 1), MIN_FRAMES_VISIBLE] for _ in range(cpu_count())]
+    results_list = domainParallelizer(input_list, search_for_good_results, cores=cml_args.cores)
 
-    print('Resulted simulations:', numb_sim - count_none)
-    print('Failed simulations:', count_none)
-    print('Saved', numb_sim - count_none, 'simulations in', output_folder)
+    # delete the folder that starts with v and ends with 2 numbers
+    for folder in os.listdir(output_folder):
+        if re.match(r'v\d{2}', folder):
+            shutil.rmtree(os.path.join(output_folder, folder))
 
-    #########################
-    # # Generate simulations using multiprocessing
-    # input_list = [[output_folder, copy.deepcopy(erosion_sim_params), \
-    #     np.random.randint(0, 2**31 - 1),MIN_FRAMES_VISIBLE] for _ in range(numb_sim)]
-    # results_list = domainParallelizer(input_list, generateErosionSim, cores=cml_args.cores)
 
-    # # print(results_list)
 
-    # # count how many None are in the results_list
-    # count_none=0
-    # for res in results_list:
-    #     if res is None:
-    #         count_none+=1
-    #         continue
+    
+def search_for_good_results(n_res_to_find, gensim_data_obs, fit_funct, result_folder, output_folder, erosion_sim_params, randinteger = np.random.randint(0, 2**31 - 1), minframvis = MIN_FRAMES_VISIBLE):
+    
+    # check if gensim_data_obs['name'] ends with pikle
+    if gensim_data_obs['name'].endswith('.pickle'):
+        print('The detect meteor is in a pickle format')
+        # turn the true False statement to True
+        optimiz_case = True
+    else:
+        print('The detect meteor is not saved in a pickle format')
+        # it cannot optimize the json files
+        optimiz_case = False
+
+    # open the folder and extract all the json files
+    os.chdir(result_folder)
+    # walk thorought the directories and find all the json files inside each folder inside the directory
+    all_jsonfiles = [i for i in glob.glob('**/*.{}'.format('json'), recursive=True)]
+    file_name_obs = os.path.basename(gensim_data_obs['name'])[:15]
+    real_event_copy = copy.deepcopy(gensim_data_obs)
+    # optimize start if below the multiplier value
+    ii_cpu_sim = 1
+    while len(all_jsonfiles) < n_res_to_find:
+        results_list = safe_generate_erosion_sim([output_folder, erosion_sim_params, randinteger, minframvis])
+
+        # chnage the extension of results_list[0] to json
+        results_json = results_list[0].replace('.pickle','.json')
+        gensim_data = read_GenerateSimulations_output(results_json, real_event_copy)
+        flag_results_found = create_json_file_and_optimiz(gensim_data, file_name_obs, real_event_copy, fit_funct, result_folder, output_folder, '',2, optimiz_case)
+        if flag_results_found:
+            print('Results found for',results_json)
+
+        # remove the results
+        os.remove(results_json)
+        os.remove(results_list[0])
+
+        # open the folder and extract all the json files
+        os.chdir(result_folder)
+        # walk thorought the directories and find all the json files inside each folder inside the directory
+        all_jsonfiles = [i for i in glob.glob('**/*.{}'.format('json'), recursive=True)]
+        print('Number of json files:',len(all_jsonfiles),'to find:',n_res_to_find)
+
+
+
+def create_json_file_and_optimiz(gensim_data, file_name_obs, gensim_data_obs, fit_funct, result_folder, output_folder, filetype='', opt_multip=2, optim=False):
+
+    results_json = gensim_data['name']
+    # take the folder and the name of the file
+    _, results_json_name = os.path.split(results_json)
+    
+    # results_pickle_name = results_list[0].split(os.sep)[-1]
+
+    image_name=results_json_name[:-5]+'.png'
+
+    chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data, gensim_data_obs) #, fit_funct
+
+    # Interpolation on the fit data's height grid
+    interp_ht_time = interp1d(gensim_data_obs['height'], gensim_data_obs['time'], kind='linear', bounds_error=False, fill_value='extrapolate')
+    
+    # Interpolated fit on data grid
+    sim_time_pos = interp_ht_time(gensim_data['height'])
+
+    # copy the data to the mode
+    data_file = gensim_data.copy()
+    data_file['time'] = sim_time_pos
+    data_file['res_absolute_magnitudes'] = residuals_mag
+    data_file['res_velocities'] = residuals_vel
+    data_file['res_lag'] = residuals_len * 1000
+    data_file['lag'] = lag_km_sim * 1000
+    data_file['rmsd_mag'] = rmsd_mag
+    data_file['rmsd_vel'] = rmsd_vel
+    data_file['rmsd_len'] = rmsd_lag
+    data_file['chi2_red_mag'] = chi2_red_mag
+    data_file['chi2_red_len'] = chi2_red_len
+
+    print('REAL rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],'SIM rmsd_mag',rmsd_mag,'check')
+    print('REAL rmsd_lag',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'],'SIM rmsd_lag',rmsd_lag,'check')
+    if gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']>rmsd_mag and gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']>rmsd_lag:
+        print('Below RMSD threshold : rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],'rmsd_len',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'])
+
+        plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_vel']*np.sqrt(2)/(1.0/fps), gensim_data_obs['rmsd_len'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, result_folder, data_file, filetype)
+
+        # save the results
+        shutil.copy(results_json, result_folder+os.sep+results_json_name)
+        return True
+
+    # try to optimize if close to the multiplier value
+    elif gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']*opt_multip>rmsd_mag and gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']*opt_multip>rmsd_lag and optim==True:
+        print('Try Optimization as it below RMSD threshold : rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']*opt_multip,'rmsd_len',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']*opt_multip)
         
-    # saveProcessedList(output_folder, results_list, erosion_sim_params.__class__.__name__, \
-    # MIN_FRAMES_VISIBLE)
-    
-    # print('Resulted simulations:', numb_sim-count_none)
-    # print('Failed siulations', len(results_list)/100*count_none,'%')
-    # print('Saved',numb_sim-count_none,'simulations in',output_folder)
-    #########################
+        file_json_save_phys=output_folder+os.sep+OPTIMIZATION_FOLDER+os.sep+results_json_name[:-5]+'_fitted.json'
+        output_dir_optimized = output_folder+os.sep+OPTIMIZATION_FOLDER+os.sep+'Optimization_'+results_json_name[:-5]
+        mkdirP(output_dir_optimized)
 
-    # plot the pickle files data that are not none in the results_list
-    # do not plot more than 10 curves
-    if plot_case:
+        # from namefile_sel json file open the json file and save the namefile_sel.const part as file_name_obs+'_sim_fit.json'
+        with open(results_json) as json_file:
+            data = json.load(json_file)
+            const_part = data['const']
+            with open(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', 'w') as outfile:
+                json.dump(const_part, outfile, indent=4)
 
-        fig, ax = plt.subplots(1, 2, figsize=(14, 6), dpi=300)
-        # flat the ax
-        ax = ax.flatten()
+        shutil.copy(output_folder+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
+        update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_len'], True, True) # More_complex_fit=False, Custom_refinement=False
+        # run the optimization
+        shutil.copy(gensim_data_obs['name'], output_dir_optimized+os.sep+os.path.basename(gensim_data_obs['name']))
 
-        jj_plots_curve=0
-        for res in results_list:
-            if res is not None:
-                if jj_plots_curve>100:
-                    # stop if too many curves are plotted
-                    break
-                
-                if res[0] is not None:
-                    # change res[0] extension to .json
-                    res[0] = res[0].replace('.pickle', '.json')
-                    print(res[0]) 
-                    # get the first value of res
-                    gensim_data_sim = read_GenerateSimulations_output(res[0])
+        print('runing the optimization...')
+        # this creates a ew file called output_dir+os.sep+file_name_obs+'_sim_fit_fitted.json'
+        runAutoRefine(output_dir_optimized, 'AutoRefineFit_options.txt', updated_main=False, hideplots_main=True)
 
-                    plot_side_by_side(gensim_data_sim, fig, ax, 'b-')
-                    jj_plots_curve += 1
-                
-        plot_side_by_side(gensim_data,fig, ax,'go','Obsevation')
+        # # save the 20230811_082648_sim_fit_fitted.json as a json file in the output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_title[:23]+'_sim_fit_fitted.json'
+        shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
 
-        return fig, ax
+        # Check if the output file exists before copying
+        if os.path.exists(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json'):
+            try:
+                shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
+            except Exception as e:
+                # logging.exception(f"Failed to copy {optimized_file} to {file_json_save_phys}")
+                print(f"Failed to copy optimized file: {e}")
+        else:
+            # logging.warning(f"Optimized file {optimized_file} not found.")
+            print(f"Optimized file not found. Skipping copy for {file_json_save_phys}")
 
-    
+        _, gensim_data_optimized, pd_datafram_PCA_sim_optimized = run_simulation(file_json_save_phys, gensim_data_obs)
+
+        chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data_optimized, gensim_data_obs)
+
+        if gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']>rmsd_mag and gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']>rmsd_lag:
+            print('OPTIMIZATION Below RMSD threshold : rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],'rmsd_len',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'])
+
+            # Interpolated fit on data grid
+            sim_time_pos = interp_ht_time(gensim_data_optimized['height'])
+
+            # copy the data to the mode
+            data_file_sim_opt = gensim_data_optimized.copy()
+            data_file_sim_opt['time'] = sim_time_pos
+            data_file_sim_opt['res_absolute_magnitudes'] = residuals_mag
+            data_file_sim_opt['res_velocities'] = residuals_vel
+            data_file_sim_opt['res_lag'] = residuals_len * 1000
+            data_file_sim_opt['lag'] = lag_km_sim * 1000
+            data_file_sim_opt['rmsd_mag'] = rmsd_mag
+            data_file_sim_opt['rmsd_vel'] = rmsd_vel
+            data_file_sim_opt['rmsd_len'] = rmsd_lag
+            data_file_sim_opt['chi2_red_mag'] = chi2_red_mag
+            data_file_sim_opt['chi2_red_len'] = chi2_red_len
+            plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_vel']*np.sqrt(2)/(1.0/fps), gensim_data_obs['rmsd_len'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, result_folder, data_file, filetype, data_file_sim_opt, 'Optimized')
+
+            # save the results
+            shutil.copy(file_json_save_phys, result_folder+os.sep+file_json_save_phys.split(os.sep)[-1])
+            # shutil.move(results_list[0], result_folder+os.sep+results_pickle_name)
+
+            # remove the folder of the optinmization
+            shutil.rmtree(output_dir_optimized)
+            return True
+        
+        else:   
+            # remove the folder of the optinmization
+            shutil.rmtree(output_dir_optimized)
+            return False
+        
+    # case in which the filetype is Metsim but above the RMSD
+    elif filetype == 'Metsim':
+
+        print('Bad Metsim, redo manually or try optimization!\nAbove RMSD threshold : rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],'rmsd_len',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'])
+
+        plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_vel']*np.sqrt(2)/(1.0/fps), gensim_data_obs['rmsd_len'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, result_folder, data_file, filetype)
+
 
 #### Plot #############################################################################
 
@@ -1190,12 +1341,25 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
 
 
 
-def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_directory, name_file, 
-                             sigma_values=[2, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0]):
-    df = df_sel_sim.copy()
-    df_limits = df_sim.copy()
+def plot_sigma_waterfall(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, output_directory, name_file, 
+                            sigma_values=[2, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0]):
+    df = df_result.copy()
+    sim_range_plot = df_sim_range.copy()
     # take the first row df_obs_real
-    df_obs_real = df_sim.iloc[0]
+    df_obs_real = df_result.iloc[0]
+    # look find the index of the where df_sel_shower_real['type'] == 'Metsim' or 'Real'
+    if 'MetSim' in df_result['type'].values:
+        # find the index of the where df_sel_shower_real['type'] == 'Metsim'
+        idx = df_result.index[df_result['type'] == 'MetSim']
+        df_obs_real = df_result.iloc[idx]
+    elif 'Real' in df_result['type'].values:
+        # find the index of the where df_sel_shower_real['type'] == 'Real'
+        idx = df_result.index[df_result['type'] == 'Real']
+        df_obs_real = df_result.iloc[idx]
+    else:
+        # empty dataframe
+        df_obs_real = df_result.iloc[0]
+
 
     # Columns to plot
     to_plot = [
@@ -1234,14 +1398,14 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     df['erosion_energy_per_unit_mass'] = df['erosion_energy_per_unit_mass'] / 1000000
     df['erosion_mass_min'] = np.log10(df['erosion_mass_min'])
     df['erosion_mass_max'] = np.log10(df['erosion_mass_max'])
-
-    df_limits['erosion_coeff'] = df_limits['erosion_coeff'] * 1000000
-    df_limits['sigma'] = df_limits['sigma'] * 1000000
-    df_limits['erosion_energy_per_unit_cross_section'] = df_limits['erosion_energy_per_unit_cross_section'] / 1000000
-    df_limits['erosion_energy_per_unit_mass'] = df_limits['erosion_energy_per_unit_mass'] / 1000000
-    df_limits['erosion_mass_min'] = np.log10(df_limits['erosion_mass_min'])
-    df_limits['erosion_mass_max'] = np.log10(df_limits['erosion_mass_max'])
     
+    sim_range_plot['erosion_coeff'] = sim_range_plot['erosion_coeff'] * 1000000
+    sim_range_plot['sigma'] = sim_range_plot['sigma'] * 1000000
+    sim_range_plot['erosion_energy_per_unit_cross_section'] = sim_range_plot['erosion_energy_per_unit_cross_section'] / 1000000
+    sim_range_plot['erosion_energy_per_unit_mass'] = sim_range_plot['erosion_energy_per_unit_mass'] / 1000000
+    sim_range_plot['erosion_mass_min'] = np.log10(sim_range_plot['erosion_mass_min'])   
+    sim_range_plot['erosion_mass_max'] = np.log10(sim_range_plot['erosion_mass_max'])
+
     # multiply the erosion coeff by 1000000 to have it in km/s
     df_obs_real['erosion_coeff'] = df_obs_real['erosion_coeff'] * 1000000
     df_obs_real['sigma'] = df_obs_real['sigma'] * 1000000
@@ -1249,6 +1413,8 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     df_obs_real['erosion_energy_per_unit_mass'] = df_obs_real['erosion_energy_per_unit_mass'] / 1000000
     df_obs_real['erosion_mass_min'] = np.log10(df_obs_real['erosion_mass_min'])
     df_obs_real['erosion_mass_max'] = np.log10(df_obs_real['erosion_mass_max'])
+
+    df_limits = sim_range_plot.copy()
 
     used_sigmas = sigma_values
 
@@ -1299,8 +1465,12 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
                 density = np.array([0.5])
 
             sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
-            # make a black line vertical line at the real value
-            ax.axvline(df_obs_real[var], color='black', linewidth=2)
+            if 'MetSim' in df_obs_real['type']:
+                # make a black line vertical line at the real value
+                ax.axvline(df_obs_real[var], color='black', linewidth=2)
+            elif 'Real' in df_obs_real['type']:
+                # make a black line vertical line at the real value
+                ax.axvline(df_obs_real[var], color='g', linewidth=2, linestyle='--')    
             # Find the densest point (highest density)
             densest_index = np.argmax(density)
             densest_point = x[densest_index]
@@ -1357,33 +1527,6 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
             else:
                 cell.set_text_props(ha='center', va='center')
 
-
-    # sigma_text = "\n".join(lendata_sigma)
-
-    # N_sigma = len(lendata_sigma)
-    # half = (N_sigma + 1) // 2  # The midpoint, rounding up if odd
-    # col1 = lendata_sigma[:half]
-    # col2 = lendata_sigma[half:]
-
-    # # To align them neatly, you can use string formatting. For example:
-    # # Left-align the first column in a fixed width so that the second column lines up
-    # max_len_col1 = max(len(s) for s in col1)
-    # two_col_lines = []
-    # for i in range(half):
-    #     if i < len(col2):
-    #         two_col_lines.append(f"{col1[i].ljust(max_len_col1)}   {col2[i]}")
-    #     else:
-    #         # If col2 is shorter, just print col1
-    #         two_col_lines.append(col1[i])
-
-    # # Join into a single multiline string
-    # sigma_text = "\n".join(two_col_lines)
-
-    # # Now place the text in the subplot 11
-    # axes[11].text(0.5, 0.05, sigma_text,
-    #             transform=axes[11].transAxes,
-    #             ha='center', va='bottom', fontsize=9)
-
     # Create custom legend entries
     import matplotlib.patches as mpatches
     from matplotlib.lines import Line2D
@@ -1393,11 +1536,14 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
     # if 'MetSim' in df_obs_real['type'].values:
     if 'MetSim' in df_obs_real['type']:
         metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+        legend_elements = [metsim_line, mean_line, mode_line]
+    elif 'Real' in df_obs_real['type']:
+        metsim_line = Line2D([0], [0], color='g', linewidth=2, label='Real', linestyle='--')
+        legend_elements = [metsim_line, mean_line, mode_line]
     else:
-        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
-    # # put the len of x in the legend followed by the sigma value
-    # sigma_values = Line2D([], [], color='none', marker='', linestyle='None', label=lendata_sigma)
-    legend_elements = [metsim_line, mean_line, mode_line]
+        # # put the len of x in the legend followed by the sigma value
+        # sigma_values = Line2D([], [], color='none', marker='', linestyle='None', label=lendata_sigma)
+        legend_elements = [mean_line, mode_line]
 
     axes[11].legend(handles=legend_elements, loc='upper center') # , fontsize=8
 
@@ -2636,8 +2782,6 @@ def read_MetSim_phyProp_output(MetSim_phys_file_path):
     
     return output_phys
 
-
-
 def array_to_pd_dataframe_PCA(data, test_data=[]):
 
     if data is None:
@@ -3394,39 +3538,22 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
 
                     print(var)
 
-                    ii_all=0
-                    for i_var in range(len(df_obs_shower[var])):
-                        # check if all the values are outside the 5 and 95 percentile of the df_sim_shower if so delete the variable from the variable_PCA
-                        if df_obs_shower[var][i_var] < np.percentile(df_sim_shower[var], 1) or df_obs_shower[var][i_var] > np.percentile(df_sim_shower[var], 99):
-                            ii_all=ii_all+1
+                    shapiro_test = stats.shapiro(df_all[var])
+                    print("Initial Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
 
-                    if ii_all==len(df_obs_shower[var]):
-                        print('The observed and all realization',var,'are not within the 1 and 99 percentile of the simulated meteors')
-                        print('The variable',var,'is deleted from the PCA analysis!!!')
+                    if var=='vel_init_norot' or var=='zenith_angle' or var=='v_init_180':
+                        # do the cosine of the zenith angle
+                        # df_all[var]=transform_to_gaussian(df_all[var])
+                        print('Variable ',var,' is not transformed')
 
-                        # delete the variable from the variable_PCA
-                        variable_PCA.remove(var)
-                        # save the var deleted in a variable
-                        No_var_PCA_perc.append(var)
-
-                        df_all = df_all.drop(var, axis=1)
                     else:
-                        shapiro_test = stats.shapiro(df_all[var])
-                        print("Initial Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
 
-                        if var=='vel_init_norot' or var=='zenith_angle' or var=='v_init_180':
-                            # do the cosine of the zenith angle
-                            # df_all[var]=transform_to_gaussian(df_all[var])
-                            print('Variable ',var,' is not transformed')
+                        pt = PowerTransformer(method='yeo-johnson')
+                        df_all[var]=pt.fit_transform(df_all[[var]])
+                        df_sim_shower_resample[var]=pt.fit_transform(df_sim_shower_resample[[var]])
 
-                        else:
-
-                            pt = PowerTransformer(method='yeo-johnson')
-                            df_all[var]=pt.fit_transform(df_all[[var]])
-                            df_sim_shower_resample[var]=pt.fit_transform(df_sim_shower_resample[[var]])
-
-                        shapiro_test = stats.shapiro(df_all[var])
-                        print("NEW Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
+                    shapiro_test = stats.shapiro(df_all[var])
+                    print("NEW Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
                     
                     print()
 
@@ -3818,10 +3945,6 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     # print the number of simulation selected
     print('PCA run for', len(df_sim_shower),'simulations, delete ',len(outliers)-len(df_sim_shower),' outliers')
 
-    # if len(No_var_PCA_perc) > 0:
-    #     for No_var_PCA_perc in No_var_PCA_perc:
-    #         print('Observable data variable [',No_var_PCA_perc,'] is not within the 5 and 95 percentile of the simulated shower')
-
     # print the name of the variables used in PCA
     print('Variables used in PCA: ',df_all_nameless.columns)
 
@@ -3838,156 +3961,6 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
     df_obs_PCA = df_all_PCA.drop(df_all_PCA.index[:len(df_sim_shower)])
 
     
-    ########### Distance metric takes in to account varinace explained ####################################################################
-
-    if esclude_real_solution_from_selection:
-        df_all_PCA_cov = df_all_PCA[df_all_PCA['type'] != 'Real'].copy()
-    else:
-        # delete the type Real from
-        df_all_PCA_cov = df_all_PCA.copy()
-
-    # Get explained variances of principal components
-    explained_variance = pca.explained_variance_ratio_
-
-    # Calculate mean and inverse covariance matrix for Mahalanobis distance
-    cov_matrix = df_all_PCA_cov.drop(['type'], axis=1).cov()
-
-    # Modify covariance matrix based on explained variances
-    for i in range(len(explained_variance)):
-        cov_matrix.iloc[i, :] /= explained_variance[i]
-
-    # # Modify covariance matrix to positively reflect variance explained
-    # for i in range(len(explained_variance)):
-    #     cov_matrix.iloc[i, :] *= explained_variance[i]
-
-    cov_inv = inv(cov_matrix)
-
-    ############## SELECTION ###############################################
-
-    # group them by Observation, Realization type and the other group by MetSim, Simulation
-    # meanPCA = df_all_PCA.groupby('type').mean() # does not work
-
-    df_all_PCA['solution_id'] = df_all['solution_id']
-    # Create a new column to group by broader categories
-    group_mapping = {
-        'Observation': 'obs',
-        'Realization': 'obs',
-        'Real': 'sim',
-        'MetSim': 'sim',
-        'Simulation': 'sim'
-    }
-    df_all_PCA['group'] = df_all_PCA['type'].map(group_mapping)
-    df_obs_shower['group'] = df_obs_shower['type'].map(group_mapping)
-    df_obs_PCA['group'] = df_obs_PCA['type'].map(group_mapping)
-
-    # # Group by the new column and calculate the mean
-    # meanPCA = df_all_PCA.groupby('group').mean()
-
-    # # drop the sim column
-    # meanPCA = meanPCA.drop(['sim'], axis=0)
-
-    # Ensure that only numeric columns are used in the mean calculation
-    df_numeric = df_all_PCA.select_dtypes(include=[np.number])
-
-    # Group by the new column and calculate the mean only for numeric columns
-    meanPCA = df_numeric.groupby(df_all_PCA['group']).mean()
-
-    # Drop the 'sim' row if it exists
-    meanPCA = meanPCA.drop(['sim'], axis=0, errors='ignore')
-
-    # print(meanPCA)
-
-    meanPCA_current = meanPCA.loc[(meanPCA.index == 'obs')].values.flatten()
-    # take only the value of the mean of the first row
-    shower_current = df_obs_shower[df_obs_shower['group'] == 'obs']
-    shower_current_PCA = df_obs_PCA[df_obs_PCA['group'] == 'obs']
-
-    # trasform the dataframe in an array
-    shower_current_PCA = shower_current_PCA.drop(['type','group'], axis=1).values
-
-    ### mode desnest point ####################################################################################################
-
-    # define the distance
-    mkdirP(OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER)      
-    if esclude_real_solution_from_selection:
-        # delete the type Real from
-        input_list_obs_dist = [[df_sim_PCA[df_sim_PCA['type'] != 'Real'], shower_current_PCA[ii], cov_inv, meanPCA_current, df_sim_shower[df_sim_shower['type'] != 'Real'], shower_current.iloc[ii], N_sim_sel, OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER] for ii in range(len(shower_current))]
-        df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim_knee, cores=cores_parallel)
-
-    else:  
-        input_list_obs_dist = [[df_sim_PCA, shower_current_PCA[ii], cov_inv, meanPCA_current, df_sim_shower, shower_current.iloc[ii], N_sim_sel, OUT_PUT_PATH+os.sep+SAVE_SELECTION_FOLDER] for ii in range(len(shower_current))]
-        df_sim_selected_both_df = domainParallelizer(input_list_obs_dist, dist_PCA_space_select_sim_knee, cores=cores_parallel)
-
-    ###########################################################################################################################
-
-    # separet df_sim_selected the '<class 'tuple'>' to a list of dataframe called df_sim_selected_all and df_sim_selected_knee
-    df_sim_dist_all = []
-    df_sim_selected_knee = []
-    for item in df_sim_selected_both_df:
-        if isinstance(item, tuple):
-            df_sim_dist_all.append(item[0])
-            df_sim_selected_knee.append(item[1])
-
-    df_sim_dist_all = pd.concat(df_sim_dist_all)
-    df_sel_shower = pd.concat(df_sim_selected_knee)
-
-    df_sel_shower.reset_index(drop=True, inplace=True)
-
-    df_sel_shower.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_sel_bf_knee.csv', index=False)
-
-    if isinstance(df_sel_shower, tuple):
-        df_sel_shower = df_sel_shower[0]
-    if isinstance(df_sim_dist_all, tuple):
-        df_sim_dist_all = df_sim_dist_all[0]
-
-    # DELETE ALL old INDEX
-
-    # Create the new DataFrame by filtering df_sim_PCA
-    df_sel_PCA = df_all_PCA[df_all_PCA['solution_id'].isin(df_sel_shower['solution_id'])]
-    # change all df_sel_PCA 'type' to Simulation_sel
-    df_sel_PCA['type'] = 'Simulation_sel'
-    # reset the index
-    df_sel_PCA.reset_index(drop=True, inplace=True)
-    
-    df_sel_shower_no_repetitions = df_sel_shower.copy()
-
-    # order by distance_meteor
-    df_sel_shower_no_repetitions = df_sel_shower_no_repetitions.sort_values('distance_meteor')
-
-    # count duplicates and add a column for the number of duplicates
-    df_sel_shower_no_repetitions['num_duplicates'] = df_sel_shower_no_repetitions.groupby('solution_id')['solution_id'].transform('size') 
-    df_sel_shower_no_repetitions.insert(2, 'num_duplicates', df_sel_shower_no_repetitions.pop('num_duplicates'))
-    
-    # df_sel_shower_no_repetitions['solution_id_dist'] = df_obs_shower['solution_id'].values[0]
-
-    df_sel_shower_no_repetitions.drop_duplicates(subset='solution_id', keep='first', inplace=True)            
-
-    # save df_sel_shower_real to disk
-    df_sel_shower_no_repetitions.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_sel_bf_knee_NO_rep.csv', index=False)
-
-    # order by distance_meteor
-    df_sim_dist_all = df_sim_dist_all.sort_values('distance_meteor')
-    
-
-    plt.hist(df_sim_dist_all['distance_meteor'], bins=100)
-    plt.xlabel('PC distance')
-    plt.ylabel('Count')
-    plt.savefig(save_results_folder_PCA + os.sep + file_name_obs + '_HistogramsRepetitions_' + str(len(variable_PCA) - 2) + 'var_' + str(PCA_percent) + 'perc_' + str(pca.n_components_) + 'PC.png', dpi=300)
-    plt.close()
-
-    # count duplicates and add a column for the number of duplicates
-    df_sim_dist_all['num_duplicates'] = df_sim_dist_all.groupby('solution_id')['solution_id'].transform('size')
-    df_sim_dist_all.insert(2, 'num_duplicates', df_sim_dist_all.pop('num_duplicates'))
-
-    # df_sim_dist_all['solution_id_dist'] = df_obs_shower['solution_id'].values[0]
-
-    df_sim_dist_all.drop_duplicates(subset='solution_id', keep='first', inplace=True)
-
-    # save df_sim_dist_all to disk
-    df_sim_dist_all.to_csv(OUT_PUT_PATH+os.sep+file_name_obs+'_sim_best_dist.csv', index=False)
-
-    print('\nSUCCESS: the simulated meteor have been selected\n')
-
     # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
     sys.stdout.close()
 
@@ -3997,220 +3970,210 @@ def PCASim(df_sim_shower, df_obs_shower, OUT_PUT_PATH, save_results_folder_PCA, 
 
     # PLOT the selected simulated shower ########################################
 
-    # dataframe with the simulated and the selected meteors in the PCA space
-    # df_sim_sel_PCA = pd.concat([df_sim_PCA,df_sel_PCA], axis=0)
-    if PCA_pairplot:
+    # Copy the DataFrame
+    df_sim_shower_small = df_sim_shower.copy()
 
-        # Copy the DataFrame
-        df_sim_shower_small = df_sim_shower.copy()
+    # Store necessary values before sampling
+    # For example, store the first value of var_phys
+    physical_vars = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
+    var_phys_values = {}
+    for var_phys in physical_vars:
+        var_phys_values[var_phys] = df_sim_shower[var_phys].values[0]
 
-        # Store necessary values before sampling
-        # For example, store the first value of var_phys
-        physical_vars = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
-        var_phys_values = {}
-        for var_phys in physical_vars:
-            var_phys_values[var_phys] = df_sim_shower[var_phys].values[0]
+    # if len(df_sim_shower_small) >10000:  # Avoid long plotting times
+    #     # Randomly sample 10,000 events
+    #     df_sim_shower_small = df_sim_shower_small.sample(n=10000)
 
-        # if len(df_sim_shower_small) >10000:  # Avoid long plotting times
-        #     # Randomly sample 10,000 events
-        #     df_sim_shower_small = df_sim_shower_small.sample(n=10000)
+    if len(df_sim_shower_small) > 10000:  # Limit to 10,000 rows for performance
+        # Separate rows with 'MetSim' or 'Real' types
+        metsim_or_real_rows = df_sim_shower_small[df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
 
-        if len(df_sim_shower_small) > 10000:  # Limit to 10,000 rows for performance
-            # Separate rows with 'MetSim' or 'Real' types
-            metsim_or_real_rows = df_sim_shower_small[df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
+        # Sample the remaining rows excluding 'MetSim' and 'Real'
+        other_rows = df_sim_shower_small[~df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
+        sampled_other_rows = other_rows.sample(n=10000 - len(metsim_or_real_rows), random_state=42)
 
-            # Sample the remaining rows excluding 'MetSim' and 'Real'
-            other_rows = df_sim_shower_small[~df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
-            sampled_other_rows = other_rows.sample(n=10000 - len(metsim_or_real_rows), random_state=42)
+        # Combine the sampled rows with 'MetSim' or 'Real' rows
+        df_sim_shower_small = pd.concat([metsim_or_real_rows, sampled_other_rows], axis=0)
 
-            # Combine the sampled rows with 'MetSim' or 'Real' rows
-            df_sim_shower_small = pd.concat([metsim_or_real_rows, sampled_other_rows], axis=0)
+    print('Generating selected simulation histogram plot...')
 
-        print('Generating selected simulation histogram plot...')
+    # Define a custom palette
+    custom_palette = {
+        'Real': "r",
+        'Simulation': "b",
+        'Simulation_sel': "darkorange",
+        'MetSim': "k",
+        'Realization': "mediumaquamarine",
+        'Observation': "limegreen"
+    }
 
-        # Define a custom palette
-        custom_palette = {
-            'Real': "r",
-            'Simulation': "b",
-            'Simulation_sel': "darkorange",
-            'MetSim': "k",
-            'Realization': "mediumaquamarine",
-            'Observation': "limegreen"
-        }
+    # Concatenate DataFrames
+    curr_df = pd.concat([df_sim_shower_small, df_obs_shower], axis=0)
 
-        # Concatenate DataFrames
-        curr_df = pd.concat([df_sim_shower_small, df_sel_shower, df_obs_shower], axis=0)
+    # Compute weights
+    curr_df['num_type'] = curr_df.groupby('type')['type'].transform('size')
+    curr_df['weight'] = 1 / curr_df['num_type']
 
-        # Compute weights
-        curr_df['num_type'] = curr_df.groupby('type')['type'].transform('size')
-        curr_df['weight'] = 1 / curr_df['num_type']
+    # Plotting
+    fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:]) / 5)), 5, figsize=(20, 15))
+    axs = axs.flatten()
 
-        # Plotting
+    for ii, var in enumerate(variable_PCA[2:]):
+        sns.histplot(curr_df, x=var, weights=curr_df['weight'], hue='type', ax=axs[ii], kde=True, palette=custom_palette, bins=20)
+        axs[ii].set_xticks([np.round(np.min(curr_df[var]), 2), np.round(np.max(curr_df[var]), 2)])
+
+        # Invert x-axis for specific variables
+        if var in ['beg_abs_mag', 'peak_abs_mag', 'end_abs_mag']:
+            axs[ii].invert_xaxis()
+
+        # Format x-axis
+        axs[ii].xaxis.set_major_formatter(ScalarFormatter())
+        axs[ii].ticklabel_format(useOffset=False, style='plain', axis='x')
+
+        axs[ii].set_ylabel('Probability')
+        axs[ii].set_xlabel(var)
+        axs[ii].get_legend().remove()
+        axs[ii].set_yscale('log')
+        axs[ii].set_ylim(0.01, 1)
+
+    plt.tight_layout()
+    fig.savefig(OUT_PUT_PATH + os.sep + file_name_obs + '_Histograms_' + str(len(variable_PCA) - 2) + 'var_' + str(PCA_percent) + 'perc_' + str(pca.n_components_) + 'PC.png', dpi=300)
+    plt.close()
+
+    # Sampling df_sim_PCA consistently
+    if len(df_sim_PCA) >10000:
+        # Use the same indices as in df_sim_shower_small
+        df_sim_PCA = df_sim_PCA.loc[df_sim_shower_small.index]
+
+    print('Generating PCA space plot...')
+
+    df_sim_sel_PCA = pd.concat([df_sim_PCA, df_obs_PCA], axis=0)
+
+    # Select only numeric columns
+    numeric_columns = df_sim_sel_PCA.select_dtypes(include=[np.number]).columns
+
+    # Map point sizes
+    df_sim_sel_PCA['point_size'] = df_sim_sel_PCA['type'].map({
+        'Simulation_sel': 5,
+        'Simulation': 5,
+        'MetSim': 20,
+        'Realization': 20,
+        'Observation': 40
+    })
+
+    # Create the pair plot
+    fig = sns.pairplot(
+        df_sim_sel_PCA[numeric_columns.append(pd.Index(['type']))],
+        hue='type',
+        corner=True,
+        palette=custom_palette,
+        diag_kind='kde',
+        plot_kws={'s': 5, 'edgecolor': 'k'}
+    )
+
+    # Overlay scatter plots with custom point sizes
+    for i in range(len(fig.axes)):
+        for j in range(len(fig.axes)):
+            if i > j:
+                ax = fig.axes[i, j]
+                sns.scatterplot(
+                    data=df_sim_sel_PCA,
+                    x=df_sim_sel_PCA.columns[j],
+                    y=df_sim_sel_PCA.columns[i],
+                    hue='type',
+                    size='point_size',
+                    sizes=(5, 40),
+                    ax=ax,
+                    legend=False,
+                    edgecolor='k',
+                    palette=custom_palette
+                )
+
+    plt.subplots_adjust(hspace=0.3, wspace=0.3)
+    fig.savefig(OUT_PUT_PATH + os.sep + file_name_obs + 'PCAspace_sim_sel_real_' + str(len(variable_PCA) - 2) + 'var_' + str(PCA_percent) + 'perc_' + str(pca.n_components_) + 'PC.png')
+    plt.close()
+
+    print('Generating result variable plot...')
+
+    output_folder = OUT_PUT_PATH + os.sep + file_name_obs + VAR_SEL_DIR_SUFX
+    if not os.path.isdir(output_folder):
+        mkdirP(output_folder)
+
+    # Loop over physical variables
+    for var_phys in physical_vars:
+        # Create subplots
         fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:]) / 5)), 5, figsize=(20, 15))
         axs = axs.flatten()
 
-        for ii, var in enumerate(variable_PCA[2:]):
-            sns.histplot(curr_df, x=var, weights=curr_df['weight'], hue='type', ax=axs[ii], kde=True, palette=custom_palette, bins=20)
-            axs[ii].set_xticks([np.round(np.min(curr_df[var]), 2), np.round(np.max(curr_df[var]), 2)])
+        for i, var in enumerate(variable_PCA[2:]):
+            # Plot simulation data
+            axs[i].scatter(df_sim_shower_small[var], df_sim_shower_small[var_phys], c='b')
 
-            # Invert x-axis for specific variables
-            if var in ['beg_abs_mag', 'peak_abs_mag', 'end_abs_mag']:
-                axs[ii].invert_xaxis()
+            # Plot vertical line using stored value
+            axs[i].axvline(df_obs_shower[var].values[0], color='limegreen', linestyle='--', linewidth=5)
 
-            # Format x-axis
-            axs[ii].xaxis.set_major_formatter(ScalarFormatter())
-            axs[ii].ticklabel_format(useOffset=False, style='plain', axis='x')
+            # Plot horizontal line using stored value
+            axs[i].axhline(var_phys_values[var_phys], color='k', linestyle='-', linewidth=2)
 
-            axs[ii].set_ylabel('Probability')
-            axs[ii].set_xlabel(var)
-            axs[ii].get_legend().remove()
-            axs[ii].set_yscale('log')
-            axs[ii].set_ylim(0.01, 1)
+            if i % 5 == 0:
+                axs[i].set_ylabel(var_phys)
+
+            axs[i].set_xlabel(var)
+            axs[i].grid()
+
+            # Log scale for specific variables
+            if var_phys in ['erosion_mass_min', 'erosion_mass_max']:
+                axs[i].set_yscale('log')
+
+        # Remove unused subplots
+        for i in range(len(variable_PCA[2:]), len(axs)):
+            fig.delaxes(axs[i])
 
         plt.tight_layout()
-        fig.savefig(OUT_PUT_PATH + os.sep + file_name_obs + '_Histograms_' + str(len(variable_PCA) - 2) + 'var_' + str(PCA_percent) + 'perc_' + str(pca.n_components_) + 'PC.png', dpi=300)
+        plt.savefig(output_folder + os.sep + file_name_obs + var_phys + '_vs_var_select_PCA.png')
         plt.close()
 
-        # Sampling df_sim_PCA consistently
-        if len(df_sim_PCA) >10000:
-            # Use the same indices as in df_sim_shower_small
-            df_sim_PCA = df_sim_PCA.loc[df_sim_shower_small.index]
+    print('Generating PCA position plot...')
 
-        print('Generating PCA space plot...')
+    output_folder = OUT_PUT_PATH + os.sep + file_name_obs + PCA_SEL_DIR_SUFX
+    if not os.path.isdir(output_folder):
+        mkdirP(output_folder)
 
-        df_sim_sel_PCA = pd.concat([df_sim_PCA, df_sel_PCA, df_obs_PCA], axis=0)
+    # Loop over physical variables
+    for var_phys in physical_vars:
+        fig, axs = plt.subplots(int(np.ceil(len(columns_PC) / 5)), 5, figsize=(20, 15))
+        axs = axs.flatten()
 
-        # Select only numeric columns
-        numeric_columns = df_sim_sel_PCA.select_dtypes(include=[np.number]).columns
+        for i, var in enumerate(columns_PC):
+            # Plot simulation data
+            axs[i].scatter(df_sim_PCA[var], df_sim_shower_small[var_phys], c='b')
 
-        # Map point sizes
-        df_sim_sel_PCA['point_size'] = df_sim_sel_PCA['type'].map({
-            'Simulation_sel': 5,
-            'Simulation': 5,
-            'MetSim': 20,
-            'Realization': 20,
-            'Observation': 40
-        })
+            # Plot vertical line
+            axs[i].axvline(df_obs_PCA[var].values[0], color='limegreen', linestyle='--', linewidth=5)
 
-        # Create the pair plot
-        fig = sns.pairplot(
-            df_sim_sel_PCA[numeric_columns.append(pd.Index(['type']))],
-            hue='type',
-            corner=True,
-            palette=custom_palette,
-            diag_kind='kde',
-            plot_kws={'s': 5, 'edgecolor': 'k'}
-        )
+            # Plot horizontal line using stored value
+            axs[i].axhline(var_phys_values[var_phys], color='k', linestyle='-', linewidth=2)
 
-        # Overlay scatter plots with custom point sizes
-        for i in range(len(fig.axes)):
-            for j in range(len(fig.axes)):
-                if i > j:
-                    ax = fig.axes[i, j]
-                    sns.scatterplot(
-                        data=df_sim_sel_PCA,
-                        x=df_sim_sel_PCA.columns[j],
-                        y=df_sim_sel_PCA.columns[i],
-                        hue='type',
-                        size='point_size',
-                        sizes=(5, 40),
-                        ax=ax,
-                        legend=False,
-                        edgecolor='k',
-                        palette=custom_palette
-                    )
+            if i % 5 == 0:
+                axs[i].set_ylabel(var_phys)
 
-        plt.subplots_adjust(hspace=0.3, wspace=0.3)
-        fig.savefig(OUT_PUT_PATH + os.sep + file_name_obs + 'PCAspace_sim_sel_real_' + str(len(variable_PCA) - 2) + 'var_' + str(PCA_percent) + 'perc_' + str(pca.n_components_) + 'PC.png')
+            axs[i].set_xlabel(var)
+            axs[i].grid()
+
+            # Log scale for specific variables
+            if var_phys in ['erosion_mass_min', 'erosion_mass_max']:
+                axs[i].set_yscale('log')
+
+        # Remove unused subplots
+        for i in range(len(columns_PC), len(axs)):
+            fig.delaxes(axs[i])
+
+        plt.tight_layout()
+        plt.savefig(output_folder + os.sep + file_name_obs + var_phys + '_vs_var_select_PC_space.png')
         plt.close()
 
-        print('Generating result variable plot...')
 
-        output_folder = OUT_PUT_PATH + os.sep + file_name_obs + VAR_SEL_DIR_SUFX
-        if not os.path.isdir(output_folder):
-            mkdirP(output_folder)
-
-        # Loop over physical variables
-        for var_phys in physical_vars:
-            # Create subplots
-            fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:]) / 5)), 5, figsize=(20, 15))
-            axs = axs.flatten()
-
-            for i, var in enumerate(variable_PCA[2:]):
-                # Plot simulation data
-                axs[i].scatter(df_sim_shower_small[var], df_sim_shower_small[var_phys], c='b')
-
-                # Plot selected data
-                axs[i].scatter(df_sel_shower[var], df_sel_shower[var_phys], c='orange')
-
-                # Plot vertical line using stored value
-                axs[i].axvline(shower_current[var].values[0], color='limegreen', linestyle='--', linewidth=5)
-
-                # Plot horizontal line using stored value
-                axs[i].axhline(var_phys_values[var_phys], color='k', linestyle='-', linewidth=2)
-
-                if i % 5 == 0:
-                    axs[i].set_ylabel(var_phys)
-
-                axs[i].set_xlabel(var)
-                axs[i].grid()
-
-                # Log scale for specific variables
-                if var_phys in ['erosion_mass_min', 'erosion_mass_max']:
-                    axs[i].set_yscale('log')
-
-            # Remove unused subplots
-            for i in range(len(variable_PCA[2:]), len(axs)):
-                fig.delaxes(axs[i])
-
-            plt.tight_layout()
-            plt.savefig(output_folder + os.sep + file_name_obs + var_phys + '_vs_var_select_PCA.png')
-            plt.close()
-
-        print('Generating PCA position plot...')
-
-        output_folder = OUT_PUT_PATH + os.sep + file_name_obs + PCA_SEL_DIR_SUFX
-        if not os.path.isdir(output_folder):
-            mkdirP(output_folder)
-
-        # Loop over physical variables
-        for var_phys in physical_vars:
-            fig, axs = plt.subplots(int(np.ceil(len(columns_PC) / 5)), 5, figsize=(20, 15))
-            axs = axs.flatten()
-
-            for i, var in enumerate(columns_PC):
-                # Plot simulation data
-                axs[i].scatter(df_sim_PCA[var], df_sim_shower_small[var_phys], c='b')
-
-                # Plot selected data
-                axs[i].scatter(df_sel_PCA[var], df_sel_shower_no_repetitions[var_phys], c='orange')
-
-                # Plot vertical line
-                axs[i].axvline(df_obs_PCA[var].values[0], color='limegreen', linestyle='--', linewidth=5)
-
-                # Plot horizontal line using stored value
-                axs[i].axhline(var_phys_values[var_phys], color='k', linestyle='-', linewidth=2)
-
-                if i % 5 == 0:
-                    axs[i].set_ylabel(var_phys)
-
-                axs[i].set_xlabel(var)
-                axs[i].grid()
-
-                # Log scale for specific variables
-                if var_phys in ['erosion_mass_min', 'erosion_mass_max']:
-                    axs[i].set_yscale('log')
-
-            # Remove unused subplots
-            for i in range(len(columns_PC), len(axs)):
-                fig.delaxes(axs[i])
-
-            plt.tight_layout()
-            plt.savefig(output_folder + os.sep + file_name_obs + var_phys + '_vs_var_select_PC_space.png')
-            plt.close()
-
-
-    return df_sel_shower, df_sel_shower_no_repetitions, df_sim_dist_all, pcr_results_physical_param, pca.n_components_
+    return pcr_results_physical_param, pca.n_components_
 
 
 
@@ -4509,29 +4472,22 @@ def process_pca_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
     return df_sim_shower, variable_PCA, outliers
 
 
-def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, output_dir='', pca_N_comp=0):
+def PCAcorrelation_selPLOT(pd_dataframe_ranges, curr_sel, output_dir='', pca_N_comp=0, df_sim_shower_NEW=pd.DataFrame()):
 
-    curr_sim=curr_sim_init.copy()
-    # if len(curr_sim)>10000:
-    #     # pick randomly 10000 events
-    #     print('Number of events in the simulated :',len(curr_sim))
-    #     curr_sim=curr_sim.sample(n=10000).copy()
-
-    if len(curr_sim) > 10000:  # Limit to 10,000 rows for performance
-        # Separate rows with 'MetSim' or 'Real' types
-        metsim_or_real_rows = curr_sim[curr_sim['type'].isin(['MetSim', 'Real'])]
-
-        # Sample the remaining rows excluding 'MetSim' and 'Real'
-        other_rows = curr_sim[~curr_sim['type'].isin(['MetSim', 'Real'])]
-        sampled_other_rows = other_rows.sample(n=10000 - len(metsim_or_real_rows), random_state=42)
-
-        # Combine the sampled rows with 'MetSim' or 'Real' rows
-        curr_sim = pd.concat([metsim_or_real_rows, sampled_other_rows], axis=0)
-        
+    pd_dataframe_ranges=pd_dataframe_ranges.copy()        
 
     curr_sel=curr_sel.copy()
     curr_sel = curr_sel.drop_duplicates(subset='solution_id')
-    curr_df_sim_sel=pd.concat([curr_sim,curr_sel], axis=0, ignore_index=True)
+    curr_sel = pd.concat([curr_sel,df_sim_shower_NEW], axis=0, ignore_index=True)
+    curr_df_sim_sel=pd.concat([curr_sel,df_sim_shower_NEW], axis=0, ignore_index=True)
+
+    curr_sel['erosion_coeff'] = curr_sel['erosion_coeff'] * 1000000
+    curr_sel['sigma'] = curr_sel['sigma'] * 1000000
+    curr_df_sim_sel['erosion_coeff'] = curr_df_sim_sel['erosion_coeff'] * 1000000
+    curr_df_sim_sel['sigma'] = curr_df_sim_sel['sigma'] * 1000000
+    pd_dataframe_ranges['erosion_coeff'] = pd_dataframe_ranges['erosion_coeff'] * 1000000
+    pd_dataframe_ranges['sigma'] = pd_dataframe_ranges['sigma'] * 1000000
+
 
     # Define your label mappings
     label_mappings = {
@@ -4554,7 +4510,8 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, output_dir='', pca_N_comp=0)
         'Simulation_sel': "darkorange",
         'MetSim': "k",
         'Realization': "mediumaquamarine",
-        'Observation': "limegreen"
+        'Observation': "limegreen",
+        'Iteration': "gold"
     }
 
     to_plot8 = ['type', 'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
@@ -4576,6 +4533,11 @@ def PCAcorrelation_selPLOT(curr_sim_init, curr_sel, output_dir='', pca_N_comp=0)
         if ax is not None:  # Check if the axis exists
             xlabel = ax.get_xlabel()
             ylabel = ax.get_ylabel()
+            # set the x and y lim base on the ylabel and xlabel and give min and max val of pd_dataframe_ranges
+            if xlabel in pd_dataframe_ranges.columns:
+                ax.set_xlim(pd_dataframe_ranges[xlabel].min(), pd_dataframe_ranges[xlabel].max())
+            if ylabel in pd_dataframe_ranges.columns:
+                ax.set_ylim(pd_dataframe_ranges[ylabel].min(), pd_dataframe_ranges[ylabel].max())
             if ylabel in label_mappings:
                 ax.set_ylabel(label_mappings[ylabel])
             if xlabel in label_mappings:
@@ -4704,7 +4666,7 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
                 around_meteor = around_meteor[:15]
 
             if total_distribution==False:
-                output_dir=output_dir_OG+os.sep+SAVE_SELECTION_FOLDER+os.sep+around_meteor
+                output_dir=output_dir_OG+os.sep+OPTIMIZATION_FOLDER+os.sep+around_meteor
 
             image_name = around_meteor+'_MODE_DensPoint.png'
 
@@ -5222,27 +5184,9 @@ def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_f
 
 
 
-def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_name, Min_KDE_point='', save_log=True, pca_N_comp=0, df_sim_shower_NEW=pd.DataFrame()):
-    df_sim_shower_small = df_sim_shower.copy()
+def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name, Min_KDE_point='', save_log=True, pca_N_comp=0):
+    sim_range_plot = df_sim_range.copy()
     df_sel_shower = df_sel_shower_real.copy()
-    df_sim_shower_NEW_inter = df_sim_shower_NEW.copy()
-
-    # if len(df_sim_shower_small) > 10000:  # w/o takes forever to plot
-    #     # pick randomly 10000 events
-    #     df_sim_shower_small = df_sim_shower_small.sample(n=10000)
-    #     if 'MetSim' not in df_sim_shower_small['type'].values and 'Real' not in df_sim_shower_small['type'].values:
-    #         df_sim_shower_small = pd.concat([df_sim_shower_small.iloc[[0]], df_sim_shower_small])
-    
-    if len(df_sim_shower_small) > 10000:  # Limit to 10,000 rows for performance
-        # Separate rows with 'MetSim' or 'Real' types
-        metsim_or_real_rows = df_sim_shower_small[df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
-
-        # Sample the remaining rows excluding 'MetSim' and 'Real'
-        other_rows = df_sim_shower_small[~df_sim_shower_small['type'].isin(['MetSim', 'Real'])]
-        sampled_other_rows = other_rows.sample(n=10000 - len(metsim_or_real_rows), random_state=42)
-
-        # Combine the sampled rows with 'MetSim' or 'Real' rows
-        df_sim_shower_small = pd.concat([metsim_or_real_rows, sampled_other_rows], axis=0)
 
     if save_log:
         # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
@@ -5251,12 +5195,8 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             os.remove(output_dir + os.sep + "log_" + file_name[:15] + "_ConfInterval.txt")
         sys.stdout = Logger(output_dir, "log_" + file_name[:15] + "_ConfInterval.txt")  # _30var_99perc_13PC
 
-    curr_df_sim_sel = pd.concat([df_sim_shower_small, df_sel_shower], axis=0)
-
-    # check if df_sim_shower_NEW_inter is not epmty then change the type to Iteration
-    if len(df_sim_shower_NEW_inter) > 0:
-        df_sim_shower_NEW_inter['type'] = 'Iteration'
-        curr_df_sim_sel = pd.concat([curr_df_sim_sel, df_sim_shower_NEW_inter], axis=0)
+    # concatenate df_sel_shower_real and df_sim_shower_NEW_inter
+    curr_df_sim_sel = pd.concat([df_sel_shower], ignore_index=True)
 
     # Reset the index to ensure uniqueness
     curr_df_sim_sel = curr_df_sim_sel.reset_index(drop=True)
@@ -5266,12 +5206,34 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
     curr_df_sim_sel['sigma'] = curr_df_sim_sel['sigma'] * 1000000
     curr_df_sim_sel['erosion_energy_per_unit_cross_section'] = curr_df_sim_sel['erosion_energy_per_unit_cross_section'] / 1000000
     curr_df_sim_sel['erosion_energy_per_unit_mass'] = curr_df_sim_sel['erosion_energy_per_unit_mass'] / 1000000
+    sim_range_plot['erosion_coeff'] = sim_range_plot['erosion_coeff'] * 1000000
+    sim_range_plot['sigma'] = sim_range_plot['sigma'] * 1000000
+    sim_range_plot['erosion_energy_per_unit_cross_section'] = sim_range_plot['erosion_energy_per_unit_cross_section'] / 1000000
+    sim_range_plot['erosion_energy_per_unit_mass'] = sim_range_plot['erosion_energy_per_unit_mass'] / 1000000
 
+    # # Define a custom palette
+    # custom_palette = {
+    #     'Real': "r",
+    #     'Simulation': "b",
+    #     'Simulation_sel': "darkorange",
+    #     'MetSim': "k",
+    #     'Realization': "mediumaquamarine",
+    #     'Observation': "limegreen",
+    #     'Iteration': "gold"
+    # }
+
+    # group_mapping = {
+    #     'Simulation_sel': 'selected',
+    #     'MetSim': 'simulated',
+    #     'Real': 'simulated',
+    #     'Simulation': 'simulated',
+    #     'Iteration': 'iteration'
+    # }
     group_mapping = {
         'Simulation_sel': 'selected',
-        'MetSim': 'simulated',
-        'Real': 'simulated',
-        'Simulation': 'simulated',
+        'MetSim': 'selected',
+        'Real': 'selected',
+        'Simulation': 'selected',
         'Iteration': 'iteration'
     }
     curr_df_sim_sel['group'] = curr_df_sim_sel['type'].map(group_mapping)
@@ -5291,13 +5253,17 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
     axs = axs.flatten()
 
     print('\\hline')
-    if len(Min_KDE_point) > 0:
-        # delete the first two elements
-        Min_KDE_point = Min_KDE_point[2:]
-        # print('flag_',Min_KDE_point)
-        print('Variables & ' + str(df_sim_shower['type'].iloc[0]) + ' & 95\\%CIlow & Mean & Mode & Dens.Point & 95\\%CIup \\\\')
+    # look find the index of the where df_sel_shower_real['type'] == 'Metsim' or 'Real'
+    if 'MetSim' in df_sel_shower_real['type'].values:
+        # find the index of the where df_sel_shower_real['type'] == 'Metsim'
+        idx = df_sel_shower_real.index[df_sel_shower_real['type'] == 'MetSim']
+        print('Variables & ' + str(df_sel_shower_real['type'].iloc[idx]) + ' & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
+    elif 'Real' in df_sel_shower_real['type'].values:
+        # find the index of the where df_sel_shower_real['type'] == 'Real'
+        idx = df_sel_shower_real.index[df_sel_shower_real['type'] == 'Real']
+        print('Variables & ' + str(df_sel_shower_real['type'].iloc[idx]) + ' & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
     else:
-        print('Variables & ' + str(df_sim_shower['type'].iloc[0]) + ' & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
+        print('Variables & ' + str(df_sel_shower_real['type'].iloc[0]) + ' & 95\\%CIlow & Mean & Mode & 95\\%CIup \\\\')
 
     ii_densest = 0
     for i in range(12):
@@ -5313,30 +5279,31 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
 
             # Define the legend elements
             # Define the legend elements
-            prior_patch = mpatches.Patch(color='blue', label='Priors', alpha=0.5, edgecolor='black')
-            sel_events_patch = mpatches.Patch(color='darkorange', label='Selected Events', alpha=0.5, edgecolor='red')
-            if len(df_sim_shower_NEW_inter) > 0:
-                iter_patch = mpatches.Patch(color='limegreen', label='Iterative', alpha=0.5, edgecolor='black')
-            if 'MetSim' in curr_df_sim_sel['type'].values:
-                metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
-            else:
-                metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+            # prior_patch = mpatches.Patch(color='blue', label='Priors', alpha=0.5, edgecolor='black')
+            sel_events_patch = mpatches.Patch(color='darkorange', label='Initial', alpha=0.5, edgecolor='red')
             mode_line = Line2D([0], [0], color='red', linestyle='-.', label='Mode')
             mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
-            if len(Min_KDE_point) > 0:
-                dens_point_line = Line2D([0], [0], color='blue', linestyle='-.', label='Densest Point')
-                if len(df_sim_shower_NEW_inter) > 0:
-                    # Create the legend
-                    legend_elements = [prior_patch, sel_events_patch, iter_patch, metsim_line, mean_line, mode_line, dens_point_line]
+            if 'Iteration' in curr_df_sim_sel['type'].values:
+                iter_patch = mpatches.Patch(color='gold', label='Iterative', alpha=0.5, edgecolor='black')
+                if 'MetSim' in curr_df_sim_sel['type'].values:
+                    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+                    legend_elements = [sel_events_patch, iter_patch, metsim_line, mean_line, mode_line]
+                elif 'Real' in curr_df_sim_sel['type'].values:
+                    metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+                    legend_elements = [sel_events_patch, iter_patch, metsim_line, mean_line, mode_line]
                 else:
-                    legend_elements = [prior_patch, sel_events_patch, metsim_line, mean_line, mode_line, dens_point_line]
+                    legend_elements = [sel_events_patch, iter_patch, mean_line, mode_line]
             else:
-                if len(df_sim_shower_NEW_inter) > 0:
-                    # Create the legend
-                    legend_elements = [prior_patch, sel_events_patch, iter_patch, metsim_line, mean_line, mode_line]
+                if 'MetSim' in curr_df_sim_sel['type'].values:
+                    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+                    legend_elements = [sel_events_patch, metsim_line, mean_line, mode_line]
+                elif 'Real' in curr_df_sim_sel['type'].values:
+                    metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+                    legend_elements = [sel_events_patch, metsim_line, mean_line, mode_line]
                 else:
-                    legend_elements = [prior_patch, sel_events_patch, metsim_line, mean_line, mode_line]
-            
+                    legend_elements = [sel_events_patch, mean_line, mode_line]
+
+
             axs[i].legend(handles=legend_elements, loc='upper center') # , fontsize='small'
 
             # Remove axes ticks and labels
@@ -5350,10 +5317,10 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             # take the log of the erosion_mass_min and erosion_mass_max
             curr_df_sim_sel[plotvar] = np.log10(curr_df_sim_sel[plotvar])
             curr_sel[plotvar] = np.log10(curr_sel[plotvar])
-            if len(Min_KDE_point) > 0:
-                Min_KDE_point[ii_densest] = np.log10(Min_KDE_point[ii_densest])
+            sim_range_plot[plotvar] = np.log10(sim_range_plot[plotvar])
 
-        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20)
+
+        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette={'selected': 'darkorange', 'iteration': 'gold'}, bins=20)
         unique_values_count = curr_sel[plotvar].nunique()
         if unique_values_count > 1:
             # Add the KDE to the plot
@@ -5362,8 +5329,11 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             axs[i].lines[-1].remove()
         else:
             kde_line = None
-
+        
         axs[i].axvline(x=np.mean(curr_df_sim_sel[curr_df_sim_sel['group'] == 'selected'][plotvar]), color='blue', linestyle='--', linewidth=3)
+
+        # set lim min and max sim_range_plot
+        axs[i].set_xlim(sim_range_plot[plotvar].min(), sim_range_plot[plotvar].max())
 
         if 'MetSim' in curr_df_sim_sel['type'].values:
             axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=3)
@@ -5376,6 +5346,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             # Convert back from log scale
             curr_df_sim_sel[plotvar] = 10 ** curr_df_sim_sel[plotvar]
             curr_sel[plotvar] = 10 ** curr_sel[plotvar]
+            sim_range_plot[plotvar] = 10 ** sim_range_plot[plotvar]
 
         # Calculate percentiles
         sigma_95 = np.percentile(curr_sel[plotvar], 95)
@@ -5397,21 +5368,9 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
             if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
                 x_10mode = 10 ** kde_line_Xval[max_index]
 
-            if len(Min_KDE_point) > 0:
-                if len(Min_KDE_point) > ii_densest:
-                    densest_index = find_closest_index(kde_line_Xval, [Min_KDE_point[ii_densest]])
-                    axs[i].axvline(x=Min_KDE_point[ii_densest], color='blue', linestyle='-.', linewidth=3)
-                    if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
-                        Min_KDE_point[ii_densest] = 10 ** (Min_KDE_point[ii_densest])
-
-                    if i < 12:
-                        print('\\hline') 
-                        print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(Min_KDE_point[ii_densest])} & {'{:.4g}'.format(sigma_95)} \\\\")
-                    ii_densest += 1
-            else:
-                if i < 12:
-                    print('\\hline')
-                    print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
+            if i < 12:
+                print('\\hline')
+                print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
         else:
             if i < 12:
                 print('\\hline')
@@ -5445,86 +5404,6 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_shower, output_dir, file_nam
     if save_log:
         sys.stdout.close()
         sys.stdout = sys.__stdout__
-
-    # # Additional plotting for realizations (if applicable)
-    # ii_densest = 0
-    # if 'solution_id_dist' in df_sel_shower_real.columns:
-    #     if len(df_sel_shower_real['solution_id_dist'].unique()) < 60 and len(df_sel_shower_real['solution_id_dist'].unique()) > 1:
-    #         print('Plot the distribution of the Realizations', len(df_sel_shower_real['solution_id_dist'].unique()))
-    #         fig, axs = plt.subplots(3, 3)
-    #         axs = axs.flatten()
-
-    #         for i in range(9):
-    #             plotvar = to_plot[i]
-
-    #             if i == 8:
-    #                 # Plot only the legend
-    #                 axs[i].axis('off')
-
-    #                 import matplotlib.patches as mpatches
-    #                 from matplotlib.lines import Line2D
-
-    #                 prior_patch = mpatches.Patch(color='blue', label='Priors')
-    #                 sel_events_patch = mpatches.Patch(color='orange', label='Selected Events')
-    #                 if 'MetSim' in curr_df_sim_sel['type'].values:
-    #                     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
-    #                 else:
-    #                     metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
-    #                 mode_line = Line2D([0], [0], color='red', linestyle='--', label='Mode')
-
-    #                 legend_elements = [prior_patch, sel_events_patch, metsim_line, mode_line]
-    #                 axs[i].legend(handles=legend_elements, loc='center')
-
-    #                 axs[i].set_xticks([])
-    #                 axs[i].set_yticks([])
-    #                 axs[i].set_xlabel('')
-    #                 axs[i].set_ylabel('')
-    #                 continue
-
-    #             if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
-    #                 sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])), np.log10(np.max(curr_df_sim_sel[plotvar]))])
-    #                 sns.histplot(curr_df_sim_sel, x=np.log10(curr_df_sim_sel[plotvar]), weights=curr_df_sim_sel['weight'], hue='solution_id_dist', ax=axs[i], multiple="stack", bins=20, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])), np.log10(np.max(curr_df_sim_sel[plotvar]))])
-    #                 sns.histplot(curr_sel, x=np.log10(curr_sel[plotvar]), weights=curr_sel['weight'], bins=20, ax=axs[i], multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.log10(np.min(curr_df_sim_sel[plotvar])), np.log10(np.max(curr_df_sim_sel[plotvar]))])
-
-    #                 kde_line = axs[i].lines[-1]
-    #                 axs[i].lines[-1].remove()
-
-    #                 if 'MetSim' in curr_df_sim_sel['type'].values:
-    #                     axs[i].axvline(x=np.log10(curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0]), color='k', linewidth=2)
-    #                 elif 'Real' in curr_df_sim_sel['type'].values:
-    #                     axs[i].axvline(x=np.log10(curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0]), color='g', linewidth=2, linestyle='--')
-
-    #             else:
-    #                 sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette='bright', bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]), np.max(curr_df_sim_sel[plotvar])])
-    #                 sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='solution_id_dist', ax=axs[i], multiple="stack", bins=20, binrange=[np.min(curr_df_sim_sel[plotvar]), np.max(curr_df_sim_sel[plotvar])])
-    #                 sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i], multiple="stack", fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]), np.max(curr_df_sim_sel[plotvar])])
-
-    #                 kde_line = axs[i].lines[-1]
-    #                 axs[i].lines[-1].remove()
-
-    #                 if 'MetSim' in curr_df_sim_sel['type'].values:
-    #                     axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=2)
-    #                 elif 'Real' in curr_df_sim_sel['type'].values:
-    #                     axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=2, linestyle='--')
-
-    #             axs[i].set_ylabel('Probability')
-    #             axs[i].set_xlabel(to_plot_unit[i])
-
-    #             if axs[i].get_ylim()[1] > 1:
-    #                 axs[i].set_ylim(0, 1)
-
-    #             axs[i].get_legend().remove()
-
-    #         plt.tight_layout()
-
-    #         if pca_N_comp != 0:
-    #             # Save the figure
-    #             fig.savefig(output_dir + os.sep + 'PCA' + str(pca_N_comp) + 'PC_'+ file_name + '_PhysicProp_Reliazations_' + str(len(curr_sel)) + 'ev.png', dpi=300)
-    #         else:
-    #             # Save the figure
-    #             fig.savefig(output_dir + os.sep + file_name + '_PhysicProp_Reliazations_' + str(len(curr_sel)) + 'ev.png', dpi=300)
-
-    #         plt.close()
 
 
 
@@ -6019,12 +5898,12 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
             # split the name from the path
             _, file_name_title = os.path.split(curr_sel.iloc[ii]['solution_id'])
             
-            file_json_save_phys_NOoptimized=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title
+            file_json_save_phys_NOoptimized=output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_title
             if Metsim_flag:
-                file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_fitted.json'
+                file_json_save_phys=output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_title[:23]+'_fitted.json'
                 file_json_save_results=output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:23]+'_fitted.json'
             else:
-                file_json_save_phys=output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:-5]+'_fitted.json'
+                file_json_save_phys=output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:-5]+'_fitted.json'
                 file_json_save_results=output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_obs[:15]+'_'+file_name_title[:-5]+'_fitted.json'
 
             try:
@@ -6048,14 +5927,14 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
             data_file_sim['chi2_red_len'] = chi2_red_len
 
             if Metsim_flag:
-                plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+SAVE_SELECTION_FOLDER, data_file_sim, 'Metsim')
+                plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+OPTIMIZATION_FOLDER, data_file_sim, 'Metsim')
             else:
-                plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+SAVE_SELECTION_FOLDER, data_file_sim)
+                plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+OPTIMIZATION_FOLDER, data_file_sim)
 
             if run_optimization:
                 # check if file_json_save_phys is present
                 if not os.path.isfile(file_json_save_phys):
-                    output_dir_optimized = output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+'Optimization_'+file_name_title[:-5]
+                    output_dir_optimized = output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+'Optimization_'+file_name_title[:-5]
                     mkdirP(output_dir_optimized)
 
                     if Metsim_flag:
@@ -6079,7 +5958,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
 
                         shutil.copy(df_obs_shower.iloc[0]['solution_id'], output_dir_optimized+os.sep+os.path.basename(df_obs_shower.iloc[0]['solution_id']))
 
-                        shutil.copy(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+image_name , output_dir+os.sep+save_results_folder_events_plots+os.sep+image_name)
+                        shutil.copy(output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+image_name , output_dir+os.sep+save_results_folder_events_plots+os.sep+image_name)
 
                         pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_selected_low_RMSD], axis=0)
 
@@ -6114,7 +5993,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
                         text=True
                     )
 
-                    # # save the 20230811_082648_sim_fit_fitted.json as a json file in the output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name_title[:23]+'_sim_fit_fitted.json'
+                    # # save the 20230811_082648_sim_fit_fitted.json as a json file in the output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_title[:23]+'_sim_fit_fitted.json'
                     # shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
 
                     # Check if the output file exists before copying
@@ -6146,7 +6025,7 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
                 sim_time_pos = interp_ht_time(gensim_data_optimized['height'])
 
                 # copy the data to the mode
-                data_file_sim_opt = data_file.copy()
+                data_file_sim_opt = gensim_data_optimized.copy() # data_file
                 data_file_sim_opt['time'] = sim_time_pos
                 data_file_sim_opt['res_absolute_magnitudes'] = residuals_mag
                 data_file_sim_opt['res_velocities'] = residuals_vel
@@ -6159,13 +6038,13 @@ def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real
                 data_file_sim_opt['chi2_red_len'] = chi2_red_len
 
                 if Metsim_flag:
-                    plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+SAVE_SELECTION_FOLDER, data_file_sim, 'Metsim', data_file_sim_opt, 'Optimized')
+                    plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+OPTIMIZATION_FOLDER, data_file_sim, 'Metsim', data_file_sim_opt, 'Optimized')
                 else:
-                    plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+SAVE_SELECTION_FOLDER, data_file_sim,'', data_file_sim_opt, 'Optimized')
+                    plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+OPTIMIZATION_FOLDER, data_file_sim,'', data_file_sim_opt, 'Optimized')
 
             if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD: # and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
 
-                shutil.copy(output_dir+os.sep+SAVE_SELECTION_FOLDER+os.sep+image_name , output_dir+os.sep+save_results_folder_events_plots+os.sep+image_name) # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
+                shutil.copy(output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+image_name , output_dir+os.sep+save_results_folder_events_plots+os.sep+image_name) # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
                 
                 if run_optimization:
                     if not os.path.isfile(file_json_save_phys):
@@ -6493,6 +6372,135 @@ def compute_chi2_red_thresholds(confidence_level, degrees_of_freedom): # 0.95, l
     
     return chi2_red_threshold_lower, chi2_red_threshold_upper
 
+def order_both_RMSD(pd_datafram_check_RMSD):
+
+    # deep copy pd_datafram_PCA_sim
+    pd_datafram_check_RMSD = pd_datafram_PCA_sim.copy(deep=True)
+
+    # Normalize the columns to bring them to the same scale
+    pd_datafram_check_RMSD['rmsd_mag_norm'] = pd_datafram_check_RMSD['rmsd_mag'] / pd_datafram_check_RMSD['rmsd_mag'].max()
+    pd_datafram_check_RMSD['rmsd_len_norm'] = pd_datafram_check_RMSD['rmsd_len'] / pd_datafram_check_RMSD['rmsd_len'].max()
+
+    # Compute the combined metric (e.g., sum of absolute normalized values)
+    pd_datafram_check_RMSD['combined_RMSD_metric'] = abs(pd_datafram_check_RMSD['rmsd_mag_norm']) + abs(pd_datafram_check_RMSD['rmsd_len_norm'])
+
+    # Sort the DataFrame based on the combined metric
+    pd_datafram_check_RMSD = pd_datafram_check_RMSD.sort_values(by='combined_RMSD_metric')
+
+    pd_datafram_check_RMSD = pd_datafram_check_RMSD.reset_index(drop=True)
+
+    # delete rmsd_mag_norm and rmsd_len_norm and combined_RMSD_metric
+    pd_datafram_check_RMSD = pd_datafram_check_RMSD.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
+
+    return pd_datafram_check_RMSD
+
+
+def CI_range_gen_sim(pd_results, ii_repeat, old_results_number):
+
+    result_number = len(pd_results)
+
+    # check if only 1 in len
+    if result_number == 1:
+        print('Only one result found')
+        # create a dictionary with the physical parameters
+        CI_physical_param = {
+            'v_init_180km': [pd_results['v_init_180km'].values[0], pd_results['v_init_180km'].values[0]],
+            'zenith_angle': [pd_results['zenith_angle'].values[0], pd_results['zenith_angle'].values[0]],
+            'mass': [pd_results['mass'].values[0], pd_results['mass'].values[0]],
+            'rho': [pd_results['rho'].values[0], pd_results['rho'].values[0]],
+            'sigma': [pd_results['sigma'].values[0], pd_results['sigma'].values[0]],
+            'erosion_height_start': [pd_results['erosion_height_start'].values[0], pd_results['erosion_height_start'].values[0]],
+            'erosion_coeff': [pd_results['erosion_coeff'].values[0], pd_results['erosion_coeff'].values[0]],
+            'erosion_mass_index': [pd_results['erosion_mass_index'].values[0], pd_results['erosion_mass_index'].values[0]],
+            'erosion_mass_min': [pd_results['erosion_mass_min'].values[0], pd_results['erosion_mass_min'].values[0]],
+            'erosion_mass_max': [pd_results['erosion_mass_max'].values[0], pd_results['erosion_mass_max'].values[0]]
+        }
+
+    else:
+        print('Number of results found:',len(pd_results))
+        columns_physpar = ['v_init_180km','zenith_angle','mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
+            'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
+        
+        if ii_repeat > 1 and old_results_number == result_number:
+        ###############################################################################
+            # try to focus on the one that have good results
+            
+            # Calculate the quantiles
+            quantiles = pd_results[columns_physpar].quantile([0.2, 0.8])
+
+            # Convert the quantiles to a dictionary
+            CI_physical_param = {col: quantiles[col].tolist() for col in columns_physpar}
+
+        ###############################################################################
+        else:
+            # try and look for other results that might be around
+
+            # Calculate the quantiles
+            quantiles = pd_results[columns_physpar].quantile([0.1, 0.9])
+
+            # Get the minimum and maximum values
+            min_val = pd_results[columns_physpar].min()
+            max_val = pd_results[columns_physpar].max()
+
+            # Calculate the extended range using the logic provided
+            extended_min = min_val - (quantiles.loc[0.1] - min_val)
+            # consider the value extended_min<0 Check each column in extended_min and set to min_val if negative
+            for col in columns_physpar:
+                if extended_min[col] < 0:
+                    extended_min[col] = min_val[col]
+            extended_max = max_val + (max_val - quantiles.loc[0.9])
+
+            # Convert the extended range to a dictionary
+            CI_physical_param = {col: [extended_min[col], extended_max[col]] for col in columns_physpar}
+        
+        ###############################################################################
+
+
+    # check if v_init_180km are the same value
+    if CI_physical_param['v_init_180km'][0] == CI_physical_param['v_init_180km'][1]:
+        CI_physical_param['v_init_180km'] = [CI_physical_param['v_init_180km'][0] - CI_physical_param['v_init_180km'][0]/1000, CI_physical_param['v_init_180km'][1] + CI_physical_param['v_init_180km'][1]/1000]
+    if CI_physical_param['zenith_angle'][0] == CI_physical_param['zenith_angle'][1]:
+        CI_physical_param['zenith_angle'] = [CI_physical_param['zenith_angle'][0] - CI_physical_param['zenith_angle'][0]/10000, CI_physical_param['zenith_angle'][1] + CI_physical_param['zenith_angle'][1]/10000]
+    if CI_physical_param['mass'][0] == CI_physical_param['mass'][1]:
+        CI_physical_param['mass'] = [CI_physical_param['mass'][0] - CI_physical_param['mass'][0]/10, CI_physical_param['mass'][1] + CI_physical_param['mass'][1]/10]
+    if np.round(CI_physical_param['rho'][0]/100) == np.round(CI_physical_param['rho'][1]/100):
+        if CI_physical_param['rho'][0] - 100<0:
+            CI_physical_param['rho'] = [CI_physical_param['rho'][0]/10, CI_physical_param['rho'][1] + 100]
+        else:
+            CI_physical_param['rho'] = [CI_physical_param['rho'][0] - 100, CI_physical_param['rho'][1] + 100] # - CI_physical_param['rho'][0]/5
+    if CI_physical_param['sigma'][0] == CI_physical_param['sigma'][1]:
+        CI_physical_param['sigma'] = [CI_physical_param['sigma'][0] - CI_physical_param['sigma'][0]/10, CI_physical_param['sigma'][1] + CI_physical_param['sigma'][1]/10]
+    if CI_physical_param['erosion_height_start'][0] == CI_physical_param['erosion_height_start'][1]:
+        CI_physical_param['erosion_height_start'] = [CI_physical_param['erosion_height_start'][0] - CI_physical_param['erosion_height_start'][0]/100, CI_physical_param['erosion_height_start'][1] + CI_physical_param['erosion_height_start'][1]/100]
+    if CI_physical_param['erosion_coeff'][0] == CI_physical_param['erosion_coeff'][1]:
+        CI_physical_param['erosion_coeff'] = [CI_physical_param['erosion_coeff'][0] - CI_physical_param['erosion_coeff'][0]/10, CI_physical_param['erosion_coeff'][1] + CI_physical_param['erosion_coeff'][1]/10]
+    if CI_physical_param['erosion_mass_index'][0] == CI_physical_param['erosion_mass_index'][1]:
+        CI_physical_param['erosion_mass_index'] = [CI_physical_param['erosion_mass_index'][0] - CI_physical_param['erosion_mass_index'][0]/10, CI_physical_param['erosion_mass_index'][1] + CI_physical_param['erosion_mass_index'][1]/10]
+    if CI_physical_param['erosion_mass_min'][0] == CI_physical_param['erosion_mass_min'][1]:
+        CI_physical_param['erosion_mass_min'] = [CI_physical_param['erosion_mass_min'][0] - CI_physical_param['erosion_mass_min'][0]/10, CI_physical_param['erosion_mass_min'][1] + CI_physical_param['erosion_mass_min'][1]/10]
+    if CI_physical_param['erosion_mass_max'][0] == CI_physical_param['erosion_mass_max'][1]:
+        CI_physical_param['erosion_mass_max'] = [CI_physical_param['erosion_mass_max'][0] - CI_physical_param['erosion_mass_max'][0]/10, CI_physical_param['erosion_mass_max'][1] + CI_physical_param['erosion_mass_max'][1]/10]
+        
+
+    # Multiply the 'erosion_height_start' values by 1000
+    CI_physical_param['erosion_height_start'] = [x * 1000 for x in CI_physical_param['erosion_height_start']]
+
+    return CI_physical_param
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6543,7 +6551,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     # add to save_res_fin_folder the file_name
     save_res_fin_folder=SAVE_RESULTS_FINAL_FOLDER+file_name
     save_results_folder=save_res_fin_folder
-    save_results_folder_events_plots = save_results_folder+os.sep+'events_plots'
+    # save_results_folder_events_plots = save_results_folder+os.sep+METEOR_PLOTS_JSON_FILE_FOLDER
+    save_results_folder_events_plots = METEOR_PLOTS_JSON_FILE_FOLDER
 
     flag_manual_metsim=True
     # check if it ends with _first_guess.json
@@ -6564,17 +6573,17 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     # check if the input_folder exists if the csv file has been already created
     if trajectory_file.endswith('.csv'):
         # read the csv file
-        pd_dataframe_PCA_obs_real = pd.read_csv(trajectory_file)
+        pd_dataframe_obs_real = pd.read_csv(trajectory_file)
         # check the column name solution_id	and see if it matches a file i the folder
-        if not input_folder in pd_dataframe_PCA_obs_real['solution_id'][0]:
+        if not input_folder in pd_dataframe_obs_real['solution_id'][0]:
             # if the solution_id is in the name of the file then the file is the real data
             print('The folder of the csv file is different')
             # check if the file is present in the folder
-            if not os.path.isfile(pd_dataframe_PCA_obs_real['solution_id'][0]):
+            if not os.path.isfile(pd_dataframe_obs_real['solution_id'][0]):
                 print()
                 print('--- MODIFY OLD CSV FILE PATH ---')
-                # take the first element pd_dataframe_PCA_obs_real['solution_id'][0] and take only the path
-                old_input_folder = os.path.split(pd_dataframe_PCA_obs_real['solution_id'][0])[0]
+                # take the first element pd_dataframe_obs_real['solution_id'][0] and take only the path
+                old_input_folder = os.path.split(pd_dataframe_obs_real['solution_id'][0])[0]
                 # run the update_solution_ids function
                 print('old_input_folder',old_input_folder)
                 update_solution_ids(old_input_folder, input_folder)
@@ -6584,113 +6593,68 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     ######################### OBSERVATION ###############################
     print('--- OBSERVATION ---')
 
+    results_event_dir = output_folder+os.sep+save_results_folder_events_plots
     mkdirP(output_folder+os.sep+save_results_folder)
     mkdirP(output_folder+os.sep+save_results_folder_events_plots)
-    mkdirP(output_folder+os.sep+SAVE_SELECTION_FOLDER)
+    mkdirP(output_folder+os.sep+OPTIMIZATION_FOLDER)
 
     # check the extension of the file if it already present the csv file meas it has been aleady processed
     if trajectory_file.endswith('.csv'):
         # read the csv file
-        pd_dataframe_PCA_obs_real = pd.read_csv(trajectory_file)
+        pd_dataframe_obs_real = pd.read_csv(trajectory_file)
 
-        if pd_dataframe_PCA_obs_real['type'][0] != 'Observation' and pd_dataframe_PCA_obs_real['type'][0] != 'Observation_sim':
+        if pd_dataframe_obs_real['type'][0] != 'Observation' and pd_dataframe_obs_real['type'][0] != 'Observation_sim':
             # raise an error saing that the type is wrong and canot be processed by PCA
             raise ValueError('Type of the csv file is wrong and canot be processed by script.')
-    
-        if pd_dataframe_PCA_obs_real['solution_id'][0].endswith('.pickle'):
-            # read the pickle file
-            gensim_data_obs = read_pickle_reduction_file(pd_dataframe_PCA_obs_real['solution_id'][0])
+        
+        trajectory_file = pd_dataframe_obs_real['solution_id'][0]
+        # print the file that is going to be processed
+        print('file to be processed:',trajectory_file)
 
-        # json file
-        elif pd_dataframe_PCA_obs_real['solution_id'][0].endswith('.json') and pd_dataframe_PCA_obs_real['type'][0] != 'Observation_sim': 
-            # read the json file with noise
-            gensim_data_obs = read_with_noise_GenerateSimulations_output(pd_dataframe_PCA_obs_real['solution_id'][0], fps)
 
-        else:
-            # raise an error if the file is not a csv, pickle or json file
-            raise ValueError('File format not supported. Please provide a csv, pickle or json file.')
+    if trajectory_file.endswith('.pickle'):
+        # read the pickle file
+        gensim_data_obs = read_pickle_reduction_file(trajectory_file) #,trajectory_Metsim_file
 
-        rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, False, output_folder+os.sep+save_results_folder, file_name)
-
-        print('read the csv file:',trajectory_file)
-
+    # json file
+    elif trajectory_file.endswith('.json'): 
+        # read the json file with noise
+        gensim_data_obs = read_with_noise_GenerateSimulations_output(trajectory_file, fps)
+        
     else:
+        # raise an error if the file is not a csv, pickle or json file
+        raise ValueError('File format not supported. Please provide a csv, pickle or json file.')
 
-        if trajectory_file.endswith('.pickle'):
-            # read the pickle file
-            gensim_data_obs = read_pickle_reduction_file(trajectory_file) #,trajectory_Metsim_file
+    # run generate observation realization with the gensim_data_obs
+    rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, output_folder+os.sep+save_results_folder, file_name)
 
-        # json file
-        elif trajectory_file.endswith('.json'): 
-            # read the json file with noise
-            gensim_data_obs = read_with_noise_GenerateSimulations_output(trajectory_file, fps)
-            
-        else:
-            # raise an error if the file is not a csv, pickle or json file
-            raise ValueError('File format not supported. Please provide a csv, pickle or json file.')
+    print()
+    
+    pd_dataframe_obs_real = array_to_pd_dataframe_PCA(gensim_data_obs)
+    pd_dataframe_obs_real['type'] = 'Observation'
 
-        if cml_args.save_test_plot:
-            # run generate observation realization with the gensim_data_obs
-            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct, fig, ax = find_noise_of_data(gensim_data_obs, cml_args.fps, cml_args.save_test_plot, output_folder+os.sep+save_results_folder, file_name)
-            # make the results_list to incorporate all rows of pd_dataframe_PCA_obs_real
-            results_list = []
-            for ii in range(cml_args.nobs):
-                results_pd = generate_observation_realization(gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fps, fig, ax, cml_args.save_test_plot) 
-                results_list.append(results_pd)
-                print()
+    # check if there is a column with the name 'mass'
+    if 'mass' in pd_dataframe_obs_real.columns:
+        #delete from the real_data panda dataframe mass rho sigma
+        pd_dataframe_obs_real = pd_dataframe_obs_real.drop(columns=['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'])
+    
+    # add to all the rows the rmsd_mag_obs, rmsd_lag_obs, RMSD cannot work for noisy simulations because of interp
+    pd_dataframe_obs_real['rmsd_mag'] = rmsd_pol_mag
+    pd_dataframe_obs_real['rmsd_len'] = rmsd_t0_lag/1000
+    pd_dataframe_obs_real['chi2_red_mag'] = 1
+    pd_dataframe_obs_real['chi2_red_len'] = 1
+    # pd_dataframe_obs_real['vel_init_norot'] = pd_dataframe_obs_real['vel_init_norot'].iloc[0]
+    if flag_manual_metsim:
+        simulation_MetSim_object, gensim_data_Metsim, pd_datafram_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
+        # add pd_datafram_Metsim['v_init_180km'] to pd_dataframe_obs_real
+        pd_dataframe_obs_real['v_init_180km'] = pd_datafram_Metsim['v_init_180km'].iloc[0]
 
-            # plot noisy area around vel_kms for vel_noise for the fix height_km
-            ax[0].fill_betweenx(np.array(fit_funct['height'])/1000, np.array(fit_funct['absolute_magnitudes'])-rmsd_pol_mag, np.array(fit_funct['absolute_magnitudes'])+rmsd_pol_mag, color='lightgray', alpha=0.5)
+    pd_dataframe_obs_real.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_OBS, index=False)
+    # print saved csv file
+    print()
+    print('saved obs csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_OBS)
 
-            # plot noisy area around vel_kms for vel_noise for the fix height_km
-            # ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000/(1/fps)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000/(1/fps)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
-            ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/fps)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/fps)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
-
-            ax[0].plot(np.array(fit_funct['absolute_magnitudes']), np.array(fit_funct['height'])/1000, 'k--')
-            ax[1].plot(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000, 'k--', label='Fit')
-
-            # Save the figure as file with instead of _trajectory.pickle it has file+std_dev.png on the desktop
-            plt.savefig(output_folder+os.sep+file_name+'obs_realizations.png', dpi=300)
-
-            plt.close()
-
-        else:      
-            rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, False, output_folder+os.sep+save_results_folder, file_name)       
-            input_list_obs = [[gensim_data_obs, rmsd_t0_lag, rmsd_pol_mag, fit_funct,'realization_'+str(ii+1), fps] for ii in range(cml_args.nobs)]
-            results_list = domainParallelizer(input_list_obs, generate_observation_realization, cores=cml_args.cores)
-            print()
-        
-        pd_dataframe_PCA_obs_real = array_to_pd_dataframe_PCA(gensim_data_obs)
-        pd_dataframe_PCA_obs_real['type'] = 'Observation'
-
-        df_obs_realiz = pd.concat(results_list)
-        pd_dataframe_PCA_obs_real = pd.concat([pd_dataframe_PCA_obs_real, df_obs_realiz])
-        # re index the dataframe
-        pd_dataframe_PCA_obs_real.reset_index(drop=True, inplace=True)
-
-        # check if there is a column with the name 'mass'
-        if 'mass' in pd_dataframe_PCA_obs_real.columns:
-            #delete from the real_data panda dataframe mass rho sigma
-            pd_dataframe_PCA_obs_real = pd_dataframe_PCA_obs_real.drop(columns=['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass'])
-        
-        # add to all the rows the rmsd_mag_obs, rmsd_lag_obs, RMSD cannot work for noisy simulations because of interp
-        pd_dataframe_PCA_obs_real['rmsd_mag'] = rmsd_pol_mag
-        pd_dataframe_PCA_obs_real['rmsd_len'] = rmsd_t0_lag/1000
-        pd_dataframe_PCA_obs_real['chi2_red_mag'] = 1
-        pd_dataframe_PCA_obs_real['chi2_red_len'] = 1
-        # pd_dataframe_PCA_obs_real['vel_init_norot'] = pd_dataframe_PCA_obs_real['vel_init_norot'].iloc[0]
-        if flag_manual_metsim:
-            simulation_MetSim_object, gensim_data_Metsim, pd_datafram_PCA_sim_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
-            # add pd_datafram_PCA_sim_Metsim['v_init_180km'] to pd_dataframe_PCA_obs_real
-            pd_dataframe_PCA_obs_real['v_init_180km'] = pd_datafram_PCA_sim_Metsim['v_init_180km'].iloc[0]
-
-        pd_dataframe_PCA_obs_real.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_OBS, index=False)
-        # print saved csv file
-        print()
-        print('saved obs csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_OBS)
-
-    cml_args.conf_lvl=cml_args.conf_lvl/100
-    z_score = norm.ppf(1 - (1 - cml_args.conf_lvl) / 2)
+    z_score = norm.ppf(1 - (1 - cml_args.conf_lvl/100) / 2)
     print('z_score:',z_score)
     if cml_args.mag_rmsd != 0:
         # set the value of rmsd_pol_mag=rmsd_mag_obs and len_RMSD=rmsd_lag_obs*conf_lvl
@@ -6719,6 +6683,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     gensim_data_obs['rmsd_mag'] = rmsd_pol_mag
     gensim_data_obs['rmsd_len'] = rmsd_t0_lag/1000
     gensim_data_obs['rmsd_vel'] = rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps)
+    gensim_data_obs['z_score'] = z_score
 
     # set the value of mag_RMSD=rmsd_mag_obs*conf_lvl and len_RMSD=rmsd_lag_obs*conf_lvl
     mag_RMSD_real = rmsd_pol_mag*z_score
@@ -6741,12 +6706,12 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
 
 
-    ######################## SIMULATIONTS ###############################
-    print('--- SIMULATIONS ---')
+    ######################## RANDOM RESEARCH ###############################
+    print('--- RANDOM RESEARCH ---')
 
     print('Run MetSim file:',trajectory_Metsim_file)
 
-    simulation_MetSim_object, gensim_data_Metsim, pd_datafram_PCA_sim_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
+    simulation_MetSim_object, gensim_data_Metsim, pd_datafram_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
 
     # print('metsim',gensim_data_Metsim['dens_co'])
     # print('obs',gensim_data_obs['dens_co'])
@@ -6755,442 +6720,144 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     else:
         dens_co = gensim_data_obs['dens_co']
 
-    # open the folder and extract all the json files
-    os.chdir(input_folder)
+    flag_results_found_metsim = create_json_file_and_optimiz(gensim_data_Metsim, file_name, gensim_data_obs, fit_funct, results_event_dir, output_folder, 'Metsim')
+    # avoid carry over if a name with gensim_data_Metsim['name'] has not been found in the output_folder
+    if flag_results_found_metsim == False and flag_manual_metsim:
+        print('Try other MetSim manual solution:',trajectory_Metsim_file)
+        # break if requested from user
+        if cml_args.stop_bad_manual_sol:
+            print('Break requested from user (to avoid this set the stop_bad_manual_sol to False)')
+            return
 
-    # enough simulations in the folder
-    flag_enough_sim = False
-    # check in directory if it exist a csv file with input_folder+os.sep+file_name+NAME_SUFX_CSV_SIM
-    if os.path.isfile(output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM):
-        # read the csv file
-        pd_datafram_PCA_sim = pd.read_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM)
-        print('read the csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM)
-        # print len of the csv file
-        print('Number of simulations in the csv file:',len(pd_datafram_PCA_sim))
-        flag_enough_sim = True
+    # Init simulation parameters with the given class name
+    _, pd_dataframe_ranges = range_gen_simulations(pd_dataframe_obs_real,simulation_MetSim_object, fps, dens_co, flag_manual_metsim)
 
-        if len(pd_datafram_PCA_sim) < cml_args.nsim:
-            print('Add',cml_args.nsim - len(pd_datafram_PCA_sim),' json files')
-            flag_enough_sim = False
+    result_number = 0
 
-        if cml_args.fix_n_sim:
-            flag_enough_sim = True
-        
-        if cml_args.resample_sim:
-            print('Number of simulations in the csv file is more than the number of simulations to run')
-            print('Resample the simulations taking only', cml_args.nsim, 'simulations')
-            
-            # Extract and keep the first row as a separate DataFrame
-            pd_datafram_PCA_sim_0 = pd_datafram_PCA_sim.iloc[[0]]  # Keep as DataFrame, not Series
-            # Remove the first row from the DataFrame
-            pd_datafram_PCA_sim = pd_datafram_PCA_sim.drop([0])
-            # Sample the remaining rows with exactly cml_args.nsim - 1 rows
-            pd_datafram_PCA_sim = pd_datafram_PCA_sim.sample(n=cml_args.nsim - 1)
-            # Concatenate the first row back to the sampled DataFrame
-            pd_datafram_PCA_sim = pd.concat([pd_datafram_PCA_sim_0, pd_datafram_PCA_sim], ignore_index=True)
-            
-            # # Verify the final count
-            # print('Number of simulations in the csv file:', len(pd_datafram_PCA_sim)) 
-            # print(pd_datafram_PCA_sim['solution_id'][0])
-            
-
-
-    if flag_enough_sim == False:
-
-        # open the folder and extract all the json files
-        os.chdir(output_folder)
-
-        extension = 'json'
-        # walk thorought the directories and find all the json files inside each folder inside the directory
-        all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
-
-        # delete from all_jsonfiles any file that has 'Selection' or 'Results' or 'mode' or 'DensPoint' in it
-        all_jsonfiles = [file for file in all_jsonfiles if 'Selection' not in file and 'Results' not in file and 'mode' not in file and 'DensPoint' not in file]
-
-        if len(all_jsonfiles) == 0 or len(all_jsonfiles) < cml_args.nsim:
-            if len(all_jsonfiles) != 0:
-                print('In the sim folder there are already',len(all_jsonfiles),'json files')
-                print('Add',cml_args.nsim - len(all_jsonfiles),' json files')
-            number_sim_to_run_and_simulation_in_folder = cml_args.nsim - len(all_jsonfiles)
-            
-            # run the new simulations
-            if cml_args.save_test_plot:
-                fig, ax = generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,fps,dens_co,cml_args.save_test_plot, flag_manual_metsim)
-                
-                if flag_manual_metsim:
-                    # plot gensim_data_Metsim
-                    plot_side_by_side(gensim_data_Metsim,fig, ax,'k-',str(pd_datafram_PCA_sim_Metsim['type'].iloc[0]))
-
-                # plot noisy area around vel_kms for vel_noise for the fix height_km
-                ax[0].fill_betweenx(np.array(fit_funct['height'])/1000, np.array(fit_funct['absolute_magnitudes'])-rmsd_pol_mag, np.array(fit_funct['absolute_magnitudes'])+rmsd_pol_mag, color='lightgray', alpha=0.5)
-
-                # plot noisy area around vel_kms for vel_noise for the fix height_km
-                # ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000/(1/fps)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000/(1/fps)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
-                ax[1].fill_between(np.array(fit_funct['time']), np.array(fit_funct['velocities'])/1000-(rmsd_t0_lag/1000*np.sqrt(2)/(1/fps)), np.array(fit_funct['velocities'])/1000+(rmsd_t0_lag/1000*np.sqrt(2)/(1/fps)), color='lightgray', alpha=0.5, label='Std.dev. realizations')
-
-                ax[0].plot(fit_funct['absolute_magnitudes'],fit_funct['height']/1000, 'k--')
-                ax[1].plot(fit_funct['time'],fit_funct['velocities']/1000, 'k--', label='Fit')
-
-                # save the plot
-                plt.savefig(output_folder+os.sep+file_name+'_obs_sim.png', dpi=300)
-                # close the plot
-                plt.close()
-                # print saved csv file
-                print('saved image '+output_folder+os.sep+file_name+'_obs_sim.png')
-
-                # walk thorought the directories and find all the json files inside each folder inside the directory
-                all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
-
-                # delete from all_jsonfiles any file that has 'Selection' or 'Results' or 'mode' or 'DensPoint' in it
-                all_jsonfiles = [file for file in all_jsonfiles if 'Selection' not in file and 'Results' not in file and 'mode' not in file and 'DensPoint' not in file]
-
-            else:
-                generate_simulations(pd_dataframe_PCA_obs_real,simulation_MetSim_object,gensim_data_obs,number_sim_to_run_and_simulation_in_folder,output_folder,file_name,fps,dens_co,cml_args.save_test_plot, flag_manual_metsim)
-                # walk thorought the directories and find all the json files inside each folder inside the directory
-                all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
-
-                # delete from all_jsonfiles any file that has 'Selection' or 'Results' or 'mode' or 'DensPoint' in it
-                all_jsonfiles = [file for file in all_jsonfiles if 'Selection' not in file and 'Results' not in file and 'mode' not in file and 'DensPoint' not in file]
-
-                
-        print('start reading the json files')
-
-        # add the output_folder to all_jsonfiles
-        all_jsonfiles = [output_folder+os.sep+file for file in all_jsonfiles]
+    while result_number >= cml_args.nsim_refine_step:
 
         # open the folder and extract all the json files
         os.chdir(input_folder)
 
-        print('Number of simulated files: ',len(all_jsonfiles))
+        # enough simulations in the folder
+        flag_enough_results = False
+        # check in directory if it exist a csv file with input_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS
+        if os.path.isfile(output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS):
+            # read the csv file
+            pd_initial_results = pd.read_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS)
+            print('read the csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS)
+            result_number = len(pd_initial_results)
+            # print len of the csv file
+            print('Number of simulations in the csv file:',len(pd_initial_results))
+            if result_number >= cml_args.nsim_refine_step:
+                print('Enough simulations in the csv file, START RECURSIVE RESEARCH')
+                flag_enough_results = True
 
-        input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct, gensim_data_obs, True] for ii in range(len(all_jsonfiles))]
-        results_list = domainParallelizer(input_list, read_GenerateSimulations_output_to_PCA, cores=cml_args.cores)
-        
-        # if no read the json files in the folder and create a new csv file
-        pd_datafram_PCA_sim = pd.concat(results_list)
 
-        if flag_manual_metsim:
+        if flag_enough_results == False:
+
+            # open the folder and extract all the json files
+            os.chdir(output_folder+os.sep+save_results_folder_events_plots)
+
+            extension = 'json'
+            # walk thorought the directories and find all the json files inside each folder inside the directory
+            all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
+
+            # delete from all_jsonfiles any file that has 'Selection' or 'Results' or 'mode' or 'DensPoint' in it
+            all_jsonfiles = [file for file in all_jsonfiles if 'Selection' not in file and 'Results' not in file and 'mode' not in file and 'DensPoint' not in file]
+
+            if len(all_jsonfiles) == 0 or len(all_jsonfiles) < cml_args.nsim_refine_step:
+                if len(all_jsonfiles) != 0:
+                    print('In the sim folder there are already',len(all_jsonfiles),'json files')
+                    print('Add',cml_args.nsim_refine_step - len(all_jsonfiles),' json files')
+                
+                print('Before recursive find',cml_args.nsim_refine_step - len(all_jsonfiles),'results')
+                
+                generate_simulations(pd_dataframe_obs_real,simulation_MetSim_object,gensim_data_obs,fit_funct,cml_args.nsim_refine_step,output_folder+os.sep+save_results_folder_events_plots,output_folder,file_name,fps,dens_co, flag_manual_metsim)
+                # walk thorought the directories and find all the json files inside each folder inside the directory
+                all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
+
+                # delete from all_jsonfiles any file that has 'Selection' or 'Results' or 'mode' or 'DensPoint' in it
+                all_jsonfiles = [file for file in all_jsonfiles if 'Selection' not in file and 'Results' not in file and 'mode' not in file and 'DensPoint' not in file]
+
+                    
+            print('start reading the json files')
+
+            # add the output_folder to all_jsonfiles
+            all_jsonfiles = [output_folder+os.sep+file for file in all_jsonfiles]
+
+            # open the folder and extract all the json files
+            os.chdir(input_folder)
+
+            print('Number of simulated files: ',len(all_jsonfiles))
+
+            input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct, gensim_data_obs, True] for ii in range(len(all_jsonfiles))]
+            results_list = domainParallelizer(input_list, read_GenerateSimulations_output_to_PCA, cores=cml_args.cores)
+            
+            # if no read the json files in the folder and create a new csv file
+            pd_initial_results = pd.concat(results_list)
+            pd_initial_results['type'] = 'Simulation_sel'
+
+        if flag_manual_metsim and flag_results_found_metsim:
             # concatenate the two dataframes
-            pd_datafram_PCA_sim = pd.concat([pd_datafram_PCA_sim_Metsim, pd_datafram_PCA_sim])
+            pd_initial_results = pd.concat([pd_datafram_Metsim, pd_initial_results])
+
         # print(df_sim_shower)
-        pd_datafram_PCA_sim.reset_index(drop=True, inplace=True)
-        
-        # if pd_dataframe_PCA_obs_real['solution_id'].iloc[0].endswith('.json'): 
-        #     print('REAL json file:',trajectory_Metsim_file)
-        #     # change the type column to Real
-        #     pd_datafram_PCA_sim['type'].iloc[0] = 'Real'
+        pd_initial_results.reset_index(drop=True, inplace=True)
 
-        pd_datafram_PCA_sim.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM, index=False)
-        # print saved csv file
-        print('saved sim csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM)
+        # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
+        if 'mass' in pd_initial_results.columns:                  
+            # Drop duplicate rows based on the specified columns
+            pd_initial_results = pd_initial_results.drop_duplicates(subset=[
+                'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
+                'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 
+                'erosion_range', 'erosion_energy_per_unit_cross_section', 
+                'erosion_energy_per_unit_mass'
+            ])
+            print('Number of simulations after dropping duplicates:',len(pd_initial_results))
+            pd_initial_results.reset_index(drop=True, inplace=True)
 
+        # Make sure all below RMSD
+        pd_initial_results = pd_initial_results[(pd_initial_results['rmsd_mag'] < mag_RMSD_real) & (pd_initial_results['rmsd_len'] < len_RMSD_real)]
         
-    if pd_dataframe_PCA_obs_real['solution_id'].iloc[0].endswith('.json'): 
+        # check the folder of pd_dataframe_obs_real['solution_id'][0]
+        check_folder = os.path.split(pd_dataframe_obs_real['solution_id'][0])[0]
+        # delete any json or png in check_folder that is not any of pd_initial_results['solution_id'] and pd_initial_results['solution_id'][:-5]+'.png'
+        files = [f for f in os.listdir(check_folder) if f.endswith('.json')]
+        for file in files:
+            if file not in pd_initial_results['solution_id'].values:
+                os.remove(os.path.join(check_folder, file))
+                os.remove(os.path.join(check_folder, file[:-5]+'.png'))
+
+        result_number = len(pd_initial_results)
+        print('Number of simulations in the results csv file:',result_number)
+
+    pd_initial_results.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS, index=False)
+    # print saved csv file
+    print('saved sim csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS)
+
+    if pd_dataframe_obs_real['solution_id'].iloc[0].endswith('.json'): 
         print('REAL json file:',trajectory_Metsim_file)
         # change the type column to Real
-        pd_datafram_PCA_sim['type'].iloc[0] = 'Real'
-
+        pd_initial_results['type'].iloc[0] = 'Real'
 
     # save the trajectory_file in the output_folder
-    shutil.copy(pd_dataframe_PCA_obs_real['solution_id'][0], output_folder)
+    shutil.copy(pd_dataframe_obs_real['solution_id'][0], output_folder)
 
     # delete any file that end with _good_files.txt in the output_folder
     files = [f for f in os.listdir(output_folder) if f.endswith('_good_files.txt')]
     for file in files:
         os.remove(os.path.join(output_folder, file))
-    
-    print()
-        
 
-
-    ######################## PCA SELECTION ###############################
-
-    pd_datafram_PCA_selected_lowRMSD = pd.DataFrame()
-    pd_datafram_PCA_selected_before_knee_NO_repetition = pd.DataFrame()
-
-    PCAn_comp = 0
-
-    _,_,_=process_pca_variables(cml_args.YesPCA, cml_args.NoPCA, pd_dataframe_PCA_obs_real, pd_datafram_PCA_sim, output_folder+os.sep+save_results_folder, file_name, True)
-    
-    print('/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow_GenSim/PER_v57_slow.json')
-    print(trajectory_Metsim_file)
-
-    if cml_args.use_PCA:
-
-        print('--- PCA SELECTION ---')
-
-        save_results_folder_PCA = save_results_folder+os.sep+'PCA'
-        mkdirP(output_folder+os.sep+save_results_folder_PCA)
-
-        pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition_all, pd_datafram_PCA_selected_all, pcr_results_physical_param, PCAn_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, output_folder+os.sep+save_results_folder_PCA, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_test_plot, cml_args.esclude_real_solution_from_selection)
-
-        # find the 10 percentile value of 'distance_meteor'
-        perc_10 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.01)
-        perc_5 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.005)
-        perc_4 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.004)
-        perc_3 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.003)
-        perc_2 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.002)
-        perc_1 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.001)
-
-        output_PCA_dist = output_folder+os.sep+save_results_folder_PCA+os.sep+'Knee'
-        mkdirP(output_PCA_dist)
-        print('PLOT: best 10 simulations selected and add the RMSD value to csv selected')
-        # order pd_datafram_PCA_selected_before_knee_NO_repetition to distance_mean
-        pd_datafram_PCA_selected_before_knee_NO_repetition = pd_datafram_PCA_selected_before_knee_NO_repetition_all.sort_values(by=['distance_meteor'], ascending=True) # distance_mean
-        # plot of the best 10 selected simulations and add the RMSD value to csv selected
-        PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_PCA_dist, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='lag', pca_N_comp=PCAn_comp)
-        PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_PCA_dist, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='vel', pca_N_comp=PCAn_comp)
-
-        print('PLOT: the physical characteristics of the selected simulations Mode and KDE')
-        PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, output_PCA_dist, file_name, pca_N_comp=PCAn_comp)
-
-        print('PLOT: correlation of the selected simulations (takes a long time)')
-        # plot correlation function of the selected simulations
-        PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition, output_PCA_dist, pca_N_comp=PCAn_comp)
-
-        # from pd_datafram_PCA_selected_before_knee_NO_repetition delete the one that pd_datafram_PCA_selected_before_knee_NO_repetition['rmsd_mag'].iloc[i] > mag_RMSD_real or pd_datafram_PCA_selected_before_knee_NO_repetition['rmsd_len'].iloc[i] > len_RMSD_real:
-        pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD = pd_datafram_PCA_selected_before_knee_NO_repetition[(pd_datafram_PCA_selected_before_knee_NO_repetition['rmsd_mag'] < mag_RMSD_real) & (pd_datafram_PCA_selected_before_knee_NO_repetition['rmsd_len'] < len_RMSD_real)]
-        # check if there are any selected simulations
-        if len(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD) != 0:
-            PCA_RMSD_folder=output_PCA_dist+os.sep+'PCA+RMSD'
-            mkdirP(PCA_RMSD_folder) 
-            print('PLOT: best 10 simulations selected and add the RMSD value to csv selected')
-            # plot of the best 10 selected simulations and add the RMSD value to csv selected
-            PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, pd_dataframe_PCA_obs_real, PCA_RMSD_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='lag', pca_N_comp=PCAn_comp)
-            PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, pd_dataframe_PCA_obs_real, PCA_RMSD_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='vel', pca_N_comp=PCAn_comp)
-
-            print('PLOT: the physical characteristics of the selected simulations Mode and KDE')
-            PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, pd_datafram_PCA_sim, PCA_RMSD_folder, file_name, pca_N_comp=PCAn_comp)
-
-            print('PLOT: correlation of the selected simulations (takes a long time)')
-            # plot correlation function of the selected simulations
-            PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, PCA_RMSD_folder, pca_N_comp=PCAn_comp)
-
-        maxdist = perc_10
-        # minimum distance_meteor for pd_datafram_PCA_selected_before_knee_NO_repetition [1,0.9,0.8,0.7,0.6,0.5]
-        input_list_obs = [[pd_datafram_PCA_selected_all, mindist, maxdist, output_folder+os.sep+save_results_folder_PCA+os.sep+'PCdist'+str(np.round(mindist,2)), pd_dataframe_PCA_obs_real, pd_datafram_PCA_sim, fit_funct, gensim_data_obs, rmsd_pol_mag, mag_RMSD_real, rmsd_t0_lag, len_RMSD_real, fps, file_name, trajectory_Metsim_file, PCAn_comp] for mindist in [perc_5,perc_4,perc_3,perc_2,perc_1]]
-        domainParallelizer(input_list_obs, plot_PCA_mindist_RMSD, cores=cml_args.cores)
-
-        ############################################# Mode & Dens.Point stuff ########################################################
-
-        # print('Selected simulations and generate KDE and MODE plot')
-        # input_list_obs = [[pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real.iloc[[ii]].reset_index(drop=True), pd_datafram_PCA_selected_before_knee[pd_datafram_PCA_selected_before_knee['solution_id_dist'] == pd_dataframe_PCA_obs_real['solution_id'].iloc[ii]], gensim_data_obs, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots] for ii in range(len(pd_dataframe_PCA_obs_real))]
-        # results_list = domainParallelizer(input_list_obs, PCA_physicalProp_KDE_MODE_PLOT, cores=cml_args.cores)
-        
-        # # if no read the json files in the folder and create a new csv file
-        # pd_datafram_PCA_selected_mode_min_KDE = pd.concat(results_list)
-
-        # pd_datafram_PCA_selected_mode_min_KDE_TOT = PCA_physicalProp_KDE_MODE_PLOT(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, pd_datafram_PCA_selected_before_knee, gensim_data_obs, fit_funct, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, trajectory_Metsim_file, file_name, pd_dataframe_PCA_obs_real['solution_id'].iloc[0], output_folder, save_results_folder_events_plots,True, True)
-        
-        # # concatenate the two dataframes
-        # pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_mode_min_KDE_TOT, pd_datafram_PCA_selected_mode_min_KDE])
-        # # reset index
-        # pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
-
-        # pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
-
-        # # print(pd_datafram_PCA_selected_lowRMSD)
-        # # split in directory and filename
-        # filename_list = []
-        # # print(pd_datafram_PCA_selected_lowRMSD['solution_id'].values)
-        # if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
-        #     # check if in pd_datafram_PCA_selected_lowRMSD there is any json file that is not in the selected simulations
-        #     for solution_id in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
-        #         directory, filename = os.path.split(solution_id)
-        #         filename_list.append(filename)
-        #     # print(filename_list)
-        #     json_files = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
-        #     for json_file in json_files:
-        #         folder_and_jsonfile_result = output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file
-        #         if json_file not in filename_list:
-        #             # print that is found a json file that is not in the selected simulations
-        #             print(folder_and_jsonfile_result,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
-        #             f = open(folder_and_jsonfile_result,"r")
-        #             data = json.loads(f.read())
-        #             if 'ht_sampled' in data:
-        #                 data_file = read_GenerateSimulations_output(folder_and_jsonfile_result, gensim_data_obs)
-        #                 pd_datafram_PCA_sim_resulsts=array_to_pd_dataframe_PCA(data_file, gensim_data_obs)
-        #             else:
-        #                 _, _, pd_datafram_PCA_sim_resulsts = run_simulation(folder_and_jsonfile_result, gensim_data_obs, fit_funct)
-                    
-        #             pd_datafram_PCA_sim_resulsts['type'] = 'Simulation_sel'
-        #             # delete every pd_datafram_PCA_sim_resulsts with RMSD above mag_RMSD_real and len_RMSD_real
-        #             if pd_datafram_PCA_sim_resulsts['rmsd_mag'].iloc[0] < mag_RMSD_real and pd_datafram_PCA_sim_resulsts['rmsd_len'].iloc[0] < len_RMSD_real:
-        #                 # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
-        #                 pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
-
-        #             # # Add the simulation results to pd_datafram_PCA_selected_lowRMSD
-        #             # pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
-
-        #     pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
-
-            
-
-        # else:
-        #     print('No Mode and Densest point solutions for the selected simulations')
-
-        
-        ############################################# Mode & Dens.Point stuff ########################################################
-
-        print()
-
-    ######################## OPTIMIZATION ###############################
-
-    print('--- RMSD CHECK ---')
-
-    ### ORDER BASE ON BOTH RMSD ###
-
-    # deep copy pd_datafram_PCA_sim
-    pd_datafram_check_RMSD = pd_datafram_PCA_sim.copy(deep=True)
-
-    # Normalize the columns to bring them to the same scale
-    pd_datafram_check_RMSD['rmsd_mag_norm'] = pd_datafram_check_RMSD['rmsd_mag'] / pd_datafram_check_RMSD['rmsd_mag'].max()
-    pd_datafram_check_RMSD['rmsd_len_norm'] = pd_datafram_check_RMSD['rmsd_len'] / pd_datafram_check_RMSD['rmsd_len'].max()
-
-    # Compute the combined metric (e.g., sum of absolute normalized values)
-    pd_datafram_check_RMSD['combined_RMSD_metric'] = abs(pd_datafram_check_RMSD['rmsd_mag_norm']) + abs(pd_datafram_check_RMSD['rmsd_len_norm'])
-
-    # Sort the DataFrame based on the combined metric
-    pd_datafram_check_RMSD = pd_datafram_check_RMSD.sort_values(by='combined_RMSD_metric')
-
-    pd_datafram_check_RMSD = pd_datafram_check_RMSD.reset_index(drop=True)
-
-    pd_datafram_check_below_RMSD = pd_datafram_check_RMSD[(pd_datafram_check_RMSD['rmsd_mag'] < mag_RMSD_real) & (pd_datafram_check_RMSD['rmsd_len'] < len_RMSD_real)]
-
-    if len(pd_datafram_check_below_RMSD) != 0:
-        # Reset index if needed
-        pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD.reset_index(drop=True)
-    else:
-        cml_args.optimize=True
-        if cml_args.number_optimized==0:
-            cml_args.number_optimized=cpu_count()           
-        pd_datafram_check_below_RMSD = pd_datafram_check_RMSD.head(cml_args.number_optimized)
-        print('No simulations below RMSD, run the optimization for the first',cml_args.number_optimized,'simulations')
-        if not os.path.isfile(cml_args.ref_opt_path):
-            # If the file is not found, check in the parent directory
-            parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            cml_args.ref_opt_path = os.path.join(parent_directory, 'AutoRefineFit_options.txt')
-            if not os.path.isfile(cml_args.ref_opt_path):
-                print('file '+cml_args.ref_opt_path+' not found')
-                print("You need to specify the correct path and name of the AutoRefineFit_options.txt file in --ref_opt_path, like: C:\\path\\AutoRefineFit_options.txt")
-                sys.exit()
-        # copy the file to the output_folder
-        shutil.copy(cml_args.ref_opt_path, output_folder+os.sep+'AutoRefineFit_options.txt')
-
-
-    # Drop the auxiliary columns if they are no longer neededpd_datafram_PCA_selected_before_knee_NO_repetition_all
-    # check if in pd_datafram_PCA_sim there are any where rmsd_mag and rmsd_len are below mag$_{RMSD}$ and len$_{RMSD}$
-    print('Number of simulations below RMSD:', len(pd_datafram_check_below_RMSD)-1)
-    print('Threshold mag_RMSD:', mag_RMSD_real,'len_RMSD:', len_RMSD_real)
-    # print the first mag_RMSD and len_RMSD
-    print('Best simulation mag_RMSD:', pd_datafram_check_below_RMSD['rmsd_mag'].iloc[0],'len_RMSD:', pd_datafram_check_below_RMSD['rmsd_len'].iloc[0])
-
-    # add a column with solution_id_dist to 9999
-    pd_datafram_check_below_RMSD['solution_id_dist'] = pd_datafram_check_below_RMSD['solution_id'].iloc[0]
-    # set type equal 'Simulation_sel'
-    pd_datafram_check_below_RMSD['type'] = 'Simulation_sel'
-    # add column distance_meteor=9999 and distance_mean=9999 and num_duplicates=0
-    pd_datafram_check_below_RMSD['distance_meteor'] = 9999
-    pd_datafram_check_below_RMSD['distance_mean'] = 9999
-    pd_datafram_check_below_RMSD['num_duplicates'] = 0
-
-    # if cml_args.use_PCA:
-    #     # delete any rows from pd_datafram_check_below_RMSD that has the same ['solution_id'] as pd_datafram_PCA_selected_before_knee_NO_repetition['solution_id']
-    #     pd_datafram_check_below_RMSD = pd_datafram_check_below_RMSD[~pd_datafram_check_below_RMSD['solution_id'].isin(pd_datafram_PCA_selected_before_knee_NO_repetition['solution_id'])]
-
-    # reset index
-    pd_datafram_check_below_RMSD.reset_index(drop=True, inplace=True)
-        
-    # concatenate the two dataframes
-    pd_datafram_check_below_RMSD = pd.concat([pd_datafram_check_below_RMSD, pd_datafram_PCA_selected_before_knee_NO_repetition])
-    pd_datafram_check_below_RMSD.to_csv(output_folder+os.sep+SAVE_SELECTION_FOLDER+os.sep+file_name+'_sim_sel_to_optimize.csv', index=False)
-
-    # check if cml_args.number_optimized is negative and take the abs
-    if cml_args.number_optimized < 0:
-        cml_args.number_optimized = 0
-    # check if cml_args.number_optimized is bigger than the number of selected simulations
-    if cml_args.number_optimized > len(pd_datafram_check_below_RMSD):
-        cml_args.number_optimized = 0
-
-    # # plot the values and find the RMSD of each of them
-    if cml_args.number_optimized == 0:
-        input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, gensim_data_obs, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, file_name, save_results_folder_events_plots, cml_args.optimize] for ii in range(len(pd_datafram_check_below_RMSD))]
-        results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
-        # check if the results_list is empty
-        if len(results_list)==0:
-            pd_datafram_PCA_selected_optimized = pd.DataFrame()
-        else:
-            pd_datafram_PCA_selected_optimized = pd.concat(results_list)
-    elif cml_args.number_optimized > 0 and cml_args.optimize==True:
-        # repeat for the rest of the selected events but no Optimization
-        input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, gensim_data_obs, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, file_name, save_results_folder_events_plots, False] for ii in range(cml_args.number_optimized,len(pd_datafram_check_below_RMSD))]
-        results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
-        # check if is.empty(results_list)
-        if len(results_list)==0:
-            pd_datafram_PCA_selected_NO_optimizad = pd.DataFrame()
-        else:
-            pd_datafram_PCA_selected_NO_optimizad = pd.concat(results_list)        
-        # take only the first cml_args.number_optimized
-        input_list_obs = [[pd_datafram_check_below_RMSD.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, gensim_data_obs, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, file_name, save_results_folder_events_plots, True] for ii in range(cml_args.number_optimized)]
-        results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
-        # check if is.empty(results_list)
-        if len(results_list)==0:
-            pd_datafram_PCA_selected_optimized = pd.DataFrame()
-        else:
-            pd_datafram_PCA_selected_optimized = pd.concat(results_list)
-        # pd_datafram_PCA_selected_optimized = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_check_below_RMSD.head(cml_args.number_optimized), pd_dataframe_PCA_obs_real, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, file_name, save_results_folder_events_plots, True)
-        pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_selected_NO_optimizad])
-
-    
-    # concatenate the two dataframes
-    pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_selected_lowRMSD])
-
-    # check if trajectory_Metsim_file is among the pd_datafram_check_below_RMSD
-    if flag_manual_metsim and trajectory_Metsim_file not in pd_datafram_check_below_RMSD['solution_id'].values:
-        print('Check the manual reduction')
-        # check also the manual reduction
-        pd_datafram_PCA_selected_optimized_Metsim = PCA_LightCurveRMSDPLOT_optimize(pd_datafram_PCA_sim_Metsim, pd_dataframe_PCA_obs_real, gensim_data_obs, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, file_name, save_results_folder_events_plots, False) # file_name, trajectory_Metsim_file, 
-            
-        # concatenate the two dataframes
-        pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_optimized_Metsim, pd_datafram_PCA_selected_lowRMSD])
-
-    # get all the json file in output_folder+os.sep+save_results_folder_events_plots
-    json_files_results = [f for f in os.listdir(output_folder+os.sep+save_results_folder_events_plots) if f.endswith('.json')]
-    # check if output_folder+os.sep+save_res_fin_folder+'events_plots' exist
-    if os.path.isdir(output_folder+os.sep+save_res_fin_folder+os.sep+'events_plots'):
-        # get all the json file in output_folder+os.sep+save_res_fin_folder+'events_plots'
-        json_files_results = json_files_results + [f for f in os.listdir(output_folder+os.sep+save_res_fin_folder+os.sep+'events_plots') if f.endswith('.json')]
-
-    # check if any json_files_results is in pd_datafram_PCA_selected_lowRMSD['solution_id'].values
-    if 'solution_id' in pd_datafram_PCA_selected_lowRMSD.columns:
-        for json_file in json_files_results:
-            if json_file not in pd_datafram_PCA_selected_lowRMSD['solution_id'].values:
-                # print that is found a json file that is not in the selected simulations
-                print(output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file,'\njson file found in the Results directory that is not in '+file_name+'_sim_sel_results.csv')
-                f = open(output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file,"r")
-                data = json.loads(f.read())
-                if 'ht_sampled' in data:
-                    data_file = read_GenerateSimulations_output(output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file, gensim_data_obs)
-                    pd_datafram_PCA_sim_resulsts=array_to_pd_dataframe_PCA(data_file, gensim_data_obs)
-                else:
-                    _, data_file, pd_datafram_PCA_sim_resulsts = run_simulation(output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file, gensim_data_obs, fit_funct)
-                
-                chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, _, _, _, _, _ , _ = RMSD_calc_diff(data_file, gensim_data_obs)
-                # Add the simulation results that have a rmsd_mag and rmsd_len that is below RMSD to pd_datafram_PCA_selected_lowRMSD
-                if rmsd_mag <= mag_RMSD_real and rmsd_lag <= len_RMSD_real: #  and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
-                    # print to added to the selected simulations pd_datafram_PCA_sim_resulsts['solution_id'].values[0]
-                    print('Added to the selected simulations:',output_folder+os.sep+save_results_folder_events_plots+os.sep+json_file)
-                    pd_datafram_PCA_selected_lowRMSD = pd.concat([pd_datafram_PCA_selected_lowRMSD, pd_datafram_PCA_sim_resulsts])
-                    # pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
-                    # pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
-    else:
-        print('No solutions below the RMSD for the selected simulations')
+    result_number = len(pd_initial_results)
 
     print()
+        
+
 
     ######################## ITERATIVE RESEARCH ###############################
 
-    print('--- ITERATIVE RESEARCH ---')
+    print('--- ITERATIVE SEARCH ---')
 
     # move the txt file starting with log_RMSD_ to the save_results_folder
     files = [f for f in os.listdir(output_folder) if f.startswith('log_RMSD_')]
@@ -7203,58 +6870,30 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         shutil.move(os.path.join(output_folder, img_file), os.path.join(output_folder, save_results_folder, img_file))
 
     flag_fail = False
-    old_results_number = 0
-    result_number = 0
+    old_results_number = result_number
+    # save as recursive results
+    pd_results = pd_initial_results.copy(deep=True)
     ii_repeat = 0
-    pd_results = pd.DataFrame()
     df_sim_NEW = pd.DataFrame()
     outputdir_RMSD_plot = output_folder+os.sep+save_results_folder+os.sep+'RMSD'
     mkdirP(outputdir_RMSD_plot)
     # while cml_args.min_nresults > result_number:
-    print(cml_args.min_nresults,'simulated to find:')
-    while cml_args.min_nresults > result_number:
-
-        # reset index
-        pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
-
-        pd_datafram_PCA_selected_lowRMSD['type'] = 'Simulation_sel'
-
-        # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
-        if 'mass' in pd_datafram_PCA_selected_lowRMSD.columns:                  
-            # Drop duplicate rows based on the specified columns
-            pd_datafram_PCA_selected_lowRMSD = pd_datafram_PCA_selected_lowRMSD.drop_duplicates(subset=[
-                'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
-                'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 
-                'erosion_range', 'erosion_energy_per_unit_cross_section', 
-                'erosion_energy_per_unit_mass'
-            ])
-            pd_datafram_PCA_selected_lowRMSD.reset_index(drop=True, inplace=True)
-
-        pd_results = pd.concat([pd_results, pd_datafram_PCA_selected_lowRMSD])
-
-        # save and update the disk 
-        pd_results.to_csv(outputdir_RMSD_plot+os.sep+file_name+'_sim_sel_results.csv', index=False)
+    print(cml_args.min_nresults,'results to find:')
+    # do-while loop works th first time annd break in the if condition
+    while True:
+        print('Number of results:',result_number)
         
         if 'solution_id' in pd_results.columns:
             print('PLOT: the physical characteristics results')
-            PCA_PhysicalPropPLOT(pd_results, pd_datafram_PCA_sim, outputdir_RMSD_plot, file_name, df_sim_shower_NEW=df_sim_NEW)
+            PCA_PhysicalPropPLOT(pd_results, pd_dataframe_ranges, outputdir_RMSD_plot, file_name, df_sim_shower_NEW=df_sim_NEW)
             print('PLOT: correlation matrix of the results (takes a long time)')
-            PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_results, outputdir_RMSD_plot)
+            PCAcorrelation_selPLOT(pd_dataframe_ranges, pd_results, outputdir_RMSD_plot, df_sim_shower_NEW=df_sim_NEW)
             print('PLOT: best 10 results and add the RMSD value to csv selected')
-            # Normalize the columns to bring them to the same scale
-            pd_results['rmsd_mag_norm'] = pd_results['rmsd_mag'] / pd_results['rmsd_mag'].max()
-            pd_results['rmsd_len_norm'] = pd_results['rmsd_len'] / pd_results['rmsd_len'].max()
-            # Compute the combined metric (e.g., sum of absolute normalized values)
-            pd_results['combined_RMSD_metric'] = abs(pd_results['rmsd_mag_norm']) + abs(pd_results['rmsd_len_norm'])
-            # Sort the DataFrame based on the combined metric
-            pd_results = pd_results.sort_values(by='combined_RMSD_metric')
-            # Reset index if needed
-            pd_results = pd_results.reset_index(drop=True)
-            pd_results = pd_results.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
-            PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, outputdir_RMSD_plot, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,outputdir_RMSD_plot+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='lag')
-            PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_PCA_obs_real, outputdir_RMSD_plot, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,outputdir_RMSD_plot+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='vel')
+            pd_results_ordered = order_both_RMSD(pd_results)
+            PCA_LightCurveCoefPLOT(pd_results_ordered, pd_dataframe_obs_real, outputdir_RMSD_plot, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,outputdir_RMSD_plot+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='lag')
+            PCA_LightCurveCoefPLOT(pd_results_ordered, pd_dataframe_obs_real, outputdir_RMSD_plot, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,outputdir_RMSD_plot+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='vel')
             print('PLOT: the sigma range waterfall plot')
-            plot_sigma_waterfall(pd_results, pd_datafram_PCA_sim, rmsd_pol_mag, rmsd_t0_lag, outputdir_RMSD_plot, file_name)
+            plot_sigma_waterfall(pd_results, pd_dataframe_ranges, rmsd_pol_mag, rmsd_t0_lag, outputdir_RMSD_plot, file_name)
             print()
             print('SUCCES: the physical characteristics range is in the results folder')
         else:
@@ -7262,95 +6901,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             print('FAIL: Not found any result below magRMSD',mag_RMSD_real,'and lenRMSD',len_RMSD_real)
             flag_fail = True
             break
-
-
-        # check if only 1 in len break
-        if len(pd_results) == 1:
-            print('Only one result found')
-            # create a dictionary with the physical parameters
-            CI_physical_param = {
-                'v_init_180km': [pd_results['v_init_180km'].values[0], pd_results['v_init_180km'].values[0]],
-                'zenith_angle': [pd_results['zenith_angle'].values[0], pd_results['zenith_angle'].values[0]],
-                'mass': [pd_results['mass'].values[0], pd_results['mass'].values[0]],
-                'rho': [pd_results['rho'].values[0], pd_results['rho'].values[0]],
-                'sigma': [pd_results['sigma'].values[0], pd_results['sigma'].values[0]],
-                'erosion_height_start': [pd_results['erosion_height_start'].values[0], pd_results['erosion_height_start'].values[0]],
-                'erosion_coeff': [pd_results['erosion_coeff'].values[0], pd_results['erosion_coeff'].values[0]],
-                'erosion_mass_index': [pd_results['erosion_mass_index'].values[0], pd_results['erosion_mass_index'].values[0]],
-                'erosion_mass_min': [pd_results['erosion_mass_min'].values[0], pd_results['erosion_mass_min'].values[0]],
-                'erosion_mass_max': [pd_results['erosion_mass_max'].values[0], pd_results['erosion_mass_max'].values[0]]
-            }
-
-        else:
-            print('Number of results found:',len(pd_results))
-            columns_physpar = ['v_init_180km','zenith_angle','mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
-                'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
-            
-            if ii_repeat > 1 and old_results_number == result_number:
-            ###############################################################################
-                # try to focus on the one that have good results
-                
-                # Calculate the quantiles
-                quantiles = pd_results[columns_physpar].quantile([0.2, 0.8])
-
-                # Convert the quantiles to a dictionary
-                CI_physical_param = {col: quantiles[col].tolist() for col in columns_physpar}
-
-            ###############################################################################
-            else:
-                # try and look for other results that might be around
-
-                # Calculate the quantiles
-                quantiles = pd_results[columns_physpar].quantile([0.1, 0.9])
-
-                # Get the minimum and maximum values
-                min_val = pd_results[columns_physpar].min()
-                max_val = pd_results[columns_physpar].max()
-
-                # Calculate the extended range using the logic provided
-                extended_min = min_val - (quantiles.loc[0.1] - min_val)
-                # consider the value extended_min<0 Check each column in extended_min and set to min_val if negative
-                for col in columns_physpar:
-                    if extended_min[col] < 0:
-                        extended_min[col] = min_val[col]
-                extended_max = max_val + (max_val - quantiles.loc[0.9])
-
-                # Convert the extended range to a dictionary
-                CI_physical_param = {col: [extended_min[col], extended_max[col]] for col in columns_physpar}
-            
-            ###############################################################################
-
-
-        # check if v_init_180km are the same value
-        if CI_physical_param['v_init_180km'][0] == CI_physical_param['v_init_180km'][1]:
-            CI_physical_param['v_init_180km'] = [CI_physical_param['v_init_180km'][0] - CI_physical_param['v_init_180km'][0]/1000, CI_physical_param['v_init_180km'][1] + CI_physical_param['v_init_180km'][1]/1000]
-        if CI_physical_param['zenith_angle'][0] == CI_physical_param['zenith_angle'][1]:
-            CI_physical_param['zenith_angle'] = [CI_physical_param['zenith_angle'][0] - CI_physical_param['zenith_angle'][0]/10000, CI_physical_param['zenith_angle'][1] + CI_physical_param['zenith_angle'][1]/10000]
-        if CI_physical_param['mass'][0] == CI_physical_param['mass'][1]:
-            CI_physical_param['mass'] = [CI_physical_param['mass'][0] - CI_physical_param['mass'][0]/10, CI_physical_param['mass'][1] + CI_physical_param['mass'][1]/10]
-        if np.round(CI_physical_param['rho'][0]/100) == np.round(CI_physical_param['rho'][1]/100):
-            if CI_physical_param['rho'][0] - 100<0:
-                CI_physical_param['rho'] = [CI_physical_param['rho'][0]/10, CI_physical_param['rho'][1] + 100]
-            else:
-                CI_physical_param['rho'] = [CI_physical_param['rho'][0] - 100, CI_physical_param['rho'][1] + 100] # - CI_physical_param['rho'][0]/5
-        if CI_physical_param['sigma'][0] == CI_physical_param['sigma'][1]:
-            CI_physical_param['sigma'] = [CI_physical_param['sigma'][0] - CI_physical_param['sigma'][0]/10, CI_physical_param['sigma'][1] + CI_physical_param['sigma'][1]/10]
-        if CI_physical_param['erosion_height_start'][0] == CI_physical_param['erosion_height_start'][1]:
-            CI_physical_param['erosion_height_start'] = [CI_physical_param['erosion_height_start'][0] - CI_physical_param['erosion_height_start'][0]/100, CI_physical_param['erosion_height_start'][1] + CI_physical_param['erosion_height_start'][1]/100]
-        if CI_physical_param['erosion_coeff'][0] == CI_physical_param['erosion_coeff'][1]:
-            CI_physical_param['erosion_coeff'] = [CI_physical_param['erosion_coeff'][0] - CI_physical_param['erosion_coeff'][0]/10, CI_physical_param['erosion_coeff'][1] + CI_physical_param['erosion_coeff'][1]/10]
-        if CI_physical_param['erosion_mass_index'][0] == CI_physical_param['erosion_mass_index'][1]:
-            CI_physical_param['erosion_mass_index'] = [CI_physical_param['erosion_mass_index'][0] - CI_physical_param['erosion_mass_index'][0]/10, CI_physical_param['erosion_mass_index'][1] + CI_physical_param['erosion_mass_index'][1]/10]
-        if CI_physical_param['erosion_mass_min'][0] == CI_physical_param['erosion_mass_min'][1]:
-            CI_physical_param['erosion_mass_min'] = [CI_physical_param['erosion_mass_min'][0] - CI_physical_param['erosion_mass_min'][0]/10, CI_physical_param['erosion_mass_min'][1] + CI_physical_param['erosion_mass_min'][1]/10]
-        if CI_physical_param['erosion_mass_max'][0] == CI_physical_param['erosion_mass_max'][1]:
-            CI_physical_param['erosion_mass_max'] = [CI_physical_param['erosion_mass_max'][0] - CI_physical_param['erosion_mass_max'][0]/10, CI_physical_param['erosion_mass_max'][1] + CI_physical_param['erosion_mass_max'][1]/10]
-            
-
-        # Multiply the 'erosion_height_start' values by 1000
-        CI_physical_param['erosion_height_start'] = [x * 1000 for x in CI_physical_param['erosion_height_start']]
-
-        print('CI_physical_param:',CI_physical_param)
 
         result_number = len(pd_results)
 
@@ -7368,65 +6918,97 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
                 print('STOP: Number of results found:',result_number)
                 flag_fail = True
                 break
+
+            CI_physical_param = CI_range_gen_sim(pd_results, ii_repeat, old_results_number)
+
+            print('CI_physical_param:',CI_physical_param)
+
             old_results_number = result_number
+
+            # every 10 adjust the CI and recompute
+            look_for_n_sim=result_number+10
+            if look_for_n_sim+5 > cml_args.min_nresults:
+                look_for_n_sim = cml_args.min_nresults
+
             print('regenerate new simulation in the CI range')
-            generate_simulations(pd_dataframe_PCA_obs_real, simulation_MetSim_object, gensim_data_obs, cml_args.nsim_refine_step, output_folder, file_name,fps,dens_co, False, True, CI_physical_param)
-            
-            # look for the good_files = glob.glob(os.path.join(output_folder, '*_good_files.txt'))
-            good_files = [f for f in os.listdir(output_folder) if f.endswith('_good_files.txt')]                
+            generate_simulations(pd_dataframe_obs_real, simulation_MetSim_object, gensim_data_obs, fit_funct, look_for_n_sim, output_folder+os.sep+save_results_folder_events_plots, output_folder, file_name,fps,dens_co, flag_manual_metsim, CI_physical_param)
 
-            # Construct the full path to the good file
-            good_file_path = os.path.join(output_folder, good_files[0])
+            # walk thorought the directories and find all the json files inside each folder inside the directory
+            all_jsonfiles = [i for i in glob.glob('**/*.{}'.format(extension), recursive=True)]
 
-            # Read the file, skipping the first line
-            df_good_files = pd.read_csv(good_file_path, skiprows=1)
+            # delete from all_jsonfiles any file that has 'Selection' or 'Results' or 'mode' or 'DensPoint' in it
+            all_jsonfiles = [file for file in all_jsonfiles if 'Selection' not in file and 'Results' not in file and 'mode' not in file and 'DensPoint' not in file]
 
-            # Rename the columns
-            df_good_files.columns = ["File name", "lim mag", "lim mag length", "length delay (s)"]
+       
+            print('start reading the json files')
 
-            # Extract the first column into an array
-            file_names = df_good_files["File name"].to_numpy()
-
-            # Change the file extension to .json
-            all_jsonfiles = [file_name.replace('.pickle', '.json') for file_name in file_names]
+            # add the output_folder to all_jsonfiles
+            all_jsonfiles = [output_folder+os.sep+file for file in all_jsonfiles]
 
             # open the folder and extract all the json files
             os.chdir(input_folder)
 
-            # print('Number of simulated files : ',len(all_jsonfiles),' LEN confidence interval', conf_len,'% MAG confidence interval', conf_mag,'%')
+            print('Number of simulated files: ',len(all_jsonfiles))
 
-            input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct, gensim_data_obs] for ii in range(len(all_jsonfiles))]
+            input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct, gensim_data_obs, True] for ii in range(len(all_jsonfiles))]
             results_list = domainParallelizer(input_list, read_GenerateSimulations_output_to_PCA, cores=cml_args.cores)
-
+            
             # if no read the json files in the folder and create a new csv file
-            pd_datafram_NEWsim_good = pd.concat(results_list)
+            pd_results = pd.concat(results_list)
+            # reset index
+            pd_results.reset_index(drop=True, inplace=True)
+            # type set to iteration
+            pd_results['type'] = 'Iteration'
 
-            # save all the new gen sim
-            df_sim_NEW = pd.concat([df_sim_NEW, pd_datafram_NEWsim_good], axis=0)
+            # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
+            if 'mass' in pd_results.columns:                  
+                # Drop duplicate rows based on the specified columns
+                pd_results = pd_results.drop_duplicates(subset=[
+                    'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
+                    'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 
+                    'erosion_range', 'erosion_energy_per_unit_cross_section', 
+                    'erosion_energy_per_unit_mass'
+                ])
+                print('Number of simulations after dropping duplicates:',len(pd_results))
+                pd_results.reset_index(drop=True, inplace=True)
+            
+            result_number = len(pd_results)
 
-            pd_datafram_NEWsim_good.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM_NEW, index=False)
-            # print saved csv file
-            print('saved sim csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_SIM_NEW)
+            # change all the 'type' of pd_results to the one that matches the 'solution_id' of the pd_initial_results
+            if 'solution_id' in pd_results.columns and 'solution_id' in pd_initial_results.columns:
+                # Create a dictionary mapping 'solution_id' to 'type' from pd_initial_results
+                solution_type_map = pd_initial_results.set_index('solution_id')['type'].to_dict()
 
-            # delete from pd_datafram_NEWsim_good the one with a RMSD above the threshold
-            pd_datafram_NEWsim_good = pd_datafram_NEWsim_good[(pd_datafram_NEWsim_good['rmsd_mag'] <= mag_RMSD_real) & (pd_datafram_NEWsim_good['rmsd_len'] <= len_RMSD_real)]
+                # Update 'type' in pd_results based on the mapping
+                pd_results['type'] = pd_results['solution_id'].map(solution_type_map).fillna(pd_results['type'])
+                print('Updated "type" values in pd_results based on pd_initial_results.')
 
-            # check if pd_datafram_NEWsim_good is not empty
-            if pd_datafram_NEWsim_good.empty:
-                print('No new simulation below RMSD')
-                pd_datafram_PCA_selected_lowRMSD = pd.DataFrame()
+            # save and update the disk 
+            pd_results.to_csv(outputdir_RMSD_plot+os.sep+file_name+NAME_SUFX_CSV_RESULTS, index=False)
+                
 
-            else:
-                print('Number of new simulations below RMSD:',len(pd_datafram_NEWsim_good))
-                input_list_obs = [[pd_datafram_NEWsim_good.iloc[[ii]].reset_index(drop=True), pd_dataframe_PCA_obs_real, gensim_data_obs, output_folder, fit_funct, gensim_data_Metsim, rmsd_pol_mag, rmsd_t0_lag, mag_RMSD_real, len_RMSD_real, fps, file_name, save_results_folder_events_plots, False] for ii in range(len(pd_datafram_NEWsim_good))]
-                results_list = domainParallelizer(input_list_obs, PCA_LightCurveRMSDPLOT_optimize, cores=cml_args.cores)
 
-                # base on the one selected
-                pd_datafram_PCA_selected_lowRMSD = pd.concat(results_list)
 
     print()
 
 
+
+    ######################## PCA PLOTS ###############################
+
+    _,_,_=process_pca_variables(cml_args.YesPCA, cml_args.NoPCA, pd_dataframe_obs_real, pd_datafram_PCA_sim, output_folder+os.sep+save_results_folder, file_name, True)
+    
+    print(trajectory_Metsim_file)
+
+    if cml_args.use_PCA:
+
+        print('--- PCA SELECTION ---')
+
+        save_results_folder_PCA = save_results_folder+os.sep+'PCA'
+        mkdirP(output_folder+os.sep+save_results_folder_PCA)
+
+        pcr_results_physical_param, PCAn_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_obs_real, output_folder, output_folder+os.sep+save_results_folder_PCA, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.esclude_real_solution_from_selection)
+
+        print()
 
 
     ######################## FINAL RESULTS ###############################
@@ -7557,19 +7139,20 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
 
     # Init the command line arguments parser
-    arg_parser = argparse.ArgumentParser(description="From Observation and simulated data we select the most likely through Montecarlo method and store results to disk.")
+    arg_parser = argparse.ArgumentParser(description="From Observation and simulated data we select the most likely through Montecarlo method and store results to disk.\n\
+                                         the path to the input folder must not contain : 'Selection', 'Results', 'mode', 'DensPoint'")
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
     # C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v57_slow\PER_v57_slow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v59_heavy\PER_v59_heavy.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v60_light\PER_v60_light.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v61_shallow\PER_v61_shallow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v62_steep\PER_v62_steep.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v65_fast\PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json,/home/mvovk/Documents/Test_cases', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\test_1stPaper\PER_EMCCD\Max\20210813-061452.998134', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/srv/public/mvovk/1stPaper/Results_PCA-12-18',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \
@@ -7586,30 +7169,15 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   
-
-    arg_parser.add_argument('--nobs', metavar='OBS_NUM', type=int, default=50, \
-        help="Number of Observation that will be resampled.")
     
-    arg_parser.add_argument('--nsim', metavar='SIM_NUM', type=int, default=10000, \
-        help="Number of simulations to generate.")
-    
-    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=1000, \
-        help="Minimum number of results that are in the CI that have to be found.")
+    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=2, \
+        help="Minimum number of results when the interative solution search starts.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=1, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=3, \
         help="Minimum number of results that are in the CI that have to be found.")
     
-    arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \
-        help="Number of failed attemp allowed to generate the set number of similar simulations, by default 3.")
-
-    arg_parser.add_argument('--fix_n_sim', metavar='FIX_NUM_SIM', type=bool, default=True, \
-        help="do not change the number of simularions if the csv file is smaller than the SIM_RESULTS.")
-
-    arg_parser.add_argument('--resample_sim', metavar='RESAMPLE_SIM', type=bool, default=False, \
-        help="if the number of simulations in the csv file is above SIM_NUM then resample the csv file base on the simulations.")
-    
-    arg_parser.add_argument('--delete_sim', metavar='DELETE_SIM', type=bool, default=False, \
-        help="Delete the simulations after the entire run.")
+    arg_parser.add_argument('--stop_bad_manual_sol', metavar='STOP_BAD_MANUAL_SOL', type=bool, default=True, \
+        help="The code stops if the manual solution is above the RMSD.")
     
     arg_parser.add_argument('--mag_rmsd', metavar='mag_RMSD', type=float, default=0, \
         help="Minimum absolute Magnitude RMSD = mag_rmsd*conf_lvl.")
@@ -7634,20 +7202,8 @@ if __name__ == "__main__":
 
     arg_parser.add_argument('--NoPCA', metavar='NOPCA', type=str, default=['chi2_red_mag', 'chi2_red_len', 'rmsd_mag', 'rmsd_len', 'v_init_180km','a1_acc_jac','a2_acc_jac','a_acc','b_acc','c_acc','c_mag_init','c_mag_end','a_t0', 'b_t0', 'c_t0'], \
         help="Use specific variable NOT considered in PCA.")
-
-    arg_parser.add_argument('--save_test_plot', metavar='SAVE_TEST_PLOT', type=bool, default=False, \
-        help="save test plots of the realization and the simulations and more plots in PCA control plots.")
     
-    arg_parser.add_argument('--optimize', metavar='OPTIMIZE', type=bool, default=False, \
-        help="Run optimization step to have more precise results but increase the computation time, automatically active if no solution found for 5 events.")
-
-    arg_parser.add_argument('--number_optimized', metavar='NUMBER_OPTIMZED', type=int, default=0, \
-        help="ONLY ACTIVE IF OPTIMIZE=True, Number of optimized simulations that have to be optimized starting starting from the best, 0 means all, by default 0.")
-
-    arg_parser.add_argument('--esclude_real_solution_from_selection', metavar='ESCLUDE_REAL_SOLUTION_FROM_SELECTION', type=bool, default=False, \
-        help="When use a generate simulation you can select to exclude the real result with True or also consider it in the distance calculations with False.")
-    
-    arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'/home/mvovk/WesternMeteorPyLib/wmpl/MetSim/AutoRefineFit_options.txt', \
+    arg_parser.add_argument('--ref_opt_path', metavar='REF_OPT_PATH', type=str, default=r'C:\Users\maxiv\WesternMeteorPyLib\wmpl\MetSim\AutoRefineFit_options.txt', \
         help="path and name of like C: path + AutoRefineFit_options.txt")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None, \
@@ -7660,18 +7216,17 @@ if __name__ == "__main__":
     fps = cml_args.fps
 
     #########################
-    warnings.filterwarnings('ignore')
+    # warnings.filterwarnings('ignore')
 
-    if cml_args.optimize:
-        # check if the file exist
+    # check if the file exist
+    if not os.path.isfile(cml_args.ref_opt_path):
+        # If the file is not found, check in the parent directory
+        parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cml_args.ref_opt_path = os.path.join(parent_directory, 'AutoRefineFit_options.txt')
         if not os.path.isfile(cml_args.ref_opt_path):
-            # If the file is not found, check in the parent directory
-            parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            cml_args.ref_opt_path = os.path.join(parent_directory, 'AutoRefineFit_options.txt')
-            if not os.path.isfile(cml_args.ref_opt_path):
-                print('file '+cml_args.ref_opt_path+' not found')
-                print("You need to specify the correct path and name of the AutoRefineFit_options.txt file in --ref_opt_path, like: C:\\path\\AutoRefineFit_options.txt")
-                sys.exit()
+            print('file '+cml_args.ref_opt_path+' not found')
+            print("You need to specify the correct path and name of the AutoRefineFit_options.txt file in --ref_opt_path, like: C:\\path\\AutoRefineFit_options.txt")
+            sys.exit()
 
     if cml_args.repeate_research <= 1:
         cml_args.repeate_research = 1

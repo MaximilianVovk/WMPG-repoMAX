@@ -3993,7 +3993,7 @@ def PCASim(df_sim_shower, df_obs_shower, save_results_folder_PCA, PCA_percent=99
 
     # Define a custom palette
     custom_palette = {
-        'Real': "r",
+        'Real': "g",
         'Simulation': "b",
         'Simulation_sel': "darkorange",
         'MetSim': "k",
@@ -4026,6 +4026,7 @@ def PCASim(df_sim_shower, df_obs_shower, save_results_folder_PCA, PCA_percent=99
         'Simulation_sel': 5,
         'Simulation': 5,
         'MetSim': 20,
+        'Real': 20,
         'Realization': 20,
         'Observation': 40
     })

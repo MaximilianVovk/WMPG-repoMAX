@@ -919,7 +919,7 @@ def search_for_good_results(n_res_to_find, gensim_data_obs, fit_funct, result_fo
     # optimize start if below the multiplier value
     ii_cpu_sim = 1
     while len(all_jsonfiles) < n_res_to_find:
-        results_list = safe_generate_erosion_sim([output_folder, erosion_sim_params, randinteger, minframvis])
+        results_list = safe_generate_erosion_sim([output_folder, erosion_sim_params, np.random.randint(0, 2**31 - 1), minframvis])
 
         # chnage the extension of results_list[0] to json
         results_json = results_list[0].replace('.pickle','.json')
@@ -1501,7 +1501,7 @@ def plot_sigma_waterfall(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, ou
         cellText=data_for_table,
         colLabels=["RMSD", "Count"],
         loc='center left',
-        bbox=[-0.05, 0.0, 0.35, 1.0]  # Adjust these values as needed
+        bbox=[-0.1, 0.0, 0.35, 1.0]  # Adjust these values as needed
     )
 
     # Adjust table formatting
@@ -1529,7 +1529,7 @@ def plot_sigma_waterfall(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, ou
     mean_line = Line2D([0], [0], color='blue', label='Mean', marker='s', linestyle='None')
     # if 'MetSim' in df_obs_real['type'].values:
     if 'MetSim' == df_obs_real['type'].iloc[0]:
-        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim')
         legend_elements = [metsim_line, mean_line, mode_line]
     elif 'Real' == df_obs_real['type'].iloc[0]:
         metsim_line = Line2D([0], [0], color='g', linewidth=2, label='Real', linestyle='--')
@@ -2199,141 +2199,144 @@ def read_GenerateSimulations_output_to_PCA(file_path, name='', fit_funct='', rea
 
 
 def read_GenerateSimulations_output(file_path, real_event, flag_for_PCA=False):
+    # check if present the file_path
+    if os.path.isfile(file_path):
+        f = open(file_path,"r")
+        data = json.loads(f.read())
 
-    f = open(file_path,"r")
-    data = json.loads(f.read())
+        # show processed event
+        print(file_path)
 
-    # show processed event
-    print(file_path)
-
-    # check if there is 'ht_sampled' in the data
-    if 'ht_sampled' not in data:
-        print("Warning: 'ht_sampled' not in data. Skipping.")
-        return None
-    if data['ht_sampled']!= None: 
-
-        vel_sim=data['simulation_results']['leading_frag_vel_arr'][:-1]#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
-        ht_sim=data['simulation_results']['leading_frag_height_arr'][:-1]#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
-        time_sim=data['simulation_results']['time_arr'][:-1]#['main_time_arr']
-        abs_mag_sim=data['simulation_results']['abs_magnitude'][:-1]
-        len_sim=data['simulation_results']['leading_frag_length_arr'][:-1]#['brightest_length_arr']
-        Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr'][:-1]
-        
-        # ht_obs=data['ht_sampled']
-        # try:
-        #     index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[0])
-        # except StopIteration:
-        #     # index_ht_sim = None
-        #     print('The first element of the observation is not in the simulation')
-        #     return None
-
-        # try:
-        #     index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[-1])
-        # except StopIteration:
-        #     # index_ht_sim_end = None
-        #     print('The last element of the observation is not in the simulation')
-        #     return None
-        
-        # if real_event!= '':
-        #     mag_obs=real_event['absolute_magnitudes']
-        # else:
-        #     mag_obs=data['mag_sampled']
-
-        mag_obs=real_event['absolute_magnitudes']
-
-        # print('read_GenerateSimulations_output mag',mag_obs[0],'-',mag_obs[-1])
-
-        try:
-            # find the index of the first element of abs_mag_sim that is smaller than the first element of mag_obs
-            index_abs_mag_sim_start = next(i for i, val in enumerate(abs_mag_sim) if val <= mag_obs[0])
-            if flag_for_PCA:
-                index_abs_mag_sim_start = index_abs_mag_sim_start - 1 + np.random.randint(2)
-            else:
-                index_abs_mag_sim_start = index_abs_mag_sim_start - 1 # + np.random.randint(2)
-        except StopIteration:
-            print("The first observation height is not within the simulation data range.")
+        # check if there is 'ht_sampled' in the data
+        if 'ht_sampled' not in data:
+            print("Warning: 'ht_sampled' not in data. Skipping.")
             return None
-        try:   
-            index_abs_mag_sim_end = next(i for i, val in enumerate(abs_mag_sim[::-1]) if val <= mag_obs[-1])
-            if flag_for_PCA:
-                index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end + 1 - np.random.randint(2)
-            else:
-                index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end + 1        
-        except StopIteration:
-            print("The first observation height is not within the simulation data range.")
-            return None
-        
-        # print('mag',index_abs_mag_sim_start,'-',index_abs_mag_sim_end,'\nheight',index_ht_sim,'-',index_ht_sim_end)
+        if data['ht_sampled']!= None: 
+
+            vel_sim=data['simulation_results']['leading_frag_vel_arr'][:-1]#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+            ht_sim=data['simulation_results']['leading_frag_height_arr'][:-1]#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
+            time_sim=data['simulation_results']['time_arr'][:-1]#['main_time_arr']
+            abs_mag_sim=data['simulation_results']['abs_magnitude'][:-1]
+            len_sim=data['simulation_results']['leading_frag_length_arr'][:-1]#['brightest_length_arr']
+            Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr'][:-1]
             
-        abs_mag_sim = abs_mag_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
-        vel_sim = vel_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
-        time_sim = time_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
-        ht_sim = ht_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
-        len_sim = len_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
-        Dynamic_pressure = Dynamic_pressure[index_abs_mag_sim_start:index_abs_mag_sim_end]
+            # ht_obs=data['ht_sampled']
+            # try:
+            #     index_ht_sim=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[0])
+            # except StopIteration:
+            #     # index_ht_sim = None
+            #     print('The first element of the observation is not in the simulation')
+            #     return None
+
+            # try:
+            #     index_ht_sim_end=next(x for x, val in enumerate(ht_sim) if val <= ht_obs[-1])
+            # except StopIteration:
+            #     # index_ht_sim_end = None
+            #     print('The last element of the observation is not in the simulation')
+            #     return None
+            
+            # if real_event!= '':
+            #     mag_obs=real_event['absolute_magnitudes']
+            # else:
+            #     mag_obs=data['mag_sampled']
+
+            mag_obs=real_event['absolute_magnitudes']
+
+            # print('read_GenerateSimulations_output mag',mag_obs[0],'-',mag_obs[-1])
+
+            try:
+                # find the index of the first element of abs_mag_sim that is smaller than the first element of mag_obs
+                index_abs_mag_sim_start = next(i for i, val in enumerate(abs_mag_sim) if val <= mag_obs[0])
+                if flag_for_PCA:
+                    index_abs_mag_sim_start = index_abs_mag_sim_start - 1 + np.random.randint(2)
+                else:
+                    index_abs_mag_sim_start = index_abs_mag_sim_start - 1 # + np.random.randint(2)
+            except StopIteration:
+                print("The first observation height is not within the simulation data range.")
+                return None
+            try:   
+                index_abs_mag_sim_end = next(i for i, val in enumerate(abs_mag_sim[::-1]) if val <= mag_obs[-1])
+                if flag_for_PCA:
+                    index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end + 1 - np.random.randint(2)
+                else:
+                    index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end + 1        
+            except StopIteration:
+                print("The first observation height is not within the simulation data range.")
+                return None
+            
+            # print('mag',index_abs_mag_sim_start,'-',index_abs_mag_sim_end,'\nheight',index_ht_sim,'-',index_ht_sim_end)
+                
+            abs_mag_sim = abs_mag_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+            vel_sim = vel_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+            time_sim = time_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+            ht_sim = ht_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+            len_sim = len_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+            Dynamic_pressure = Dynamic_pressure[index_abs_mag_sim_start:index_abs_mag_sim_end]
 
 
 
-        # abs_mag_sim=abs_mag_sim[index_ht_sim:index_ht_sim_end]
-        # vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
-        # time_sim=time_sim[index_ht_sim:index_ht_sim_end]
-        # ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
-        # len_sim=len_sim[index_ht_sim:index_ht_sim_end]
+            # abs_mag_sim=abs_mag_sim[index_ht_sim:index_ht_sim_end]
+            # vel_sim=vel_sim[index_ht_sim:index_ht_sim_end]
+            # time_sim=time_sim[index_ht_sim:index_ht_sim_end]
+            # ht_sim=ht_sim[index_ht_sim:index_ht_sim_end]
+            # len_sim=len_sim[index_ht_sim:index_ht_sim_end]
 
-        # closest_indices = find_closest_index(ht_sim, ht_obs)
+            # closest_indices = find_closest_index(ht_sim, ht_obs)
 
-        # Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr']
-        # Dynamic_pressure= Dynamic_pressure[index_ht_sim:index_ht_sim_end]
-        # Dynamic_pressure=[Dynamic_pressure[jj_index_cut] for jj_index_cut in closest_indices]
+            # Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr']
+            # Dynamic_pressure= Dynamic_pressure[index_ht_sim:index_ht_sim_end]
+            # Dynamic_pressure=[Dynamic_pressure[jj_index_cut] for jj_index_cut in closest_indices]
 
-        # abs_mag_sim=[abs_mag_sim[jj_index_cut] for jj_index_cut in closest_indices]
-        # vel_sim=[vel_sim[jj_index_cut] for jj_index_cut in closest_indices]
-        # time_sim=[time_sim[jj_index_cut] for jj_index_cut in closest_indices]
-        # ht_sim=[ht_sim[jj_index_cut] for jj_index_cut in closest_indices]
-        # len_sim=[len_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            # abs_mag_sim=[abs_mag_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            # vel_sim=[vel_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            # time_sim=[time_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            # ht_sim=[ht_sim[jj_index_cut] for jj_index_cut in closest_indices]
+            # len_sim=[len_sim[jj_index_cut] for jj_index_cut in closest_indices]
 
-        # divide the vel_sim by 1000 considering is a list
-        time_sim = [i-time_sim[0] for i in time_sim]
-        # vel_sim = [i/1000 for i in vel_sim]
-        len_sim = [i-len_sim[0] for i in len_sim]
-        # ht_sim = [i/1000 for i in ht_sim]
+            # divide the vel_sim by 1000 considering is a list
+            time_sim = [i-time_sim[0] for i in time_sim]
+            # vel_sim = [i/1000 for i in vel_sim]
+            len_sim = [i-len_sim[0] for i in len_sim]
+            # ht_sim = [i/1000 for i in ht_sim]
 
-        # Load the constants
-        const, _ = loadConstants(file_path)
-        const.dens_co = np.array(const.dens_co)
+            # Load the constants
+            const, _ = loadConstants(file_path)
+            const.dens_co = np.array(const.dens_co)
 
-        # Compute the erosion energies
-        erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass = wmpl.MetSim.MetSimErosion.energyReceivedBeforeErosion(const)
+            # Compute the erosion energies
+            erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass = wmpl.MetSim.MetSimErosion.energyReceivedBeforeErosion(const)
 
-        gensim_data = {
-        'name': file_path,
-        'type': 'Simulation',
-        'v_init': vel_sim[0], # m/s
-        'velocities': np.array(vel_sim), # m/s
-        'height': np.array(ht_sim), # m
-        'absolute_magnitudes': np.array(abs_mag_sim),
-        'lag': np.array(len_sim-(vel_sim[0]*np.array(time_sim))), # m +len_sim[0]
-        'length': np.array(len_sim), # m
-        'time': np.array(time_sim), # s
-        'v_avg': np.mean(vel_sim), # m/s
-        'vel_180km': data['params']['v_init']['val'], # m/s
-        'Dynamic_pressure_peak_abs_mag': Dynamic_pressure[np.argmin(abs_mag_sim)],
-        'zenith_angle': data['params']['zenith_angle']['val']*180/np.pi,
-        'mass': data['params']['m_init']['val'],
-        'rho': data['params']['rho']['val'],
-        'sigma': data['params']['sigma']['val'],
-        'erosion_height_start': data['params']['erosion_height_start']['val']/1000,
-        'erosion_coeff': data['params']['erosion_coeff']['val'],
-        'erosion_mass_index': data['params']['erosion_mass_index']['val'],
-        'erosion_mass_min': data['params']['erosion_mass_min']['val'],
-        'erosion_mass_max': data['params']['erosion_mass_max']['val'],
-        'erosion_range': np.log10(data['params']['erosion_mass_max']['val']) - np.log10(data['params']['erosion_mass_min']['val']),
-        'erosion_energy_per_unit_cross_section': erosion_energy_per_unit_cross_section,
-        'erosion_energy_per_unit_mass': erosion_energy_per_unit_mass
-        }
+            gensim_data = {
+            'name': file_path,
+            'type': 'Simulation',
+            'v_init': vel_sim[0], # m/s
+            'velocities': np.array(vel_sim), # m/s
+            'height': np.array(ht_sim), # m
+            'absolute_magnitudes': np.array(abs_mag_sim),
+            'lag': np.array(len_sim-(vel_sim[0]*np.array(time_sim))), # m +len_sim[0]
+            'length': np.array(len_sim), # m
+            'time': np.array(time_sim), # s
+            'v_avg': np.mean(vel_sim), # m/s
+            'vel_180km': data['params']['v_init']['val'], # m/s
+            'Dynamic_pressure_peak_abs_mag': Dynamic_pressure[np.argmin(abs_mag_sim)],
+            'zenith_angle': data['params']['zenith_angle']['val']*180/np.pi,
+            'mass': data['params']['m_init']['val'],
+            'rho': data['params']['rho']['val'],
+            'sigma': data['params']['sigma']['val'],
+            'erosion_height_start': data['params']['erosion_height_start']['val']/1000,
+            'erosion_coeff': data['params']['erosion_coeff']['val'],
+            'erosion_mass_index': data['params']['erosion_mass_index']['val'],
+            'erosion_mass_min': data['params']['erosion_mass_min']['val'],
+            'erosion_mass_max': data['params']['erosion_mass_max']['val'],
+            'erosion_range': np.log10(data['params']['erosion_mass_max']['val']) - np.log10(data['params']['erosion_mass_min']['val']),
+            'erosion_energy_per_unit_cross_section': erosion_energy_per_unit_cross_section,
+            'erosion_energy_per_unit_mass': erosion_energy_per_unit_mass
+            }
 
-        return gensim_data
-    
+            return gensim_data
+        
+        else:
+            return None
     else:
         return None
 
@@ -5087,11 +5090,11 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name
             # Define the legend elements
             # Define the legend elements
             # prior_patch = mpatches.Patch(color='blue', label='Priors', alpha=0.5, edgecolor='black')
-            sel_events_patch = mpatches.Patch(color='darkorange', label='Initial', alpha=0.5, edgecolor='red')
+            sel_events_patch = mpatches.Patch(color='darkorange', label='Initial results', alpha=0.5, edgecolor='red')
             mode_line = Line2D([0], [0], color='red', linestyle='-.', label='Mode')
             mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
             if 'Iteration' in curr_df_sim_sel['type'].values:
-                iter_patch = mpatches.Patch(color='gold', label='Iterative', alpha=0.5, edgecolor='black')
+                iter_patch = mpatches.Patch(color='gold', label='Iterative results', alpha=0.5, edgecolor='black')
                 if 'MetSim' in curr_df_sim_sel['type'].values:
                     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
                     legend_elements = [sel_events_patch, iter_patch, metsim_line, mean_line, mode_line]
@@ -5127,11 +5130,11 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name
             sim_range_plot[plotvar] = np.log10(sim_range_plot[plotvar])
 
 
-        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette={'selected': 'darkorange', 'iteration': 'gold'}, bins=20)
+        sns.histplot(curr_df_sim_sel, x=curr_df_sim_sel[plotvar], weights=curr_df_sim_sel['weight'], hue='group', ax=axs[i], palette={'selected': 'darkorange', 'iteration': 'gold'}, bins=20, binrange=[np.min(sim_range_plot[plotvar]), np.max(sim_range_plot[plotvar])])
         unique_values_count = curr_sel[plotvar].nunique()
         if unique_values_count > 1:
             # Add the KDE to the plot
-            sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(curr_df_sim_sel[plotvar]), np.max(curr_df_sim_sel[plotvar])])
+            sns.histplot(curr_sel, x=curr_sel[plotvar], weights=curr_sel['weight'], bins=20, ax=axs[i], fill=False, edgecolor=False, color='r', kde=True, binrange=[np.min(sim_range_plot[plotvar]), np.max(sim_range_plot[plotvar])])
             kde_line = axs[i].lines[-1]
             axs[i].lines[-1].remove()
         else:
@@ -6504,6 +6507,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     ######################## RANDOM SEARCH ###############################
     print('--- RANDOM SEARCH ---')
 
+    # copy the file to the output_folder
+    shutil.copy(cml_args.ref_opt_path, output_folder+os.sep+'AutoRefineFit_options.txt')
+
     print('Run MetSim file:',trajectory_Metsim_file)
 
     simulation_MetSim_object, gensim_data_Metsim, pd_datafram_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
@@ -6645,12 +6651,14 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         # check all check_change variables in the pd_results and in case the max pd_dataframe_ranges['erosion_energy_per_unit_cross_section'] is below the max pd_results['erosion_energy_per_unit_cross_section'] change the value
         for check in check_change:
             if check in pd_results.columns:
-                if pd_dataframe_ranges[check].max() < pd_results[check].max():
-                    pd_dataframe_ranges[check].iloc[1] = pd_results[check].max()
-                    print('Change the MAX value of',check,'to',pd_results[check].max())
                 if pd_dataframe_ranges[check].min() > pd_results[check].min():
+                    print('Change the MIN value of',check,'to',pd_results[check].min(),'before:',pd_dataframe_ranges[check].min())
                     pd_dataframe_ranges[check].iloc[0] = pd_results[check].min()
-                    print('Change the MIN value of',check,'to',pd_results[check].min())
+                    # if check == 'erosion_energy_per_unit_cross_section' or check == 'erosion_energy_per_unit_mass':
+                    #     pd_dataframe_ranges[check].iloc[0] = 0
+                if pd_dataframe_ranges[check].max() < pd_results[check].max():
+                    print('Change the MAX value of',check,'to',pd_results[check].max(),'before:',pd_dataframe_ranges[check].max())
+                    pd_dataframe_ranges[check].iloc[1] = pd_results[check].max()
 
         if 'solution_id' in pd_results.columns:
             print('PLOT: the physical characteristics results')
@@ -6715,8 +6723,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             pd_results = pd.concat(results_list)
             # reset index
             pd_results.reset_index(drop=True, inplace=True)
-            # type set to iteration
-            pd_results['type'] = 'Iteration'
+            # # type set to iteration
+            # pd_results['type'] = 'Iteration'
 
             # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
             if 'mass' in pd_results.columns:                  
@@ -6880,7 +6888,7 @@ if __name__ == "__main__":
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
     # C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v57_slow\PER_v57_slow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v59_heavy\PER_v59_heavy.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v60_light\PER_v60_light.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v61_shallow\PER_v61_shallow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v62_steep\PER_v62_steep.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v65_fast\PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/Test/Simulations_PER_v57_slow/PER_v57_slow.json', \
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/Test/20210813-061452.998134', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
@@ -6900,10 +6908,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   
     
-    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=2, \
+    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=10, \
         help="Minimum number of results when the interative solution search starts.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=3, \
+    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=30, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--stop_bad_manual_sol', metavar='STOP_BAD_MANUAL_SOL', type=bool, default=True, \

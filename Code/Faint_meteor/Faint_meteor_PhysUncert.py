@@ -60,6 +60,7 @@ import itertools
 import time
 from multiprocessing import Pool
 from multiprocessing import cpu_count
+import multiprocessing
 
 # CONSTANTS ###########################################################################################
 
@@ -780,7 +781,7 @@ def range_gen_simulations(real_data,simulation_MetSim_object, fps, dens_co, flag
 
 
 
-def generate_simulations(real_data,simulation_MetSim_object,gensim_data_obs,fit_funct,n_res_to_find,result_folder,output_folder,file_name, fps, dens_co, flag_manual_metsim=True, CI_physical_param=''):
+def generate_simulations(real_data,simulation_MetSim_object,gensim_data_obs,fit_funct,n_res_to_find,cores_to_run,result_folder,output_folder,file_name, fps, dens_co, flag_manual_metsim=True, CI_physical_param=''):
     '''                 
         Generate simulations for the given real data
     '''
@@ -810,8 +811,8 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data_obs,fit_
         # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
         if os.path.exists(output_folder+os.sep+"log_"+file_name[:15]+"_GenereateSimulations_range.txt"):
             # remove the file
-            os.remove(output_folder+os.sep+"log_"+file_name[:15]+"GenereateSimulations_range.txt")
-        sys.stdout = Logger(output_folder,"log_"+file_name[:15]+"GenereateSimulations_range.txt") # _30var_99perc_13PC
+            os.remove(output_folder+os.sep+"log_"+file_name[:15]+"_GenereateSimulations_range.txt")
+        sys.stdout = Logger(output_folder,"log_"+file_name[:15]+"_GenereateSimulations_range.txt") # _30var_99perc_13PC
 
 
     # to_plot_unit=['mass [kg]','rho [kg/m^3]','sigma [kg/MJ]','erosion height start [km]','erosion coeff [kg/MJ]','erosion mass index','eros. mass min [kg]','eros. mass max [kg]']
@@ -887,21 +888,8 @@ def generate_simulations(real_data,simulation_MetSim_object,gensim_data_obs,fit_
     # Reset sys.stdout to its original value if needed
     sys.stdout = sys.__stdout__
 
+    mkdirP(output_folder+os.sep+OPTIMIZATION_FOLDER)
 
-    print(range(cpu_count()))
-    input_list = [[n_res_to_find, gensim_data_obs, fit_funct, result_folder, output_folder, copy.deepcopy(erosion_sim_params), np.random.randint(0, 2**31 - 1), MIN_FRAMES_VISIBLE] for _ in range(cpu_count())]
-    results_list = domainParallelizer(input_list, search_for_good_results, cores=cml_args.cores)
-
-    # delete the folder that starts with v and ends with 2 numbers
-    for folder in os.listdir(output_folder):
-        if re.match(r'v\d{2}', folder):
-            shutil.rmtree(os.path.join(output_folder, folder))
-
-
-
-    
-def search_for_good_results(n_res_to_find, gensim_data_obs, fit_funct, result_folder, output_folder, erosion_sim_params, randinteger = np.random.randint(0, 2**31 - 1), minframvis = MIN_FRAMES_VISIBLE):
-    
     # check if gensim_data_obs['name'] ends with pikle
     if gensim_data_obs['name'].endswith('.pickle'):
         print('The detect meteor is in a pickle format')
@@ -912,29 +900,91 @@ def search_for_good_results(n_res_to_find, gensim_data_obs, fit_funct, result_fo
         # it cannot optimize the json files
         optimiz_case = False
 
+    # Create a Pool with 'cores_to_run' processes
+    pool = multiprocessing.Pool(processes=cores_to_run)
+
+    try:
+        # Keep submitting tasks as long as we don't have enough JSON files
+        while True:
+            # Check how many JSON files we have so far
+            all_jsonfiles = get_json_files(result_folder)
+            current_count = len(all_jsonfiles)
+            print(f"{n_res_to_find} needed, current count: {current_count} still need {n_res_to_find - current_count}")
+            # If we have enough, break
+            if current_count >= n_res_to_find:
+                print(f"SUCCESS: Found {current_count} JSON files, stopping.")
+                # Terminate *all* running/pending tasks immediately
+                pool.terminate()
+                # Join so we wait for worker processes to actually exit
+                pool.join()
+                # (Optional) cleanup
+                for folder in os.listdir(output_folder):
+                    # Example: remove folders that match vNN, e.g. v60
+                    if re.match(r'v\d{2}', folder):
+                        shutil.rmtree(os.path.join(output_folder, folder))
+                
+                # delete the (output_folder+os.sep+OPTIMIZATION_FOLDER)
+                shutil.rmtree(output_folder+os.sep+OPTIMIZATION_FOLDER)
+
+                break
+
+            # If not enough yet, spawn *one* new task
+            pool.apply_async(
+                search_for_good_results,
+                args=(
+                    n_res_to_find,
+                    gensim_data_obs,
+                    fit_funct,
+                    result_folder,
+                    output_folder,
+                    copy.deepcopy(erosion_sim_params),
+                    optimiz_case,
+                    MIN_FRAMES_VISIBLE
+                )
+            )
+
+            # Sleep a little so we don't spawn tasks too rapidly in a tight loop
+            # This also gives the pool time to schedule tasks and start them
+            time.sleep(0.1)
+
+    finally:
+        # Once we have enough files, or if there's an error, close the pool
+        pool.close()
+        pool.join()
+
+
+
+
+    
+def search_for_good_results(n_res_to_find, gensim_data_obs, fit_funct, result_folder, output_folder, erosion_sim_params, optimiz_case = True, minframvis = MIN_FRAMES_VISIBLE):
+    """
+    Perform exactly ONE iteration of the generation + optimization process.
+    Return True/False (or any relevant info) to indicate success/failure.
+    """
+
     # walk thorought the directories and find all the json files inside each folder inside the directory
-    all_jsonfiles = get_json_files(result_folder)
     file_name_obs = os.path.basename(gensim_data_obs['name'])[:15]
     real_event_copy = copy.deepcopy(gensim_data_obs)
-    # optimize start if below the multiplier value
-    ii_cpu_sim = 1
-    while len(all_jsonfiles) < n_res_to_find:
-        results_list = safe_generate_erosion_sim([output_folder, erosion_sim_params, np.random.randint(0, 2**31 - 1), minframvis])
 
-        # chnage the extension of results_list[0] to json
-        results_json = results_list[0].replace('.pickle','.json')
-        gensim_data = read_GenerateSimulations_output(results_json, real_event_copy)
-        flag_results_found = create_json_file_and_optimiz(gensim_data, file_name_obs, real_event_copy, fit_funct, result_folder, output_folder, '',2, optimiz_case)
-        if flag_results_found:
-            print('Results found for',results_json)
+    print('CPU:',multiprocessing.current_process().name)
+    # very random seed np.random.seed(None)
+    results_list = safe_generate_erosion_sim([output_folder, erosion_sim_params, np.random.seed(None), minframvis]) # np.random.randint(0, 2**31 - 1)
 
-        # remove the results
-        os.remove(results_json)
-        os.remove(results_list[0])
+    print('results_list',results_list)  
 
-        # walk thorought the directories and find all the json files inside each folder inside the directory
-        all_jsonfiles = get_json_files(result_folder)
-        print('Number of json files:',len(all_jsonfiles),'to find:',n_res_to_find)
+    # chnage the extension of results_list[0] to json
+    results_json = results_list[0].replace('.pickle','.json')
+    gensim_data = read_GenerateSimulations_output(results_json, real_event_copy)
+    flag_results_found = create_json_file_and_optimiz(gensim_data, file_name_obs, real_event_copy, fit_funct, result_folder, output_folder, '',1.1, optimiz_case)
+    if flag_results_found:
+        print('Results found for',results_json)
+    else:
+        print('Results not found for',results_json)
+
+    # remove the results
+    os.remove(results_json)
+    os.remove(results_list[0])
+
 
 
 
@@ -972,9 +1022,9 @@ def create_json_file_and_optimiz(gensim_data, file_name_obs, gensim_data_obs, fi
     print('REAL rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],'SIM rmsd_mag',rmsd_mag,'check')
     print('REAL rmsd_lag',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'],'SIM rmsd_lag',rmsd_lag,'check')
     if gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']>rmsd_mag and gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']>rmsd_lag:
-        print('Below RMSD threshold : rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],'rmsd_len',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'])
+        print('SUCCESS: Below RMSD threshold RMSD: MAG sim',np.round(rmsd_mag,3),'REAL',np.round(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],3),'|| LAG',np.round(rmsd_lag,3),'REAL',np.round(gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'],3))
 
-        plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_vel']*np.sqrt(2)/(1.0/fps), gensim_data_obs['rmsd_len'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, result_folder, data_file, filetype)
+        plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_vel']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, result_folder, data_file, filetype)
 
         # save the results
         shutil.copy(results_json, result_folder+os.sep+results_json_name)
@@ -982,11 +1032,17 @@ def create_json_file_and_optimiz(gensim_data, file_name_obs, gensim_data_obs, fi
 
     # try to optimize if close to the multiplier value
     elif gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']*opt_multip>rmsd_mag and gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']*opt_multip>rmsd_lag and optim==True:
-        print('Try Optimization as it below RMSD threshold : rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']*opt_multip,'rmsd_len',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']*opt_multip)
+        print('... : Try Optimization as it below RMSD threshold RMSD: MAG sim',np.round(rmsd_mag,3),'REAL',np.round(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']*opt_multip,3),'|| LAG',np.round(rmsd_lag,3),'REAL',np.round(gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']*opt_multip,3))
         
-        file_json_save_phys=output_folder+os.sep+OPTIMIZATION_FOLDER+os.sep+results_json_name[:-5]+'_fitted.json'
+        # file_json_save_phys=output_folder+os.sep+OPTIMIZATION_FOLDER+os.sep+results_json_name[:-5]+'_fitted.json'
         output_dir_optimized = output_folder+os.sep+OPTIMIZATION_FOLDER+os.sep+'Optimization_'+results_json_name[:-5]
+        # file_json_save_phys=output_dir_optimized+os.sep+results_json_name[:-5]+'_fitted.json'
+        file_optim_results = output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json'
+        # image_name=results_json_name[:-5]+'_fitted.png'
+        # results_json_name_fit = results_json_name[:-5]+'_fitted.json'
         mkdirP(output_dir_optimized)
+
+        plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_vel']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, output_dir_optimized, data_file, filetype)
 
         # from namefile_sel json file open the json file and save the namefile_sel.const part as file_name_obs+'_sim_fit.json'
         with open(results_json) as json_file:
@@ -996,71 +1052,69 @@ def create_json_file_and_optimiz(gensim_data, file_name_obs, gensim_data_obs, fi
                 json.dump(const_part, outfile, indent=4)
 
         shutil.copy(output_folder+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
-        update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_len'], True, True) # More_complex_fit=False, Custom_refinement=False
+        update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_len'], False, False) # More_complex_fit=False, Custom_refinement=False
         # run the optimization
         shutil.copy(gensim_data_obs['name'], output_dir_optimized+os.sep+os.path.basename(gensim_data_obs['name']))
 
-        print('runing the optimization...')
+        print('runing the optimization... CPU:',multiprocessing.current_process().name)
         # this creates a ew file called output_dir+os.sep+file_name_obs+'_sim_fit_fitted.json'
         runAutoRefine(output_dir_optimized, 'AutoRefineFit_options.txt', updated_main=False, hideplots_main=True)
 
-        # # save the 20230811_082648_sim_fit_fitted.json as a json file in the output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_title[:23]+'_sim_fit_fitted.json'
-        shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
-
-        # Check if the output file exists before copying
-        if os.path.exists(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json'):
-            try:
-                shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
-            except Exception as e:
-                # logging.exception(f"Failed to copy {optimized_file} to {file_json_save_phys}")
-                print(f"Failed to copy optimized file: {e}")
-        else:
-            # logging.warning(f"Optimized file {optimized_file} not found.")
-            print(f"Optimized file not found. Skipping copy for {file_json_save_phys}")
-
-        _, gensim_data_optimized, pd_datafram_PCA_sim_optimized = run_simulation(file_json_save_phys, gensim_data_obs)
+        _, gensim_data_optimized, pd_datafram_PCA_sim_optimized = run_simulation(file_optim_results, gensim_data_obs)
 
         chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data_optimized, gensim_data_obs)
 
-        if gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']>rmsd_mag and gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']>rmsd_lag:
-            print('OPTIMIZATION Below RMSD threshold : rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],'rmsd_len',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'])
 
-            # Interpolated fit on data grid
-            sim_time_pos = interp_ht_time(gensim_data_optimized['height'])
+        # Interpolated fit on data grid
+        sim_time_pos = interp_ht_time(gensim_data_optimized['height'])
+    
+        # copy the data to the mode
+        data_file_sim_opt = gensim_data_optimized.copy()
+        data_file_sim_opt['time'] = sim_time_pos
+        data_file_sim_opt['res_absolute_magnitudes'] = residuals_mag
+        data_file_sim_opt['res_velocities'] = residuals_vel
+        data_file_sim_opt['res_lag'] = residuals_len * 1000
+        data_file_sim_opt['lag'] = lag_km_sim * 1000
+        data_file_sim_opt['rmsd_mag'] = rmsd_mag
+        data_file_sim_opt['rmsd_vel'] = rmsd_vel
+        data_file_sim_opt['rmsd_len'] = rmsd_lag
+        data_file_sim_opt['chi2_red_mag'] = chi2_red_mag
+        data_file_sim_opt['chi2_red_len'] = chi2_red_len
+        plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_vel']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, output_dir_optimized, data_file, filetype, data_file_sim_opt, 'Optimized')
+
+
+        if gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score']>rmsd_mag and gensim_data_obs['rmsd_len']*gensim_data_obs['z_score']>rmsd_lag:
+            print('SUCCESS: OPTIMIZATION Below RMSD threshold RMSD: MAG sim',np.round(rmsd_mag,3),'REAL',np.round(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],3),'|| LAG',np.round(rmsd_lag,3),'REAL',np.round(gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'],3))
 
             # copy the data to the mode
-            data_file_sim_opt = gensim_data_optimized.copy()
-            data_file_sim_opt['time'] = sim_time_pos
-            data_file_sim_opt['res_absolute_magnitudes'] = residuals_mag
-            data_file_sim_opt['res_velocities'] = residuals_vel
-            data_file_sim_opt['res_lag'] = residuals_len * 1000
-            data_file_sim_opt['lag'] = lag_km_sim * 1000
-            data_file_sim_opt['rmsd_mag'] = rmsd_mag
-            data_file_sim_opt['rmsd_vel'] = rmsd_vel
-            data_file_sim_opt['rmsd_len'] = rmsd_lag
-            data_file_sim_opt['chi2_red_mag'] = chi2_red_mag
-            data_file_sim_opt['chi2_red_len'] = chi2_red_len
-            plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_vel']*np.sqrt(2)/(1.0/fps), gensim_data_obs['rmsd_len'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, result_folder, data_file, filetype, data_file_sim_opt, 'Optimized')
+            plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_vel']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, result_folder, data_file, filetype, data_file_sim_opt, 'Optimized')
 
             # save the results
-            shutil.copy(file_json_save_phys, result_folder+os.sep+file_json_save_phys.split(os.sep)[-1])
+            shutil.copy(file_optim_results, result_folder+os.sep+results_json_name)
             # shutil.move(results_list[0], result_folder+os.sep+results_pickle_name)
 
-            # remove the folder of the optinmization
-            shutil.rmtree(output_dir_optimized)
+        #     # remove the folder of the optinmization
+        #     shutil.rmtree(output_dir_optimized)
             return True
         
         else:   
-            # remove the folder of the optinmization
-            shutil.rmtree(output_dir_optimized)
+            print('FAIL: OPTIMIZATION Above RMSD threshold RMSD: MAG sim',np.round(rmsd_mag,3),'REAL',np.round(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],3),'|| LAG',np.round(rmsd_lag,3),'REAL',np.round(gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'],3))
+            # # remove the folder of the optinmization
+            # shutil.rmtree(output_dir_optimized)
             return False
         
     # case in which the filetype is Metsim but above the RMSD
     elif filetype == 'Metsim':
 
-        print('Bad Metsim, redo manually or try optimization!\nAbove RMSD threshold : rmsd_mag',gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],'rmsd_len',gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'])
+        print('FAIL: Bad Metsim, redo manually or try optimization!\nAbove RMSD threshold RMSD: MAG sim',np.round(rmsd_mag,3),'REAL',np.round(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],3),'|| LAG',np.round(rmsd_lag,3),'REAL',np.round(gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'],3))
 
-        plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_vel']*np.sqrt(2)/(1.0/fps), gensim_data_obs['rmsd_len'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, result_folder, data_file, filetype)
+        plot_data_with_residuals_and_real(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_vel']*gensim_data_obs['z_score'], gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'], fit_funct, gensim_data_obs, gensim_data_obs['name'].split(os.sep)[-1], image_name, result_folder, data_file, filetype)
+        return False
+
+    else:
+        print('FAIL: Above RMSD threshold RMSD: MAG sim',np.round(rmsd_mag,3),'REAL',np.round(gensim_data_obs['rmsd_mag']*gensim_data_obs['z_score'],3),'|| LAG',np.round(rmsd_lag,3),'REAL',np.round(gensim_data_obs['rmsd_len']*gensim_data_obs['z_score'],3))
+
+        return False
 
 
 #### Plot #############################################################################
@@ -1126,7 +1180,7 @@ def plot_data_with_residuals_and_real(rmsd_mag, rmsd_vel, rmsd_len, fit_funct_or
     abs_mag_sim_err = fit_funct['absolute_magnitudes']
     mag_noise = real['rmsd_mag']
     ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise, abs_mag_sim_err + mag_noise, color='darkgray', alpha=0.2)
-    ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise * 1.96, abs_mag_sim_err + mag_noise * 1.96, color='lightgray', alpha=0.2)
+    ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise * real_original['z_score'], abs_mag_sim_err + mag_noise * real_original['z_score'], color='lightgray', alpha=0.2)
     ax0.plot(real['absolute_magnitudes'], real['height'], 'go')
     if data != '':
         line1, = ax0.plot(data['absolute_magnitudes'], data['height'])
@@ -1156,7 +1210,7 @@ def plot_data_with_residuals_and_real(rmsd_mag, rmsd_vel, rmsd_len, fit_funct_or
     ax0.grid(True, linestyle='--', color='lightgray')
 
     ax1.fill_betweenx(height_km_err, -mag_noise, mag_noise, color='darkgray', alpha=0.2)
-    ax1.fill_betweenx(height_km_err, -mag_noise * 1.96, mag_noise * 1.96, color='lightgray', alpha=0.2)
+    ax1.fill_betweenx(height_km_err, -mag_noise * real_original['z_score'], mag_noise * real_original['z_score'], color='lightgray', alpha=0.2)
     ax1.plot([0, 0], [fit_funct['height'][0], fit_funct['height'][-1]],color='lightgray')
     # Plot 1: Height vs. Res.Mag, without y-axis tick labels    
     if data != '':
@@ -1206,7 +1260,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
     # Plot 5: Custom legend with green dot, dashed line, and shaded areas
     ax5 = fig.add_subplot(gs_main[1, 1])
     ax5.axis('off')
-    ax5.plot([], [], 'go', label=label_real[:15]+'\nmag$_{RMSD}$ '+str(round(rmsd_mag/1.96,3))+'\nvel$_{RMSD}$ '+str(round(rmsd_vel/1.96,3))+'km/s\nlag$_{RMSD}$ '+str(round(rmsd_len/1.96*1000,1))+'m')  # Green dot
+    ax5.plot([], [], 'go', label=label_real[:15]+'\nmag$_{RMSD}$ '+str(round(real['rmsd_mag'],3))+'\nvel$_{RMSD}$ '+str(round(real['rmsd_vel'],3))+'km/s\nlag$_{RMSD}$ '+str(round(real['rmsd_len']*1000,1))+'m')  # Green dot
     if data == '':
         ax5.plot([], [], 'k--', label='Fit')  # Black dashed line
     ax5.fill_between([], [], [], color='darkgray', alpha=0.2, label='1$\sigma$')
@@ -1225,7 +1279,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
     vel_kms_err = fit_funct['velocities']
     vel_noise = real['rmsd_vel']
     ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise, vel_kms_err + vel_noise, color='darkgray', alpha=0.2)
-    ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise * 1.96, vel_kms_err + vel_noise * 1.96, color='lightgray', alpha=0.2)
+    ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise * real_original['z_score'], vel_kms_err + vel_noise * real_original['z_score'], color='lightgray', alpha=0.2)
     # Plot 2: Velocity vs. Time, without x-axis tick labels
     ax2.plot(real['time'], real['velocities'], 'go')
     if data != '':
@@ -1240,7 +1294,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
 
     # Plot 6: Res.Vel vs. Time
     ax6.fill_between(residual_time_pos, -vel_noise, vel_noise, color='darkgray', alpha=0.2)
-    ax6.fill_between(residual_time_pos, -vel_noise * 1.96, vel_noise * 1.96, color='lightgray', alpha=0.2)
+    ax6.fill_between(residual_time_pos, -vel_noise * real_original['z_score'], vel_noise * real_original['z_score'], color='lightgray', alpha=0.2)
     ax6.plot([fit_funct['time'][0], fit_funct['time'][-1]], [0, 0], color='lightgray')
     if data != '':
         ax6.plot(real['time'], data['res_velocities'], '.', color=color_line1)
@@ -1263,7 +1317,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
     lag_km_err = fit_funct['lag']
     lag_noise = real['rmsd_len'] * 1000
     ax3.fill_between(residual_time_pos, lag_km_err - lag_noise, lag_km_err + lag_noise, color='darkgray', alpha=0.2)
-    ax3.fill_between(residual_time_pos, lag_km_err - lag_noise * 1.96, lag_km_err + lag_noise * 1.96, color='lightgray', alpha=0.2)
+    ax3.fill_between(residual_time_pos, lag_km_err - lag_noise * real_original['z_score'], lag_km_err + lag_noise * real_original['z_score'], color='lightgray', alpha=0.2)
     # Plot 2: Velocity vs. Time, without x-axis tick labels
     ax3.plot(real['time'], real['lag'], 'go')
     if data != '':
@@ -1278,7 +1332,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
 
     # Plot 7: Res.Vel vs. Time
     ax7.fill_between(residual_time_pos, -lag_noise, lag_noise, color='darkgray', alpha=0.2)
-    ax7.fill_between(residual_time_pos, -lag_noise * 1.96, lag_noise * 1.96, color='lightgray', alpha=0.2)
+    ax7.fill_between(residual_time_pos, -lag_noise * real_original['z_score'], lag_noise * real_original['z_score'], color='lightgray', alpha=0.2)
     ax7.plot([fit_funct['time'][0], fit_funct['time'][-1]], [0, 0], color='lightgray')
     if data != '':
         ax7.plot(real['time'], data['res_lag'], '.', color=color_line1)
@@ -1303,7 +1357,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
         else:
             select_data=label_data+' NOT SELECTED'
     if data_opt_or_desns !='':
-        if data_opt_or_desns['rmsd_mag']<rmsd_mag: # and data_opt_or_desns['rmsd_len']<rmsd_len and data_opt_or_desns['chi2_red_mag'] >= 0.5 and data_opt_or_desns['chi2_red_mag'] <= 1.5 and data_opt_or_desns['chi2_red_len'] >= 0.5 and data_opt_or_desns['chi2_red_len'] <= 1.5
+        if data_opt_or_desns['rmsd_mag']<rmsd_mag and data_opt_or_desns['rmsd_len']<rmsd_len: # and data_opt_or_desns['rmsd_len']<rmsd_len and data_opt_or_desns['chi2_red_mag'] >= 0.5 and data_opt_or_desns['chi2_red_mag'] <= 1.5 and data_opt_or_desns['chi2_red_len'] >= 0.5 and data_opt_or_desns['chi2_red_len'] <= 1.5
             select_data=select_data+' '+label_opt_or_desns+' SELECTED'
         else:
             select_data=select_data+' '+label_opt_or_desns+' NOT SELECTED'
@@ -3104,8 +3158,8 @@ class SetUpObservationFolders:
         trajectory_files, file_names, input_folders, output_folders, metsim_files = [], [], [], [], []
 
         for root, _, files in os.walk(directory):
-            # Skip folders with the name 'GenSim'
-            if 'GenSim' in root:
+            # Skip folders with the name NAME_SUFX_GENSIM
+            if NAME_SUFX_GENSIM in root:
                 continue
 
             csv_found = False
@@ -5144,7 +5198,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name
 
         # set lim min and max sim_range_plot
         axs[i].set_xlim(sim_range_plot[plotvar].min(), sim_range_plot[plotvar].max())
-
+        find_type=''
         if 'MetSim' in curr_df_sim_sel['type'].values:
             axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=3)
             find_type = 'MetSim'
@@ -5180,11 +5234,11 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name
 
             if i < 12:
                 print('\\hline')
-                print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
+                print(f"{to_plot_unit[i]} & {find_type} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(x_10mode)} & {'{:.4g}'.format(sigma_95)} \\\\")
         else:
             if i < 12:
                 print('\\hline')
-                print(f"{to_plot_unit[i]} & {'{:.4g}'.format(curr_df_sim_sel[curr_df_sim_sel['type'] == find_type][plotvar].values[0])} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(sigma_95)} \\\\")
+                print(f"{to_plot_unit[i]} & {find_type} & {'{:.4g}'.format(sigma_5)} & {'{:.4g}'.format(mean_values_sel)} & {'{:.4g}'.format(sigma_95)} \\\\")
 
         axs[i].set_ylabel('Probability')
         axs[i].set_xlabel(to_plot_unit[i])
@@ -5602,11 +5656,11 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
         plt.savefig(output_dir + os.sep + file_name_obs + '_'+vel_lagplot+'_Heigh_MagVelCoef.png', bbox_inches='tight')
     plt.close()
 
-    # Save the DataFrame with RMSD
-    if output_folder_of_csv == '':
-        df_sel_shower_real.to_csv(output_dir + os.sep +'PCA_'+file_name_obs + '_sim_sel.csv', index=False)
-    else:
-        df_sel_shower_real.to_csv(output_folder_of_csv, index=False)
+    # # Save the DataFrame with RMSD
+    # if output_folder_of_csv == '':
+    #     df_sel_shower_real.to_csv(output_dir + os.sep +'PCA_'+file_name_obs + '_sim_sel.csv', index=False)
+    # else:
+    #     df_sel_shower_real.to_csv(output_folder_of_csv, index=False)
 
 
 
@@ -6393,7 +6447,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     results_event_dir = output_folder+os.sep+save_results_folder_events_plots
     mkdirP(result_dir)
     mkdirP(results_event_dir)
-    mkdirP(output_folder+os.sep+OPTIMIZATION_FOLDER)
 
     # check the extension of the file if it already present the csv file meas it has been aleady processed
     if trajectory_file.endswith('.csv'):
@@ -6422,6 +6475,10 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     else:
         # raise an error if the file is not a csv, pickle or json file
         raise ValueError('File format not supported. Please provide a csv, pickle or json file.')
+
+    z_score = norm.ppf(1 - (1 - cml_args.conf_lvl/100) / 2)
+    print('z_score:',z_score)
+    gensim_data_obs['z_score'] = z_score
 
     # run generate observation realization with the gensim_data_obs
     rmsd_t0_lag, rmsd_pol_mag, fit_pol_mag, fitted_lag_t0_lag, fit_funct = find_noise_of_data(gensim_data_obs, cml_args.fps, result_dir, file_name)
@@ -6452,8 +6509,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     print()
     print('saved obs csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_OBS)
 
-    z_score = norm.ppf(1 - (1 - cml_args.conf_lvl/100) / 2)
-    print('z_score:',z_score)
     if cml_args.mag_rmsd != 0:
         # set the value of rmsd_pol_mag=rmsd_mag_obs and len_RMSD=rmsd_lag_obs*conf_lvl
         rmsd_pol_mag = np.array(cml_args.mag_rmsd)/z_score
@@ -6481,7 +6536,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     gensim_data_obs['rmsd_mag'] = rmsd_pol_mag
     gensim_data_obs['rmsd_len'] = rmsd_t0_lag/1000
     gensim_data_obs['rmsd_vel'] = rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps)
-    gensim_data_obs['z_score'] = z_score
+
 
     # set the value of mag_RMSD=rmsd_mag_obs*conf_lvl and len_RMSD=rmsd_lag_obs*conf_lvl
     mag_RMSD_real = rmsd_pol_mag*z_score
@@ -6562,7 +6617,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             
             print('Before recursive find',cml_args.nsim_refine_step - len(all_jsonfiles),'results')
             
-            generate_simulations(pd_dataframe_obs_real,simulation_MetSim_object,gensim_data_obs,fit_funct,cml_args.nsim_refine_step,results_event_dir,output_folder,file_name,fps,dens_co, flag_manual_metsim)
+            generate_simulations(pd_dataframe_obs_real,simulation_MetSim_object,gensim_data_obs,fit_funct,cml_args.nsim_refine_step,cml_args.cores,results_event_dir,output_folder,file_name,fps,dens_co, flag_manual_metsim)
                 
         print('start reading the json files')
 
@@ -6693,12 +6748,12 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             if old_results_number == result_number:
                 print('Same number of results found:',result_number)
                 ii_repeat+=1
-            if ii_repeat==cml_args.ntry:
-                print('STOP: After '+str(cml_args.ntry)+' failed attempt')
-                print('STOP: No new simulation below magRMSD',mag_RMSD_real,'and lenRMSD',len_RMSD_real)
-                print('STOP: Number of results found:',result_number)
-                flag_fail = True
-                break
+            # if ii_repeat==cml_args.ntry:
+            #     print('STOP: After '+str(cml_args.ntry)+' failed attempt')
+            #     print('STOP: No new simulation below magRMSD',mag_RMSD_real,'and lenRMSD',len_RMSD_real)
+            #     print('STOP: Number of results found:',result_number)
+            #     flag_fail = True
+            #     break
 
             old_results_number = result_number
 
@@ -6708,7 +6763,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
                 look_for_n_sim = cml_args.min_nresults
 
             print('regenerate new simulation in the CI range')
-            generate_simulations(pd_dataframe_obs_real, simulation_MetSim_object, gensim_data_obs, fit_funct, look_for_n_sim, results_event_dir, output_folder, file_name,fps,dens_co, flag_manual_metsim, CI_physical_param)
+            generate_simulations(pd_dataframe_obs_real, simulation_MetSim_object, gensim_data_obs, fit_funct, look_for_n_sim, cml_args.cores, results_event_dir, output_folder, file_name,fps,dens_co, flag_manual_metsim, CI_physical_param)
 
             all_jsonfiles = get_json_files(results_event_dir)
 
@@ -6723,8 +6778,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             pd_results = pd.concat(results_list)
             # reset index
             pd_results.reset_index(drop=True, inplace=True)
-            # # type set to iteration
-            # pd_results['type'] = 'Iteration'
 
             # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
             if 'mass' in pd_results.columns:                  
@@ -6738,6 +6791,10 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
                 print('Number of simulations after dropping duplicates:',len(pd_results))
                 pd_results.reset_index(drop=True, inplace=True)
             
+            # type set to iteration
+            # pd_results['type'] = 'Iteration'
+            # pd_results['type'] = 'Simulation_sel'
+
             result_number = len(pd_results)
 
             # change all the 'type' of pd_results to the one that matches the 'solution_id' of the pd_initial_results
@@ -6749,15 +6806,28 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
                 pd_results['type'] = pd_results['solution_id'].map(solution_type_map).fillna(pd_results['type'])
                 print('Updated "type" values in pd_results based on pd_initial_results.')
 
+                # Identify rows in pd_results whose 'solution_id' is NOT in pd_initial_results
+                no_mapping_mask = ~pd_results['solution_id'].isin(solution_type_map.keys())
+                pd_results.loc[no_mapping_mask, 'type'] = 'Simulation_sel' # 'Iteration'
+                print("Set 'Simulation_sel' for rows in pd_results that have no mapping in pd_initial_results.")
+
+                # Identify rows in pd_initial_results whose 'solution_id' is NOT in pd_results
+                missing_rows_mask = ~pd_initial_results['solution_id'].isin(pd_results['solution_id'])
+                missing_rows = pd_initial_results[missing_rows_mask]
+
+                # If there are any rows with solution_ids not found in pd_results, append them
+                if not missing_rows.empty:
+                    pd_results = pd.concat([missing_rows, pd_results], ignore_index=True)
+                    print(f"Appended {len(missing_rows)} missing rows from pd_initial_results.")
+                # else:
+                #     print("No missing rows to append.")
+
             # re order all the rows based on the RMSD
             pd_results = order_base_on_both_RMSD(pd_results)
 
             # save and update the disk 
             pd_results.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS, index=False)
                 
-
-    # delete the Optimization folder
-    shutil.rmtree(output_folder+os.sep+OPTIMIZATION_FOLDER)
 
     print()
 
@@ -6892,7 +6962,7 @@ if __name__ == "__main__":
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
-    
+
     arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'',\
         help="Path were to store the results, by default the same as the input_dir.")
 
@@ -6908,10 +6978,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   
     
-    arg_parser.add_argument('--nsim_refine_step', metavar='SIM_NUM_REFINE', type=int, default=10, \
+    arg_parser.add_argument('--nsim_refine_step', metavar='NSIM_REFINE_STEP', type=int, default=5, \
         help="Minimum number of results when the interative solution search starts.")
 
-    arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=30, \
+    arg_parser.add_argument('--min_nresults', metavar='MIN_NRESULTS', type=int, default=30, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--stop_bad_manual_sol', metavar='STOP_BAD_MANUAL_SOL', type=bool, default=True, \

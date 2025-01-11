@@ -1280,35 +1280,41 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         for ax_index, var in enumerate(to_plot):
             ax = axes[ax_index]
 
+            ax.axvline(df_obs_real[var], color='black', linewidth=2)
+
             data = filtered_df[var].dropna()
             if data.empty:
                 # No data after filtering, just continue
                 continue
-
-            # make sigma multipy to ones
-            y = np.ones(len(data)) * s
-            # Compute density along the variable's values
-            x = data.values
-
-            if len(x) > 1:
-                density = gaussian_kde(x)(x)
-                # Normalize density to [0, 1]
-                density = (density - density.min()) / (density.max() - density.min())
             else:
-                # If there's only one point, set density to mid-range
-                density = np.array([0.5])
+                # make sigma multipy to ones
+                y = np.ones(len(data)) * s
+                # Compute density along the variable's values
+                x = data.values
 
-            sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
-            # make a black line vertical line at the real value
-            ax.axvline(df_obs_real[var], color='black', linewidth=2)
-            # Find the densest point (highest density)
-            densest_index = np.argmax(density)
-            densest_point = x[densest_index]
+                if len(x) > 2:
+                    density = gaussian_kde(x)(x)
+                    # Normalize density to [0, 1]
+                    density = (density - density.min()) / (density.max() - density.min())
 
-            # put a blue dot to the mean value                              
-            ax.plot(np.mean(x), s, 'bs', markersize=5) 
-            # You can now use densest_point as your "mode" or representative value
-            ax.plot(densest_point, s, 'ro', markersize=5)
+                    sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
+        
+                    # Find the densest point (highest density)
+                    densest_index = np.argmax(density)
+                    densest_point = x[densest_index]
+
+                else:
+                    # If there's only one point, set density to mid-range
+                    density = np.ones(len(data)) * 0.5
+
+                    sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
+
+                    densest_point = np.mean(x)
+
+                # put a blue dot to the mean value                              
+                ax.plot(np.mean(x), s, 'bs', markersize=5) 
+                # You can now use densest_point as your "mode" or representative value
+                ax.plot(densest_point, s, 'ro', markersize=5)
 
 
     # Set titles and labels
@@ -1328,6 +1334,8 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
         # ax.set_yticklabels(lendata_sigma)
         # put the -- in the grids
         ax.grid(True, linestyle='--', color='lightgray')
+        # set the y axis
+        ax.set_ylim([np.min(sigma_values)-np.min(sigma_values)/10, np.max(sigma_values)+np.min(sigma_values)/10])
 
     # The last subplot (axes[11]) is used for the legend only
     axes[11].axis('off')
@@ -7574,7 +7582,7 @@ if __name__ == "__main__":
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/srv/public/mvovk/1stPaper/Results_PCA-01-09',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/srv/public/mvovk/1stPaper/Results_PCA-01-10',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \

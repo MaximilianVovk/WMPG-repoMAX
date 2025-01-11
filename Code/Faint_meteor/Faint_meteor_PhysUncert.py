@@ -1492,41 +1492,48 @@ def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, out
         for ax_index, var in enumerate(to_plot):
             ax = axes[ax_index]
 
-            data = filtered_df[var].dropna()
-            if data.empty:
-                # No data after filtering, just continue
-                continue
-
-            # make sigma multipy to ones
-            y = np.ones(len(data)) * s
-            # Compute density along the variable's values
-            x = data.values
-
-            if len(x) > 1:
-                density = gaussian_kde(x)(x)
-                # Normalize density to [0, 1]
-                density = (density - density.min()) / (density.max() - density.min())
-            else:
-                # If there's only one point, set density to mid-range
-                density = np.array([0.5])
-
-            sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
-   
-            # Find the densest point (highest density)
-            densest_index = np.argmax(density)
-            densest_point = x[densest_index]
-
-            # put a blue dot to the mean value                              
-            ax.plot(np.mean(x), s, 'bs', markersize=5) 
-            # You can now use densest_point as your "mode" or representative value
-            ax.plot(densest_point, s, 'ro', markersize=5)
-
             if 'MetSim'==df_obs_real['type'].iloc[0]:
                 # make a black line vertical line at the real value
                 ax.axvline(df_obs_real[var].iloc[0], color='black', linewidth=2)
             elif 'Real'==df_obs_real['type'].iloc[0]:
                 # make a black line vertical line at the real value
                 ax.axvline(df_obs_real[var].iloc[0], color='g', linewidth=2, linestyle='--') 
+
+            data = filtered_df[var].dropna()
+            if data.empty:
+                # No data after filtering, just continue
+                continue
+            else:
+                # make sigma multipy to ones
+                y = np.ones(len(data)) * s
+                # Compute density along the variable's values
+                x = data.values
+
+                if len(x) > 2:
+                    density = gaussian_kde(x)(x)
+                    # Normalize density to [0, 1]
+                    density = (density - density.min()) / (density.max() - density.min())
+
+                    sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
+        
+                    # Find the densest point (highest density)
+                    densest_index = np.argmax(density)
+                    densest_point = x[densest_index]
+
+                else:
+                    # If there's only one point, set density to mid-range
+                    density = np.ones(len(data)) * 0.5
+
+                    sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
+
+                    densest_point = np.mean(x)
+
+                # put a blue dot to the mean value                              
+                ax.plot(np.mean(x), s, 'bs', markersize=5) 
+                # You can now use densest_point as your "mode" or representative value
+                ax.plot(densest_point, s, 'ro', markersize=5)
+    
+
 
 
     # Set titles and labels
@@ -1546,6 +1553,8 @@ def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, out
         # ax.set_yticklabels(lendata_sigma)
         # put the -- in the grids
         ax.grid(True, linestyle='--', color='lightgray')
+        # set the y axis
+        ax.set_ylim([np.min(sigma_values)-np.min(sigma_values)/10, np.max(sigma_values)+np.min(sigma_values)/10])
 
     # The last subplot (axes[11]) is used for the legend only
     axes[11].axis('off')
@@ -5591,6 +5600,14 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     check_change = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
     # while cml_args.min_nresults > result_number:
     print(cml_args.min_nresults,'results to find:')
+
+    # make dir for result_dir+os.sep+'Physical_characteristics'
+    physChar_dir = result_dir+os.sep+'Physical_characteristics'
+    mkdirP(physChar_dir)
+    # make dir for result_dir+os.sep+'Correlation_matrix'
+    corrMat_dir = result_dir+os.sep+'Correlation_matrix'
+    mkdirP(corrMat_dir)
+
     # do-while loop works th first time annd break in the if condition
     while True:
         print('Number of results:',result_number) # erosion_energy_per_unit_cross_section	erosion_energy_per_unit_mass
@@ -5608,15 +5625,15 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
         if 'solution_id' in pd_results.columns:
             print('PLOT: the physical characteristics results')
-            PhysicalPropPLOT(pd_results, pd_dataframe_ranges, result_dir, file_name)
+            PhysicalPropPLOT(pd_results, pd_dataframe_ranges, physChar_dir, file_name)
             print('PLOT: correlation matrix of the results (takes a long time)')
-            correlation_selPLOT(pd_dataframe_ranges, pd_results, result_dir)
+            correlation_selPLOT(pd_dataframe_ranges, pd_results, corrMat_dir)
             print('PLOT: best 10 results and add the RMSD value to csv selected')
             # pd_results_ordered = order_base_on_both_RMSD(pd_results)
             LightCurveCoefPLOT(pd_results, pd_dataframe_obs_real, result_dir, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,result_dir+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='lag')
             LightCurveCoefPLOT(pd_results, pd_dataframe_obs_real, result_dir, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,result_dir+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='vel')
             print('PLOT: the sigma range waterfall plot')
-            sigma_waterfallPLOT(pd_results, pd_dataframe_ranges, rmsd_pol_mag, rmsd_t0_lag, result_dir, file_name)
+            sigma_waterfallPLOT(pd_results, pd_dataframe_ranges, rmsd_pol_mag, rmsd_t0_lag/1000, result_dir, file_name)
             print()
             print('SUCCES: the physical characteristics range is in the results folder')
         else:
@@ -5731,7 +5748,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     for ii in range(len(pd_results)):
         ratio_mag = pd_results['rmsd_mag'].iloc[ii] / rmsd_pol_mag
         ratio_len = pd_results['rmsd_len'].iloc[ii] / (rmsd_t0_lag/1000)
-        calc_multiple.append(min(ratio_mag, ratio_len))
+        calc_multiple.append(max(ratio_mag, ratio_len))
     # check if multiple_rmsd present update it if not added to the pd_results
     if 'multiple_rmsd' in pd_results.columns:
         pd_results['multiple_rmsd'] = calc_multiple

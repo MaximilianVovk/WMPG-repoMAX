@@ -1387,7 +1387,7 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
 
 
 
-def plot_sigma_waterfall(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, output_directory, name_file, 
+def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, output_directory, name_file, 
                             sigma_values=[2, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0]):
     df = df_result.copy()
     sim_range_plot = df_sim_range.copy()
@@ -1605,10 +1605,8 @@ def plot_sigma_waterfall(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, ou
     # Save the figure instead of showing it
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
-    plt.savefig(os.path.join(output_directory, name_file + 'SigmaPlot_sigma'+str(np.max(sigma_values))+'max'+str(np.min(sigma_values))+'min.png'), dpi=300)
+    plt.savefig(os.path.join(output_directory, name_file + '_waterfall_sigma'+str(np.max(sigma_values))+'max'+str(np.min(sigma_values))+'min.png'), dpi=300)
     plt.close(fig)
-
-
 
 
     # if len(df_sim_shower_NEW_inter) > 0:
@@ -1917,7 +1915,7 @@ def plot_histogram_PCA_dist(df_sim_selected_all, save_folder, dist, maxcutdist=0
     plt.close()
 
 
-def plot_gray_dist(pd_datafram_PCA_selected, mindist, maxdist, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real=0.1, len_noise_real=20.0, fps=32, file_name_obs='', trajectory_Metsim_file=''):
+def plot_gray_dist(pd_datafram_PCA_selected, mindist, maxdist, distance_metric, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real=0.1, len_noise_real=20.0, fps=32, file_name_obs='', trajectory_Metsim_file=''):
     # Number of observations and selections to plot
     n_confront_obs = 1
 
@@ -1942,10 +1940,10 @@ def plot_gray_dist(pd_datafram_PCA_selected, mindist, maxdist, df_obs_shower, ou
 
     df_sel_shower = pd_datafram_PCA_selected.copy()
 
-    df_sel_shower = df_sel_shower[df_sel_shower['distance_meteor'] < maxdist]
+    df_sel_shower = df_sel_shower[df_sel_shower[distance_metric] < maxdist]
 
-    # oreder the df_sel_shower from the highest 'distance_meteor' to the lowest
-    df_sel_shower = df_sel_shower.sort_values(by='distance_meteor', ascending=False)
+    # oreder the df_sel_shower from the highest distance_metric to the lowest
+    df_sel_shower = df_sel_shower.sort_values(by=distance_metric, ascending=False)
 
     # Adjust units for erosion coefficients
     df_sel_shower['erosion_coeff'] = df_sel_shower['erosion_coeff'] * 1e6
@@ -2115,7 +2113,7 @@ def plot_gray_dist(pd_datafram_PCA_selected, mindist, maxdist, df_obs_shower, ou
             )
             residual_time_pos = interp_ht_time(height_km)
 
-            if mindist > curr_sel.iloc[ii]['distance_meteor']:
+            if mindist > curr_sel.iloc[ii][distance_metric]:
 
                 # Plot the selected simulation data
                 if Metsim_flag:
@@ -2140,13 +2138,22 @@ def plot_gray_dist(pd_datafram_PCA_selected, mindist, maxdist, df_obs_shower, ou
                 line, = ax1.plot(residual_time_pos, vel_kms, color=line_color, linewidth=0.1)
                 line, = ax3.plot(residual_time_pos, lag_m, color=line_color, linewidth=0.1)
 
-    # ax2.hist(pd_datafram_PCA_selected['distance_meteor'], bins=100, alpha=0.5, color='b') #  color='b', edgecolor='black', linewidth=1.2
-    # make the cumulative distribution of pd_datafram_PCA_selected['distance_meteor']
-    # ax2.hist(pd_datafram_PCA_selected['distance_meteor'], bins=100, alpha=0.5, color='b', cumulative=True, edgecolor='black', linewidth=1.2)
-    ax2.hist(df_sel_shower['distance_meteor'], edgecolor='black', alpha=0.5, color='b') #, cumulative=True , color='b', edgecolor='black', linewidth=1.2
+    # ax2.hist(pd_datafram_PCA_selected[distance_metric], bins=100, alpha=0.5, color='b') #  color='b', edgecolor='black', linewidth=1.2
+    # make the cumulative distribution of pd_datafram_PCA_selected[distance_metric]
+    # ax2.hist(pd_datafram_PCA_selected[distance_metric], bins=100, alpha=0.5, color='b', cumulative=True, edgecolor='black', linewidth=1.2)
+    ax2.hist(df_sel_shower[distance_metric], edgecolor='black', alpha=0.5, color='b') #, cumulative=True , color='b', edgecolor='black', linewidth=1.2
     # put a vertical line at the dist
     ax2.axvline(x=mindist, color='blue', linestyle='--', label='Real event distance')
-    ax2.set_xlabel('PC distance')
+    
+    plot_xaxis_dist = distance_metric
+    if distance_metric == 'distance_meteor':
+        plot_xaxis_dist = 'PC distance'
+    elif distance_metric == 'distance_mean':
+        plot_xaxis_dist = 'PC Mean reliz. distance'
+    elif distance_metric == 'multiple_rmsd':
+        plot_xaxis_dist = 'RMSD'
+
+    ax2.set_xlabel(plot_xaxis_dist)
     ax2.set_ylabel('Count') # Cumulative 
     # # make th y axis logarithmic
     # ax2.set_yscale('log')
@@ -2200,21 +2207,21 @@ def plot_PCA_mindist_RMSD(pd_datafram_PCA_selected_before_knee_NO_repetition_all
 
         print('PLOT: all simulations selected and max dist in gray')
         # plot all simulations selected and max in gray
-        plot_gray_dist(pd_datafram_PCA_selected_before_knee_NO_repetition_all, mindist, maxdist, pd_dataframe_PCA_obs_real, output_PCA_dist, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file)
+        plot_gray_dist(pd_datafram_PCA_selected_before_knee_NO_repetition_all, mindist, maxdist,'distance_meteor', pd_dataframe_PCA_obs_real, output_PCA_dist, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file)
 
         print('PLOT: best 10 simulations selected and add the RMSD value to csv selected')
         # order pd_datafram_PCA_selected_before_knee_NO_repetition to distance_mean
         pd_datafram_PCA_selected_before_knee_NO_repetition = pd_datafram_PCA_selected_before_knee_NO_repetition.sort_values(by=['distance_meteor'], ascending=True) # distance_mean
         # plot of the best 10 selected simulations and add the RMSD value to csv selected
-        PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_PCA_dist, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='lag', pca_N_comp=PCAn_comp)
-        PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_PCA_dist, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='vel', pca_N_comp=PCAn_comp)
+        LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_PCA_dist, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='lag', pca_N_comp=PCAn_comp)
+        LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_dataframe_PCA_obs_real, output_PCA_dist, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='vel', pca_N_comp=PCAn_comp)
 
         print('PLOT: the physical characteristics of the selected simulations Mode and KDE')
-        PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, output_PCA_dist, file_name, pca_N_comp=PCAn_comp)
+        PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, output_PCA_dist, file_name, pca_N_comp=PCAn_comp)
 
         print('PLOT: correlation of the selected simulations (takes a long time)')
         # plot correlation function of the selected simulations
-        PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition, output_PCA_dist, pca_N_comp=PCAn_comp)
+        correlation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition, output_PCA_dist, pca_N_comp=PCAn_comp)
 
         # from pd_datafram_PCA_selected_before_knee_NO_repetition delete the one that pd_datafram_PCA_selected_before_knee_NO_repetition['rmsd_mag'].iloc[i] > mag_RMSD_real or pd_datafram_PCA_selected_before_knee_NO_repetition['rmsd_len'].iloc[i] > len_RMSD_real:
         pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD = pd_datafram_PCA_selected_before_knee_NO_repetition[(pd_datafram_PCA_selected_before_knee_NO_repetition['rmsd_mag'] < mag_RMSD_real) & (pd_datafram_PCA_selected_before_knee_NO_repetition['rmsd_len'] < len_RMSD_real)]
@@ -2224,15 +2231,15 @@ def plot_PCA_mindist_RMSD(pd_datafram_PCA_selected_before_knee_NO_repetition_all
             mkdirP(PCA_RMSD_folder) 
             print('PLOT: best 10 simulations selected and add the RMSD value to csv selected')
             # plot of the best 10 selected simulations and add the RMSD value to csv selected
-            PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, pd_dataframe_PCA_obs_real, PCA_RMSD_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='lag', pca_N_comp=PCAn_comp)
-            PCA_LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, pd_dataframe_PCA_obs_real, PCA_RMSD_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='vel', pca_N_comp=PCAn_comp)
+            LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, pd_dataframe_PCA_obs_real, PCA_RMSD_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='lag', pca_N_comp=PCAn_comp)
+            LightCurveCoefPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, pd_dataframe_PCA_obs_real, PCA_RMSD_folder, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file, vel_lagplot='vel', pca_N_comp=PCAn_comp)
 
             print('PLOT: the physical characteristics of the selected simulations Mode and KDE')
-            PCA_PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, pd_datafram_PCA_sim, PCA_RMSD_folder, file_name, pca_N_comp=PCAn_comp)
+            PhysicalPropPLOT(pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, pd_datafram_PCA_sim, PCA_RMSD_folder, file_name, pca_N_comp=PCAn_comp)
 
             print('PLOT: correlation of the selected simulations (takes a long time)')
             # plot correlation function of the selected simulations
-            PCAcorrelation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, PCA_RMSD_folder, pca_N_comp=PCAn_comp)
+            correlation_selPLOT(pd_datafram_PCA_sim, pd_datafram_PCA_selected_before_knee_NO_repetition_RMSD, PCA_RMSD_folder, pca_N_comp=PCAn_comp)
     else:
         print('Results already present or No selected simulations below min PCA distance',mindist)
 
@@ -3301,215 +3308,109 @@ def update_sigma_values(file_path, mag_sigma, len_sigma, More_complex_fit=False,
     print('modified options file:', file_path)
 
 
+def CI_range_gen_sim(pd_results, ii_repeat, old_results_number):
 
+    result_number = len(pd_results)
 
-########## Distance ##########################
-
-# Function to find the knee of the distance plot
-def find_knee_dist_index(data_meteor_pd, window_of_smothing_avg=3, std_multip_threshold=1, output_path='', around_meteor='', N_sim_sel_force=0, data_meteor_pd_sel='distance_meteor', find_closest_results=False):
-    
-    # check if 'distance_meteor' is in the columns of data_for_meteor
-    # if 'distance_meteor' in data_meteor_pd.columns:
-    #     dist_for_meteor=np.array(data_meteor_pd['distance_meteor'])
-    if data_meteor_pd_sel in data_meteor_pd.columns:
-        dist_for_meteor=np.array(data_meteor_pd[data_meteor_pd_sel])
-    else:
-        print('Neither distance_meteor nor',data_meteor_pd_sel,'in the columns')
-        return 0
-
-    #make subtraction of the next element and the previous element of data_for_meteor["distance_meteor"]
-    # diff_distance_meteor = np.diff(dist_for_meteor[:int(len(dist_for_meteor)/10)])
-    diff_distance_meteor = np.diff(dist_for_meteor)
-
-    # histogram plot of the difference with the count on the x axis and diff_distance_meteor on the y axis 
-    indices = np.arange(len(diff_distance_meteor))
-
-    # create the cumulative sum of the diff_distance_meteor
-    cumsum_diff_distance_meteor = np.cumsum(diff_distance_meteor)
-    # check if any diff_distance_meteor is negative if so take the abs
-    # if np.any(diff_distance_meteor<0):
-    #     # diff_distance_meteor = dist_for_meteor-min(dist_for_meteor)
-    #     # # delete the 0 values
-    #     # diff_distance_meteor = diff_distance_meteor[diff_distance_meteor!=0]
-
-    #     diff_distance_meteor = np.abs(diff_distance_meteor)
-
-    # normalize the diff_distance_meteor xnormalized = (x - xminimum) / range of x
-    diff_distance_meteor_normalized = (diff_distance_meteor - np.min(diff_distance_meteor)) / (np.max(diff_distance_meteor) - np.min(diff_distance_meteor))
-
-    def moving_average_smoothing(data, window_size):
-        smoothed_data = np.convolve(data, np.ones(window_size)/window_size, mode='same')
-        return smoothed_data
-
-    # apply the smoothing function
-    smoothed_diff_distance_meteor = moving_average_smoothing(diff_distance_meteor_normalized, window_of_smothing_avg)
-    
-    if find_closest_results==False:
-        # fid the first value of the smoothed_diff_distance_meteor that is smaller than the std of the smoothed_diff_distance_meteor
-        index10percent = np.where(smoothed_diff_distance_meteor < np.std(smoothed_diff_distance_meteor)*std_multip_threshold)[0][0]
-    elif find_closest_results==True:
-        # oppositely we want a way to get the most close to each other results
-        # find the first value of the smoothed_diff_distance_meteor that is above than the std of the smoothed_diff_distance_meteor
-        index10percent = np.where(smoothed_diff_distance_meteor > np.std(smoothed_diff_distance_meteor)*std_multip_threshold)[0][0]
-        
-    # if data_meteor_pd_sel=='distance_meteor':
-    #     index10percent = index10percent-2
-    # else:
-    #     index10percent = index10percent-1
-    index10percent = index10percent-1
-
-    if N_sim_sel_force!=0:
-        index10percent = N_sim_sel_force
-
-    if index10percent<0: # below does not work problem with finding the mode on KDE later on
-        index10percent=0
-
-    if output_path!='':
-
-        # Define a custom palette
-        custom_palette_orange = {
-            'Real': "darkorange",
-            'Simulation': "blue",
-            'Simulation_sel': "darkorange",
-            'MetSim': "darkorange",
-            'Realization': "darkorange",
-            'Observation': "darkorange"
+    # check if only 1 in len
+    if result_number == 1:
+        print('Only one result found')
+        # create a dictionary with the physical parameters
+        CI_physical_param = {
+            'vel_180km': [pd_results['vel_180km'].values[0], pd_results['vel_180km'].values[0]],
+            'zenith_angle': [pd_results['zenith_angle'].values[0], pd_results['zenith_angle'].values[0]],
+            'mass': [pd_results['mass'].values[0], pd_results['mass'].values[0]],
+            'rho': [pd_results['rho'].values[0], pd_results['rho'].values[0]],
+            'sigma': [pd_results['sigma'].values[0], pd_results['sigma'].values[0]],
+            'erosion_height_start': [pd_results['erosion_height_start'].values[0], pd_results['erosion_height_start'].values[0]],
+            'erosion_coeff': [pd_results['erosion_coeff'].values[0], pd_results['erosion_coeff'].values[0]],
+            'erosion_mass_index': [pd_results['erosion_mass_index'].values[0], pd_results['erosion_mass_index'].values[0]],
+            'erosion_mass_min': [pd_results['erosion_mass_min'].values[0], pd_results['erosion_mass_min'].values[0]],
+            'erosion_mass_max': [pd_results['erosion_mass_max'].values[0], pd_results['erosion_mass_max'].values[0]]
         }
 
-        # dimension of the plot 15,5
-        plt.figure(figsize=(15,5))
-        if data_meteor_pd_sel!='distance_meteor':
-            data_meteor_pd['type'] = 'Simulation'
-
-        plt.subplot(1,2,2)
-        sns.histplot(data_meteor_pd, x=data_meteor_pd_sel, hue="type", kde=True, cumulative=True, bins=len(dist_for_meteor), palette=custom_palette_orange) # , stat='density' to have probability        
-        if data_meteor_pd_sel=='distance_meteor':
-            # plt.title('Cumulative distance in PCA space')
-            plt.xlabel('Distance in PCA space')
-            plt.axvline(x=(dist_for_meteor[index10percent]), color="darkorange", linestyle='--', label='Knee distance')
-        else:
-            # plt.title('Cumulative '+data_meteor_pd_sel)
-            plt.xlabel(data_meteor_pd_sel)
-            plt.axvline(x=(dist_for_meteor[index10percent]), color="blue", linestyle='--', label='Knee distance')
-        plt.ylabel('Count')            
-
-        if len(dist_for_meteor)>100:
-            plt.ylim(0,100) 
-        elif len(dist_for_meteor)>50:
-            plt.ylim(0,50)
-        
-        plt.legend()
-        # delete the legend
-        plt.legend().remove()
-
-
-        plt.subplot(1,2,1)
-        # sns.histplot(diff_distance_meteor_normalized, kde=True, bins=len(distance_meteor_sel_save))
-        #make the bar plot 0.5 transparency
-        if data_meteor_pd_sel=='distance_meteor':
-            plt.bar(indices, diff_distance_meteor_normalized,color="darkorange", alpha=0.5, edgecolor='black')
-            # plt.title('Distance difference Normalized')
-            # put a horizontal line at len(curr_sel['distance_meteor'])
-            plt.axvline(x=index10percent, color="darkorange", linestyle='--') 
-        else:
-            plt.bar(indices, diff_distance_meteor_normalized,color="blue", alpha=0.5, edgecolor='black')
-            # plt.title(data_meteor_pd_sel+' Normalized from the mean of the selected shower')
-            # put a horizontal line at len(curr_sel['distance_meteor'])
-            plt.axvline(x=index10percent, color="blue", linestyle='--') 
-        plt.xlabel('Count')
-        plt.ylabel('Normalized difference')
-
-        if len(dist_for_meteor)>100:
-            plt.xlim(-1,100) 
-        elif len(dist_for_meteor)>50:
-            plt.xlim(-1,50)
-
-        # find the mean of the first 100 elements of diff_distance_meteor_normalized and put a horizontal line
-        # plt.axhline(y=np.std(smoothed_diff_distance_meteor), color="darkorange", linestyle='--')
-
-        # set a sup title
-        # plt.suptitle(around_meteor)
-
-        # give more space
-        plt.tight_layout()  
-        # plt.show()
-        if data_meteor_pd_sel == 'distance_meteor':
-            plt.savefig(output_path+os.sep+around_meteor+os.sep+around_meteor+'_knee'+str(index10percent+1)+'ev_MAXdist'+str(np.round(dist_for_meteor[index10percent],2))+'.png', dpi=300)
-        else:
-            # save the figure maximized and with the right name
-            plt.savefig(output_path+os.sep+around_meteor+'_knee'+str(index10percent+1)+'ev_MAXdist'+str(np.round(dist_for_meteor[index10percent],2))+'.png', dpi=300)
-
-        # close the figure
-        plt.close()
-
-    return index10percent
-
-# function to use the mahaloby distance and from the mean of the selected shower
-def dist_PCA_space_select_sim_knee(df_sim_PCA, shower_current_PCA_single, cov_inv, meanPCA_current, df_sim_shower, shower_current_single, N_sim_sel_force=0, output_dir=''):
-    N_sim_sel_all=50
-    print('calculate distance for',shower_current_single['solution_id'])
-
-    df_sim_PCA_for_now = df_sim_PCA.drop(['type'], axis=1).values
-
-    distance_current = []
-    for i_sim in range(len(df_sim_PCA_for_now)):
-        distance_current.append(mahalanobis_distance(df_sim_PCA_for_now[i_sim], shower_current_PCA_single, cov_inv))
-
-    # create an array with lenght equal to the number of simulations and set it to shower_current_PCA['solution_id'][i_shower]
-    solution_id_dist = [shower_current_single['solution_id']] * len(df_sim_PCA_for_now)
-    df_sim_shower['solution_id_dist'] = solution_id_dist
-    df_sim_shower['distance_meteor'] = distance_current
-    # sort the distance and select the n_selected closest to the meteor
-    df_sim_shower_dis = df_sim_shower.sort_values(by=['distance_meteor']).reset_index(drop=True)
-    df_sim_selected = df_sim_shower_dis.drop(['type'], axis=1)
-    df_sim_selected['type'] = 'Simulation_sel'
-
-    # create a dataframe with the selected simulated shower characteristics
-    df_sim_PCA_dist = df_sim_PCA
-    df_sim_PCA_dist['distance_meteor'] = distance_current
-    df_sim_PCA_dist = df_sim_PCA_dist.sort_values(by=['distance_meteor']).reset_index(drop=True)
-    # delete the shower code
-    df_sim_selected_PCA = df_sim_PCA_dist.drop(['type','distance_meteor'], axis=1)
-
-    # make df_sim_selected_PCA an array
-    df_sim_selected_PCA = df_sim_selected_PCA.values
-    distance_current_mean = []
-    # for i_shower in range(len(df_sim_selected)):
-    #     distance_current_mean.append(scipy.spatial.distance.euclidean(meanPCA_current, df_sim_selected_PCA[i_shower]))
-    for i_shower in range(len(df_sim_selected)):
-        distance_current_mean.append(mahalanobis_distance(df_sim_selected_PCA[i_shower], meanPCA_current, cov_inv))
-    df_sim_selected['distance_mean']=distance_current_mean # from the mean of the selected shower
-
-    df_sim_selected.insert(1, 'distance_mean', df_sim_selected.pop('distance_mean'))
-    df_sim_selected.insert(1, 'distance_meteor', df_sim_selected.pop('distance_meteor'))
-    df_sim_selected.insert(1, 'solution_id_dist', df_sim_selected.pop('solution_id_dist'))
-    df_sim_selected.insert(1, 'type', df_sim_selected.pop('type'))
-
-    df_curr_sel_curv = df_sim_selected.copy()
-    df_curr_sel_curv = df_curr_sel_curv[:N_sim_sel_all]
-
-    around_meteor=shower_current_single['solution_id']
-    # check if around_meteor is a file in a folder
-    if os.path.exists(around_meteor):
-        # split in file and directory
-        _, around_meteor = os.path.split(around_meteor)
-        around_meteor = around_meteor[:15]
-
-    mkdirP(output_dir+os.sep+around_meteor)
-    window_of_smothing_avg=1
-    std_multip_threshold=1
-    if N_sim_sel_force!=0:
-        print(around_meteor,'select the best',N_sim_sel_force,'simulations')
-        dist_to_cut=find_knee_dist_index(df_curr_sel_curv,window_of_smothing_avg,std_multip_threshold, output_dir, around_meteor, N_sim_sel_force)
-        # change of curvature print
-        df_curr_sel_curv=df_curr_sel_curv.iloc[:dist_to_cut]
     else:
-        dist_to_cut=find_knee_dist_index(df_curr_sel_curv,window_of_smothing_avg,std_multip_threshold, output_dir, around_meteor)
-        print(around_meteor,'index of the knee distance',dist_to_cut+1)
-        # change of curvature print
-        df_curr_sel_curv=df_curr_sel_curv.iloc[:dist_to_cut+1]
+        print('Number of results found:',len(pd_results))
+        columns_physpar = ['vel_180km','zenith_angle','mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
+            'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
+        
+        if ii_repeat > 1 and old_results_number == result_number:
+        ###############################################################################
+            # try to focus on the one that have good results
+            
+            # Calculate the quantiles
+            quantiles = pd_results[columns_physpar].quantile([0.2, 0.8])
 
-    return df_sim_selected, df_curr_sel_curv
+            # Convert the quantiles to a dictionary
+            CI_physical_param = {col: quantiles[col].tolist() for col in columns_physpar}
+
+        ###############################################################################
+        else:
+            # try and look for other results that might be around
+
+            # Calculate the quantiles
+            quantiles = pd_results[columns_physpar].quantile([0.1, 0.9])
+
+            # Get the minimum and maximum values
+            min_val = pd_results[columns_physpar].min()
+            max_val = pd_results[columns_physpar].max()
+
+            # Calculate the extended range using the logic provided
+            extended_min = min_val - (quantiles.loc[0.1] - min_val)
+            # consider the value extended_min<0 Check each column in extended_min and set to min_val if negative
+            for col in columns_physpar:
+                if extended_min[col] < 0:
+                    extended_min[col] = min_val[col]
+            extended_max = max_val + (max_val - quantiles.loc[0.9])
+
+            # Convert the extended range to a dictionary
+            CI_physical_param = {col: [extended_min[col], extended_max[col]] for col in columns_physpar}
+        
+        ###############################################################################
+
+
+    # check if v_init_180km are the same value
+    if CI_physical_param['vel_180km'][0] == CI_physical_param['vel_180km'][1]:
+        CI_physical_param['vel_180km'] = [CI_physical_param['vel_180km'][0] - CI_physical_param['vel_180km'][0]/1000, CI_physical_param['vel_180km'][1] + CI_physical_param['vel_180km'][1]/1000]
+    if CI_physical_param['zenith_angle'][0] == CI_physical_param['zenith_angle'][1]:
+        CI_physical_param['zenith_angle'] = [CI_physical_param['zenith_angle'][0] - CI_physical_param['zenith_angle'][0]/10000, CI_physical_param['zenith_angle'][1] + CI_physical_param['zenith_angle'][1]/10000]
+    if CI_physical_param['mass'][0] == CI_physical_param['mass'][1]:
+        CI_physical_param['mass'] = [CI_physical_param['mass'][0] - CI_physical_param['mass'][0]/10, CI_physical_param['mass'][1] + CI_physical_param['mass'][1]/10]
+    if np.round(CI_physical_param['rho'][0]/100) == np.round(CI_physical_param['rho'][1]/100):
+        if CI_physical_param['rho'][0] - 100<0:
+            CI_physical_param['rho'] = [CI_physical_param['rho'][0]/10, CI_physical_param['rho'][1] + 100]
+        else:
+            CI_physical_param['rho'] = [CI_physical_param['rho'][0] - 100, CI_physical_param['rho'][1] + 100] # - CI_physical_param['rho'][0]/5
+    if CI_physical_param['sigma'][0] == CI_physical_param['sigma'][1]:
+        CI_physical_param['sigma'] = [CI_physical_param['sigma'][0] - CI_physical_param['sigma'][0]/10, CI_physical_param['sigma'][1] + CI_physical_param['sigma'][1]/10]
+    if CI_physical_param['erosion_height_start'][0] == CI_physical_param['erosion_height_start'][1]:
+        CI_physical_param['erosion_height_start'] = [CI_physical_param['erosion_height_start'][0] - CI_physical_param['erosion_height_start'][0]/100, CI_physical_param['erosion_height_start'][1] + CI_physical_param['erosion_height_start'][1]/100]
+    if CI_physical_param['erosion_coeff'][0] == CI_physical_param['erosion_coeff'][1]:
+        CI_physical_param['erosion_coeff'] = [CI_physical_param['erosion_coeff'][0] - CI_physical_param['erosion_coeff'][0]/10, CI_physical_param['erosion_coeff'][1] + CI_physical_param['erosion_coeff'][1]/10]
+    if CI_physical_param['erosion_mass_index'][0] == CI_physical_param['erosion_mass_index'][1]:
+        CI_physical_param['erosion_mass_index'] = [CI_physical_param['erosion_mass_index'][0] - CI_physical_param['erosion_mass_index'][0]/10, CI_physical_param['erosion_mass_index'][1] + CI_physical_param['erosion_mass_index'][1]/10]
+    if CI_physical_param['erosion_mass_min'][0] == CI_physical_param['erosion_mass_min'][1]:
+        CI_physical_param['erosion_mass_min'] = [CI_physical_param['erosion_mass_min'][0] - CI_physical_param['erosion_mass_min'][0]/10, CI_physical_param['erosion_mass_min'][1] + CI_physical_param['erosion_mass_min'][1]/10]
+    if CI_physical_param['erosion_mass_max'][0] == CI_physical_param['erosion_mass_max'][1]:
+        CI_physical_param['erosion_mass_max'] = [CI_physical_param['erosion_mass_max'][0] - CI_physical_param['erosion_mass_max'][0]/10, CI_physical_param['erosion_mass_max'][1] + CI_physical_param['erosion_mass_max'][1]/10]
+        
+
+    # Multiply the 'erosion_height_start' values by 1000
+    CI_physical_param['erosion_height_start'] = [x * 1000 for x in CI_physical_param['erosion_height_start']]
+
+    return CI_physical_param
+
+def get_json_files(results_event_dir):
+    json_files = []
+    for file_name in os.listdir(results_event_dir):
+        if file_name.endswith('.json'):
+            json_files.append(results_event_dir+os.sep+file_name)
+    return json_files
+
+
+
+
+
 
 
 
@@ -4337,7 +4238,7 @@ def process_PCA_variables(variable_PCA, No_var_PCA, df_obs_shower, df_sim_shower
     return df_sim_shower, variable_PCA, outliers
 
 
-def PCAcorrelation_selPLOT(pd_dataframe_ranges, curr_sel, output_dir='', pca_N_comp=0):
+def correlation_selPLOT(pd_dataframe_ranges, curr_sel, output_dir='', pca_N_comp=0):
 
     pd_dataframe_ranges=pd_dataframe_ranges.copy()        
 
@@ -4487,568 +4388,9 @@ class TimeLimitedObjective:
         return self.func(x)
 
 
-def PCA_physicalProp_KDE_MODE_PLOT(df_sim, df_obs, df_sel, data_file_real, fit_funct, mag_noise_real, len_noise_real, mag_RMSD, len_RMSD, fps=32, Metsim_folderfile_json='', file_name_obs='', folder_file_name_real='', output_dir='', save_results_folder_events_plots='', total_distribution=False, save_log=False):
-    try:
-        output_dir_OG=output_dir
 
-        pd_datafram_PCA_selected_mode_min_KDE=pd.DataFrame()
 
-        mag_noise = mag_noise_real.copy()
-        len_noise = len_noise_real.copy()
-
-        # # Standard deviation of the magnitude Gaussian noise 1 sigma
-        # # SD of noise in length [m] 1 sigma in km
-        len_noise= len_noise/1000
-        # velocity noise 1 sigma km/s
-        vel_noise = (len_noise*np.sqrt(2)/(1/fps))
-        # vel_noise = (len_noise/(1/fps))
-
-        _, _, _, _, _, _, residuals_mag_real, residuals_vel_real, lag_differences_real, residual_time_pos_real, residual_height_pos_real , _ = RMSD_calc_diff(fit_funct, data_file_real)
-
-        if total_distribution:
-            df_sel['solution_id_dist'] = df_obs['solution_id'].iloc[0]
-            df_obs=df_obs.iloc[[0]]
-
-        # Get the default color cycle
-        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
-        # Create an infinite cycle of colors
-        infinite_color_cycle = itertools.cycle(color_cycle)
-
-        for jj in range(len(df_obs)):
-            
-            around_meteor=df_obs.iloc[jj]['solution_id']
-            curr_sel = df_sel[df_sel['solution_id_dist'] == around_meteor]
-            curr_sel['erosion_coeff']=curr_sel['erosion_coeff']*1000000
-            curr_sel['sigma']=curr_sel['sigma']*1000000
-
-            # check if around_meteor is a file in a folder
-            is_real=False
-            if os.path.exists(around_meteor):
-                is_real=True
-                # split in file and directory
-                _, around_meteor = os.path.split(around_meteor)
-                around_meteor = around_meteor[:15]
-
-            if total_distribution==False:
-                output_dir=output_dir_OG+os.sep+OPTIMIZATION_FOLDER+os.sep+around_meteor
-
-            image_name = around_meteor+'_MODE_DensPoint.png'
-
-            densest_point = ''
-
-            print('Number of selected events:',len(curr_sel))
-
-            if len(curr_sel)<2:
-                print('Check if the event is below RMSD')
-                ii=0
-                Metsim_flag=False
-                try:
-                    namefile_sel = curr_sel['solution_id'].iloc[ii]
-                except IndexError:
-                    # Handle the error
-                    print(f"Index {ii} is out of bounds for 'solution_id' in curr_sel.")
-                    namefile_sel = None
-                    plt.close()
-                    continue
-                # namefile_sel = curr_sel['solution_id'].iloc[ii]
-                
-                # chec if the file exist
-                if not os.path.isfile(namefile_sel):
-                    print('file '+namefile_sel+' not found')
-                    plt.close()
-                    continue
-
-                else:
-                    if namefile_sel.endswith('.pickle'):
-                        data_file = read_pickle_reduction_file(namefile_sel)
-                        pd_datafram_PCA_sim = array_to_pd_dataframe_PCA(data_file, data_file_real)
-
-                    elif namefile_sel.endswith('.json'):
-                        # open the json file with the name namefile_sel 
-                        f = open(namefile_sel,"r")
-                        data = json.loads(f.read())
-                        if 'ht_sampled' in data:
-                            data_file = read_GenerateSimulations_output(namefile_sel, data_file_real)
-                            pd_datafram_PCA_sim = array_to_pd_dataframe_PCA(data_file, data_file_real)
-
-                        else:
-                            Metsim_flag=True
-                            _, data_file, pd_datafram_PCA_sim = run_simulation(namefile_sel, data_file_real, fit_funct)
-                
-                chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_km_sim = RMSD_calc_diff(data_file, data_file_real)
-
-                # Interpolation on the fit data's height grid
-                interp_ht_time = interp1d(data_file_real['height'], data_file_real['time'], kind='linear', bounds_error=False, fill_value='extrapolate')
-                # Interpolated fit on data grid
-                sim_time_pos = interp_ht_time(data_file['height'])
-
-                # copy the data to the mode
-                data_file_sim = data_file.copy()
-                data_file_sim['time'] = sim_time_pos
-                data_file_sim['res_absolute_magnitudes'] = residuals_mag
-                data_file_sim['res_velocities'] = residuals_vel
-                data_file_sim['res_lag'] = residuals_len * 1000
-                data_file_sim['lag'] = lag_km_sim * 1000
-                data_file_sim['rmsd_mag'] = rmsd_mag
-                data_file_sim['rmsd_vel'] = rmsd_vel
-                data_file_sim['rmsd_len'] = rmsd_lag
-                data_file_sim['chi2_red_mag'] = chi2_red_mag
-                data_file_sim['chi2_red_len'] = chi2_red_len
-
-                color_line=next(infinite_color_cycle)
-
-                if Metsim_flag:
-                    plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir, data_file_sim, 'Metsim')
-                else:
-                    plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir, data_file_sim)
-
-                _, name_file = os.path.split(curr_sel['solution_id'].iloc[ii])
-                if curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD and curr_sel.iloc[ii]['rmsd_len']<len_RMSD: # and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
-                    shutil.copy(curr_sel['solution_id'].iloc[ii], output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+name_file)
-
-                    pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
-
-                    shutil.copy(output_dir+os.sep+image_name, output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+image_name)
-
-                curr_sel['erosion_coeff']=curr_sel['erosion_coeff']/1000000
-                curr_sel['sigma']=curr_sel['sigma']/1000000
-
-                PCA_PhysicalPropPLOT(curr_sel, df_sim, output_dir, file_name_obs, densest_point, save_log)
-
-                # return pd_datafram_PCA_selected_mode_min_KDE    
-                                
-            else:
-
-                print('compute the MODE and KDE for the selected meteors',around_meteor)
-                var_kde = ['vel_180km','zenith_angle','mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
-
-                # create the dataframe with the selected variable
-                curr_sel_data = curr_sel[var_kde].values
-
-                if len(curr_sel) > 10:
-
-                    try:
-                        kde = gaussian_kde(dataset=curr_sel_data.T)  # Note the transpose to match the expected input shape
-
-                        # Negative of the KDE function for optimization
-                        def neg_density(x):
-                            return -kde(x)
-
-                        # Bounds for optimization within the simulation space
-                        bounds = [(np.min(curr_sel_data[:, i]), np.max(curr_sel_data[:, i])) for i in range(curr_sel_data.shape[1])]
-
-                        # Initial guesses: mean, median, and KMeans centroids
-                        mean_guess = np.mean(curr_sel_data, axis=0)
-                        median_guess = np.median(curr_sel_data, axis=0)
-                        kmeans = KMeans(n_clusters=5, n_init='auto').fit(curr_sel_data)
-                        centroids = kmeans.cluster_centers_
-
-                        initial_guesses = [mean_guess, median_guess] + centroids.tolist()
-
-                        # Time limit in seconds
-                        time_limit = 1  # Set to 1 second per optimization
-
-                        results = []
-                        for x0 in initial_guesses:
-                            try:
-                                # Wrap the neg_density function to enforce the time limit
-                                time_limited_neg_density = TimeLimitedObjective(neg_density, time_limit)
-                                result = minimize(
-                                    time_limited_neg_density,
-                                    x0,
-                                    method='Powell', #  L-BFGS-B
-                                    bounds=bounds,
-                                    options={'maxfun': 1000}  # maxfun ensures function evaluations are capped
-                                )
-                                results.append(result)
-                            except TimeoutError:
-                                print(f"Optimization for initial guess {x0} stopped due to time limit.")
-
-                        # Filter out successful optimizations
-                        successful_results = [res for res in results if res.success]
-
-                        if successful_results:
-                            best_result = min(successful_results, key=lambda x: x.fun)
-                            densest_point = best_result.x
-                            print("Densest point found using optimization:\n", densest_point)
-
-                        # else:
-                        #     print('Optimization was unsuccessful. Trying fallback strategy (Grid Search).')
-
-                        #     # Fallback strategy: Grid Search
-                        #     grid_size = 5
-                        #     grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
-                        #     grid_combinations = list(itertools.product(*grid_points))
-
-                        #     best_grid_point = None
-                        #     best_grid_density = -np.inf
-
-                        #     for point in grid_combinations:
-                        #         density = kde(point)
-                        #         if density > best_grid_density:
-                        #             best_grid_density = density
-                        #             best_grid_point = point
-
-                        #     if best_grid_point is not None:
-                        #         densest_point = np.array(best_grid_point)
-                        #         print("Densest point found using Grid Search:\n", densest_point)
-                        #     else:
-                        #         print("None of the strategies worked. No KDE result. Change the selected simulations.")
-                        # else:
-                        #     print('Optimization was unsuccessful. Trying fallback strategy (Grid Search).')
-
-                        #############################################
-
-                        #     # Fallback strategy: Grid Search
-                        #     grid_size = 5
-                        #     grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
-                        #     grid_combinations = list(itertools.product(*grid_points))
-
-                        #     best_grid_point = None
-                        #     best_grid_density = -np.inf
-
-                        #     for point in grid_combinations:
-                        #         density = kde(point)
-                        #         if density > best_grid_density:
-                        #             best_grid_density = density
-                        #             best_grid_point = point
-
-                        #     if best_grid_point is not None:
-                        #         densest_point = np.array(best_grid_point)
-                        #         print("Densest point found using Grid Search:\n", densest_point)
-                        #     else:
-                        #         print("None of the strategies worked. No KDE result. Change the selected simulations.")
-                    except np.linalg.LinAlgError as e:
-                        print(f"LinAlgError: {str(e)}")
-
-
-                    # try:
-
-                    #     kde = gaussian_kde(dataset=curr_sel_data.T)  # Note the transpose to match the expected input shape
-
-                    #     # Negative of the KDE function for optimization
-                    #     def neg_density(x):
-                    #         return -kde(x)
-
-                    #     # Bounds for optimization within all the sim space
-                    #     # data_sim = df_sim[var_kde].values
-                    #     bounds = [(np.min(curr_sel_data[:, i]), np.max(curr_sel_data[:, i])) for i in range(curr_sel_data.shape[1])]
-
-                    #     # Initial guesses: curr_sel_data mean, curr_sel_data median, and KMeans centroids
-                    #     mean_guess = np.mean(curr_sel_data, axis=0)
-                    #     median_guess = np.median(curr_sel_data, axis=0)
-
-                    #     # KMeans centroids as additional guesses 
-                    #     # # might be better not to get stuck in loops kmeans = KMeans(n_clusters=2, n_init=10).fit(curr_sel_data)
-                    #     kmeans = KMeans(n_clusters=5, n_init='auto').fit(curr_sel_data)  # Adjust n_clusters based on your understanding of the curr_sel_data
-                    #     centroids = kmeans.cluster_centers_
-
-                    #     # Combine all initial guesses
-                    #     initial_guesses = [mean_guess, median_guess] + centroids.tolist()
-
-                    #     # # Perform optimization from each initial guess
-                    #     # results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds) for x0 in initial_guesses]
-
-                    #     # Set options for the optimizer
-                    #     options = {'maxiter': 1000}  # Adjust maxiter as needed
-
-                    #     # Modify the minimize calls to include options so to not getting stuck in infinite loops
-                    #     results = [minimize(neg_density, x0, method='L-BFGS-B', bounds=bounds, options=options) for x0 in initial_guesses]
-
-                    #     # Filter out unsuccessful optimizations and find the best result
-                    #     successful_results = [res for res in results if res.success]
-
-                    #     if successful_results:
-                    #         best_result = min(successful_results, key=lambda x: x.fun)
-                    #         densest_point = best_result.x
-                    #         print("Densest point using KMeans centroid:\n", densest_point)
-                    #     else:
-                    #         # raise ValueError('Optimization was unsuccessful. Consider revising the strategy.')
-                    #         print('Optimization was unsuccessful. Consider revising the strategy.')
-                    #         # revise the optimization strategy
-                    #         print('Primary optimization strategies were unsuccessful. Trying fallback strategy (Grid Search).')
-                    #         # Fallback strategy: Grid Search
-                    #         grid_size = 5  # Define the grid size for the search
-                    #         grid_points = [np.linspace(bound[0], bound[1], grid_size) for bound in bounds]
-                    #         grid_combinations = list(itertools.product(*grid_points))
-
-                    #         best_grid_point = None
-                    #         best_grid_density = -np.inf
-
-                    #         for point in grid_combinations:
-                    #             density = kde(point)
-                    #             if density > best_grid_density:
-                    #                 best_grid_density = density
-                    #                 best_grid_point = point
-
-                    #         if best_grid_point is not None:
-                    #             densest_point = np.array(best_grid_point)
-                    #             print("Densest point found using Grid Search:\n", densest_point)
-                    #         else:
-                    #             print("None of the strategy worked no KDE result, change the selected simulations")
-                    # except np.linalg.LinAlgError as e:
-                    #     print(f"LinAlgError: {str(e)}")
-                else:
-                    print('Not enough data to perform the KDE need more than 10 meteors')
-        
-                # if pickle change the extension and the code ##################################################################################################
-                if Metsim_folderfile_json != '':
-                    # Load the nominal simulation parameters
-                    const_nominal, _ = loadConstants(Metsim_folderfile_json)
-                else:
-                    const_nominal, _ = loadConstants()
-
-                const_nominal.dens_co = np.array(const_nominal.dens_co)
-
-                dens_co=np.array(const_nominal.dens_co)
-
-                # print(const_nominal.__dict__)
-
-                ### Calculate atmosphere density coeffs (down to the bottom observed height, limit to 15 km) ###
-
-                # Determine the height range for fitting the density
-                dens_fit_ht_beg = const_nominal.h_init
-                # dens_fit_ht_end = const_nominal.h_final
-
-                # Assign the density coefficients
-                const_nominal.dens_co = dens_co
-
-                # Turn on plotting of LCs of individual fragments 
-                const_nominal.fragmentation_show_individual_lcs = True
-
-                # # change the sigma of the fragmentation
-                # const_nominal.sigma = 1.0
-
-                # 'rho': 209.27575861617834, 'm_init': 1.3339843905562902e-05, 'v_init': 59836.848805126894, 'shape_factor': 1.21, 'sigma': 1.387556841276162e-08, 'zenith_angle': 0.6944268835985749, 'gamma': 1.0, 'rho_grain': 3000, 'lum_eff_type': 5, 'lum_eff': 0.7, 'mu': 3.8180000000000003e-26, 'erosion_on': True, 'erosion_bins_per_10mass': 10, 'erosion_height_start': 117311.48011974395, 'erosion_coeff': 6.356639734390828e-07, 'erosion_height_change': 0, 'erosion_coeff_change': 3.3e-07, 'erosion_rho_change': 3700, 'erosion_sigma_change': 2.3e-08, 'erosion_mass_index': 1.614450928834309, 'erosion_mass_min': 4.773894502090459e-11, 'erosion_mass_max': 7.485333377052805e-10, 'disruption_on': False, 'compressive_strength': 2000, 
-
-                # create a copy of the const_nominal
-                const_nominal_1D_KDE = copy.deepcopy(const_nominal)
-                const_nominal_allD_KDE = copy.deepcopy(const_nominal)
-
-                var_cost=['v_init','zenith_angle','m_init','rho','sigma','erosion_height_start','erosion_coeff','erosion_mass_index','erosion_mass_min','erosion_mass_max']
-                # print for each variable the kde
-                percent_diff_1D=[]
-                percent_diff_allD=[]
-                for i in range(len(var_kde)):
-                    x = curr_sel[var_kde[i]]
-
-                    # Check if dataset has multiple elements
-                    if len(x) < 2:
-                        # If dataset has fewer than 2 elements, duplicate the single element or skip
-                        print(f"Dataset for {var_kde[i]} has less than 2 elements. Duplicating elements to compute KDE.")
-                        x = pd.concat([x, x])  # Duplicate elements to have at least two
-
-                    # Check if variance is zero
-                    if np.var(x) == 0:
-                        print(f"Dataset for {var_kde[i]} has zero variance. Skipping KDE computation.")
-                        mode = x.iloc[0]
-                        print(f"Since variance is zero, setting mode to the single data value: {mode}")
-                    else:
-                        try:
-                            # Compute KDE
-                            kde = gaussian_kde(x)
-                            # Define the range for which you want to compute KDE values
-                            kde_x = np.linspace(x.min(), x.max(), 1000)
-                            kde_values = kde(kde_x)
-                            # Find the mode (x-value where the KDE curve is at its maximum)
-                            mode_index = np.argmax(kde_values)
-                            mode = kde_x[mode_index]
-                        except np.linalg.LinAlgError as e:
-                            print(f"KDE computation failed for {var_kde[i]} due to LinAlgError: {e}")
-                            # Handle the error, perhaps set mode to the mean or median
-                            mode = np.mean(x)
-                            print(f"Setting mode to mean of data: {mode}")
-
-                    real_val = df_sim[var_kde[i]].iloc[0]
-
-                    print()
-                    if df_sim['type'].iloc[0] in ['MetSim', 'Real']:
-                        print(f"MetSim value {var_kde[i]}: {'{:.4g}'.format(real_val)}")
-                        print(f"1D Mode of KDE for {var_kde[i]}: {'{:.4g}'.format(mode)} percent diff: "
-                            f"{'{:.4g}'.format(abs((real_val - mode) / (real_val + mode)) / 2 * 100)}%")
-                        percent_diff_1D.append(abs((real_val - mode) / (real_val + mode)) / 2 * 100)
-                        if densest_point != '':
-                            print(f"Mult.dim. KDE densest {var_kde[i]}:  {'{:.4g}'.format(densest_point[i])} percent diff: "
-                                f"{'{:.4g}'.format(abs((real_val - densest_point[i]) / (real_val + densest_point[i])) / 2 * 100)}%")
-                            percent_diff_allD.append(abs((real_val - densest_point[i]) / (real_val + densest_point[i])) / 2 * 100)
-
-                    # Update const_nominal_1D_KDE and const_nominal_allD_KDE based on variable
-                    if var_cost[i] == 'sigma' or var_cost[i] == 'erosion_coeff':
-                        const_nominal_1D_KDE.__dict__[var_cost[i]] = mode / 1_000_000
-                        if densest_point != '':
-                            const_nominal_allD_KDE.__dict__[var_cost[i]] = densest_point[i] / 1_000_000
-                    elif var_cost[i] == 'erosion_height_start':
-                        const_nominal_1D_KDE.__dict__[var_cost[i]] = mode * 1000
-                        if densest_point != '':
-                            const_nominal_allD_KDE.__dict__[var_cost[i]] = densest_point[i] * 1000
-                    elif var_cost[i] == 'zenith_angle':
-                        const_nominal_1D_KDE.__dict__[var_cost[i]] = mode * np.pi / 180
-                        if densest_point != '':
-                            const_nominal_allD_KDE.__dict__[var_cost[i]] = densest_point[i] * np.pi / 180
-                    else:
-                        const_nominal_1D_KDE.__dict__[var_cost[i]] = mode
-                        if densest_point != '':
-                            const_nominal_allD_KDE.__dict__[var_cost[i]] = densest_point[i]
-
-
-                ##### MODE ########## MODE ########## MODE ########## MODE ########## MODE ########## MODE ########
-
-                # check if the file output_folder+os.sep+file_name+'_sim_sel_optimized.csv' exists then read
-                if os.path.exists(output_dir+os.sep+file_name_obs+'_sim_sel_optimized.csv'):
-                    df_sel_optimized_check = pd.read_csv(output_dir+os.sep+file_name_obs+'_sim_sel_optimized.csv')
-                else:
-                    df_sel_optimized_check = pd.DataFrame()
-                    df_sel_optimized_check['solution_id']=''
-                
-                # save the const_nominal as a json file saveConstants(const, dir_path, file_name):
-                if total_distribution:
-                    if output_dir+os.sep+around_meteor+'_mode_TOT.json' not in df_sel_optimized_check['solution_id'].values:
-                        saveConstants(const_nominal_1D_KDE,output_dir,around_meteor+'_mode_TOT.json')
-                        _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_mode_TOT.json', data_file_real, fit_funct)
-                    else:
-                        print('already optimized')
-                        _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_mode_TOT.json', data_file_real, fit_funct)
-
-                else:
-                    if output_dir+os.sep+around_meteor+'_mode.json' not in df_sel_optimized_check['solution_id'].values:
-                        saveConstants(const_nominal_1D_KDE,output_dir,around_meteor+'_mode.json')
-                        _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_mode.json', data_file_real, fit_funct)
-                    else:
-                        print('already optimized')
-                        _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_mode.json', data_file_real, fit_funct)
-
-                if pd_datafram_PCA_sim is None:
-                    plt.close()
-                    return pd_datafram_PCA_selected_mode_min_KDE
-                if gensim_data_sim is None:
-                    plt.close()
-                    return pd_datafram_PCA_selected_mode_min_KDE
-                
-                chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data_sim, data_file_real)
-
-                # Interpolation on the fit data's height grid
-                interp_ht_time = interp1d(data_file_real['height'], data_file_real['time'], kind='linear', bounds_error=False, fill_value='extrapolate')
-                # Interpolated fit on data grid
-                sim_time_pos = interp_ht_time(gensim_data_sim['height'])
-
-
-                # copy the data to the mode
-                gensim_data_sim_mode = gensim_data_sim.copy()
-                gensim_data_sim_mode['time'] = sim_time_pos
-                gensim_data_sim_mode['res_absolute_magnitudes'] = residuals_mag
-                gensim_data_sim_mode['res_velocities'] = residuals_vel
-                gensim_data_sim_mode['res_lag'] = residuals_len * 1000
-                gensim_data_sim_mode['lag'] = lag_km_sim * 1000
-                gensim_data_sim_mode['rmsd_mag'] = rmsd_mag
-                gensim_data_sim_mode['rmsd_vel'] = rmsd_vel
-                gensim_data_sim_mode['rmsd_len'] = rmsd_lag
-                gensim_data_sim_mode['chi2_red_mag'] = chi2_red_mag
-                gensim_data_sim_mode['chi2_red_len'] = chi2_red_len
-
-                plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir, gensim_data_sim_mode, 'Mode')
-
-                if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD: # and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
-                    print(around_meteor,'below noise MODE, SAVED')
-                    pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
-
-                    if total_distribution:
-                        shutil.copy(output_dir+os.sep+around_meteor+'_mode_TOT.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_mode_TOT.json')
-                    else:
-                        shutil.copy(output_dir+os.sep+around_meteor+'_mode.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_mode.json')
-
-                    shutil.copy(output_dir+os.sep+image_name, output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+image_name)
-
-
-                # fig.suptitle(around_meteor+' '+select_mode_print+' mode selected') # , fontsize=16
-
-                ##### DENSEST POINT ########## DENSEST POINT ########## DENSEST POINT ########## DENSEST POINT ########
-
-                if densest_point!='':
-
-                    if total_distribution:
-                        if output_dir+os.sep+around_meteor+'_DensPoint_TOT.json' not in df_sel_optimized_check['solution_id'].values:
-                            saveConstants(const_nominal_allD_KDE,output_dir,around_meteor+'_DensPoint_TOT.json')
-                            _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_DensPoint_TOT.json', data_file_real, fit_funct)
-                        else:
-                            print('already optimized')
-                            _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_DensPoint_TOT.json', data_file_real, fit_funct)
-                    else:
-                        if output_dir+os.sep+around_meteor+'_mode.json' not in df_sel_optimized_check['solution_id'].values:
-                            saveConstants(const_nominal_allD_KDE,output_dir,around_meteor+'_DensPoint.json')
-                            _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_DensPoint.json', data_file_real, fit_funct)
-                        else:
-                            print('already optimized')
-                            _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir+os.sep+around_meteor+'_DensPoint.json', data_file_real, fit_funct)
-
-                    # save the const_nominal as a json file saveConstants(const, dir_path, file_name):
-                    # saveConstants(const_nominal_allD_KDE,output_dir_OG,file_name_obs+'_sim_fit.json')
-                    # check if pd_datafram_PCA_sim is empty
-                    if pd_datafram_PCA_sim is None:
-                        plt.close()
-                        return pd_datafram_PCA_selected_mode_min_KDE
-                    if gensim_data_sim is None:
-                        plt.close()
-                        return pd_datafram_PCA_selected_mode_min_KDE
-
-                    # Interpolation on the fit data's height grid
-                    interp_ht_time = interp1d(data_file_real['height'], data_file_real['time'], kind='linear', bounds_error=False, fill_value='extrapolate')
-                    # Interpolated fit on data grid
-                    sim_time_pos = interp_ht_time(gensim_data_sim['height'])
-
-                    # _, gensim_data_sim, pd_datafram_PCA_sim = run_simulation(output_dir_OG+os.sep+file_name_obs+'_sim_fit.json', data_file_real)
-                    # print('DENSEST REAL time', data_file_real['time']) #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                    chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data_sim, data_file_real)
-
-                    # copy the data to the densest point
-                    gensim_data_sim_densest = gensim_data_sim.copy()
-                    gensim_data_sim_densest['time'] = sim_time_pos
-                    gensim_data_sim_densest['res_absolute_magnitudes'] = residuals_mag
-                    gensim_data_sim_densest['res_velocities'] = residuals_vel
-                    gensim_data_sim_densest['res_lag'] = residuals_len * 1000
-                    gensim_data_sim_densest['lag'] = lag_km_sim * 1000 # data['rmsd_mag']<rmsd_mag and data['rmsd_len']<rmsd_len:
-                    gensim_data_sim_densest['rmsd_mag'] = rmsd_mag
-                    gensim_data_sim_densest['rmsd_vel'] = rmsd_vel
-                    gensim_data_sim_densest['rmsd_len'] = rmsd_lag
-                    gensim_data_sim_densest['chi2_red_mag'] = chi2_red_mag
-                    gensim_data_sim_densest['chi2_red_len'] = chi2_red_len
-
-                    plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir, gensim_data_sim_mode, 'Mode', gensim_data_sim_densest, 'Dens.point')
-
-                    if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD: # and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
-                        print(around_meteor,'below noise DENSEST POINT, SAVED')
-                        pd_datafram_PCA_selected_mode_min_KDE = pd.concat([pd_datafram_PCA_selected_mode_min_KDE, pd_datafram_PCA_sim], axis=0)
-
-                        if total_distribution:
-                            # shuty copy the file
-                            shutil.copy(output_dir+os.sep+around_meteor+'_DensPoint_TOT.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_DensPoint_TOT.json')
-                            shutil.copy(output_dir+os.sep+image_name, output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_MODE_DensPoint_TOT.png')
-                        else:
-                            shutil.copy(output_dir+os.sep+around_meteor+'_DensPoint.json', output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+around_meteor+'_DensPoint.json')
-                            shutil.copy(output_dir+os.sep+image_name, output_dir_OG+os.sep+save_results_folder_events_plots+os.sep+image_name)
-                        
-                        
-                # if densest_point!='':
-                #     plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], around_meteor, output_dir, gensim_data_sim_mode, 'Mode', gensim_data_sim_densest, 'Dens.point')
-                # else:
-                #     plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], around_meteor, output_dir, gensim_data_sim_mode, 'Mode')
-
-                curr_sel['erosion_coeff']=curr_sel['erosion_coeff']/1000000
-                curr_sel['sigma']=curr_sel['sigma']/1000000
-
-                PCA_PhysicalPropPLOT(curr_sel, df_sim, output_dir, file_name_obs, densest_point, save_log)
-        # # check if plot is still open
-        # if plt.fignum_exists(fig.number):
-        #     plt.close()
-        return pd_datafram_PCA_selected_mode_min_KDE
-    
-    except Exception as e:
-        print(f"An error occurred in PCA_physicalProp_KDE_MODE_PLOT: {e}")
-        return pd.DataFrame()
-            
-
-
-
-def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name, save_log=True, pca_N_comp=0):
+def PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name, save_log=True, pca_N_comp=0):
     sim_range_plot = df_sim_range.copy()
     df_sel_shower = df_sel_shower_real.copy()
 
@@ -5272,7 +4614,7 @@ def PCA_PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name
 
 
 
-def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real=0.1, len_noise_real=20.0, fps=32, file_name_obs='', trajectory_Metsim_file='', output_folder_of_csv='', vel_lagplot='vel', pca_N_comp=0):
+def LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct, gensim_data_obs='', mag_noise_real=0.1, len_noise_real=20.0, fps=32, file_name_obs='', trajectory_Metsim_file='', output_folder_of_csv='', vel_lagplot='vel', pca_N_comp=0):
     """
     Plots the light curve coefficients and includes a table with parameters for each colored curve.
 
@@ -5650,10 +4992,10 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     )
 
     if pca_N_comp != 0:
-        plt.savefig(output_dir + os.sep + 'PCA'+str(pca_N_comp)+'PC_'+file_name_obs + '_'+vel_lagplot+'_Heigh_MagVelCoef.png', bbox_inches='tight')
+        plt.savefig(output_dir + os.sep + 'PCA'+str(pca_N_comp)+'PC_'+file_name_obs + '_Heigh_MagVelCoef_'+vel_lagplot+'.png', bbox_inches='tight')
     else:
         # Save and close the plot
-        plt.savefig(output_dir + os.sep + file_name_obs + '_'+vel_lagplot+'_Heigh_MagVelCoef.png', bbox_inches='tight')
+        plt.savefig(output_dir + os.sep + file_name_obs + '_Heigh_MagVelCoef_'+vel_lagplot+'.png', bbox_inches='tight')
     plt.close()
 
     # # Save the DataFrame with RMSD
@@ -5662,284 +5004,6 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     # else:
     #     df_sel_shower_real.to_csv(output_folder_of_csv, index=False)
 
-
-
-
-# OPTIMIZATION ####################################################################################
-
-def PCA_LightCurveRMSDPLOT_optimize(df_sel_shower, df_obs_shower, data_file_real, output_dir, fit_funct='', gen_Metsim='', mag_noise_real = 0.1, len_noise_real = 20.0, mag_RMSD = 0.1, len_RMSD = 20.0, fps=32, file_name_obs='', save_results_folder_events_plots='', run_optimization=True):
-    try:
-        # merge curr_sel and curr_obs
-        curr_sel = df_sel_shower.copy()
-
-        pd_datafram_PCA_selected_optimized=pd.DataFrame()
-
-        mag_noise = mag_noise_real.copy()
-        len_noise = len_noise_real.copy()
-
-        len_noise= len_noise/1000
-        # velocity noise 1 sigma km/s
-        vel_noise = (len_noise*np.sqrt(2)/(1/fps))
-
-        curr_sel['erosion_coeff']=curr_sel['erosion_coeff']*1000000
-        curr_sel['sigma']=curr_sel['sigma']*1000000
-        
-        #     data_file_real = read_pickle_reduction_file(df_obs_shower.iloc[0]['solution_id'])
-        if df_obs_shower.iloc[0]['solution_id'].endswith('.json'):
-            # data_file_real = read_with_noise_GenerateSimulations_output(df_obs_shower.iloc[0]['solution_id'], fps)
-            print('json file NO optimization possible:', df_obs_shower.iloc[0]['solution_id'])
-            run_optimization=False
-
-        _, _, _, _, _, _, residuals_mag_real, residuals_vel_real, residuals_len_real, residual_time_pos_real, residual_height_pos_real , _ = RMSD_calc_diff(fit_funct, data_file_real)
-
-        # Get the default color cycle
-        color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
-
-        # Create an infinite cycle of colors
-        infinite_color_cycle = itertools.cycle(color_cycle)
-
-        for ii in range(len(curr_sel)):
-            
-            # pick the ii element of the solution_id column 
-            namefile_sel=curr_sel.iloc[ii]['solution_id']
-            Metsim_flag=False
-
-            # chec if the file exist
-            if not os.path.isfile(namefile_sel):
-                print('file '+namefile_sel+' not found')
-                if ii == len(curr_sel)-1:
-                    print('no more files to optimize')
-                    plt.close()
-                continue
-            else:
-                if namefile_sel.endswith('.pickle'):
-                    data_file = read_pickle_reduction_file(namefile_sel)
-
-                elif namefile_sel.endswith('.json'):
-                    # open the json file with the name namefile_sel 
-                    f = open(namefile_sel,"r")
-                    data = json.loads(f.read())
-                    if 'ht_sampled' in data:
-                        data_file = read_GenerateSimulations_output(namefile_sel, data_file_real)
-
-                    else:
-                        if gen_Metsim == '':
-                            print('no data for the Metsim file')
-                            # check if ii is the last element
-                            if ii == len(curr_sel)-1:
-                                print('no more files to optimize')
-                                plt.close()
-                            continue
-
-                        else:
-                            # make a copy of gen_Metsim
-                            data_file = gen_Metsim.copy()
-                            # file metsim
-                            Metsim_flag=True
-
-                chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos, lag_km_sim = RMSD_calc_diff(data_file, data_file_real)
-
-
-            # Interpolation on the fit data's height grid
-            interp_ht_time = interp1d(data_file_real['height'], data_file_real['time'], kind='linear', bounds_error=False, fill_value='extrapolate')
-            # Interpolated fit on data grid
-            sim_time_pos = interp_ht_time(data_file['height'])
-
-            color_line=next(infinite_color_cycle)
-
-            rmsd_mag = curr_sel.iloc[ii]['rmsd_mag']
-            rmsd_lag = curr_sel.iloc[ii]['rmsd_len']
-
-            color_line=next(infinite_color_cycle)
-
-            image_name = namefile_sel.split(os.sep)[-1]
-            if '.pickle' in image_name:
-                image_name=image_name[:15]
-            if '.json' in image_name:
-                image_name=image_name[:-5]
-            image_name = image_name+'.png'
-
-            # split the name from the path
-            _, file_name_title = os.path.split(curr_sel.iloc[ii]['solution_id'])
-            
-            file_json_save_phys_NOoptimized=output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_title
-            if Metsim_flag:
-                file_json_save_phys=output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_title[:23]+'_fitted.json'
-                file_json_save_results=output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title[:23]+'_fitted.json'
-            else:
-                file_json_save_phys=output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_obs[:15]+'_'+file_name_title[:-5]+'_fitted.json'
-                file_json_save_results=output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_obs[:15]+'_'+file_name_title[:-5]+'_fitted.json'
-
-            try:
-                # copy the file over to the selected folder
-                shutil.copy(namefile_sel, file_json_save_phys_NOoptimized)
-            except shutil.SameFileError:
-                # log the event or handle it in another way if needed
-                print(f"Skipping copy operation because '{namefile_sel}' and '{file_json_save_phys_NOoptimized}' are the same file.")
-
-            # copy the data to the mode
-            data_file_sim = data_file.copy()
-            data_file_sim['time'] = sim_time_pos
-            data_file_sim['res_absolute_magnitudes'] = residuals_mag
-            data_file_sim['res_velocities'] = residuals_vel
-            data_file_sim['res_lag'] = residuals_len * 1000
-            data_file_sim['lag'] = lag_km_sim * 1000
-            data_file_sim['rmsd_mag'] = rmsd_mag
-            data_file_sim['rmsd_vel'] = rmsd_vel
-            data_file_sim['rmsd_len'] = rmsd_lag
-            data_file_sim['chi2_red_mag'] = chi2_red_mag
-            data_file_sim['chi2_red_len'] = chi2_red_len
-
-            if Metsim_flag:
-                plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+OPTIMIZATION_FOLDER, data_file_sim, 'Metsim')
-            else:
-                plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+OPTIMIZATION_FOLDER, data_file_sim)
-
-            if run_optimization:
-                # check if file_json_save_phys is present
-                if not os.path.isfile(file_json_save_phys):
-                    output_dir_optimized = output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+'Optimization_'+file_name_title[:-5]
-                    mkdirP(output_dir_optimized)
-
-                    if Metsim_flag:
-                        const_nominal, _ = loadConstants(namefile_sel)
-                        saveConstants(const_nominal,output_dir_optimized,file_name_obs+'_sim_fit.json')
-                    else:
-                        # from namefile_sel json file open the json file and save the namefile_sel.const part as file_name_obs+'_sim_fit.json'
-                        with open(namefile_sel) as json_file:
-                            data = json.load(json_file)
-                            const_part = data['const']
-                            with open(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', 'w') as outfile:
-                                json.dump(const_part, outfile, indent=4)
-
-                    if curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD and curr_sel.iloc[ii]['rmsd_len']<len_RMSD:
-                        print(curr_sel.iloc[ii]['solution_id'],'below sigma noise, SAVED')
-
-                        shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', file_json_save_results)
-                        shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', file_json_save_phys)
-                        pd_selected_low_RMSD = curr_sel.iloc[ii].copy()
-                        pd_selected_low_RMSD['solution_id']=file_json_save_phys
-
-                        shutil.copy(df_obs_shower.iloc[0]['solution_id'], output_dir_optimized+os.sep+os.path.basename(df_obs_shower.iloc[0]['solution_id']))
-
-                        shutil.copy(output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+image_name , output_dir+os.sep+save_results_folder_events_plots+os.sep+image_name)
-
-                        pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_selected_low_RMSD], axis=0)
-
-                        continue
-
-                    elif curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD*1.1 and curr_sel.iloc[ii]['rmsd_len']<len_RMSD*1.1: # 95CI 1.96 z-score
-                        print(curr_sel.iloc[ii]['solution_id'],'A little bit above the RMSD, try minor OPTIMIZATION')
-                        shutil.copy(output_dir+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
-                        update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, False, False) # More_complex_fit=False, Custom_refinement=False
-
-                    elif curr_sel.iloc[ii]['rmsd_mag']<mag_RMSD*2 and curr_sel.iloc[ii]['rmsd_len']<len_RMSD*2: # 99.99CI 1.96*2 z-score
-                        print(curr_sel.iloc[ii]['solution_id'],'between 2 and 4 times the RMSD threshold, try major OPTIMIZATION')
-                        shutil.copy(output_dir+os.sep+'AutoRefineFit_options.txt', output_dir_optimized+os.sep+'AutoRefineFit_options.txt')
-                        update_sigma_values(output_dir_optimized+os.sep+'AutoRefineFit_options.txt', mag_noise_real, len_noise_real, True, True) # More_complex_fit=False, Custom_refinement=False
-
-                    else:
-                        print(curr_sel.iloc[ii]['solution_id'],'4 times above RMSD threshold, NO OPTIMIZATION and NOT SAVED')
-                        
-                        shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit.json', file_json_save_phys)
-
-                        continue
-
-                    shutil.copy(df_obs_shower.iloc[0]['solution_id'], output_dir_optimized+os.sep+os.path.basename(df_obs_shower.iloc[0]['solution_id']))
-
-                    print('runing the optimization...')
-                    # this creates a ew file called output_dir+os.sep+file_name_obs+'_sim_fit_fitted.json'
-                    subprocess.run(
-                        ['python', '-m', 'wmpl.MetSim.AutoRefineFit', 
-                        output_dir_optimized, 'AutoRefineFit_options.txt', '-x'], 
-                        # stdout=subprocess.PIPE, 
-                        # stderr=subprocess.PIPE, 
-                        text=True
-                    )
-
-                    # # save the 20230811_082648_sim_fit_fitted.json as a json file in the output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+file_name_title[:23]+'_sim_fit_fitted.json'
-                    # shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
-
-                    # Check if the output file exists before copying
-                    if os.path.exists(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json'):
-                        try:
-                            shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
-                        except Exception as e:
-                            # logging.exception(f"Failed to copy {optimized_file} to {file_json_save_phys}")
-                            print(f"Failed to copy optimized file: {e}")
-                            plt.close()
-                            continue
-                    else:
-                        # logging.warning(f"Optimized file {optimized_file} not found.")
-                        print(f"Optimized file not found. Skipping copy for {file_json_save_phys}")
-                        plt.close()
-                        continue
-
-                else:
-                    print('file '+file_json_save_phys+' already exist, read it...')
-
-                _, gensim_data_optimized, pd_datafram_PCA_sim_optimized = run_simulation(file_json_save_phys, data_file_real, fit_funct)
-
-
-                chi2_red_mag, chi2_red_vel, chi2_red_len, rmsd_mag, rmsd_vel, rmsd_lag, residuals_mag, residuals_vel, residuals_len, residual_time_pos, residual_height_pos , lag_km_sim = RMSD_calc_diff(gensim_data_optimized, data_file_real)
-
-                # Interpolation on the fit data's height grid
-                interp_ht_time = interp1d(data_file_real['height'], data_file_real['time'], kind='linear', bounds_error=False, fill_value='extrapolate')
-                # Interpolated fit on data grid
-                sim_time_pos = interp_ht_time(gensim_data_optimized['height'])
-
-                # copy the data to the mode
-                data_file_sim_opt = gensim_data_optimized.copy() # data_file
-                data_file_sim_opt['time'] = sim_time_pos
-                data_file_sim_opt['res_absolute_magnitudes'] = residuals_mag
-                data_file_sim_opt['res_velocities'] = residuals_vel
-                data_file_sim_opt['res_lag'] = residuals_len * 1000
-                data_file_sim_opt['lag'] = lag_km_sim * 1000
-                data_file_sim_opt['rmsd_mag'] = rmsd_mag
-                data_file_sim_opt['rmsd_vel'] = rmsd_vel
-                data_file_sim_opt['rmsd_len'] = rmsd_lag
-                data_file_sim_opt['chi2_red_mag'] = chi2_red_mag
-                data_file_sim_opt['chi2_red_len'] = chi2_red_len
-
-                if Metsim_flag:
-                    plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+OPTIMIZATION_FOLDER, data_file_sim, 'Metsim', data_file_sim_opt, 'Optimized')
-                else:
-                    plot_data_with_residuals_and_real(mag_RMSD, len_RMSD*np.sqrt(2)/(1.0/fps), len_RMSD, fit_funct, data_file_real, data_file_real['name'].split(os.sep)[-1], image_name, output_dir+os.sep+OPTIMIZATION_FOLDER, data_file_sim,'', data_file_sim_opt, 'Optimized')
-
-            if rmsd_mag<mag_RMSD and rmsd_lag<len_RMSD: # and chi2_red_mag >= 0.5 and chi2_red_mag <= 1.5 and chi2_red_len >= 0.5 and chi2_red_len <= 1.5
-
-                shutil.copy(output_dir+os.sep+OPTIMIZATION_FOLDER+os.sep+image_name , output_dir+os.sep+save_results_folder_events_plots+os.sep+image_name) # _mag$_{RMSD}$'+str(round(rmsd_mag,2))+'_RMSDlen'+str(round(rmsd_lag,2))+'_Heigh_MagVelCoef
-                
-                if run_optimization:
-                    if not os.path.isfile(file_json_save_phys):
-                        # output_dir+os.sep+file_name_obs+'_sim_fit.json'
-                        shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_results)
-                        shutil.copy(output_dir_optimized+os.sep+file_name_obs+'_sim_fit_fitted.json', file_json_save_phys)
-                    # change solution_id of pd_datafram_PCA_sim_optimized to file_json_save_results
-                    pd_datafram_PCA_sim_optimized['solution_id']=file_json_save_phys
-                    pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_sim_optimized], axis=0)
-                else:
-                    pd_datafram_PCA_sim = array_to_pd_dataframe_PCA(data_file, data_file_real)
-                    pd_datafram_PCA_sim['solution_id']=file_json_save_phys_NOoptimized
-                    shutil.copy(file_json_save_phys_NOoptimized, output_dir+os.sep+save_results_folder_events_plots+os.sep+file_name_title)
-                    # remove curr_sel.iloc[[ii]].drop(columns=['rmsd_mag', 'rmsd_len', 'solution_id_dist', 'distance_meteor', 'distance_mean']) rmsd_mag	rmsd_len solution_id_dist	distance_meteor	distance_mean
-                    pd_datafram_PCA_selected_optimized = pd.concat([pd_datafram_PCA_selected_optimized, pd_datafram_PCA_sim], axis=0)
-
-            else:
-                print(curr_sel.iloc[ii]['solution_id'],'above the noise, NOT SAVED')
-
-        return pd_datafram_PCA_selected_optimized
-
-    except FileNotFoundError as fnf_error:
-        print(f"File not found: {fnf_error}")
-        # Handle the error or log it
-        # Optionally, continue or exit the function
-        return pd.DataFrame()
-
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        # Handle other exceptions
-        return pd.DataFrame()
 
 
 
@@ -6143,78 +5207,6 @@ def RMSD_calc_diff(sim_file_data, real_funct_data):
         'p_value_len': p_value_lag,
     }
 
-    # print(f'RMSD Magnitude: {rmsd_mag:.4f}')
-    # print(f'RMSD Velocity: {rmsd_vel:.4f}')
-    # print(f'RMSD Lag: {rmsd_lag:.4f}')
-    # # Plotting the results
-    # plt.figure(figsize=(10, 5))
-    # # create 3 subplots
-    # plt.subplot(1, 3, 1)
-    # # plot both the abs_mag_data_interp against the height and the vel_kms_data_interp angainst time and the lag_sampled_adj gainst time
-    # plt.plot(abs_mag_sim_interp, height_km_real, 'k-', label='simulated')
-    # # against the abs_mag_fit and the height_km_fit
-    # plt.plot(abs_mag_real, height_km_real, 'b.', label='real')
-    # # put also the range of the threshold_mag
-    # plt.plot(abs_mag_sim_interp-threshold_mag, height_km_real, 'g--', label='threshold_mag')
-    # plt.plot(abs_mag_sim_interp+threshold_mag, height_km_real, 'g--')
-    # plt.ylabel('Height [km]')
-    # plt.xlabel('Absolute Magnitude')
-    # plt.grid()
-    # plt.legend()
-
-    # # plt.subplot(1, 3, 2)
-    # # plt.plot(vel_kms_sim, height_km_sim, 'k-', label='simulated')
-    # # plt.plot(vel_kms_real, height_km_real, 'b.', label='real')
-    # # # Plot the range of the threshold_vel
-    # # plt.plot(vel_kms_sim - threshold_vel, height_km_sim, 'g--', label='threshold_vel')
-    # # plt.plot(vel_kms_sim + threshold_vel, height_km_sim, 'g--')
-    # # plt.xlabel('Velocity [km/s]')
-    # # plt.ylabel('Height [s]')
-    # # plt.grid()
-    # # plt.legend()
-
-    # # plt.subplot(1, 3, 3)
-    # # plt.plot(lag_kms_sim, height_km_sim, 'k-', label='simulated')
-    # # plt.plot(lag_kms_real, height_km_real, 'b.', label='new_real')
-    # # plt.plot(wrong_lag, height_km_real, 'rx', label='old_real')
-    # # # Plot the range of the threshold_lag
-    # # plt.plot(lag_kms_sim - threshold_lag, height_km_sim, 'g--', label='threshold_lag')
-    # # plt.plot(lag_kms_sim + threshold_lag, height_km_sim, 'g--')
-    # # plt.xlabel('Lag [km]')
-    # # plt.ylabel('Height [s]')
-    # # plt.grid()
-    # # plt.legend()
-
-
-    # plt.subplot(1, 3, 2)
-    # plt.plot(time_real, vel_kms_sim_interp,'k-', label='simulated')
-    # plt.plot(time_real, vel_kms_real, 'b.', label='real')
-    # # put also the range of the threshold_vel
-    # plt.plot(time_real, vel_kms_sim_interp-threshold_vel, 'g--', label='threshold_vel')
-    # plt.plot(time_real, vel_kms_sim_interp+threshold_vel, 'g--')
-    # plt.xlabel('Time [s]')
-    # plt.ylabel('Velocity [km/s]')
-    # plt.grid()
-    # plt.legend()
-
-    # plt.subplot(1, 3, 3)
-    # # plt.plot(time_data, lag_sampled_adj, 'k-', label='lag_sampled_adj')
-    # plt.plot(time_real, lag_kms_sim_interp, 'k-', label='simulated')
-    # plt.plot(time_real, lag_kms_real, 'b.', label='new_real')
-    # # plt.plot(time_real, wrong_lag, 'rx', label='old_real')
-    # # put also the range of the threshold_lag 
-    # plt.plot(time_real, lag_kms_sim_interp-threshold_lag, 'g--', label='threshold_lag')
-    # plt.plot(time_real, lag_kms_sim_interp+threshold_lag, 'g--')
-    # plt.xlabel('Time [s]')
-    # plt.ylabel('Lag [km]')
-    # plt.grid()
-    # plt.legend()
-
-    # # more space between the plots
-    # plt.tight_layout()
-    # # show the plot
-    # plt.show()
-
     return chi2_red_mag, chi2_red_vel, chi2_red_lag, rmsd_mag, rmsd_vel, rmsd_lag, magnitude_differences, velocity_differences, lag_differences, residual_time_pos, residual_height_pos, lag_kms_sim
 
 
@@ -6257,106 +5249,6 @@ def order_base_on_both_RMSD(pd_datafram_PCA_sim):
     pd_datafram_check_RMSD = pd_datafram_check_RMSD.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
 
     return pd_datafram_check_RMSD
-
-
-def CI_range_gen_sim(pd_results, ii_repeat, old_results_number):
-
-    result_number = len(pd_results)
-
-    # check if only 1 in len
-    if result_number == 1:
-        print('Only one result found')
-        # create a dictionary with the physical parameters
-        CI_physical_param = {
-            'vel_180km': [pd_results['vel_180km'].values[0], pd_results['vel_180km'].values[0]],
-            'zenith_angle': [pd_results['zenith_angle'].values[0], pd_results['zenith_angle'].values[0]],
-            'mass': [pd_results['mass'].values[0], pd_results['mass'].values[0]],
-            'rho': [pd_results['rho'].values[0], pd_results['rho'].values[0]],
-            'sigma': [pd_results['sigma'].values[0], pd_results['sigma'].values[0]],
-            'erosion_height_start': [pd_results['erosion_height_start'].values[0], pd_results['erosion_height_start'].values[0]],
-            'erosion_coeff': [pd_results['erosion_coeff'].values[0], pd_results['erosion_coeff'].values[0]],
-            'erosion_mass_index': [pd_results['erosion_mass_index'].values[0], pd_results['erosion_mass_index'].values[0]],
-            'erosion_mass_min': [pd_results['erosion_mass_min'].values[0], pd_results['erosion_mass_min'].values[0]],
-            'erosion_mass_max': [pd_results['erosion_mass_max'].values[0], pd_results['erosion_mass_max'].values[0]]
-        }
-
-    else:
-        print('Number of results found:',len(pd_results))
-        columns_physpar = ['vel_180km','zenith_angle','mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
-            'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max']
-        
-        if ii_repeat > 1 and old_results_number == result_number:
-        ###############################################################################
-            # try to focus on the one that have good results
-            
-            # Calculate the quantiles
-            quantiles = pd_results[columns_physpar].quantile([0.2, 0.8])
-
-            # Convert the quantiles to a dictionary
-            CI_physical_param = {col: quantiles[col].tolist() for col in columns_physpar}
-
-        ###############################################################################
-        else:
-            # try and look for other results that might be around
-
-            # Calculate the quantiles
-            quantiles = pd_results[columns_physpar].quantile([0.1, 0.9])
-
-            # Get the minimum and maximum values
-            min_val = pd_results[columns_physpar].min()
-            max_val = pd_results[columns_physpar].max()
-
-            # Calculate the extended range using the logic provided
-            extended_min = min_val - (quantiles.loc[0.1] - min_val)
-            # consider the value extended_min<0 Check each column in extended_min and set to min_val if negative
-            for col in columns_physpar:
-                if extended_min[col] < 0:
-                    extended_min[col] = min_val[col]
-            extended_max = max_val + (max_val - quantiles.loc[0.9])
-
-            # Convert the extended range to a dictionary
-            CI_physical_param = {col: [extended_min[col], extended_max[col]] for col in columns_physpar}
-        
-        ###############################################################################
-
-
-    # check if v_init_180km are the same value
-    if CI_physical_param['vel_180km'][0] == CI_physical_param['vel_180km'][1]:
-        CI_physical_param['vel_180km'] = [CI_physical_param['vel_180km'][0] - CI_physical_param['vel_180km'][0]/1000, CI_physical_param['vel_180km'][1] + CI_physical_param['vel_180km'][1]/1000]
-    if CI_physical_param['zenith_angle'][0] == CI_physical_param['zenith_angle'][1]:
-        CI_physical_param['zenith_angle'] = [CI_physical_param['zenith_angle'][0] - CI_physical_param['zenith_angle'][0]/10000, CI_physical_param['zenith_angle'][1] + CI_physical_param['zenith_angle'][1]/10000]
-    if CI_physical_param['mass'][0] == CI_physical_param['mass'][1]:
-        CI_physical_param['mass'] = [CI_physical_param['mass'][0] - CI_physical_param['mass'][0]/10, CI_physical_param['mass'][1] + CI_physical_param['mass'][1]/10]
-    if np.round(CI_physical_param['rho'][0]/100) == np.round(CI_physical_param['rho'][1]/100):
-        if CI_physical_param['rho'][0] - 100<0:
-            CI_physical_param['rho'] = [CI_physical_param['rho'][0]/10, CI_physical_param['rho'][1] + 100]
-        else:
-            CI_physical_param['rho'] = [CI_physical_param['rho'][0] - 100, CI_physical_param['rho'][1] + 100] # - CI_physical_param['rho'][0]/5
-    if CI_physical_param['sigma'][0] == CI_physical_param['sigma'][1]:
-        CI_physical_param['sigma'] = [CI_physical_param['sigma'][0] - CI_physical_param['sigma'][0]/10, CI_physical_param['sigma'][1] + CI_physical_param['sigma'][1]/10]
-    if CI_physical_param['erosion_height_start'][0] == CI_physical_param['erosion_height_start'][1]:
-        CI_physical_param['erosion_height_start'] = [CI_physical_param['erosion_height_start'][0] - CI_physical_param['erosion_height_start'][0]/100, CI_physical_param['erosion_height_start'][1] + CI_physical_param['erosion_height_start'][1]/100]
-    if CI_physical_param['erosion_coeff'][0] == CI_physical_param['erosion_coeff'][1]:
-        CI_physical_param['erosion_coeff'] = [CI_physical_param['erosion_coeff'][0] - CI_physical_param['erosion_coeff'][0]/10, CI_physical_param['erosion_coeff'][1] + CI_physical_param['erosion_coeff'][1]/10]
-    if CI_physical_param['erosion_mass_index'][0] == CI_physical_param['erosion_mass_index'][1]:
-        CI_physical_param['erosion_mass_index'] = [CI_physical_param['erosion_mass_index'][0] - CI_physical_param['erosion_mass_index'][0]/10, CI_physical_param['erosion_mass_index'][1] + CI_physical_param['erosion_mass_index'][1]/10]
-    if CI_physical_param['erosion_mass_min'][0] == CI_physical_param['erosion_mass_min'][1]:
-        CI_physical_param['erosion_mass_min'] = [CI_physical_param['erosion_mass_min'][0] - CI_physical_param['erosion_mass_min'][0]/10, CI_physical_param['erosion_mass_min'][1] + CI_physical_param['erosion_mass_min'][1]/10]
-    if CI_physical_param['erosion_mass_max'][0] == CI_physical_param['erosion_mass_max'][1]:
-        CI_physical_param['erosion_mass_max'] = [CI_physical_param['erosion_mass_max'][0] - CI_physical_param['erosion_mass_max'][0]/10, CI_physical_param['erosion_mass_max'][1] + CI_physical_param['erosion_mass_max'][1]/10]
-        
-
-    # Multiply the 'erosion_height_start' values by 1000
-    CI_physical_param['erosion_height_start'] = [x * 1000 for x in CI_physical_param['erosion_height_start']]
-
-    return CI_physical_param
-
-def get_json_files(results_event_dir):
-    json_files = []
-    for file_name in os.listdir(results_event_dir):
-        if file_name.endswith('.json'):
-            json_files.append(results_event_dir+os.sep+file_name)
-    return json_files
 
 
 
@@ -6537,7 +5429,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     gensim_data_obs['rmsd_len'] = rmsd_t0_lag/1000
     gensim_data_obs['rmsd_vel'] = rmsd_t0_lag/1000*np.sqrt(2)/(1.0/fps)
 
-
     # set the value of mag_RMSD=rmsd_mag_obs*conf_lvl and len_RMSD=rmsd_lag_obs*conf_lvl
     mag_RMSD_real = rmsd_pol_mag*z_score
     # check if in km or m
@@ -6717,15 +5608,15 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
         if 'solution_id' in pd_results.columns:
             print('PLOT: the physical characteristics results')
-            PCA_PhysicalPropPLOT(pd_results, pd_dataframe_ranges, result_dir, file_name)
+            PhysicalPropPLOT(pd_results, pd_dataframe_ranges, result_dir, file_name)
             print('PLOT: correlation matrix of the results (takes a long time)')
-            PCAcorrelation_selPLOT(pd_dataframe_ranges, pd_results, result_dir)
+            correlation_selPLOT(pd_dataframe_ranges, pd_results, result_dir)
             print('PLOT: best 10 results and add the RMSD value to csv selected')
             # pd_results_ordered = order_base_on_both_RMSD(pd_results)
-            PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_obs_real, result_dir, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,result_dir+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='lag')
-            PCA_LightCurveCoefPLOT(pd_results, pd_dataframe_obs_real, result_dir, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,result_dir+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='vel')
+            LightCurveCoefPLOT(pd_results, pd_dataframe_obs_real, result_dir, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,result_dir+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='lag')
+            LightCurveCoefPLOT(pd_results, pd_dataframe_obs_real, result_dir, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,result_dir+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='vel')
             print('PLOT: the sigma range waterfall plot')
-            plot_sigma_waterfall(pd_results, pd_dataframe_ranges, rmsd_pol_mag, rmsd_t0_lag, result_dir, file_name)
+            sigma_waterfallPLOT(pd_results, pd_dataframe_ranges, rmsd_pol_mag, rmsd_t0_lag, result_dir, file_name)
             print()
             print('SUCCES: the physical characteristics range is in the results folder')
         else:
@@ -6832,6 +5723,27 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     print()
 
 
+    ######################## PLOT SECTION ###############################
+
+    # add to pd_results a column called 'multiple_rmsd' where we have the smallest for each row of the pd_results['rmsd_mag']/pd_dataframe_obs_real['rmsd_mag'] and pd_results['rmsd_len']/pd_dataframe_obs_real['rmsd_len']
+    calc_multiple = []
+
+    for ii in range(len(pd_results)):
+        ratio_mag = pd_results['rmsd_mag'].iloc[ii] / rmsd_pol_mag
+        ratio_len = pd_results['rmsd_len'].iloc[ii] / (rmsd_t0_lag/1000)
+        calc_multiple.append(min(ratio_mag, ratio_len))
+    # check if multiple_rmsd present update it if not added to the pd_results
+    if 'multiple_rmsd' in pd_results.columns:
+        pd_results['multiple_rmsd'] = calc_multiple
+    else:
+        pd_results.insert(2, 'multiple_rmsd', calc_multiple)
+
+    pd_results.to_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS, index=False)
+    # waterfall directory result_dir+os.sep+'waterfall'
+    waterfall_dir = result_dir+os.sep+'waterfall'
+    mkdirP(waterfall_dir)
+    for dist_ii in [2, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0]:
+        plot_gray_dist(pd_results, dist_ii, gensim_data_obs['z_score'], 'multiple_rmsd', pd_dataframe_obs_real, waterfall_dir, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file)
 
     ######################## PCA PLOTS ###############################
 
@@ -6978,10 +5890,10 @@ if __name__ == "__main__":
     arg_parser.add_argument('--MetSim_json', metavar='METSIM_JSON', type=str, default='_sim_fit_latest.json', \
         help="json file extension where are stored the MetSim constats, by default _sim_fit_latest.json.")   
     
-    arg_parser.add_argument('--nsim_refine_step', metavar='NSIM_REFINE_STEP', type=int, default=5, \
+    arg_parser.add_argument('--nsim_refine_step', metavar='NSIM_REFINE_STEP', type=int, default=20, \
         help="Minimum number of results when the interative solution search starts.")
 
-    arg_parser.add_argument('--min_nresults', metavar='MIN_NRESULTS', type=int, default=30, \
+    arg_parser.add_argument('--min_nresults', metavar='MIN_NRESULTS', type=int, default=100, \
         help="Minimum number of results that are in the CI that have to be found.")
     
     arg_parser.add_argument('--stop_bad_manual_sol', metavar='STOP_BAD_MANUAL_SOL', type=bool, default=True, \

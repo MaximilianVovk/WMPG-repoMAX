@@ -5531,17 +5531,17 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     # print(df_sim_shower)
     pd_initial_results.reset_index(drop=True, inplace=True)
 
-    # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
-    if 'mass' in pd_initial_results.columns:                  
-        # Drop duplicate rows based on the specified columns
-        pd_initial_results = pd_initial_results.drop_duplicates(subset=[
-            'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
-            'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 
-            'erosion_range', 'erosion_energy_per_unit_cross_section', 
-            'erosion_energy_per_unit_mass'
-        ])
-        print('Number of simulations after dropping duplicates:',len(pd_initial_results))
-        pd_initial_results.reset_index(drop=True, inplace=True)
+    # # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
+    # if 'mass' in pd_initial_results.columns:                  
+    #     # Drop duplicate rows based on the specified columns
+    #     pd_initial_results = pd_initial_results.drop_duplicates(subset=[
+    #         'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
+    #         'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 
+    #         'erosion_range', 'erosion_energy_per_unit_cross_section', 
+    #         'erosion_energy_per_unit_mass'
+    #     ])
+    #     print('Number of simulations after dropping duplicates:',len(pd_initial_results))
+    #     pd_initial_results.reset_index(drop=True, inplace=True)
 
     # Make sure all below RMSD
     pd_initial_results = pd_initial_results[(pd_initial_results['rmsd_mag'] < mag_RMSD_real) & (pd_initial_results['rmsd_len'] < len_RMSD_real)]
@@ -5670,17 +5670,17 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             # reset index
             pd_results.reset_index(drop=True, inplace=True)
 
-            # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
-            if 'mass' in pd_results.columns:                  
-                # Drop duplicate rows based on the specified columns
-                pd_results = pd_results.drop_duplicates(subset=[
-                    'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
-                    'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 
-                    'erosion_range', 'erosion_energy_per_unit_cross_section', 
-                    'erosion_energy_per_unit_mass'
-                ])
-                print('Number of simulations after dropping duplicates:',len(pd_results))
-                pd_results.reset_index(drop=True, inplace=True)
+            # # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
+            # if 'mass' in pd_results.columns:                  
+            #     # Drop duplicate rows based on the specified columns
+            #     pd_results = pd_results.drop_duplicates(subset=[
+            #         'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
+            #         'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 
+            #         'erosion_range', 'erosion_energy_per_unit_cross_section', 
+            #         'erosion_energy_per_unit_mass'
+            #     ])
+            #     print('Number of simulations after dropping duplicates:',len(pd_results))
+            #     pd_results.reset_index(drop=True, inplace=True)
             
             # type set to iteration
             # pd_results['type'] = 'Iteration'

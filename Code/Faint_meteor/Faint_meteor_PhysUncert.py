@@ -5488,28 +5488,33 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     # Init simulation parameters with the given class name
     _, pd_dataframe_ranges = range_gen_simulations(pd_dataframe_obs_real,simulation_MetSim_object, fps, dens_co, flag_manual_metsim)
 
+    all_jsonfiles = get_json_files(results_event_dir)
 
-    result_number = 0
+    if len(all_jsonfiles) < cml_args.nsim_refine_step:
+        if len(all_jsonfiles) != 0:
+            print('In the sim folder there are already',len(all_jsonfiles),'json files')
+            print('Add',cml_args.nsim_refine_step - len(all_jsonfiles),' json files')
+        
+        print('Before recursive find',cml_args.nsim_refine_step - len(all_jsonfiles),'results')
+        
+        generate_simulations(pd_dataframe_obs_real,simulation_MetSim_object,gensim_data_obs,fit_funct,cml_args.nsim_refine_step,cml_args.cores,results_event_dir,output_folder,file_name,fps,dens_co, flag_manual_metsim)
+    else:
+        # enough simulation then check if all below RMSD
+        input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct, gensim_data_obs, True] for ii in range(len(all_jsonfiles))]
+        results_list = domainParallelizer(input_list, read_GenerateSimulations_output_to_PCA, cores=cml_args.cores)
+        
+        # if no read the json files in the folder and create a new csv file
+        pd_initial_results = pd.concat(results_list)
+        pd_initial_results['type'] = 'Simulation_sel'
 
-    # enough simulations in the folder
-    flag_enough_results = False
-    # check in directory if it exist a csv file with input_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS
-    if os.path.isfile(output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS):
-        # read the csv file
-        pd_initial_results = pd.read_csv(output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS)
-        print('read the csv file:',output_folder+os.sep+file_name+NAME_SUFX_CSV_RESULTS)
-        result_number = len(pd_initial_results)
-        # print len of the csv file
-        print('Number of simulations in the csv file:',len(pd_initial_results))
-        if result_number >= cml_args.nsim_refine_step:
-            print('Enough simulations in the csv file, START RECURSIVE RESEARCH')
-            flag_enough_results = True
-
-
-    if flag_enough_results == False:
+        # Make sure all below RMSD
+        pd_initial_results = pd_initial_results[(pd_initial_results['rmsd_mag'] < mag_RMSD_real) & (pd_initial_results['rmsd_len'] < len_RMSD_real)]
+        # the one not in pd_initial_results have to be deleted from the folder by looking at the solution_id
+        for json_file in all_jsonfiles:
+            if json_file not in pd_initial_results['solution_id'].values:
+                os.remove(json_file)
 
         all_jsonfiles = get_json_files(results_event_dir)
-
         if len(all_jsonfiles) < cml_args.nsim_refine_step:
             if len(all_jsonfiles) != 0:
                 print('In the sim folder there are already',len(all_jsonfiles),'json files')
@@ -5518,20 +5523,20 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             print('Before recursive find',cml_args.nsim_refine_step - len(all_jsonfiles),'results')
             
             generate_simulations(pd_dataframe_obs_real,simulation_MetSim_object,gensim_data_obs,fit_funct,cml_args.nsim_refine_step,cml_args.cores,results_event_dir,output_folder,file_name,fps,dens_co, flag_manual_metsim)
-                
-        print('start reading the json files')
 
-        # walk thorought the directories and find all the json files inside each folder inside the directory
-        all_jsonfiles = get_json_files(results_event_dir)
+    print('start reading the json files')
 
-        print('Number of simulated files: ',len(all_jsonfiles))
+    # walk thorought the directories and find all the json files inside each folder inside the directory
+    all_jsonfiles = get_json_files(results_event_dir)
 
-        input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct, gensim_data_obs, True] for ii in range(len(all_jsonfiles))]
-        results_list = domainParallelizer(input_list, read_GenerateSimulations_output_to_PCA, cores=cml_args.cores)
-        
-        # if no read the json files in the folder and create a new csv file
-        pd_initial_results = pd.concat(results_list)
-        pd_initial_results['type'] = 'Simulation_sel'
+    print('Number of simulated files: ',len(all_jsonfiles))
+
+    input_list = [[all_jsonfiles[ii], 'simulation_'+str(ii+1), fit_funct, gensim_data_obs, True] for ii in range(len(all_jsonfiles))]
+    results_list = domainParallelizer(input_list, read_GenerateSimulations_output_to_PCA, cores=cml_args.cores)
+    
+    # if no read the json files in the folder and create a new csv file
+    pd_initial_results = pd.concat(results_list)
+    pd_initial_results['type'] = 'Simulation_sel'
 
     if flag_manual_metsim and flag_results_found_metsim:
         # concatenate the two dataframes
@@ -5540,21 +5545,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     # print(df_sim_shower)
     pd_initial_results.reset_index(drop=True, inplace=True)
 
-    # # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
-    # if 'mass' in pd_initial_results.columns:                  
-    #     # Drop duplicate rows based on the specified columns
-    #     pd_initial_results = pd_initial_results.drop_duplicates(subset=[
-    #         'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
-    #         'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 
-    #         'erosion_range', 'erosion_energy_per_unit_cross_section', 
-    #         'erosion_energy_per_unit_mass'
-    #     ])
-    #     print('Number of simulations after dropping duplicates:',len(pd_initial_results))
-    #     pd_initial_results.reset_index(drop=True, inplace=True)
-
-    # Make sure all below RMSD
-    pd_initial_results = pd_initial_results[(pd_initial_results['rmsd_mag'] < mag_RMSD_real) & (pd_initial_results['rmsd_len'] < len_RMSD_real)]
-    
     # check that the pd_datafram_Metsim is in th first row of pd_initial_results if not move it to the first row
     if flag_manual_metsim and flag_results_found_metsim:
         # look for the row with the same solution_id as pd_datafram_Metsim['solution_id'][0]
@@ -5686,22 +5676,6 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             pd_results = pd.concat(results_list)
             # reset index
             pd_results.reset_index(drop=True, inplace=True)
-
-            # # delete any row from the csv file that has the same value of mass, rho, sigma, erosion_height_start, erosion_coeff, erosion_mass_index, erosion_mass_min, erosion_mass_max, erosion_range, erosion_energy_per_unit_cross_section, erosion_energy_per_unit_mass
-            # if 'mass' in pd_results.columns:                  
-            #     # Drop duplicate rows based on the specified columns
-            #     pd_results = pd_results.drop_duplicates(subset=[
-            #         'mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 
-            #         'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 
-            #         'erosion_range', 'erosion_energy_per_unit_cross_section', 
-            #         'erosion_energy_per_unit_mass'
-            #     ])
-            #     print('Number of simulations after dropping duplicates:',len(pd_results))
-            #     pd_results.reset_index(drop=True, inplace=True)
-            
-            # type set to iteration
-            # pd_results['type'] = 'Iteration'
-            # pd_results['type'] = 'Simulation_sel'
 
             result_number = len(pd_results)
 

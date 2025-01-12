@@ -5624,7 +5624,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             LightCurveCoefPLOT(pd_results, pd_dataframe_obs_real, result_dir, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,result_dir+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='lag')
             LightCurveCoefPLOT(pd_results, pd_dataframe_obs_real, result_dir, fit_funct, gensim_data_obs, rmsd_pol_mag, rmsd_t0_lag, fps, file_name, trajectory_Metsim_file,result_dir+os.sep+file_name+'_sim_sel_results.csv', vel_lagplot='vel')
             print('PLOT: the sigma range waterfall plot')
-            sigma_waterfallPLOT(pd_results, pd_dataframe_ranges, mag_RMSD_real, len_RMSD_real, result_dir, file_name)
+            sigma_waterfallPLOT(pd_results, pd_dataframe_ranges, gensim_data_obs['rmsd_mag'], gensim_data_obs['rmsd_len'], result_dir, file_name)
             print()
             print('SUCCES: the physical characteristics range is in the results folder')
         else:
@@ -5723,8 +5723,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     calc_multiple = []
 
     for ii in range(len(pd_results)):
-        ratio_mag = pd_results['rmsd_mag'].iloc[ii] / mag_RMSD_real
-        ratio_len = pd_results['rmsd_len'].iloc[ii] / len_RMSD_real
+        ratio_mag = pd_results['rmsd_mag'].iloc[ii] / gensim_data_obs['rmsd_mag']
+        ratio_len = pd_results['rmsd_len'].iloc[ii] / gensim_data_obs['rmsd_len']
         calc_multiple.append(max(ratio_mag, ratio_len))
     # check if multiple_rmsd present update it if not added to the pd_results
     if 'multiple_rmsd' in pd_results.columns:

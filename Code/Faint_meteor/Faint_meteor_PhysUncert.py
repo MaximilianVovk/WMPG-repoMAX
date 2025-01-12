@@ -5572,7 +5572,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     for file in files:
         os.remove(os.path.join(output_folder, file))
 
-    result_number = len(pd_initial_results)
+    result_number = len(all_jsonfiles)
 
     print()
         

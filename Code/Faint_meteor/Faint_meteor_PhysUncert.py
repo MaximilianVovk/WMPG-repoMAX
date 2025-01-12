@@ -5637,7 +5637,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
         print('CI_physical_param:',CI_physical_param)
 
-        result_number = len(pd_results)
+        # result_number = len(pd_results)
+        all_jsonfiles = get_json_files(results_event_dir)
+        result_number = len(all_jsonfiles)
 
         if cml_args.min_nresults <= result_number:
             # print the number of results found
@@ -5678,7 +5680,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             # reset index
             pd_results.reset_index(drop=True, inplace=True)
 
-            result_number = len(pd_results)
+            # result_number = len(pd_results)
 
             # change all the 'type' of pd_results to the one that matches the 'solution_id' of the pd_initial_results
             if 'solution_id' in pd_results.columns and 'solution_id' in pd_initial_results.columns:

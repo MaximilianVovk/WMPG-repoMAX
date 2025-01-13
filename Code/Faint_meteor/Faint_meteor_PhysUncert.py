@@ -5599,7 +5599,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             # give to every row the type Simulation_sel
             pd_results['type'] = 'Simulation_sel'
 
-            # # check if any of them has in the solution_id the same as the pd_datafram_Metsim split by os.sep and take the last element
+            # # # check if any of them has in the solution_id the same as the pd_datafram_Metsim split by os.sep and take the last element
             # if flag_manual_metsim and flag_results_found_metsim:
             #     for ii in range(len(pd_results)):
             #         # split the solution_id by os.sep and take the last element
@@ -5607,37 +5607,39 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             #             pd_results['type'].iloc[ii] = pd_datafram_Metsim['type'].iloc[0]
             #             pd_results['solution_id'].iloc[ii] = pd_datafram_Metsim['solution_id'].iloc[0]
 
-            if flag_manual_metsim and flag_results_found_metsim:
-                # Create a boolean mask to identify rows where the file name matches
-                mask = pd_results['solution_id'].apply(lambda x: metsim_file_name in x.split(os.sep)[-1])
+            # if flag_manual_metsim and flag_results_found_metsim:
+            #     # Create a boolean mask to identify rows where the file name matches
+            #     mask = pd_results['solution_id'].apply(lambda x: metsim_file_name in x.split(os.sep)[-1])
                 
-                # Update the 'type' column and reassign the solution_id to itself (unnecessary but explicit)
-                pd_results.loc[mask, 'type'] = pd_datafram_Metsim['type'].iloc[0]
-                pd_results.loc[mask, 'solution_id'] = pd_results.loc[mask, 'solution_id']
-            # # change all the 'type' of pd_results to the one that matches the 'solution_id' of the pd_initial_results
-            # if 'solution_id' in pd_results.columns and 'solution_id' in pd_initial_results.columns:
-            #     # Create a dictionary mapping 'solution_id' to 'type' from pd_initial_results
-            #     solution_type_map = pd_initial_results.set_index('solution_id')['type'].to_dict()
+            #     # Update the 'type' column and reassign the solution_id to itself (unnecessary but explicit)
+            #     pd_results.loc[mask, 'type'] = pd_datafram_Metsim['type'].iloc[0]
+            #     pd_results.loc[mask, 'solution_id'] = pd_results.loc[mask, 'solution_id']
 
-            #     # Update 'type' in pd_results based on the mapping
-            #     pd_results['type'] = pd_results['solution_id'].map(solution_type_map).fillna(pd_results['type'])
-            #     print('Updated "type" values in pd_results based on pd_initial_results.')
 
-            #     # Identify rows in pd_results whose 'solution_id' is NOT in pd_initial_results
-            #     no_mapping_mask = ~pd_results['solution_id'].isin(solution_type_map.keys())
-            #     pd_results.loc[no_mapping_mask, 'type'] = 'Simulation_sel' # 'Iteration'
-            #     print("Set 'Simulation_sel' for rows in pd_results that have no mapping in pd_initial_results.")
+            # change all the 'type' of pd_results to the one that matches the 'solution_id' of the pd_initial_results
+            if 'solution_id' in pd_results.columns and 'solution_id' in pd_initial_results.columns:
+                # Create a dictionary mapping 'solution_id' to 'type' from pd_initial_results
+                solution_type_map = pd_initial_results.set_index('solution_id')['type'].to_dict()
 
-            #     # Identify rows in pd_initial_results whose 'solution_id' is NOT in pd_results
-            #     missing_rows_mask = ~pd_initial_results['solution_id'].isin(pd_results['solution_id'])
-            #     missing_rows = pd_initial_results[missing_rows_mask]
+                # Update 'type' in pd_results based on the mapping
+                pd_results['type'] = pd_results['solution_id'].map(solution_type_map).fillna(pd_results['type'])
+                print('Updated "type" values in pd_results based on pd_initial_results.')
 
-            #     # If there are any rows with solution_ids not found in pd_results, append them
-            #     if not missing_rows.empty:
-            #         pd_results = pd.concat([missing_rows, pd_results], ignore_index=True)
-            #         print(f"Appended {len(missing_rows)} missing rows from pd_initial_results.")
-            #     # else:
-            #     #     print("No missing rows to append.")
+                # Identify rows in pd_results whose 'solution_id' is NOT in pd_initial_results
+                no_mapping_mask = ~pd_results['solution_id'].isin(solution_type_map.keys())
+                pd_results.loc[no_mapping_mask, 'type'] = 'Simulation_sel' # 'Iteration'
+                print("Set 'Simulation_sel' for rows in pd_results that have no mapping in pd_initial_results.")
+
+                # Identify rows in pd_initial_results whose 'solution_id' is NOT in pd_results
+                missing_rows_mask = ~pd_initial_results['solution_id'].isin(pd_results['solution_id'])
+                missing_rows = pd_initial_results[missing_rows_mask]
+
+                # If there are any rows with solution_ids not found in pd_results, append them
+                if not missing_rows.empty:
+                    pd_results = pd.concat([missing_rows, pd_results], ignore_index=True)
+                    print(f"Appended {len(missing_rows)} missing rows from pd_initial_results.")
+                # else:
+                #     print("No missing rows to append.")
 
             # re order all the rows based on the RMSD
             pd_results = order_base_on_both_RMSD(pd_results)

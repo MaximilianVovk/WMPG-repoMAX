@@ -3488,93 +3488,6 @@ def PCASim(df_sim_shower, df_obs_shower, save_results_folder_PCA, PCA_percent=99
     # create a copy of df_sim_shower for the resampling
     df_sim_shower_resample=df_sim_shower.copy()
     # df_obs_shower_resample=df_obs_shower.copy()
-    No_var_PCA_perc=[]
-    # check that all the df_obs_shower for variable_PCA is within th 5 and 95 percentie of df_sim_shower of variable_PCA
-    for var in variable_PCA:
-        if var != 'type' and var != 'solution_id':
-            # check if the variable is in the df_obs_shower
-            if var in df_obs_shower.columns:
-                # check if the variable is in the df_sim_shower
-                if var in df_sim_shower.columns:
-
-                    print(var)
-
-                    shapiro_test = stats.shapiro(df_all[var])
-                    print("Initial Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
-
-                    if var=='vel_init_norot' or var=='zenith_angle' or var=='v_init_180':
-                        # do the cosine of the zenith angle
-                        # df_all[var]=transform_to_gaussian(df_all[var])
-                        print('Variable ',var,' is not transformed')
-
-                    else:
-
-                        pt = PowerTransformer(method='yeo-johnson')
-                        df_all[var]=pt.fit_transform(df_all[[var]])
-                        df_sim_shower_resample[var]=pt.fit_transform(df_sim_shower_resample[[var]])
-
-                    shapiro_test = stats.shapiro(df_all[var])
-                    print("NEW Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
-                
-                    print()
-
-                else:
-                    print('Variable ',var,' is not in the simulated shower')
-            else:
-                print('Variable ',var,' is not in the observed shower')
-
-    # check if the variable_PCA is empty FAILSAFE
-    if variable_PCA == []:
-        print('All the variables are not within the 1 and 99 percentile of the simulated meteors!!!')
-        # add the variable_PCA_initial
-        variable_PCA=variable_PCA_initial
-
-
-    # if PCA_pairplot:
-    df_all_nameless_plot=df_all.copy()
-
-    # Store the values for vertical lines before sampling
-    vertical_line_values = {}
-    for var in variable_PCA[2:]:
-        vertical_line_values[var] = df_all_nameless_plot[var].values[len(df_sim_shower[variable_PCA])]
-
-
-    if len(df_all_nameless_plot)>10000:
-        # pick randomly 10000 events
-        print('Number of events in the simulated:',len(df_all_nameless_plot))
-        df_all_nameless_plot=df_all_nameless_plot.sample(n=10000)
-        # add the last len(df_sim_shower[variable_PCA])
-
-    # make a subplot of the rho againist each variable_PCA as a scatter plot
-    fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:])/5)), 5, figsize=(20, 15))
-    # flat it
-    axs = axs.flatten()
-    for i, var in enumerate(variable_PCA[2:]):
-        # plot the distribution of the variable
-        sns.histplot(df_all_nameless_plot[var].values[:len(df_sim_shower[variable_PCA])], ax=axs[i], color='darkorange', alpha=0.5, bins=20) # kde=True, 
-        # axs[i//4, i%4].set_title('Distribution of '+var)
-        # put a vertical line for the df_obs_shower[var] value
-        # print(df_all_nameless_plot['solution_id'].values[len(df_sim_shower[variable_PCA])])
-        axs[i].axvline(vertical_line_values[var], color='limegreen', linestyle='--', linewidth=5)      
-        # x axis
-        axs[i].set_xlabel(var)
-        # # grid
-        # axs[i//5, i%5].grid()
-        if i != 0 and i != 5 and i != 10 and i != 15 and i != 20:
-            # delete the y axis
-            axs[i].set_ylabel('')
-    
-    # delete the plot that are not used
-    for i in range(len(variable_PCA[2:]), len(axs)):
-        fig.delaxes(axs[i])
-
-    # space between the subplots
-    plt.tight_layout()
-
-    # save the figure
-    plt.savefig(save_results_folder_PCA+os.sep+file_name_obs+'_var_hist_yeo-johnson.png')
-    # close the figure
-    plt.close()
 
     ####################################################################################################################
 
@@ -3589,7 +3502,6 @@ def PCASim(df_sim_shower, df_obs_shower, save_results_folder_PCA, PCA_percent=99
 
     # performing preprocessing part so to make it readeble for PCA
     scaled_df_all = StandardScaler().fit_transform(scaled_df_all)
-
 
     #################################
     # Applying PCA function on the data for the number of components
@@ -5660,7 +5572,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
             # every 10 adjust the CI and recompute
             look_for_n_sim=result_number+10
-            if look_for_n_sim+5 > cml_args.min_nresults:
+            if look_for_n_sim > cml_args.min_nresults: # look_for_n_sim+5
                 look_for_n_sim = cml_args.min_nresults
 
             print('regenerate new simulation in the CI range')

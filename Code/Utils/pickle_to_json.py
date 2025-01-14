@@ -1,7 +1,3 @@
-""" Batch generate meteor simulations using an ablation model and random physical parameters, and store the 
-simulations to disk. """
-
-
 from __future__ import print_function, division, absolute_import, unicode_literals
 
 import os
@@ -24,7 +20,6 @@ def find_all_pickle_files(directory):
     return pickle_files
 
 
-# Convert numpy arrays to lists and handle nested structures
 # Convert numpy arrays to lists and handle nested structures
 def convert_to_serializable(obj):
     if isinstance(obj, np.ndarray):
@@ -65,9 +60,10 @@ def save_as_json(output_dir,pickle_file):
     print(f"Saved {pickle_file} as {json_file_path}")
 
 
-# Main script execution
+
 if __name__ == "__main__":
-    curr_dir = r'C:\Users\maxiv\Documents\UWO\Papers\1)PCA\Reductions\CAMO\20230811_082649\20230811_082649_mir'
+    # Change the current directory it reads all the pickle files in the current directory and trnslates them to JSON
+    curr_dir = r'C:\Users\maxiv\WMPG-repoMAX\Code\Utils'
 
     # Find all the pickle files in the current directory
     pickle_files = find_all_pickle_files(curr_dir)

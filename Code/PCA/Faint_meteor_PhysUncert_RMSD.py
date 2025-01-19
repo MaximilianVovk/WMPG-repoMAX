@@ -607,7 +607,7 @@ class ErosionSimParametersEMCCD_Comet(object):
         self.mag_noise = 0.06
 
         # SD of noise in length [m]
-        self.len_noise = 40.0
+        self.len_noise = 5.0
 
         ### ###
 
@@ -2254,6 +2254,51 @@ def read_with_noise_GenerateSimulations_output(file_path, fps=32):
             print('The first element of the observation is not in the simulation')
             return None
 
+
+        vel_sim=data['simulation_results']['leading_frag_vel_arr'][:-1]#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+        ht_sim=data['simulation_results']['leading_frag_height_arr'][:-1]#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
+        time_sim=data['simulation_results']['time_arr'][:-1]#['main_time_arr']
+        abs_mag_sim=data['simulation_results']['abs_magnitude'][:-1]
+        len_sim=data['simulation_results']['leading_frag_length_arr'][:-1]#['brightest_length_arr']
+        Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr'][:-1]
+
+        mag_obs=np.array(data['mag_sampled'])
+
+        index_abs_mag_sim_start = next(i for i, val in enumerate(abs_mag_sim) if val <= mag_obs[0])
+        index_abs_mag_sim_start = index_abs_mag_sim_start - 1 # + np.random.randint(2)
+  
+        index_abs_mag_sim_end = next(i for i, val in enumerate(abs_mag_sim[::-1]) if val <= mag_obs[-1])
+        index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end + 1        
+
+        abs_mag_sim = abs_mag_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        vel_sim = vel_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        time_sim = time_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        ht_sim = ht_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        len_sim = len_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        Dynamic_pressure = Dynamic_pressure[index_abs_mag_sim_start:index_abs_mag_sim_end]
+
+        # divide the vel_sim by 1000 considering is a list
+        time_sim = [i-time_sim[0] for i in time_sim]
+        # vel_sim = [i/1000 for i in vel_sim]
+        len_sim = [i-len_sim[0] for i in len_sim]
+
+        lag_detect = np.array(data['lag_sampled'])
+
+        lag_sim=np.array(len_sim-(vel_sim[0]*np.array(time_sim))) # m +len_sim[0]
+
+        fitted_lag_t0_lag, residuals_t0_lag, rmsd_t0_lag, fit_type_lag, fitted_vel_t0, residuals_t0_vel, fitted_acc_t0 = fit_lag_t0_RMSD(np.array(data['lag_sampled']),np.array(data['time_sampled']), np.array(data['vel_sampled']), data['simulation_results']['leading_frag_vel_arr'][index_ht_sim])
+
+        interp_lag_time = interp1d(time_sim, lag_sim, kind='linear', bounds_error=False, fill_value='extrapolate')
+
+        lag_sim_detect = interp_lag_time(data['time_sampled'])
+
+        lag_noise = lag_sim_detect
+
+        np.random.seed(42)
+        # add a rmsd_t0_lag as a random normal noise to the lag_sim_detect make it so it it a determinate number
+        lag_noise += np.random.normal(loc=0, scale=rmsd_t0_lag, size=len(lag_sim_detect))
+        lag_noise[0] = 0
+
         closest_indices = find_closest_index(ht_sim, ht_obs)
 
         Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr']
@@ -2279,7 +2324,7 @@ def read_with_noise_GenerateSimulations_output(file_path, fps=32):
         'velocities': np.array(data['vel_sampled']), # m/s
         'height': np.array(data['ht_sampled']), # m
         'absolute_magnitudes': np.array(data['mag_sampled']),
-        'lag': np.array(data['lag_sampled']), # m
+        'lag': lag_noise, # m
         'length': np.array(data['len_sampled']), # m
         'time': np.array(data['time_sampled']), # s
         'v_avg': np.mean(data['vel_sampled']), # m/s
@@ -6636,7 +6681,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         # json file
         elif trajectory_file.endswith('.json'): 
             # read the json file with noise
-            gensim_data_obs = read_with_noise_GenerateSimulations_output(trajectory_file, fps)
+            gensim_data_obs = read_with_noise_GenerateSimulations_output(trajectory_file, fps) 
             
         else:
             # raise an error if the file is not a csv, pickle or json file
@@ -7577,12 +7622,13 @@ if __name__ == "__main__":
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
     # C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v57_slow\PER_v57_slow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v59_heavy\PER_v59_heavy.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v60_light\PER_v60_light.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v61_shallow\PER_v61_shallow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v62_steep\PER_v62_steep.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v65_fast\PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json,/home/mvovk/Documents/Test_cases', \
+    # ,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light_EMCCD/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow_CAMO.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy_CAMO.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light_CAMO.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light_EMCCD/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow_CAMO.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep_CAMO.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast_CAMO.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/srv/public/mvovk/1stPaper/Results_PCA-01-10',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/srv/public/mvovk/1stPaper/Results_PCA_CAMO-01-18',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \

@@ -1492,9 +1492,18 @@ def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, out
         for ax_index, var in enumerate(to_plot):
             ax = axes[ax_index]
 
-            if 'MetSim'==df_obs_real['type'].iloc[0]:
+            # if 'MetSim'==df_obs_real['type'].iloc[0]:
+            #     # make a black line vertical line at the real value
+            #     ax.axvline(df_obs_real[var].iloc[0], color='black', linewidth=2)
+            # el
+            if 'Real'==df_obs_real['type'].iloc[0]:
                 # make a black line vertical line at the real value
                 ax.axvline(df_obs_real[var].iloc[0], color='black', linewidth=2)
+                ax.axvline(df_obs_real[var].iloc[0], color='black', linewidth=2)
+            elif 'Real'==df_obs_real['type'].iloc[0]:
+                # make a black line vertical line at the real value
+                ax.axvline(df_obs_real[var].iloc[0], color='g', linewidth=2, linestyle='--') 
+                ax.axvline(df_obs_real[var].iloc[0], color='black', linewidth=2) 
             elif 'Real'==df_obs_real['type'].iloc[0]:
                 # make a black line vertical line at the real value
                 ax.axvline(df_obs_real[var].iloc[0], color='g', linewidth=2, linestyle='--') 
@@ -1509,7 +1518,7 @@ def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, out
                 # Compute density along the variable's values
                 x = data.values
 
-                if len(x) > 2:
+                if len(x) > 3:
                     density = gaussian_kde(x)(x)
                     # Normalize density to [0, 1]
                     density = (density - density.min()) / (density.max() - density.min())
@@ -1520,6 +1529,11 @@ def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, out
                     densest_index = np.argmax(density)
                     densest_point = x[densest_index]
 
+                    # put a blue dot to the mean value                              
+                    ax.plot(np.mean(x), s, 'bs', markersize=5) 
+                    # You can now use densest_point as your "mode" or representative value
+                    ax.plot(densest_point, s, 'ro', markersize=5)
+
                 else:
                     # If there's only one point, set density to mid-range
                     density = np.ones(len(data)) * 0.5
@@ -1528,10 +1542,7 @@ def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, out
 
                     densest_point = np.mean(x)
 
-                # put a blue dot to the mean value                              
-                ax.plot(np.mean(x), s, 'bs', markersize=5) 
-                # You can now use densest_point as your "mode" or representative value
-                ax.plot(densest_point, s, 'ro', markersize=5)
+
     
 
 
@@ -1591,11 +1602,12 @@ def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, out
     mode_line = Line2D([0], [0], color='red', label='Mode', marker='o', linestyle='None')
     mean_line = Line2D([0], [0], color='blue', label='Mean', marker='s', linestyle='None')
     # if 'MetSim' in df_obs_real['type'].values:
-    if 'MetSim' == df_obs_real['type'].iloc[0]:
-        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim')
-        legend_elements = [metsim_line, mean_line, mode_line]
-    elif 'Real' == df_obs_real['type'].iloc[0]:
-        metsim_line = Line2D([0], [0], color='g', linewidth=2, label='Real', linestyle='--')
+    # if 'MetSim' == df_obs_real['type'].iloc[0]:
+    #     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim')
+    #     legend_elements = [metsim_line, mean_line, mode_line]
+    # el
+    if 'Real' == df_obs_real['type'].iloc[0]:
+        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
         legend_elements = [metsim_line, mean_line, mode_line]
     else:
         # # put the len of x in the legend followed by the sigma value
@@ -2459,6 +2471,51 @@ def read_with_noise_GenerateSimulations_output(file_path, fps=32):
             print('The first element of the observation is not in the simulation')
             return None
 
+
+        vel_sim=data['simulation_results']['leading_frag_vel_arr'][:-1]#['brightest_vel_arr']#['leading_frag_vel_arr']#['main_vel_arr']
+        ht_sim=data['simulation_results']['leading_frag_height_arr'][:-1]#['brightest_height_arr']['leading_frag_height_arr']['main_height_arr']
+        time_sim=data['simulation_results']['time_arr'][:-1]#['main_time_arr']
+        abs_mag_sim=data['simulation_results']['abs_magnitude'][:-1]
+        len_sim=data['simulation_results']['leading_frag_length_arr'][:-1]#['brightest_length_arr']
+        Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr'][:-1]
+
+        mag_obs=np.array(data['mag_sampled'])
+
+        index_abs_mag_sim_start = next(i for i, val in enumerate(abs_mag_sim) if val <= mag_obs[0])
+        index_abs_mag_sim_start = index_abs_mag_sim_start - 1 # + np.random.randint(2)
+  
+        index_abs_mag_sim_end = next(i for i, val in enumerate(abs_mag_sim[::-1]) if val <= mag_obs[-1])
+        index_abs_mag_sim_end = len(abs_mag_sim) - index_abs_mag_sim_end + 1        
+
+        abs_mag_sim = abs_mag_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        vel_sim = vel_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        time_sim = time_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        ht_sim = ht_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        len_sim = len_sim[index_abs_mag_sim_start:index_abs_mag_sim_end]
+        Dynamic_pressure = Dynamic_pressure[index_abs_mag_sim_start:index_abs_mag_sim_end]
+
+        # divide the vel_sim by 1000 considering is a list
+        time_sim = [i-time_sim[0] for i in time_sim]
+        # vel_sim = [i/1000 for i in vel_sim]
+        len_sim = [i-len_sim[0] for i in len_sim]
+
+        lag_detect = np.array(data['lag_sampled'])
+
+        lag_sim=np.array(len_sim-(vel_sim[0]*np.array(time_sim))) # m +len_sim[0]
+
+        fitted_lag_t0_lag, residuals_t0_lag, rmsd_t0_lag, fit_type_lag, fitted_vel_t0, residuals_t0_vel, fitted_acc_t0 = fit_lag_t0_RMSD(np.array(data['lag_sampled']),np.array(data['time_sampled']), np.array(data['vel_sampled']), data['simulation_results']['leading_frag_vel_arr'][index_ht_sim])
+
+        interp_lag_time = interp1d(time_sim, lag_sim, kind='linear', bounds_error=False, fill_value='extrapolate')
+
+        lag_sim_detect = interp_lag_time(data['time_sampled'])
+
+        lag_noise = lag_sim_detect
+
+        np.random.seed(42)
+        # add a rmsd_t0_lag as a random normal noise to the lag_sim_detect make it so it it a determinate number
+        lag_noise += np.random.normal(loc=0, scale=rmsd_t0_lag, size=len(lag_sim_detect))
+        lag_noise[0] = 0
+
         closest_indices = find_closest_index(ht_sim, ht_obs)
 
         Dynamic_pressure= data['simulation_results']['leading_frag_dyn_press_arr']
@@ -2484,7 +2541,7 @@ def read_with_noise_GenerateSimulations_output(file_path, fps=32):
         'velocities': np.array(data['vel_sampled']), # m/s
         'height': np.array(data['ht_sampled']), # m
         'absolute_magnitudes': np.array(data['mag_sampled']),
-        'lag': np.array(data['lag_sampled']), # m
+        'lag': lag_noise, # m
         'length': np.array(data['len_sampled']), # m
         'time': np.array(data['time_sampled']), # s
         'v_avg': np.mean(data['vel_sampled']), # m/s
@@ -3317,7 +3374,7 @@ def update_sigma_values(file_path, mag_sigma, len_sigma, More_complex_fit=False,
     print('modified options file:', file_path)
 
 
-def CI_range_gen_sim(pd_results, ii_repeat, old_results_number):
+def CI_range_gen_sim(pd_results, ii_repeat, old_results_number,pd_dataframe_MAX_min_ranges=pd.DataFrame()):
 
     result_number = len(pd_results)
 
@@ -3407,6 +3464,17 @@ def CI_range_gen_sim(pd_results, ii_repeat, old_results_number):
     # Multiply the 'erosion_height_start' values by 1000
     CI_physical_param['erosion_height_start'] = [x * 1000 for x in CI_physical_param['erosion_height_start']]
 
+    # # check if pd_dataframe_ranges is not empty
+    # if pd_dataframe_MAX_min_ranges.empty == False:
+    #     # make sure that all the values are within the pd_dataframe_MAX_min_ranges
+    #     for key in CI_physical_param:
+    #         if CI_physical_param[key][0] < pd_dataframe_MAX_min_ranges[key].min():
+    #             CI_physical_param[key][0] = pd_dataframe_MAX_min_ranges[key].min()
+    #             print(key,'min is below the allowd value',CI_physical_param[key][0])
+    #         if CI_physical_param[key][1] > pd_dataframe_MAX_min_ranges[key].max():
+    #             CI_physical_param[key][1] = pd_dataframe_MAX_min_ranges[key].max()
+    #             print(key,'max is above the allowd value',CI_physical_param[key][1])
+
     return CI_physical_param
 
 def get_json_files(results_event_dir):
@@ -3488,93 +3556,6 @@ def PCASim(df_sim_shower, df_obs_shower, save_results_folder_PCA, PCA_percent=99
     # create a copy of df_sim_shower for the resampling
     df_sim_shower_resample=df_sim_shower.copy()
     # df_obs_shower_resample=df_obs_shower.copy()
-    No_var_PCA_perc=[]
-    # check that all the df_obs_shower for variable_PCA is within th 5 and 95 percentie of df_sim_shower of variable_PCA
-    for var in variable_PCA:
-        if var != 'type' and var != 'solution_id':
-            # check if the variable is in the df_obs_shower
-            if var in df_obs_shower.columns:
-                # check if the variable is in the df_sim_shower
-                if var in df_sim_shower.columns:
-
-                    print(var)
-
-                    shapiro_test = stats.shapiro(df_all[var])
-                    print("Initial Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
-
-                    if var=='vel_init_norot' or var=='zenith_angle' or var=='v_init_180':
-                        # do the cosine of the zenith angle
-                        # df_all[var]=transform_to_gaussian(df_all[var])
-                        print('Variable ',var,' is not transformed')
-
-                    else:
-
-                        pt = PowerTransformer(method='yeo-johnson')
-                        df_all[var]=pt.fit_transform(df_all[[var]])
-                        df_sim_shower_resample[var]=pt.fit_transform(df_sim_shower_resample[[var]])
-
-                    shapiro_test = stats.shapiro(df_all[var])
-                    print("NEW Shapiro-Wilk Test:", shapiro_test.statistic,"p-val", shapiro_test.pvalue)
-                
-                    print()
-
-                else:
-                    print('Variable ',var,' is not in the simulated shower')
-            else:
-                print('Variable ',var,' is not in the observed shower')
-
-    # check if the variable_PCA is empty FAILSAFE
-    if variable_PCA == []:
-        print('All the variables are not within the 1 and 99 percentile of the simulated meteors!!!')
-        # add the variable_PCA_initial
-        variable_PCA=variable_PCA_initial
-
-
-    # if PCA_pairplot:
-    df_all_nameless_plot=df_all.copy()
-
-    # Store the values for vertical lines before sampling
-    vertical_line_values = {}
-    for var in variable_PCA[2:]:
-        vertical_line_values[var] = df_all_nameless_plot[var].values[len(df_sim_shower[variable_PCA])]
-
-
-    if len(df_all_nameless_plot)>10000:
-        # pick randomly 10000 events
-        print('Number of events in the simulated:',len(df_all_nameless_plot))
-        df_all_nameless_plot=df_all_nameless_plot.sample(n=10000)
-        # add the last len(df_sim_shower[variable_PCA])
-
-    # make a subplot of the rho againist each variable_PCA as a scatter plot
-    fig, axs = plt.subplots(int(np.ceil(len(variable_PCA[2:])/5)), 5, figsize=(20, 15))
-    # flat it
-    axs = axs.flatten()
-    for i, var in enumerate(variable_PCA[2:]):
-        # plot the distribution of the variable
-        sns.histplot(df_all_nameless_plot[var].values[:len(df_sim_shower[variable_PCA])], ax=axs[i], color='darkorange', alpha=0.5, bins=20) # kde=True, 
-        # axs[i//4, i%4].set_title('Distribution of '+var)
-        # put a vertical line for the df_obs_shower[var] value
-        # print(df_all_nameless_plot['solution_id'].values[len(df_sim_shower[variable_PCA])])
-        axs[i].axvline(vertical_line_values[var], color='limegreen', linestyle='--', linewidth=5)      
-        # x axis
-        axs[i].set_xlabel(var)
-        # # grid
-        # axs[i//5, i%5].grid()
-        if i != 0 and i != 5 and i != 10 and i != 15 and i != 20:
-            # delete the y axis
-            axs[i].set_ylabel('')
-    
-    # delete the plot that are not used
-    for i in range(len(variable_PCA[2:]), len(axs)):
-        fig.delaxes(axs[i])
-
-    # space between the subplots
-    plt.tight_layout()
-
-    # save the figure
-    plt.savefig(save_results_folder_PCA+os.sep+file_name_obs+'_var_hist_yeo-johnson.png')
-    # close the figure
-    plt.close()
 
     ####################################################################################################################
 
@@ -3589,7 +3570,6 @@ def PCASim(df_sim_shower, df_obs_shower, save_results_folder_PCA, PCA_percent=99
 
     # performing preprocessing part so to make it readeble for PCA
     scaled_df_all = StandardScaler().fit_transform(scaled_df_all)
-
 
     #################################
     # Applying PCA function on the data for the number of components
@@ -4426,24 +4406,6 @@ def PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name, sa
     sim_range_plot['erosion_energy_per_unit_cross_section'] = sim_range_plot['erosion_energy_per_unit_cross_section'] / 1000000
     sim_range_plot['erosion_energy_per_unit_mass'] = sim_range_plot['erosion_energy_per_unit_mass'] / 1000000
 
-    # # Define a custom palette
-    # custom_palette = {
-    #     'Real': "r",
-    #     'Simulation': "b",
-    #     'Simulation_sel': "darkorange",
-    #     'MetSim': "k",
-    #     'Realization': "mediumaquamarine",
-    #     'Observation': "limegreen",
-    #     'Iteration': "gold"
-    # }
-
-    # group_mapping = {
-    #     'Simulation_sel': 'selected',
-    #     'MetSim': 'simulated',
-    #     'Real': 'simulated',
-    #     'Simulation': 'simulated',
-    #     'Iteration': 'iteration'
-    # }
     group_mapping = {
         'Simulation_sel': 'selected',
         'MetSim': 'selected',
@@ -4500,20 +4462,22 @@ def PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name, sa
             mean_line = Line2D([0], [0], color='blue', linestyle='--', label='Mean')
             if 'Iteration' in curr_df_sim_sel['type'].values:
                 iter_patch = mpatches.Patch(color='gold', label='Iterative results', alpha=0.5, edgecolor='black')
-                if 'MetSim' in curr_df_sim_sel['type'].values:
-                    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
-                    legend_elements = [sel_events_patch, iter_patch, metsim_line, mean_line, mode_line]
-                elif 'Real' in curr_df_sim_sel['type'].values:
-                    metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+                # if 'MetSim' in curr_df_sim_sel['type'].values:
+                #     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+                #     legend_elements = [sel_events_patch, iter_patch, metsim_line, mean_line, mode_line]
+                # el
+                if 'Real' in curr_df_sim_sel['type'].values:
+                    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real Solution')
                     legend_elements = [sel_events_patch, iter_patch, metsim_line, mean_line, mode_line]
                 else:
                     legend_elements = [sel_events_patch, iter_patch, mean_line, mode_line]
             else:
-                if 'MetSim' in curr_df_sim_sel['type'].values:
-                    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
-                    legend_elements = [sel_events_patch, metsim_line, mean_line, mode_line]
-                elif 'Real' in curr_df_sim_sel['type'].values:
-                    metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+                # if 'MetSim' in curr_df_sim_sel['type'].values:
+                #     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+                #     legend_elements = [sel_events_patch, metsim_line, mean_line, mode_line]
+                # el
+                if 'Real' in curr_df_sim_sel['type'].values:
+                    metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real Solution')
                     legend_elements = [sel_events_patch, metsim_line, mean_line, mode_line]
                 else:
                     legend_elements = [sel_events_patch, mean_line, mode_line]
@@ -4551,10 +4515,10 @@ def PhysicalPropPLOT(df_sel_shower_real, df_sim_range, output_dir, file_name, sa
         axs[i].set_xlim(sim_range_plot[plotvar].min(), sim_range_plot[plotvar].max())
         find_type=''
         if 'MetSim' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=3)
+            # axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'MetSim'][plotvar].values[0], color='k', linewidth=3)
             find_type = 'MetSim'
         elif 'Real' in curr_df_sim_sel['type'].values:
-            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='g', linewidth=3, linestyle='--')
+            axs[i].axvline(x=curr_df_sim_sel[curr_df_sim_sel['type'] == 'Real'][plotvar].values[0], color='k', linewidth=3)
             find_type = 'Real'
 
         if plotvar == 'erosion_mass_min' or plotvar == 'erosion_mass_max':
@@ -4679,6 +4643,9 @@ def LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct,
 
     if n_confront_sel < len(df_sel_shower):
         df_sel_shower = df_sel_shower.head(n_confront_sel)
+
+    # invert the df_sel_shower for the plot
+    df_sel_shower = df_sel_shower.iloc[::-1]
 
     # Concatenate observation and selection DataFrames
     curr_sel = pd.concat([df_obs_shower, df_sel_shower], axis=0).reset_index(drop=True)
@@ -4903,6 +4870,10 @@ def LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_funct,
             # Append the data and color
             row_colors.append(line_color)
             table_data.append(curve_data)
+
+    # invert the row_colors and table_data
+    row_colors = row_colors[::-1]
+    table_data = table_data[::-1]
 
     # Check if table_data is empty
     if not table_data:
@@ -5465,6 +5436,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     # copy the file to the output_folder
     shutil.copy(cml_args.ref_opt_path, output_folder+os.sep+'AutoRefineFit_options.txt')
 
+    # the file name from trajectory_Metsim_file so split it form the path
+    metsim_file_name = os.path.split(trajectory_Metsim_file)[1]
+    print('File :',metsim_file_name)
     print('Run MetSim file:',trajectory_Metsim_file)
 
     simulation_MetSim_object, gensim_data_Metsim, pd_datafram_Metsim = run_simulation(trajectory_Metsim_file, gensim_data_obs, fit_funct)
@@ -5484,6 +5458,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         if cml_args.stop_bad_manual_sol:
             print('Break requested from user (to avoid this set the stop_bad_manual_sol to False)')
             return
+    elif flag_results_found_metsim:
+        # copy the trajectory_Metsim_file to the output_folder
+        shutil.copy(trajectory_Metsim_file, results_event_dir+os.sep+metsim_file_name)
 
     # Init simulation parameters with the given class name
     _, pd_dataframe_ranges = range_gen_simulations(pd_dataframe_obs_real,simulation_MetSim_object, fps, dens_co, flag_manual_metsim)
@@ -5557,6 +5534,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             print('REAL json file:',trajectory_Metsim_file)
             # change the type column to Real
             pd_initial_results['type'].iloc[0] = 'Real'
+            pd_datafram_Metsim['type'] = 'Real'
 
     pd_initial_results = order_base_on_both_RMSD(pd_initial_results)
 
@@ -5588,7 +5566,8 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
     # save as recursive results
     pd_results = pd_initial_results.copy(deep=True)
     ii_repeat = 0
-    check_change = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
+    # check_change = ['mass', 'rho', 'sigma', 'erosion_height_start', 'erosion_coeff', 'erosion_mass_index', 'erosion_mass_min', 'erosion_mass_max', 'erosion_range', 'erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
+    check_change = ['erosion_energy_per_unit_cross_section', 'erosion_energy_per_unit_mass']
     # while cml_args.min_nresults > result_number:
     print(cml_args.min_nresults,'results to find:')
 
@@ -5633,7 +5612,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             flag_fail = True
             break
 
-        CI_physical_param = CI_range_gen_sim(pd_results, ii_repeat, old_results_number)
+        CI_physical_param = CI_range_gen_sim(pd_results, ii_repeat, old_results_number,pd_dataframe_ranges)
 
         print('CI_physical_param:',CI_physical_param)
 
@@ -5660,7 +5639,7 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
 
             # every 10 adjust the CI and recompute
             look_for_n_sim=result_number+10
-            if look_for_n_sim+5 > cml_args.min_nresults:
+            if look_for_n_sim > cml_args.min_nresults: # look_for_n_sim+5
                 look_for_n_sim = cml_args.min_nresults
 
             print('regenerate new simulation in the CI range')
@@ -5680,7 +5659,25 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
             # reset index
             pd_results.reset_index(drop=True, inplace=True)
 
-            # result_number = len(pd_results)
+            # give to every row the type Simulation_sel
+            pd_results['type'] = 'Simulation_sel'
+
+            # # # check if any of them has in the solution_id the same as the pd_datafram_Metsim split by os.sep and take the last element
+            # if flag_manual_metsim and flag_results_found_metsim:
+            #     for ii in range(len(pd_results)):
+            #         # split the solution_id by os.sep and take the last element
+            #         if metsim_file_name in pd_results['solution_id'].iloc[ii].split(os.sep)[-1]:
+            #             pd_results['type'].iloc[ii] = pd_datafram_Metsim['type'].iloc[0]
+            #             pd_results['solution_id'].iloc[ii] = pd_datafram_Metsim['solution_id'].iloc[0]
+
+            # if flag_manual_metsim and flag_results_found_metsim:
+            #     # Create a boolean mask to identify rows where the file name matches
+            #     mask = pd_results['solution_id'].apply(lambda x: metsim_file_name in x.split(os.sep)[-1])
+                
+            #     # Update the 'type' column and reassign the solution_id to itself (unnecessary but explicit)
+            #     pd_results.loc[mask, 'type'] = pd_datafram_Metsim['type'].iloc[0]
+            #     pd_results.loc[mask, 'solution_id'] = pd_results.loc[mask, 'solution_id']
+
 
             # change all the 'type' of pd_results to the one that matches the 'solution_id' of the pd_initial_results
             if 'solution_id' in pd_results.columns and 'solution_id' in pd_initial_results.columns:

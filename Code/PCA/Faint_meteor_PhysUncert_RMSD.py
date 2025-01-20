@@ -1188,6 +1188,248 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
 
 
 
+def plot_sigma_waterfall_PCA(df_sel_sim, df_sim, output_directory, name_file, 
+                             sigma_values=[0.01, 0.009, 0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 0.001]):
+    df = df_sel_sim.copy()
+    df_limits = df_sim.copy()
+    # take the first row df_obs_real
+    df_obs_real = df_sim.iloc[0]
+
+    # Columns to plot
+    to_plot = [
+        'mass', 
+        'rho', 
+        'sigma', 
+        'erosion_height_start', 
+        'erosion_coeff', 
+        'erosion_mass_index', 
+        'erosion_mass_min', 
+        'erosion_mass_max', 
+        'erosion_range', 
+        'erosion_energy_per_unit_cross_section', 
+        'erosion_energy_per_unit_mass'
+    ]
+    
+    # Corresponding units/labels
+    to_plot_unit = [
+        r'$m_0$ [kg]', 
+        r'$\rho$ [kg/m$^3$]', 
+        r'$\sigma$ [kg/MJ]', 
+        r'$h_{e}$ [km]', 
+        r'$\eta$ [kg/MJ]', 
+        r'$s$', 
+        r'log($m_{l}$)', 
+        r'log($m_{u}$)', 
+        r'log($m_{u}$)-log($m_{l}$)', 
+        r'$E_{S}$ [MJ/m$^2$]', 
+        r'$E_{V}$ [MJ/kg]'
+    ]
+
+    # multiply the erosion coeff by 1000000 to have it in km/s
+    df['erosion_coeff'] = df['erosion_coeff'] * 1000000
+    df['sigma'] = df['sigma'] * 1000000
+    df['erosion_energy_per_unit_cross_section'] = df['erosion_energy_per_unit_cross_section'] / 1000000
+    df['erosion_energy_per_unit_mass'] = df['erosion_energy_per_unit_mass'] / 1000000
+    df['erosion_mass_min'] = np.log10(df['erosion_mass_min'])
+    df['erosion_mass_max'] = np.log10(df['erosion_mass_max'])
+
+    df_limits['erosion_coeff'] = df_limits['erosion_coeff'] * 1000000
+    df_limits['sigma'] = df_limits['sigma'] * 1000000
+    df_limits['erosion_energy_per_unit_cross_section'] = df_limits['erosion_energy_per_unit_cross_section'] / 1000000
+    df_limits['erosion_energy_per_unit_mass'] = df_limits['erosion_energy_per_unit_mass'] / 1000000
+    df_limits['erosion_mass_min'] = np.log10(df_limits['erosion_mass_min'])
+    df_limits['erosion_mass_max'] = np.log10(df_limits['erosion_mass_max'])
+    
+    # multiply the erosion coeff by 1000000 to have it in km/s
+    df_obs_real['erosion_coeff'] = df_obs_real['erosion_coeff'] * 1000000
+    df_obs_real['sigma'] = df_obs_real['sigma'] * 1000000
+    df_obs_real['erosion_energy_per_unit_cross_section'] = df_obs_real['erosion_energy_per_unit_cross_section'] / 1000000
+    df_obs_real['erosion_energy_per_unit_mass'] = df_obs_real['erosion_energy_per_unit_mass'] / 1000000
+    df_obs_real['erosion_mass_min'] = np.log10(df_obs_real['erosion_mass_min'])
+    df_obs_real['erosion_mass_max'] = np.log10(df_obs_real['erosion_mass_max'])
+
+    used_sigmas = sigma_values
+
+    fig, axs = plt.subplots(3, 4, figsize=(15, 10))
+    axes = axs.flatten()  # Flatten axes for easier iteration
+
+    sc = None  # For scatter plot reference (for the colorbar)
+
+    data_for_table = []
+    lendata_sigma = []
+    # Plot data for each sigma on the same set of subplots
+    for i, s in enumerate(used_sigmas):
+        # Filter the dataframe based on sigma threshold
+        filtered_df = df['distance_meteor'].quantile(s)
+
+        # lendata_sigma.append(f'$({len(filtered_df)})~{s}\\sigma$')
+        lendata_sigma.append(f'${s}~$PC$~-~{len(filtered_df)}$')
+
+        # Format RMSD with one decimal place, even for whole numbers
+        data_for_table.append([f"{s:.1f}", f"{len(filtered_df)}"])
+
+        # Choose a distinct alpha or marker for each sigma to differentiate them
+        # (Optional: You could also use different markers or colors per sigma.)
+        alpha_val = max(0.2, 1 - (i*0.07))  # Decrease alpha with each sigma
+        # Plot each variable in its corresponding subplot
+        for ax_index, var in enumerate(to_plot):
+            ax = axes[ax_index]
+
+            ax.axvline(df_obs_real[var], color='black', linewidth=2)
+
+            data = filtered_df[var].dropna()
+            if data.empty:
+                # No data after filtering, just continue
+                continue
+            else:
+                # make sigma multipy to ones
+                y = np.ones(len(data)) * s
+                # Compute density along the variable's values
+                x = data.values
+
+                if len(x) > 2:
+                    density = gaussian_kde(x)(x)
+                    # Normalize density to [0, 1]
+                    density = (density - density.min()) / (density.max() - density.min())
+
+                    sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
+        
+                    # Find the densest point (highest density)
+                    densest_index = np.argmax(density)
+                    densest_point = x[densest_index]
+
+                else:
+                    # If there's only one point, set density to mid-range
+                    density = np.ones(len(data)) * 0.5
+
+                    sc = ax.scatter(x, y, c=density, cmap='viridis', vmin=0, vmax=1, s=20, edgecolor='none') # , alpha=alpha_val
+
+                    densest_point = np.mean(x)
+
+                # put a blue dot to the mean value                              
+                ax.plot(np.mean(x), s, 'bs', markersize=5) 
+                # You can now use densest_point as your "mode" or representative value
+                ax.plot(densest_point, s, 'ro', markersize=5)
+
+
+    # Set titles and labels
+    for ax_index, var in enumerate(to_plot):
+        ax = axes[ax_index]
+        # ax.set_title(var, fontsize=10)
+        ax.set_xlabel(to_plot_unit[ax_index], fontsize=9)
+        # now put the x axis range from the highest to the smallest value in df_sel_sim but 
+        ax.set_xlim([df_limits[var].min(), df_limits[var].max()])
+        # tilt thicks 45 degrees
+        # ax.tick_params(axis='x', rotation=45)
+        ax.xaxis.set_major_locator(ticker.MaxNLocator(4))
+        # ax.set_ylabel('$\sigma$', fontsize=9)
+        ax.set_ylabel('Dist%', fontsize=9)
+        # # set thicks along y axis as lendata
+        # ax.set_yticks(sigma_values)
+        # ax.set_yticklabels(lendata_sigma)
+        # put the -- in the grids
+        ax.grid(True, linestyle='--', color='lightgray')
+        # set the y axis
+        ax.set_ylim([np.min(sigma_values)-np.min(sigma_values)/10, np.max(sigma_values)+np.min(sigma_values)/10])
+
+    # The last subplot (axes[11]) is used for the legend only
+    axes[11].axis('off')
+
+    # Create the table
+    table = axes[11].table(
+        cellText=data_for_table,
+        colLabels=["Dist%", "Count"],
+        loc='center left',
+        bbox=[-0.05, 0.0, 0.35, 1.0]  # Adjust these values as needed
+    )
+
+    # Adjust table formatting
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    table.auto_set_column_width(col=list(range(2)))  # Auto-adjust column widths
+
+    # Align text in cells (optional)
+    for (row, col), cell in table.get_celld().items():
+        # Make header bold and aligned center
+        if row == 0:
+            cell.set_text_props(ha='center', va='center', fontweight='bold')
+        else:
+            # Align numeric columns to the right and RMSD column center if desired
+            if col == 0:
+                cell.set_text_props(ha='center', va='center')
+            else:
+                cell.set_text_props(ha='center', va='center')
+
+
+    # sigma_text = "\n".join(lendata_sigma)
+
+    # N_sigma = len(lendata_sigma)
+    # half = (N_sigma + 1) // 2  # The midpoint, rounding up if odd
+    # col1 = lendata_sigma[:half]
+    # col2 = lendata_sigma[half:]
+
+    # # To align them neatly, you can use string formatting. For example:
+    # # Left-align the first column in a fixed width so that the second column lines up
+    # max_len_col1 = max(len(s) for s in col1)
+    # two_col_lines = []
+    # for i in range(half):
+    #     if i < len(col2):
+    #         two_col_lines.append(f"{col1[i].ljust(max_len_col1)}   {col2[i]}")
+    #     else:
+    #         # If col2 is shorter, just print col1
+    #         two_col_lines.append(col1[i])
+
+    # # Join into a single multiline string
+    # sigma_text = "\n".join(two_col_lines)
+
+    # # Now place the text in the subplot 11
+    # axes[11].text(0.5, 0.05, sigma_text,
+    #             transform=axes[11].transAxes,
+    #             ha='center', va='bottom', fontsize=9)
+
+    # Create custom legend entries
+    import matplotlib.patches as mpatches
+    from matplotlib.lines import Line2D
+
+    mode_line = Line2D([0], [0], color='red', label='Mode', marker='o', linestyle='None')
+    mean_line = Line2D([0], [0], color='blue', label='Mean', marker='s', linestyle='None')
+    # if 'MetSim' in df_obs_real['type'].values:
+    if 'MetSim' in df_obs_real['type']:
+        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+    else:
+        metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Real')
+    # # put the len of x in the legend followed by the sigma value
+    # sigma_values = Line2D([], [], color='none', marker='', linestyle='None', label=lendata_sigma)
+    legend_elements = [metsim_line, mean_line, mode_line]
+
+    axes[11].legend(handles=legend_elements, loc='upper center') # , fontsize=8
+
+    # Adjust layout and add a single colorbar to the figure
+    fig.subplots_adjust(right=0.85)
+    cbar_ax = fig.add_axes([0.9, 0.15, 0.02, 0.7])
+    cbar = plt.colorbar(sc, cax=cbar_ax, label='Density (normalized)')
+
+    plt.tight_layout(rect=[0, 0, 0.9, 1])
+
+    # Save the figure instead of showing it
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+    plt.savefig(os.path.join(output_directory, name_file + 'PCA_SigmaPlot_sigma'+str(np.max(sigma_values))+'max'+str(np.min(sigma_values))+'min.png'), dpi=300)
+    plt.close(fig)
+
+
+
+
+    # if len(df_sim_shower_NEW_inter) > 0:
+    #     iter_patch = mpatches.Patch(color='limegreen', label='Iterative', alpha=0.5, edgecolor='black')
+    # if 'MetSim' in curr_df_sim_sel['type'].values:
+    #     metsim_line = Line2D([0], [0], color='black', linewidth=2, label='Metsim Solution')
+    # else:
+    #     metsim_line = Line2D([0], [0], color='green', linestyle='--', linewidth=2, label='Real Solution')
+
+
+
+
 
 
 def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_directory, name_file, 
@@ -6981,6 +7223,9 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         mkdirP(output_folder+os.sep+save_results_folder_PCA)
 
         pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition_all, pd_datafram_PCA_selected_all, pcr_results_physical_param, PCAn_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, output_folder+os.sep+save_results_folder_PCA, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_test_plot, cml_args.esclude_real_solution_from_selection)
+
+        print('PLOT: waterfall PCA plot')
+        plot_sigma_waterfall_PCA(pd_datafram_PCA_selected_before_knee_NO_repetition, pd_datafram_PCA_sim, output_folder+os.sep+save_results_folder_PCA, file_name)
 
         # find the 10 percentile value of 'distance_meteor'
         perc_10 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.01)

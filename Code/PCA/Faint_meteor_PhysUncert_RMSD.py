@@ -5886,6 +5886,9 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
     if n_confront_sel < len(df_sel_shower):
         df_sel_shower = df_sel_shower.head(n_confront_sel)
 
+    # invert the df_sel_shower to have the last element on the top
+    df_sel_shower = df_sel_shower.iloc[::-1]
+
     # Concatenate observation and selection DataFrames
     curr_sel = pd.concat([df_obs_shower, df_sel_shower], axis=0).reset_index(drop=True)
 
@@ -6109,6 +6112,10 @@ def PCA_LightCurveCoefPLOT(df_sel_shower_real, df_obs_shower, output_dir, fit_fu
             # Append the data and color
             row_colors.append(line_color)
             table_data.append(curve_data)
+
+    # invert the row_colors and table_data to have the last element on the top
+    row_colors = row_colors[::-1]
+    table_data = table_data[::-1]
 
     # Check if table_data is empty
     if not table_data:

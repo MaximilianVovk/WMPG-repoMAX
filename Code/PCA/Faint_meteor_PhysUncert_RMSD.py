@@ -607,7 +607,7 @@ class ErosionSimParametersEMCCD_Comet(object):
         self.mag_noise = 0.06
 
         # SD of noise in length [m]
-        self.len_noise = 5.0
+        self.len_noise = 40.0
 
         ### ###
 
@@ -1290,7 +1290,7 @@ def plot_sigma_waterfall_PCA(df_sel_sim, df_sim, output_directory, name_file,
                 # Compute density along the variable's values
                 x = data.values
 
-                if len(x) > 2:
+                if len(x) > 3:
                     density = gaussian_kde(x)(x)
                     # Normalize density to [0, 1]
                     density = (density - density.min()) / (density.max() - density.min())
@@ -1301,6 +1301,11 @@ def plot_sigma_waterfall_PCA(df_sel_sim, df_sim, output_directory, name_file,
                     densest_index = np.argmax(density)
                     densest_point = x[densest_index]
 
+                    # put a blue dot to the mean value                              
+                    ax.plot(np.mean(x), s*100, 'bs', markersize=5) 
+                    # You can now use densest_point as your "mode" or representative value
+                    ax.plot(densest_point, s*100, 'ro', markersize=5)
+
                 else:
                     # If there's only one point, set density to mid-range
                     density = np.ones(len(data)) * 0.5
@@ -1309,10 +1314,7 @@ def plot_sigma_waterfall_PCA(df_sel_sim, df_sim, output_directory, name_file,
 
                     densest_point = np.mean(x)
 
-                # put a blue dot to the mean value                              
-                ax.plot(np.mean(x), s*100, 'bs', markersize=5) 
-                # You can now use densest_point as your "mode" or representative value
-                ax.plot(densest_point, s*100, 'ro', markersize=5)
+
 
 
     # Set titles and labels
@@ -1333,7 +1335,7 @@ def plot_sigma_waterfall_PCA(df_sel_sim, df_sim, output_directory, name_file,
         # put the -- in the grids
         ax.grid(True, linestyle='--', color='lightgray')
         # set the y axis
-        ax.set_ylim([(np.min(sigma_values)-np.min(sigma_values)/10)*100, (np.max(sigma_values)+np.min(sigma_values)/10)*100])
+        ax.set_ylim([(sigma_values[-1]-abs(sigma_values[0]-sigma_values[1]))*100, (sigma_values[0]+abs(sigma_values[0]-sigma_values[1]))*100])
 
     # The last subplot (axes[11]) is used for the legend only
     axes[11].axis('off')
@@ -1546,7 +1548,7 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
                 # Compute density along the variable's values
                 x = data.values
 
-                if len(x) > 2:
+                if len(x) > 3:
                     density = gaussian_kde(x)(x)
                     # Normalize density to [0, 1]
                     density = (density - density.min()) / (density.max() - density.min())
@@ -1557,6 +1559,11 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
                     densest_index = np.argmax(density)
                     densest_point = x[densest_index]
 
+                    # put a blue dot to the mean value                              
+                    ax.plot(np.mean(x), s, 'bs', markersize=5) 
+                    # You can now use densest_point as your "mode" or representative value
+                    ax.plot(densest_point, s, 'ro', markersize=5)
+
                 else:
                     # If there's only one point, set density to mid-range
                     density = np.ones(len(data)) * 0.5
@@ -1565,10 +1572,7 @@ def plot_sigma_waterfall(df_sel_sim, df_sim, realRMSD_mag, realRMSD_lag, output_
 
                     densest_point = np.mean(x)
 
-                # put a blue dot to the mean value                              
-                ax.plot(np.mean(x), s, 'bs', markersize=5) 
-                # You can now use densest_point as your "mode" or representative value
-                ax.plot(densest_point, s, 'ro', markersize=5)
+
 
 
     # Set titles and labels
@@ -2258,6 +2262,7 @@ def plot_gray_dist(pd_datafram_PCA_selected, mindist, maxdist, df_obs_shower, ou
 def plot_PCA_mindist_RMSD(pd_datafram_PCA_selected_before_knee_NO_repetition_all, mindist, maxdist, output_PCA_dist, pd_dataframe_PCA_obs_real, pd_datafram_PCA_sim, fit_funct, gensim_data_obs, rmsd_pol_mag, mag_RMSD_real, rmsd_t0_lag, len_RMSD_real, fps, file_name, trajectory_Metsim_file, PCAn_comp):
     pd_datafram_PCA_selected_before_knee_NO_repetition = pd_datafram_PCA_selected_before_knee_NO_repetition_all[pd_datafram_PCA_selected_before_knee_NO_repetition_all['distance_meteor'] < mindist]
     pd_datafram_PCA_selected_before_maxdist = pd_datafram_PCA_selected_before_knee_NO_repetition_all[pd_datafram_PCA_selected_before_knee_NO_repetition_all['distance_meteor'] < maxdist]
+    print('PC distance',mindist)
     # check if pd_datafram_PCA_selected_before_knee_NO_repetition is not empty and check if folder do not exist
     if len(pd_datafram_PCA_selected_before_knee_NO_repetition) != 0: # and not os.path.isdir(output_PCA_dist)
         mkdirP(output_PCA_dist)
@@ -6813,6 +6818,46 @@ def compute_chi2_red_thresholds(confidence_level, degrees_of_freedom): # 0.95, l
     return chi2_red_threshold_lower, chi2_red_threshold_upper
 
 
+def order_base_on_both_RMSD(pd_datafram_PCA_sim):
+
+    # deep copy pd_datafram_PCA_sim
+    pd_datafram_check_RMSD = pd_datafram_PCA_sim.copy(deep=True)
+
+    # Normalize the columns to bring them to the same scale
+    pd_datafram_check_RMSD['rmsd_mag_norm'] = pd_datafram_check_RMSD['rmsd_mag'] / pd_datafram_check_RMSD['rmsd_mag'].max()
+    pd_datafram_check_RMSD['rmsd_len_norm'] = pd_datafram_check_RMSD['rmsd_len'] / pd_datafram_check_RMSD['rmsd_len'].max()
+
+    # Compute the combined metric (e.g., sum of absolute normalized values)
+    pd_datafram_check_RMSD['combined_RMSD_metric'] = abs(pd_datafram_check_RMSD['rmsd_mag_norm']) + abs(pd_datafram_check_RMSD['rmsd_len_norm'])
+
+    # Sort the DataFrame based on the combined metric
+    pd_datafram_check_RMSD = pd_datafram_check_RMSD.sort_values(by='combined_RMSD_metric')
+
+    pd_datafram_check_RMSD = pd_datafram_check_RMSD.reset_index(drop=True)
+
+    # delete rmsd_mag_norm and rmsd_len_norm and combined_RMSD_metric
+    pd_datafram_check_RMSD = pd_datafram_check_RMSD.drop(columns=['rmsd_mag_norm', 'rmsd_len_norm', 'combined_RMSD_metric'])
+
+    return pd_datafram_check_RMSD
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # MAIN FUNCTION ##################################################################################
@@ -7242,17 +7287,38 @@ def main_PhysUncert(trajectory_file, file_name, input_folder, output_folder, tra
         mkdirP(output_folder+os.sep+save_results_folder_PCA)
 
         pd_datafram_PCA_selected_before_knee, pd_datafram_PCA_selected_before_knee_NO_repetition_all, pd_datafram_PCA_selected_all, pcr_results_physical_param, PCAn_comp = PCASim(pd_datafram_PCA_sim, pd_dataframe_PCA_obs_real, output_folder, output_folder+os.sep+save_results_folder_PCA, cml_args.PCA_percent, cml_args.nsel_forced, cml_args.YesPCA, cml_args.NoPCA, file_name, cml_args.cores, cml_args.save_test_plot, cml_args.esclude_real_solution_from_selection)
-        
+
+        # order pd_datafram_PCA_selected_all to RMSD and save it as output_folder+os.sep+save_results_folder_PCA+os.sep+file_name+'_heavy_sim_best_dist_orderRMSD.csv'
+        pd_datafram_PCA_selected_all_orderedRMSD=order_base_on_both_RMSD(pd_datafram_PCA_selected_all)
+        pd_datafram_PCA_selected_all_orderedRMSD.to_csv(output_folder+os.sep+save_results_folder_PCA+os.sep+file_name+'_sim_best_dist_orderRMSD.csv', index=False)
+
+        n_sim_cur=len(pd_datafram_PCA_sim)
+
+        if n_sim_cur < 100:
+            n_sim_cur = 100
+
         print('PLOT: waterfall PCA plot')
-        plot_sigma_waterfall_PCA(pd_datafram_PCA_selected_all, pd_datafram_PCA_sim, output_folder+os.sep+save_results_folder_PCA, file_name)
+        if len(pd_datafram_PCA_sim) < 150:
+            plotwat_n=[1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]
+            n_sim_cur = 100
+        elif len(pd_datafram_PCA_sim) < 1200:
+            plotwat_n=[0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01]
+            n_sim_cur = 1000
+        elif len(pd_datafram_PCA_sim) < 10200:
+            plotwat_n=[0.01, 0.009, 0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 0.001]
+            n_sim_cur = 10000
+        else:
+            plotwat_n=[0.001, 0.0009, 0.0008, 0.0007, 0.0006, 0.0005, 0.0004, 0.0003, 0.0002, 0.0001]
+            n_sim_cur = 100000
+        plot_sigma_waterfall_PCA(pd_datafram_PCA_selected_all, pd_datafram_PCA_sim, output_folder+os.sep+save_results_folder_PCA, file_name,plotwat_n)
 
         # find the 10 percentile value of 'distance_meteor'
-        perc_10 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.01)
-        perc_5 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.005)
-        perc_4 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.004)
-        perc_3 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.003)
-        perc_2 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.002)
-        perc_1 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(0.001)
+        perc_10 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(plotwat_n[0])
+        perc_5 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(plotwat_n[5])
+        perc_4 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(plotwat_n[6])
+        perc_3 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(plotwat_n[7])
+        perc_2 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(plotwat_n[8])
+        perc_1 = pd_datafram_PCA_selected_all['distance_meteor'].quantile(plotwat_n[9])
 
         output_PCA_dist = output_folder+os.sep+save_results_folder_PCA+os.sep+'Knee'
         mkdirP(output_PCA_dist)
@@ -7889,12 +7955,14 @@ if __name__ == "__main__":
     # ,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light_EMCCD/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow_CAMO.json,
     # /home/mvovk/Documents/json_test_EMCCD/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy_CAMO.json,/home/mvovk/Documents/json_test_EMCCD/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light_CAMO.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light_EMCCD/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow_CAMO.json,/home/mvovk/Documents/json_test_EMCCD/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep_CAMO.json,/home/mvovk/Documents/json_test_EMCCD/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast_CAMO.json,/home/mvovk/Documents/json_test_EMCCD/Simulations_PER_v65_fast/PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json,/home/mvovk/Documents/Test_cases', \
+    # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,
+    # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast_CAMO/PER_v65_fast_CAMO.json,/home/mvovk/Documents/Test_cases
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v57_slowRMSD/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavyRMSD/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_lightRMSD/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallowRMSD/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steepRMSD/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast_CAMORMSD/PER_v65_fast_CAMO.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fastRMSD/PER_v65_fast.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")
     
-    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/srv/public/mvovk/1stPaper/Results_PCA-01-20',\
+    arg_parser.add_argument('--save_results_dir', metavar='SAVE_OUTPUT_PATH', type=str, default=r'/srv/public/mvovk/1stPaper/Results_RMSD+PCA-01-21',\
         help="Path were to store the results, by default the same as the input_dir.")
 
     arg_parser.add_argument('--repeate_research', metavar='REPEATE_RESEARCH', type=int, default=1, \

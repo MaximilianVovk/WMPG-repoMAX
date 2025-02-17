@@ -2515,6 +2515,10 @@ def read_with_noise_GenerateSimulations_output(file_path, fps=32):
         # add a rmsd_t0_lag as a random normal noise to the lag_sim_detect make it so it it a determinate number
         lag_noise += np.random.normal(loc=0, scale=rmsd_t0_lag, size=len(lag_sim_detect))
         lag_noise[0] = 0
+        # print('lag_noise')
+        # print(lag_noise)
+        # print('v_inti')
+        # print(data['simulation_results']['leading_frag_vel_arr'][index_ht_sim])
 
         closest_indices = find_closest_index(ht_sim, ht_obs)
 
@@ -5861,7 +5865,8 @@ if __name__ == "__main__":
     # '/home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_shallow/PER_v61_heavy_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_heavy_steep/PER_v60_heavy_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json'
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
     # C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v57_slow\PER_v57_slow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v59_heavy\PER_v59_heavy.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v60_light\PER_v60_light.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v61_shallow\PER_v61_shallow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v62_steep\PER_v62_steep.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v65_fast\PER_v65_fast.json
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Desktop/Test/20210813-061452.998134', \
+    # /home/mvovk/Desktop/Test/20210813-061452.998134
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")

@@ -1,0 +1,47 @@
+# %ECSV 0.9
+# ---
+# datatype:
+# - {name: datetime, datatype: string}
+# - {name: ra, unit: deg, datatype: float64}
+# - {name: dec, unit: deg, datatype: float64}
+# - {name: azimuth, datatype: float64}
+# - {name: altitude, datatype: float64}
+# - {name: x_image, unit: pix, datatype: float64}
+# - {name: y_image, unit: pix, datatype: float64}
+# - {name: integrated_pixel_value, datatype: int64}
+# - {name: saturated_pixels, datatype: bool}
+# - {name: mag_data, datatype: float64}
+# - {name: err_minus_mag, datatype: float64}
+# - {name: err_plus_mag, datatype: float64}
+# delimiter: ','
+# meta: !!omap
+# - {obs_latitude: 43.264017}
+# - {obs_longitude: -80.772172}
+# - {obs_elevation: 329.0}
+# - {origin: 'SkyFit2'}
+# - {camera_id: '01G'}
+# - {cx: 512}
+# - {cy: 512}
+# - {photometric_band: 'GAIA G band'}
+# - {image_file: 'FF_01G_20230811_082648_044_0000000.fits'}
+# - {isodate_start_obs: '2023-08-11T08:26:48.044156'}
+# - {astrometry_number_stars: 20}
+# - {mag_label: 'mag_data'}
+# - {no_frags: 1}
+# - {obs_az: 328.0103898093075}
+# - {obs_ev: 47.67452242343976}
+# - {obs_rot: -76.75417131496927}
+# - {fov_horiz: 14.724078427008587}
+# - {fov_vert: 14.721472516490563}
+# schema: astropy-2.0
+datetime,ra,dec,azimuth,altitude,x_image,y_image,integrated_pixel_value,saturated_pixels,mag_data,err_minus_mag,err_plus_mag
+2023-08-11T08:26:49.008838,295.815864,+75.515821,340.108892,+46.578951,  298.462,   12.978,     61651,False,  +4.30, -0.05, +0.05
+2023-08-11T08:26:49.039958,294.360341,+75.223852,339.635021,+46.241824,  309.866,   24.729,    100780,False,  +3.76, -0.05, +0.05
+2023-08-11T08:26:49.071076,292.950382,+74.915858,339.156335,+45.900445,  321.331,   36.741,    133142,False,  +3.46, -0.05, +0.05
+2023-08-11T08:26:49.102194,291.568462,+74.592850,338.673783,+45.549862,  333.028,   49.003,    140609,False,  +3.40, -0.05, +0.05
+2023-08-11T08:26:49.133313,290.214162,+74.256151,338.189476,+45.189525,  344.975,   61.472,    127618,False,  +3.51, -0.05, +0.05
+2023-08-11T08:26:49.164432,288.894022,+73.905537,337.703245,+44.820937,  357.117,   74.154,     99075,False,  +3.78, -0.09, +0.09
+2023-08-11T08:26:49.195552,287.608093,+73.540673,337.214646,+44.443923,  369.460,   87.067,     63432,False,  +4.26, -0.23, +0.23
+2023-08-11T08:26:49.226670,286.350724,+73.163709,336.726887,+44.056881,  382.061,  100.140,     37837,False,  +4.82, -0.43, +0.43
+2023-08-11T08:26:49.257788,285.155001,+72.773600,336.237130,+43.669376,  394.583,  113.424,     20072,False,  +5.51, -0.12, +0.12
+2023-08-11T08:26:49.288907,283.994322,+72.378352,335.756834,+43.274997,  407.272,  126.648,     10513,False,  +6.21, -0.21, +0.21

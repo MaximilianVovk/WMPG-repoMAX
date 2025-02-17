@@ -7945,7 +7945,7 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
 
     # Init the command line arguments parser
-    arg_parser = argparse.ArgumentParser(description="From Observation and simulated data we select the most likely through Montecarlo method and store results to disk.")
+    arg_parser = argparse.ArgumentParser(description="From Observation and simulated data we select the most likely through PCA method and filtered them using RMSD and store results to disk.")
     # C:\Users\maxiv\Desktop\RunTest\TRUEerosion_sim_v59.84_m1.33e-02g_rho0209_z39.8_abl0.014_eh117.3_er0.636_s1.61.json
     # C:\Users\maxiv\Desktop\20230811-082648.931419
     # 'C:\Users\maxiv\Desktop\jsontest\Simulations_PER_v65_fast\TRUEerosion_sim_v65.00_m7.01e-04g_rho0709_z51.7_abl0.015_eh115.2_er0.483_s2.46.json'
@@ -7990,10 +7990,10 @@ if __name__ == "__main__":
         help="Minimum number of results that are in the CI that have to be found.")
 
     arg_parser.add_argument('--min_nresults', metavar='SIM_RESULTS', type=int, default=1, \
-        help="Minimum number of results that are in the CI that have to be found.")
+        help="Minimum number of results that are in the CI that have to be found, by default 1 menaing only PCA used with no recursive RMSD search.")
     
     arg_parser.add_argument('--ntry', metavar='NUM_TRY', type=int, default=5, \
-        help="Number of failed attemp allowed to generate the set number of similar simulations, by default 3.")
+        help="Number of failed attemp allowed to generate the set number of similar simulations, by default 5.")
 
     arg_parser.add_argument('--fix_n_sim', metavar='FIX_NUM_SIM', type=bool, default=True, \
         help="do not change the number of simularions if the csv file is smaller than the SIM_RESULTS.")

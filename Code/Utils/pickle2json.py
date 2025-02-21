@@ -63,7 +63,7 @@ def save_as_json(output_dir,pickle_file):
 
 if __name__ == "__main__":
     # Change the current directory it reads all the pickle files in the current directory and trnslates them to JSON
-    curr_dir = r'C:\Users\maxiv\WMPG-repoMAX\Code\Utils'
+    curr_dir = r'C:\Users\maxiv\WMPG-repoMAX\Code\Utils\met2ecsv_test_cases\match\20240305-031927.292039_ZB'
 
     # Find all the pickle files in the current directory
     pickle_files = find_all_pickle_files(curr_dir)

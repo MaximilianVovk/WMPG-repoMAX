@@ -17,8 +17,8 @@
 # - {obs_elevation: 322.0000}
 # - {origin: 'Mirfit'}
 # - {camera_id: '02T'}
-# - {cx: 65536}
-# - {cy: 65536}
+# - {cx: 900}
+# - {cy: 900}
 # - {photometric_band: 'STARS9TH_VBVRI R band'}
 # - {image_file: 'ev_20240305_031928A_02T.vid'}
 # - {isodate_start_obs: '2024-03-05T03:19:28.19437'}

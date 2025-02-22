@@ -358,10 +358,10 @@ class observation_data:
         flag_there_is_EMCCD_data = False
         for obs in traj.observations:
             if (obs.station_id == "01T" or obs.station_id == "02T" or obs.station_id == "01T'-Mirfit" or obs.station_id == "02T'-Mirfit"):
-                if flag_there_is_CAMO_data is None:
-                    peak_abs_mag_CAMO = np.min(obs_data_CAMO.absolute_magnitudes)
-                elif peak_abs_mag_CAMO > np.min(obs_data_CAMO.absolute_magnitudes):
-                    peak_abs_mag_CAMO = np.min(obs_data_CAMO.absolute_magnitudes)
+                if peak_abs_mag_CAMO is None:
+                    peak_abs_mag_CAMO = np.min(obs.absolute_magnitudes)
+                elif peak_abs_mag_CAMO > np.min(obs.absolute_magnitudes):
+                    peak_abs_mag_CAMO = np.min(obs.absolute_magnitudes)
 
             # check if among obs.station_id there is one of the following 01T or 02T
             if (obs.station_id == "01T" or obs.station_id == "02T" or obs.station_id == "01T'-Mirfit" or obs.station_id == "02T'-Mirfit") and use_CAMO_data==True:
@@ -565,6 +565,8 @@ class observation_data:
 
     def _photometric_adjustment(self,unique_stations,peak_abs_mag_CAMO):
         
+        print("NOTE: Applying photometric adjustment to mach the luminosity of the two stations")
+
         # Find indices of each station in self.stations_lum
         station_0_indices = np.where(self.stations_lum == unique_stations[0])[0]
         station_1_indices = np.where(self.stations_lum == unique_stations[1])[0]

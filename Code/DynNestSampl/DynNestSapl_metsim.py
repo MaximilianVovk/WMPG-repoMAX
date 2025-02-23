@@ -303,12 +303,12 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                                         np.flip(sim_data.abs_magnitude))
         
         # make the difference between the no_noise_mag and the obs_data.abs_magnitude
-        sim_diff_mag = sim_mag - sim_data.absolute_magnitudes
+        sim_diff_mag = sim_mag - obs_data.absolute_magnitudes
         # for each station in obs_data_plot
         for station in np.unique(obs_data.stations_lum):
             # plot the height vs. absolute_magnitudes
             ax1.plot(sim_diff_mag[np.where(obs_data.stations_lag == station)], \
-                    sim_data.height_lum[np.where(obs_data.stations_lag == station)]/1000, 'x', \
+                    obs_data.height_lum[np.where(obs_data.stations_lag == station)]/1000, '.', \
                     color=station_colors[station], label=station)
 
         ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000, color='black', label='Best guess') 
@@ -324,7 +324,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         for station in np.unique(obs_data.stations_lum):
             # plot the height vs. absolute_magnitudes
             ax5.plot(sim_diff_lum[np.where(obs_data.stations_lag == station)], \
-                    sim_data.height_lum[np.where(obs_data.stations_lag == station)]/1000, 'x', \
+                    obs_data.height_lum[np.where(obs_data.stations_lag == station)]/1000, '.', \
                     color=station_colors[station], label=station)
 
         # find the obs_data.leading_frag_height_arr index is close to obs_data.height_lum[0] wihouth nan
@@ -390,7 +390,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     
     print(dynesty_run_results.summary())
     print('information gain:', dynesty_run_results.information[-1])
-
+    print('niter i.e number of metsim simulated events\n')
+    
     variables = list(flags_dict.keys())
 
     logwt = dynesty_run_results.logwt
@@ -406,34 +407,10 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Mapping of original variable names to LaTeX-style labels
     variable_map = {
-        'vel_1st_frame': r"$v_0$ [km/s]",
-        'vel_avg': r"$v_{avg}$ [km/s]",
-        'vel_180km': r"$v_{180km}$ [m/s]",
-        'duration': r"$T$ [s]",
-        'peak_mag_height': r"$h_{peak}$ [km]",
-        'begin_height': r"$h_{beg}$ [km]",
-        'end_height': r"$h_{end}$ [km]",
-        'peak_abs_mag': r"$M_{peak}$ [mag]",
-        'beg_abs_mag': r"$M_{beg}$ [mag]",
-        'end_abs_mag': r"$M_{end}$ [mag]",
-        'F': r"$F$",
-        'trail_len': r"$L$ [km]",
-        't0': r"$t_0$ [s]",
-        'deceleration_lin': r"$\bar{a}$ [km/s$^{2}$]",
-        'deceleration_parab': r"$a_{quad}(1~s)$ [km/s$^{2}$]",
-        'decel_parab_t0': r"$\bar{a}_{poly}(1~s)$ [km/s$^{2}$]",
-        'decel_t0': r"$\bar{a}_{poly}$ [km/s$^{2}$]",
-        'decel_jacchia': r"$a_0 k$ [km/s$^{2}$]",
+        'v_init': r"$v_0$ [km/s]",
         'zenith_angle': r"$z_c$ [deg]",
-        'avg_lag': r"$\bar{\ell}$ [m]",
-        'kc': r"$k_c$ [km]",
-        'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$ [kPa]",
-        'a_mag_init': r"$d_1$ [mag/s$^{2}$]",
-        'b_mag_init': r"$s_1$ [mag/s]",
-        'a_mag_end': r"$d_2$ [mag/s$^{2}$]",
-        'b_mag_end': r"$s_2$ [mag/s]",
-        'mass': r"$m_0$ [kg]",
-        'rho': r"$\\rho$ [kg/m$^3$]",
+        'm_init': r"$m_0$ [kg]",
+        'rho': r"$\rho$ [kg/m$^3$]",
         'sigma': r"$\sigma$ [kg/MJ]",
         'erosion_height_start': r"$h_e$ [km]",
         'erosion_coeff': r"$\eta$ [kg/MJ]",
@@ -446,14 +423,14 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     ndim = len(variables)
     sim_num = -1
-    best_guess = dynesty_run_results.results.samples[sim_num]    
-    for variable in variables:
+    best_guess = dynesty_run_results.samples[sim_num]    
+    # for variable in variables: for 
+    for i, variable in enumerate(variables):
         if 'log' in flags_dict[variable]:  
             samples_equal[:, i] = 10**(samples_equal[:, i])
             best_guess[i] = 10**(best_guess[i])
 
-    print('num of samples:', len(dynesty_run_results.results.samples))
-    print('Best fit')
+    print('Best fit:')
     # write the best fit variable names and then the best guess values
     for i in range(len(best_guess)):
         print(variables[i],':\t', best_guess[i])
@@ -490,15 +467,29 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     truth_values_plot = {}
     # if 'dynesty_run_results has const
     if hasattr(obs_data, 'const'):
-        # Get the true values of the parameters
-        truth_values_plot = {variable: getattr(obs_data.const, variable) for variable in variables}
-        # if any flags_dict has 'log' in it
-        for variable in variables:
-            if 'log' in flags_dict[variable]:
-                truth_values_plot[labels[i]] = np.log10(truth_values_plot[labels[i]])
 
-        # Convert to an array in the same order as the parameter labels
-        truths = np.array([truth_values_plot[label] for label in labels])
+        truth_values_plot = {}
+
+        # Extract values from dictionary
+        for variable in variables:
+            if variable in obs_data.const:  # Use dictionary lookup instead of hasattr()
+                truth_values_plot[variable] = obs_data.const[variable]
+            else:
+                print(f"Warning: {variable} not found in obs_data.const")
+
+        # Debugging: Print extracted values before applying log
+        print("Truth values before log processing:", truth_values_plot)
+
+        # Convert to array safely
+        truths = np.array([truth_values_plot.get(label, np.nan) for label in labels])
+
+        # Apply log10 safely if needed
+        for variable in variables:
+            if 'log' in flags_dict.get(variable, []):
+                if variable in truth_values_plot:
+                    truth_values_plot[variable] = np.log10(truth_values_plot[variable]) #np.log10(np.maximum(truth_values_plot[variable], 1e-10))
+                else:
+                    print(f"Skipping {variable}: Missing from truth_values_plot")
 
         # Compare to true theta
         bias = posterior_mean - truths
@@ -555,12 +546,14 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Save to a .tex file
     with open(output_folder+os.sep+file_name+"_results_table.tex", "w") as f:
-        f.write(dynesty_run_results.summary())
+        f.write(str(dynesty_run_results.summary()))
+        f.write("H inf.gain:"+str(dynesty_run_results.information[-1]))
+        f.write("niter i.e number of metsim simulated events\n")
+        f.write("Best fit:")
+        for i in range(len(best_guess)):
+            f.write(variables[i]+':\t'+str(best_guess[i]))
         f.write("\n")
         f.write(latex_str)
-        f.write("\n")
-        for i in range(len(best_guess)):
-            f.write(variables[i],':\t', best_guess[i])
         f.close()
 
     # Print LaTeX code for quick copy-pasting
@@ -572,7 +565,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     if hasattr(obs_data, 'const'):
         # 25310it [5:59:39,  1.32s/it, batch: 0 | bound: 10 | nc: 30 | ncall: 395112 | eff(%):  6.326 | loglstar:   -inf < -16256.467 <    inf | logz: -16269.475 +/-  0.049 | dlogz: 15670.753 >  0.010]
-        truth_plot = np.array([truth_values_plot[label] for label in labels])
+        truth_plot = np.array([truth_values_plot[variable] for variable in variables])
 
         fig, axes = dyplot.traceplot(dynesty_run_results, truths=truth_plot, labels=labels,
                                     label_kwargs={"fontsize": 10},  # Reduce axis label size
@@ -706,16 +699,39 @@ def read_prior_to_bounds(object_meteor,file_path=""):
     # Default values if no file path is provided
     if file_path == "":
         # delete from the default_bounds the zenith_angle
-        default_bounds.pop("zenith_angle")
+        # default_bounds.pop("zenith_angle")
         bounds = [default_bounds[key] for key in default_bounds]
         flags_dict = {key: default_flags.get(key, []) for key in default_bounds}
         # for the one that have log transformation, apply it
         for i, key in enumerate(default_bounds):
             if "log" in flags_dict[key]:
                 bounds[i] = np.log10(bounds[i][0]), np.log10(bounds[i][1])
-        fixed_values = {
-            "zenith_angle": np.nan,
-        }
+
+        # check if any of the values are np.nan and replace them with the object_meteor values
+        for i, key in enumerate(default_bounds):
+            bounds[i] = list(bounds[i])  # Convert tuple to list
+            # now check if the values are np.nan and if the flag key is 'norm' then divide by 10
+            if np.isnan(bounds[i][0]) and key in object_meteor.__dict__:
+                bounds[i][0] = object_meteor.__dict__[key] - object_meteor.__dict__[key]/10/2
+            elif np.isnan(bounds[i][0]) and key == "erosion_height_start":
+                bounds[i][0] = object_meteor.height_lum[0] - 1000
+            
+            if np.isnan(bounds[i][1]) and key in object_meteor.__dict__ and "norm" in flags_dict[key]:
+                bounds[i][1] = object_meteor.__dict__[key]
+            elif np.isnan(bounds[i][1]) and key in object_meteor.__dict__:
+                bounds[i][1] = object_meteor.__dict__[key] + object_meteor.__dict__[key]/10/2
+            elif np.isnan(bounds[i][1]) and key == "erosion_height_start":
+                bounds[i][1] = object_meteor.height_lum[0] + 9000
+            bounds[i] = tuple(bounds[i])  # Convert back to tuple if needed
+        # checck if stil any bounds are np.nan and raise an error
+        for i, key in enumerate(default_bounds):
+            if np.isnan(bounds[i][0]) or np.isnan(bounds[i][1]):
+                raise ValueError(f"The value for {key} is np.nan and it is not in the dictionary")
+
+        fixed_values = {}  
+        # fixed_values = {
+        #     "zenith_angle": np.nan,
+        # }
 
     else:
         bounds = []
@@ -1394,8 +1410,6 @@ class observation_data:
         return time_sampled,stations
 
 
-
-
     def _save_json_data(self):
         """Save the object to a JSON file."""
 
@@ -1419,12 +1433,12 @@ class observation_data:
 
         # Define file path for saving
         json_file_save = os.path.splitext(self.file_name)[0] + "_with_noise.json"
-        # # check if the file exists if so give a _1, _2, _3, etc. at the end of the file name
-        # i_json = 1
-        # if os.path.exists(json_file_save):
-        #     while os.path.exists(json_file_save):
-        #         json_file_save = os.path.splitext(self.file_name)[0] + f"_{i_json}_with_noise.json"
-        #         i_json += 1
+        # check if the file exists if so give a _1, _2, _3, etc. at the end of the file name
+        i_json = 1
+        if os.path.exists(json_file_save):
+            while os.path.exists(json_file_save):
+                json_file_save = os.path.splitext(self.file_name)[0] + f"_{i_json}_with_noise.json"
+                i_json += 1
 
         # Write to JSON file
         with open(json_file_save, 'w') as f:
@@ -1487,8 +1501,12 @@ class find_dynestyfile_and_priors:
             root, _ = os.path.splitext(self.input_dir_or_file)
             dynesty_file = root + ".dynesty"
 
-            self.observation_obj = observation_data(self.input_dir_or_file, self.use_CAMO_data)
+            if os.path.exists(dynesty_file):
+                # Matches the .dynesty base
+                if self.resume==False:
+                    dynesty_file = self._build_new_dynesty_name(dynesty_file)
 
+            self.observation_obj = observation_data(self.input_dir_or_file, self.use_CAMO_data)
             # If user gave a valid .prior path, read it once.
             # We'll reuse this for every .dynesty discovered.
             if os.path.isfile(self.prior_file):
@@ -1798,6 +1816,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
 
     # check if file exists
     if not os.path.exists(dynesty_file):
+        print("Starting new run:")
         # Start new run
         with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
                                logl_args=(obs_data, flags_dict, fixed_values, 10),
@@ -1807,6 +1826,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)
 
     else:
+        print("Resuming previous run:")
         # Resume previous run
         with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
                                logl_args=(obs_data, flags_dict, fixed_values, 10),
@@ -1815,10 +1835,10 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, pool = pool)
             dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
 
-    print('done')
+    print('SUCCESS: dynesty results ready!\n')
 
-    # copy the dynesty file to the output folder if output_folder is a directory
-    if os.path.isdir(output_folder) and output_folder != "":
+    # check if output_folder is different from the dynesty_file folder
+    if output_folder != os.path.dirname(dynesty_file):
         print("Copying dynesty file to output folder...")
         shutil.copy(dynesty_file, output_folder)
         print("dynesty file copied to:", output_folder)
@@ -1840,15 +1860,15 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\PER_v59_heavy.json",
+        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\test_cases\PER_v59_heavy_with_noise.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
 
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
         default=r"",
         help="Where to store results. If empty, store next to each .dynesty.")
-
+    # C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\test_cases\stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\stony_meteoroid.prior",
+        default=r"",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,

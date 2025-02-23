@@ -16,11 +16,13 @@ from scipy.stats import multivariate_normal
 import warnings
 import re
 import matplotlib.gridspec as gridspec
+from scipy.optimize import minimize
+import shutil
 
-from wmpl.MetSim.GUI import loadConstants, saveConstants,SimulationResults
+from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
+from wmpl.Utils.Math import lineFunc, mergeClosePoints, meanAngle
 from wmpl.MetSim.ML.GenerateSimulations import generateErosionSim,saveProcessedList,MetParam
-from wmpl.Utils.Math import lineFunc, mergeClosePoints, findClosestPoints, vectMag, vectNorm, lineFunc, meanAngle
 from wmpl.Utils.Physics import calcMass, dynamicPressure, calcRadiatedEnergy
 from wmpl.Utils.TrajConversions import J2000_JD, date2JD
 from wmpl.Utils.AtmosphereDensity import fitAtmPoly
@@ -28,6 +30,9 @@ from wmpl.Utils.Pickling import loadPickle
 
 import signal
 
+###############################################################################
+# Function: plotting function
+###############################################################################
 
 # Plotting function
 def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',file_name=''):
@@ -58,6 +63,10 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         ax0.plot(obs_data.absolute_magnitudes[np.where(obs_data.stations_lum == station)], \
                  obs_data.height_lum[np.where(obs_data.stations_lum == station)]/1000, 'x--', \
                  color=station_colors[station], label=station)
+    # chek if np.unique(obs_data.stations_lag) and np.unique(obs_data.stations_lum) are the same
+    if not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
+        # print a horizonal along the x axis at the height_lag[0] darkgray
+        ax0.axhline(y=obs_data.height_lag[0]/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(np.unique(obs_data.stations_lag))}", zorder=2)
 
     ax0.set_xlabel('Absolute Magnitudes')
     # flip the x-axis
@@ -66,7 +75,14 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # ax0.tick_params(axis='x', rotation=45)
     ax0.set_ylabel('Height (km)')
     ax0.grid(True, linestyle='--', color='lightgray')
-
+    # save the x-axis limits
+    xlim_abs_mag = ax0.get_xlim()
+    # fix the x-axis limits to xlim_abs_mag
+    ax0.set_xlim(xlim_abs_mag)
+    # save the y-axis limits
+    ylim_abs_mag = ax0.get_ylim()
+    # fix the y-axis limits to ylim_abs_mag
+    ax0.set_ylim(ylim_abs_mag)
     
 
     ax1.fill_betweenx(obs_data.height_lum/1000, -obs_data.noise_mag, obs_data.noise_mag, color='darkgray', alpha=0.2)
@@ -97,10 +113,22 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         ax4.plot(obs_data.luminosity[np.where(obs_data.stations_lum == station)], \
                  obs_data.height_lum[np.where(obs_data.stations_lum == station)]/1000, 'x--', \
                  color=station_colors[station], label=station)
+    # chek if np.unique(obs_data.stations_lag) and np.unique(obs_data.stations_lum) are the same
+    if not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
+        # print a horizonal along the x axis at the height_lag[0] darkgray
+        ax4.axhline(y=obs_data.height_lag[0]/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(np.unique(obs_data.stations_lag))}", zorder=2)
     ax4.set_xlabel('Luminosity [J/s]')
     # ax4.tick_params(axis='x', rotation=45)
     ax4.set_ylabel('Height (km)')
     ax4.grid(True, linestyle='--', color='lightgray')
+    # save the x-axis limits
+    xlim_lum = ax4.get_xlim()
+    # fix the x-axis limits to xlim_lum
+    ax4.set_xlim(xlim_lum)
+    # save the y-axis limits
+    ylim_lum = ax4.get_ylim()
+    # fix the y-axis limits to ylim_lum
+    ax4.set_ylim(ylim_lum)
 
     ax5.fill_betweenx(obs_data.height_lum/1000, -obs_data.noise_lum, obs_data.noise_lum, color='darkgray', alpha=0.2)
     ax5.fill_betweenx(obs_data.height_lum/1000, -obs_data.noise_lum * 2, obs_data.noise_lum * 2, color='lightgray', alpha=0.2)
@@ -130,6 +158,14 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     ax2.legend()
     ax2.tick_params(labelbottom=False)  # Hide x-axis tick labels
     ax2.grid(True, linestyle='--', color='lightgray')
+    # save the x-axis limits
+    xlim_vel = ax2.get_xlim()
+    # fix the x-axis limits to xlim_vel
+    ax2.set_xlim(xlim_vel)
+    # save the y-axis limits
+    ylim_vel = ax2.get_ylim()
+    # fix the y-axis limits to ylim_vel
+    ax2.set_ylim(ylim_vel)
 
     # Plot 6: Res.Vel vs. Time
     ax6.fill_between(obs_data.time_lag, -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
@@ -158,6 +194,14 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     ax3.set_ylabel('Lag [m]')
     ax3.tick_params(labelbottom=False)  # Hide x-axis tick labels
     ax3.grid(True, linestyle='--', color='lightgray')
+    # save the x-axis limits
+    xlim_lag = ax3.get_xlim()
+    # fix the x-axis limits to xlim_lag
+    ax3.set_xlim(xlim_lag)
+    # save the y-axis limits
+    ylim_lag = ax3.get_ylim()
+    # fix the y-axis limits to ylim_lag
+    ax3.set_ylim(ylim_lag)
 
     # Plot 7: Res.Vel vs. Time
     ax7.fill_between(obs_data.time_lag, -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
@@ -173,6 +217,160 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # make the suptitle
     # fig.suptitle(file_name)
 
+    # check if 'const' in the object obs_data.keys()
+    if hasattr(obs_data, 'const'):
+
+        # plot abs_magnitude_arr vs leading_frag_height_arr
+        ax0.plot(obs_data.abs_magnitude, obs_data.leading_frag_height_arr/1000, '--', color='black', linewidth=0.5, label='No Noise', zorder=2)
+        ax0.legend()
+
+        # inerpoate the abs_magnitude_arr to the leading_frag_height_arr
+        no_noise_mag = np.interp(obs_data.height_lum, 
+                                        np.flip(obs_data.leading_frag_height_arr), 
+                                        np.flip(obs_data.abs_magnitude))
+        
+        # make the difference between the no_noise_mag and the obs_data.abs_magnitude
+        diff_mag = no_noise_mag - obs_data.absolute_magnitudes
+        ax1.plot(diff_mag, obs_data.height_lum/1000, '.', markersize=3, color='black', label='No Noise')
+        
+        # # for ax5 add a noise that changes for the left and right side of the curve base on the -2.5*np.log10((self.luminosity_arr+self.noise_lum)/self.P_0m) and 2.5*np.log10((self.luminosity_arr+self.noise_lum)/self.P_0m)
+        # ax1.fill_betweenx(obs_data.leading_frag_height_arr/1000, \
+        #                   -2.5*(np.log10((obs_data.luminosity_arr-obs_data.noise_lum)/obs_data.P_0m)-np.log10((obs_data.luminosity_arr)/obs_data.P_0m)), \
+        #                   -2.5*(np.log10((obs_data.luminosity_arr+obs_data.noise_lum)/obs_data.P_0m)-np.log10((obs_data.luminosity_arr)/obs_data.P_0m)), \
+        #                     color='darkgray', alpha=0.2)
+        # ax1.fill_betweenx(obs_data.leading_frag_height_arr/1000, \
+        #                   -2.5*(np.log10((obs_data.luminosity_arr-2*obs_data.noise_lum)/obs_data.P_0m)-np.log10((obs_data.luminosity_arr)/obs_data.P_0m)), \
+        #                   -2.5*(np.log10((obs_data.luminosity_arr+2*obs_data.noise_lum)/obs_data.P_0m)-np.log10((obs_data.luminosity_arr)/obs_data.P_0m)), \
+        #                     color='lightgray', alpha=0.2)
+
+        # plot luminosity_arr vs leading_frag_height_arr
+        ax4.plot(obs_data.luminosity_arr, obs_data.leading_frag_height_arr/1000, '--', color='black', linewidth=0.5, label='No Noise', zorder=2)
+
+        # interpolate to make sure they are the same length and discard points after height starts increasing if it does at any point obs_metsim_obj.traj.observations[0].model_ht
+        no_noise_lum = np.interp(obs_data.height_lum, 
+                                        np.flip(obs_data.leading_frag_height_arr), 
+                                        np.flip(obs_data.luminosity_arr))
+        
+        # make the difference between the no_noise_intensity and the obs_data.luminosity_arr
+        diff_lum = no_noise_lum - obs_data.luminosity
+        ax5.plot(diff_lum, obs_data.height_lum/1000, '.', markersize=3, color='black', label='No Noise')
+
+
+        # find the obs_data.leading_frag_height_arr index is close to obs_data.height_lum[0] wihouth nan
+        index = np.argmin(np.abs(obs_data.leading_frag_height_arr[~np.isnan(obs_data.leading_frag_height_arr)]-obs_data.height_lag[0]))
+        # plot velocity_arr vs leading_frag_time_arr
+        ax2.plot(obs_data.time_arr-obs_data.time_arr[index], \
+                 obs_data.leading_frag_vel_arr/1000, '--', color='black', linewidth=0.5, label='No Noise', zorder=2)
+        ax2.legend()
+
+        # inerpoate the velocity_arr to the leading_frag_time_arr
+        no_noise_vel = np.interp(obs_data.height_lag,
+                                    np.flip(obs_data.leading_frag_height_arr),
+                                    np.flip(obs_data.leading_frag_vel_arr))
+        
+        # make the difference between the no_noise_vel and the obs_data.velocities
+        diff_vel = no_noise_vel - obs_data.velocities
+        ax6.plot(obs_data.time_lag, diff_vel/1000, '.', markersize=3, color='black', label='No Noise')
+
+        # plot lag_arr vs leading_frag_time_arr withouth nan values
+        lag_no_noise = (obs_data.leading_frag_length_arr-obs_data.leading_frag_length_arr[index])\
+              - ((obs_data.velocities[0])*(obs_data.time_arr-obs_data.time_arr[index]))
+        lag_no_noise -= lag_no_noise[index]
+        # plot lag_arr vs leading_frag_time_arr
+        ax3.plot(obs_data.time_arr-obs_data.time_arr[index], \
+                 lag_no_noise, '--', color='black', linewidth=0.5, label='No Noise', zorder=2)
+
+        # inerpoate the lag_arr to the leading_frag_time_arr
+        no_noise_lag = np.interp(obs_data.height_lag,
+                                    np.flip(obs_data.leading_frag_height_arr),
+                                    np.flip(lag_no_noise))
+        
+        # make the difference between the no_noise_lag and the obs_data.lag
+        diff_lag = no_noise_lag - obs_data.lag
+        ax7.plot(obs_data.time_lag, diff_lag, '.', markersize=3, color='black', label='No Noise')
+
+
+    # Check if sim_data was provided
+    if sim_data is not None:
+
+        # Plot simulated data
+        ax0.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr/1000, color='black', label='Best guess')
+        ax0.legend()
+        
+        # inerpoate the abs_magnitude_arr to the leading_frag_height_arr
+        sim_mag = np.interp(obs_data.height_lum, 
+                                        np.flip(sim_data.leading_frag_height_arr), 
+                                        np.flip(sim_data.abs_magnitude))
+        
+        # make the difference between the no_noise_mag and the obs_data.abs_magnitude
+        sim_diff_mag = sim_mag - sim_data.absolute_magnitudes
+        # for each station in obs_data_plot
+        for station in np.unique(obs_data.stations_lum):
+            # plot the height vs. absolute_magnitudes
+            ax1.plot(sim_diff_mag[np.where(obs_data.stations_lag == station)], \
+                    sim_data.height_lum[np.where(obs_data.stations_lag == station)]/1000, 'x', \
+                    color=station_colors[station], label=station)
+
+        ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000, color='black', label='Best guess') 
+
+        # interpolate to make sure they are the same length and discard points after height starts increasing if it does at any point obs_metsim_obj.traj.observations[0].model_ht
+        sim_lum = np.interp(obs_data.height_lum, 
+                                        np.flip(sim_data.leading_frag_height_arr), 
+                                        np.flip(sim_data.luminosity_arr))
+        
+        # make the difference between the no_noise_intensity and the obs_data.luminosity_arr
+        sim_diff_lum = sim_lum - obs_data.luminosity
+        # for each station in obs_data_plot
+        for station in np.unique(obs_data.stations_lum):
+            # plot the height vs. absolute_magnitudes
+            ax5.plot(sim_diff_lum[np.where(obs_data.stations_lag == station)], \
+                    sim_data.height_lum[np.where(obs_data.stations_lag == station)]/1000, 'x', \
+                    color=station_colors[station], label=station)
+
+        # find the obs_data.leading_frag_height_arr index is close to obs_data.height_lum[0] wihouth nan
+        index = np.argmin(np.abs(sim_data.leading_frag_height_arr[~np.isnan(sim_data.leading_frag_height_arr)]-obs_data.height_lag[0]))
+        # plot velocity_arr vs leading_frag_time_arr
+        ax2.plot(sim_data.time_arr-sim_data.time_arr[index], sim_data.leading_frag_vel_arr/1000, color='black', label='Best guess')
+        ax2.legend()
+
+        # inerpoate the velocity_arr to the leading_frag_time_arr
+        sim_vel = np.interp(obs_data.height_lag,
+                                    np.flip(sim_data.leading_frag_height_arr),
+                                    np.flip(sim_data.leading_frag_vel_arr))
+        
+        # make the difference between the no_noise_vel and the obs_data.velocities
+        sim_diff_vel = sim_vel - obs_data.velocities
+
+        # for each station in obs_data_plot
+        for station in np.unique(obs_data.stations_lag):
+            # plot the height vs. absolute_magnitudes
+            ax6.plot(obs_data.time_lag[np.where(obs_data.stations_lag == station)], \
+                    sim_diff_vel[np.where(obs_data.stations_lag == station)]/1000, '.', \
+                        color=station_colors[station], label=station)
+
+        # plot lag_arr vs leading_frag_time_arr withouth nan values
+        sim_lag = (sim_data.leading_frag_length_arr-sim_data.leading_frag_length_arr[index])\
+              - ((obs_data.velocities[0])*(sim_data.time_arr-sim_data.time_arr[index]))
+        
+        sim_lag -= sim_lag[index]
+        # plot lag_arr vs leading_frag_time_arr
+        ax3.plot(sim_data.time_arr-sim_data.time_arr[index], sim_lag, color='black', label='Best guess')
+
+        # inerpoate the lag_arr to the leading_frag_time_arr
+        sim_lag = np.interp(obs_data.height_lag,
+                                    np.flip(sim_data.leading_frag_height_arr),
+                                    np.flip(sim_lag))
+        
+        # make the difference between the no_noise_lag and the obs_data.lag
+        sim_diff_lag = sim_lag - obs_data.lag
+        
+        # for each station in obs_data_plot
+        for station in np.unique(obs_data.stations_lag):
+            # plot the height vs. absolute_magnitudes
+            ax7.plot(obs_data.time_lag[np.where(obs_data.stations_lag == station)], \
+                    sim_diff_lag[np.where(obs_data.stations_lag == station)], '.', \
+                        color=station_colors[station], label=station)
+
     # Save the plot
     print('file saved: '+out_folder +os.sep+ file_name+'.png')
     fig.savefig(output_folder +os.sep+ file_name +'.png', dpi=300)
@@ -180,20 +378,271 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # Display the plot
     plt.close(fig)
 
-    # Check if sim_data was provided
-    if sim_data is None:
-        print("Warning: No simulation data provided. Proceeding with only observation data.")
-        return
-    
     # ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise, abs_mag_sim_err + mag_noise, color='darkgray', alpha=0.2)
     # ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise * real_original['z_score'], abs_mag_sim_err + mag_noise * real_original['z_score'], color='lightgray', alpha=0.2)
 
     # ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise, vel_kms_err + vel_noise, color='darkgray', alpha=0.2)
     # ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise * real_original['z_score'], vel_kms_err + vel_noise * real_original['z_score'], color='lightgray', alpha=0.2)
 
+# Plotting function dynesty
+def plot_dynesty(dynesty_run_results, obs_data, flags_dict, output_folder='', file_name=''):
+    
+    variables = list(flags_dict.keys())
+
+    logwt = dynesty_run_results.logwt
+
+    # Subtract the maximum logwt for numerical stability
+    logwt_shifted = logwt - np.max(logwt)
+    weights = np.exp(logwt_shifted)
+
+    # Normalize so that sum(weights) = 1
+    weights /= np.sum(weights)
+
+    samples_equal = dynesty.utils.resample_equal(dynesty_run_results.samples, weights)
+
+    # Mapping of original variable names to LaTeX-style labels
+    variable_map = {
+        'vel_1st_frame': r"$v_0$ [km/s]",
+        'vel_avg': r"$v_{avg}$ [km/s]",
+        'vel_180km': r"$v_{180km}$ [m/s]",
+        'duration': r"$T$ [s]",
+        'peak_mag_height': r"$h_{peak}$ [km]",
+        'begin_height': r"$h_{beg}$ [km]",
+        'end_height': r"$h_{end}$ [km]",
+        'peak_abs_mag': r"$M_{peak}$ [mag]",
+        'beg_abs_mag': r"$M_{beg}$ [mag]",
+        'end_abs_mag': r"$M_{end}$ [mag]",
+        'F': r"$F$",
+        'trail_len': r"$L$ [km]",
+        't0': r"$t_0$ [s]",
+        'deceleration_lin': r"$\bar{a}$ [km/s$^{2}$]",
+        'deceleration_parab': r"$a_{quad}(1~s)$ [km/s$^{2}$]",
+        'decel_parab_t0': r"$\bar{a}_{poly}(1~s)$ [km/s$^{2}$]",
+        'decel_t0': r"$\bar{a}_{poly}$ [km/s$^{2}$]",
+        'decel_jacchia': r"$a_0 k$ [km/s$^{2}$]",
+        'zenith_angle': r"$z_c$ [deg]",
+        'avg_lag': r"$\bar{\ell}$ [m]",
+        'kc': r"$k_c$ [km]",
+        'Dynamic_pressure_peak_abs_mag': r"$Q_{peak}$ [kPa]",
+        'a_mag_init': r"$d_1$ [mag/s$^{2}$]",
+        'b_mag_init': r"$s_1$ [mag/s]",
+        'a_mag_end': r"$d_2$ [mag/s$^{2}$]",
+        'b_mag_end': r"$s_2$ [mag/s]",
+        'mass': r"$m_0$ [kg]",
+        'rho': r"$\\rho$ [kg/m$^3$]",
+        'sigma': r"$\sigma$ [kg/MJ]",
+        'erosion_height_start': r"$h_e$ [km]",
+        'erosion_coeff': r"$\eta$ [kg/MJ]",
+        'erosion_mass_index': r"$s$",
+        'erosion_mass_min': r"$m_{l}$ [kg]",
+        'erosion_mass_max': r"$m_{u}$ [kg]"
+    }
+
+    labels = [variable_map[variable] for variable in variables]
+
+    ndim = len(variables)
+                
+    for variable in variables:
+        if 'log' in flags_dict[variable]:  
+            samples_equal[:, i] = 10**(samples_equal[:, i])
+
+    # Posterior mean (per dimension)
+    posterior_mean = np.mean(samples_equal, axis=0)      # shape (ndim,)
+
+    # Posterior median (per dimension)
+    posterior_median = np.median(samples_equal, axis=0)  # shape (ndim,)
+
+    # 95% credible intervals (2.5th and 97.5th percentiles)
+    lower_95 = np.percentile(samples_equal, 2.5, axis=0)   # shape (ndim,)
+    upper_95 = np.percentile(samples_equal, 97.5, axis=0)  # shape (ndim,)
+
+    # Function to approximate mode using histogram binning
+    def approximate_mode_1d(samples):
+        hist, bin_edges = np.histogram(samples, bins='auto', density=True)
+        idx_max = np.argmax(hist)
+        return 0.5 * (bin_edges[idx_max] + bin_edges[idx_max + 1])
+
+    approx_modes = [approximate_mode_1d(samples_equal[:, d]) for d in range(ndim)]
+
+    truth_values_plot = {}
+    # if 'dynesty_run_results has const
+    if hasattr(obs_data, 'const'):
+        # Get the true values of the parameters
+        truth_values_plot = {variable: getattr(obs_data.const, variable) for variable in variables}
+        # if any flags_dict has 'log' in it
+        for variable in variables:
+            if 'log' in flags_dict[variable]:
+                truth_values_plot[labels[i]] = np.log10(truth_values_plot[labels[i]])
+
+        # Convert to an array in the same order as the parameter labels
+        truths = np.array([truth_values_plot[label] for label in labels])
+
+        # Compare to true theta
+        bias = posterior_mean - truths
+        abs_error = np.abs(bias)
+        rel_error = abs_error / np.abs(truths)
+
+        # Coverage check
+        coverage_mask = (truths >= lower_95) & (truths <= upper_95)
+        print("Coverage mask per dimension:", coverage_mask)
+        print("Fraction of dimensions covered:", coverage_mask.mean())
+
+        # Generate LaTeX table
+        latex_str = r"""\begin{table}[htbp]
+            \centering
+            \renewcommand{\arraystretch}{1.2} % Increase row height for readability
+            \setlength{\tabcolsep}{4pt} % Adjust column spacing
+            \resizebox{\textwidth}{!}{ % Resizing table to fit page width
+            \begin{tabular}{|l|c|c|c|c|c|c||c|c||c|}
+            \hline
+            Parameter & 2.5\% & True Value & Mean & Median & Mode & 97.5\% & Abs. Error & Rel. Error & Cover \\
+            \hline
+        """
+        # & Mode
+        # {approx_modes[i]:.4g} &
+        for i, label in enumerate(labels):
+            coverage_val = "\ding{51}" if coverage_mask[i] else "\ding{55}"  # Use checkmark/x for coverage
+            latex_str += (f"    {label} & {lower_95[i]:.4g} & {truths[i]:.4g} & {posterior_mean[i]:.4g} "
+                        f"& {posterior_median[i]:.4g} & {approx_modes[i]:.4g} & {upper_95[i]:.4g} "
+                        f"& {abs_error[i]:.4g} & {rel_error[i]:.4g} & {coverage_val} \\\\\n    \hline\n")
+
+    else:
+        # Generate LaTeX table
+        latex_str = r"""\begin{table}[htbp]
+            \centering
+            \renewcommand{\arraystretch}{1.2} % Increase row height for readability
+            \setlength{\tabcolsep}{4pt} % Adjust column spacing
+            \resizebox{\textwidth}{!}{ % Resizing table to fit page width
+            \begin{tabular}{|l|c|c|c|c|c|}
+            \hline
+            Parameter & 2.5\% & Mean & Median & Mode & 97.5\%\\
+            \hline
+        """
+        # & Mode
+        # {approx_modes[i]:.4g} &
+        for i, label in enumerate(labels):
+            latex_str += (f"    {label} & {lower_95[i]:.4g} & {posterior_mean[i]:.4g} "
+                        f"& {posterior_median[i]:.4g} & {approx_modes[i]:.4g} & {upper_95[i]:.4g} \\\\\n    \hline\n")
+
+    latex_str += r"""
+        \end{tabular}}
+        \caption{Posterior summary statistics comparing estimated values with the true values. The cover column indicates whether the true value is within the 95\% confidence interval.}
+        \label{tab:posterior_summary}
+    \end{table}"""
+
+    # Save to a .tex file
+    with open(output_folder+os.sep+file_name+"_results_table.tex", "w") as f:
+        f.write(latex_str)
+
+    # Print LaTeX code for quick copy-pasting
+    print(latex_str)
+
+    print()
+
+    print('saving trace plot...')
+
+    if hasattr(obs_data, 'const'):
+        # 25310it [5:59:39,  1.32s/it, batch: 0 | bound: 10 | nc: 30 | ncall: 395112 | eff(%):  6.326 | loglstar:   -inf < -16256.467 <    inf | logz: -16269.475 +/-  0.049 | dlogz: 15670.753 >  0.010]
+        truth_plot = np.array([truth_values_plot[label] for label in labels])
+
+        fig, axes = dyplot.traceplot(dynesty_run_results, truths=truth_plot, labels=labels,
+                                    label_kwargs={"fontsize": 10},  # Reduce axis label size
+                                    title_kwargs={"fontsize": 10},  # Reduce title font size
+                                    title_fmt='.2e',  # Scientific notation for titles
+                                    truth_color='black', show_titles=True,
+                                    trace_cmap='viridis', connect=True,
+                                    connect_highlight=range(5))
+
+    else:
+
+        fig, axes = dyplot.traceplot(dynesty_run_results, labels=labels,
+                                    label_kwargs={"fontsize": 10},  # Reduce axis label size
+                                    title_kwargs={"fontsize": 10},  # Reduce title font size
+                                    title_fmt='.2e',  # Scientific notation for titles
+                                    show_titles=True,
+                                    trace_cmap='viridis', connect=True,
+                                    connect_highlight=range(5))
+
+    # Adjust spacing and tick label size
+    fig.subplots_adjust(hspace=0.5)  # Increase spacing between plots
+
+    # save the figure
+    plt.savefig(output_folder+os.sep+file_name+'_trace_plot.png', dpi=300)
+
+    # show the trace plot
+    # plt.show()
+
+    print('saving corner plot...')
+
+    # Trace Plots
+    fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
+    axes = axes.reshape((ndim, ndim))  # reshape axes
+
+    if hasattr(obs_data, 'const'):
+        # Increase spacing between subplots
+        fg, ax = dyplot.cornerplot(
+            dynesty_run_results, 
+            color='blue', 
+            truths=truth_plot,  # Use the defined truth values
+            truth_color='black', 
+            show_titles=True, 
+            max_n_ticks=3, 
+            quantiles=None, 
+            labels=labels,  # Update axis labels
+            label_kwargs={"fontsize": 15},  # Reduce axis label size
+            title_kwargs={"fontsize": 10},  # Reduce title font size
+            title_fmt='.2e',  # Scientific notation for titles
+            fig=(fig, axes[:, :ndim])
+        )
+    else:
+
+        # Increase spacing between subplots
+        fg, ax = dyplot.cornerplot(
+            dynesty_run_results, 
+            color='blue', 
+            show_titles=True, 
+            max_n_ticks=3, 
+            quantiles=None, 
+            labels=labels,  # Update axis labels
+            label_kwargs={"fontsize": 15},  # Reduce axis label size
+            title_kwargs={"fontsize": 10},  # Reduce title font size
+            title_fmt='.2e',  # Scientific notation for titles
+            fig=(fig, axes[:, :ndim])
+        )
+
+    # Adjust spacing and tick label size
+    fg.subplots_adjust(wspace=0.3, hspace=0.3)  # Increase spacing between plots
+
+    # # Reduce tick size
+    # for ax_row in ax:
+    #     for ax_ in ax_row:
+    #         ax_.tick_params(axis='both', labelsize=6)  # Reduce tick number size
+
+    # Apply scientific notation and horizontal tick labels
+    for ax_row in ax:
+        for ax_ in ax_row:
+            ax_.tick_params(axis='both', labelsize=10, direction='in')
+            
+            # # Apply scientific notation to tick labels
+            # ax_.xaxis.set_major_formatter(ScalarFormatter(useMathText=True))
+            # ax_.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
+            # ax_.xaxis.get_major_formatter().set_scientific(True)
+            # ax_.yaxis.get_major_formatter().set_scientific(True)
+            # ax_.xaxis.get_major_formatter().set_powerlimits((-2, 2))
+            # ax_.yaxis.get_major_formatter().set_powerlimits((-2, 2))
+
+            # Set tick labels to be horizontal
+            for label in ax_.get_xticklabels():
+                label.set_rotation(0)
+            for label in ax_.get_yticklabels():
+                label.set_rotation(0)
+
+    # save the figure
+    plt.savefig(output_folder+os.sep+file_name+'_corner_plot.png', dpi=300)
+
 
 ###############################################################################
-# Function: read_prior_to_bounds
+# Function: read prior to generate bounds
 ###############################################################################
 def read_prior_to_bounds(object_meteor,file_path=""):
     # Default bounds
@@ -260,7 +709,6 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                 if "fix" in parts:
                     val = parts[1].strip() if len(parts) > 1 else "nan"
                     fixed_values[name] = safe_eval(val) if val.lower() != "nan" else np.nan
-                    print(fixed_values[name])
                     if np.isnan(fixed_values[name]) and name in object_meteor.__dict__:
                         fixed_values[name] = object_meteor.__dict__[name]
                     if np.isnan(fixed_values[name]) and name == "erosion_height_start":
@@ -331,22 +779,25 @@ def read_prior_to_bounds(object_meteor,file_path=""):
     return bounds, flags_dict, fixed_values
 
 
+###############################################################################
+# Load observation data
+###############################################################################
 class observation_data:
     def __init__(self, obs_file_path,use_CAMO_data):
-        self.file = obs_file_path
+        self.file_name = obs_file_path
         # check if the file is a json file
         if obs_file_path.endswith('.pickle'):
             self.load_pickle_data(use_CAMO_data)
-        # elif obs_file_path.endswith('.json'):
-        #     self.load_json_data()
+        elif obs_file_path.endswith('.json'):
+            self.load_json_data(use_CAMO_data)
         else:
             # file type not supported
             raise ValueError("File type not supported, only .json and .pickle files are supported")
 
     def load_pickle_data(self,use_CAMO_data):
-        print('Loading pickle file:',self.file)
+        print('Loading pickle file:',self.file_name)
         # load the pickle file
-        traj=loadPickle(*os.path.split(self.file))
+        traj=loadPickle(*os.path.split(self.file_name))
         # get the trajectory
         # v_avg = traj.v_avg
         self.v_init=traj.orbit.v_init+100
@@ -621,54 +1072,335 @@ class observation_data:
                 # Update luminosity for station_1
                 self.luminosity[station_1_indices] = self.P_0m * (10 ** (self.absolute_magnitudes[station_1_indices] / (-2.5)))
 
-    # def load_json_data(self):
 
-    #     '''
-    #     dict_keys(['const', 'frag_main', 'time_arr', 'luminosity_arr', 'luminosity_main_arr', 'luminosity_eroded_arr', 
-    #     'electron_density_total_arr', 'tau_total_arr', 'tau_main_arr', 'tau_eroded_arr', 'brightest_height_arr', 
-    #     'brightest_length_arr', 'brightest_vel_arr', 'leading_frag_height_arr', 'leading_frag_length_arr', 
-    #     'leading_frag_vel_arr', 'leading_frag_dyn_press_arr', 'mass_total_active_arr', 'main_mass_arr', 
-    #     'main_height_arr', 'main_length_arr', 'main_vel_arr', 'main_dyn_press_arr', 'abs_magnitude', 
-    #     'abs_magnitude_main', 'abs_magnitude_eroded', 'wake_results', 'wake_max_lum'])
 
-    #     in const
+    def load_json_data(self,use_CAMO_data):
 
-    #     dict_keys(['dt', 'total_time', 'n_active', 'm_kill', 'v_kill', 'h_kill', 'len_kill', 'h_init', 'P_0m', 
-    #     'dens_co', 'r_earth', 'total_fragments', 'wake_psf', 'wake_extension', 'rho', 'm_init', 'v_init', 
-    #     'shape_factor', 'sigma', 'zenith_angle', 'gamma', 'rho_grain', 'lum_eff_type', 'lum_eff', 'mu', 
-    #     'erosion_on', 'erosion_bins_per_10mass', 'erosion_height_start', 'erosion_coeff', 'erosion_height_change', 
-    #     'erosion_coeff_change', 'erosion_rho_change', 'erosion_sigma_change', 'erosion_mass_index', 'erosion_mass_min', 
-    #     'erosion_mass_max', 'disruption_on', 'compressive_strength', 'disruption_height', 'disruption_erosion_coeff', 
-    #     'disruption_mass_index', 'disruption_mass_min_ratio', 'disruption_mass_max_ratio', 'disruption_mass_grain_ratio', 
-    #     'fragmentation_on', 'fragmentation_show_individual_lcs', 'fragmentation_entries', 'fragmentation_file_name', 
-    #     'electron_density_meas_ht', 'electron_density_meas_q', 'erosion_beg_vel', 'erosion_beg_mass', 'erosion_beg_dyn_press', 
-    #     'mass_at_erosion_change', 'energy_per_cs_before_erosion', 'energy_per_mass_before_erosion', 'main_mass_exhaustion_ht', 'main_bottom_ht'])
-    #     '''
+        '''
+        dict_keys(['const', 'frag_main', 'time_arr', 'luminosity_arr', 'luminosity_main_arr', 'luminosity_eroded_arr', 
+        'electron_density_total_arr', 'tau_total_arr', 'tau_main_arr', 'tau_eroded_arr', 'brightest_height_arr', 
+        'brightest_length_arr', 'brightest_vel_arr', 'leading_frag_height_arr', 'leading_frag_length_arr', 
+        'leading_frag_vel_arr', 'leading_frag_dyn_press_arr', 'mass_total_active_arr', 'main_mass_arr', 
+        'main_height_arr', 'main_length_arr', 'main_vel_arr', 'main_dyn_press_arr', 'abs_magnitude', 
+        'abs_magnitude_main', 'abs_magnitude_eroded', 'wake_results', 'wake_max_lum'])
 
-    #     with open(self.file, 'r') as f:
-    #         self.obs_data = json.load(f)
+        in const
+
+        dict_keys(['dt', 'total_time', 'n_active', 'm_kill', 'v_kill', 'h_kill', 'len_kill', 'h_init', 'P_0m', 
+        'dens_co', 'r_earth', 'total_fragments', 'wake_psf', 'wake_extension', 'rho', 'm_init', 'v_init', 
+        'shape_factor', 'sigma', 'zenith_angle', 'gamma', 'rho_grain', 'lum_eff_type', 'lum_eff', 'mu', 
+        'erosion_on', 'erosion_bins_per_10mass', 'erosion_height_start', 'erosion_coeff', 'erosion_height_change', 
+        'erosion_coeff_change', 'erosion_rho_change', 'erosion_sigma_change', 'erosion_mass_index', 'erosion_mass_min', 
+        'erosion_mass_max', 'disruption_on', 'compressive_strength', 'disruption_height', 'disruption_erosion_coeff', 
+        'disruption_mass_index', 'disruption_mass_min_ratio', 'disruption_mass_max_ratio', 'disruption_mass_grain_ratio', 
+        'fragmentation_on', 'fragmentation_show_individual_lcs', 'fragmentation_entries', 'fragmentation_file_name', 
+        'electron_density_meas_ht', 'electron_density_meas_q', 'erosion_beg_vel', 'erosion_beg_mass', 'erosion_beg_dyn_press', 
+        'mass_at_erosion_change', 'energy_per_cs_before_erosion', 'energy_per_mass_before_erosion', 'main_mass_exhaustion_ht', 'main_bottom_ht'])
+        '''
+
+        print(f"Loading json file: {self.file_name}")
+
+        # Read the JSON file
+        with open(self.file_name, 'r') as f:
+            data_dict = json.load(f)
+
+        # check if data_dict has the key time_lag
+        if 'time_lag' in data_dict.keys():
+
+            # Convert lists back to numpy arrays where necessary
+            def restore_data(obj):
+                if isinstance(obj, dict):
+                    return {k: restore_data(v) for k, v in obj.items()}
+
+                elif isinstance(obj, list):
+                    # If all items are numeric, convert to np.array of floats
+                    if all(isinstance(i, (int, float)) for i in obj):
+                        return np.array(obj)
+
+                    # If all items are strings, convert to np.array of strings
+                    if all(isinstance(i, str) for i in obj):
+                        return np.array(obj, dtype=str)
+
+                    # Otherwise, recurse in case it's a nested list
+                    return [restore_data(v) for v in obj]
+
+                else:
+                    return obj
+
+            restored_dict = restore_data(data_dict)
+            self.__dict__.update(restored_dict)
+
+        else:
+
+            # Load the constants
+            const, _ = loadConstants(self.file_name)
+            const.dens_co = np.array(const.dens_co)
+
+            # const_nominal.P_0m = 935
+
+            # const.disruption_on = False
+
+            const.lum_eff_type = 5
+
+            # Run the simulation
+            frag_main, results_list, wake_results = runSimulation(const, compute_wake=False)
+            simulation_MetSim_object = SimulationResults(const, frag_main, results_list, wake_results)
+
+            # Store results in the object
+            self.__dict__.update(simulation_MetSim_object.__dict__)
+
+            self.noise_lum = 2.5
+            self.noise_mag = 0.1
+
+            # add a gausian noise to the luminosity of 2.5
+            lum_obs_data = self.luminosity_arr + np.random.normal(loc=0, scale=self.noise_lum, size=len(self.luminosity_arr))
+
+            # Identify indices where lum_obs_data > 0
+            positive_indices = np.where(lum_obs_data > 0)[0]  # Get only valid indices
+
+            # If no positive values exist, return empty list
+            if len(positive_indices) == 0:
+                indices_visible = []
+            else:
+                # Find differences between consecutive indices
+                diff = np.diff(positive_indices)
+
+                # Identify breaks (where difference is more than 1)
+                breaks = np.where(diff > 1)[0]
+
+                # Split the indices into uninterrupted sequences
+                sequences = np.split(positive_indices, breaks + 1)
+
+                # Find the longest sequence
+                indices_visible = max(sequences, key=len)
+
+            # Store the constants
+            self.v_init = self.const.v_init
+            self.zenith_angle = self.const.zenith_angle
+            self.m_init = self.const.m_init
+
+            self.P_0m = self.const.P_0m
+            self.dens_co = np.array(self.const.dens_co) 
+
+            # Compute absolute magnitudes
+            absolute_magnitudes_check = -2.5 * np.log10(lum_obs_data / self.P_0m)
+
+            # Check if absolute_magnitudes_check exceeds 8
+            if len(indices_visible) > 0:
+                mask = absolute_magnitudes_check[indices_visible] > 8  # Only check relevant indices
+                if np.any(mask):
+                    print('Found values below 8 absolute magnitudes:', absolute_magnitudes_check[indices_visible][mask])
+
+                    # Remove invalid indices
+                    indices_visible = indices_visible[~mask]
+
+                    # If gaps exist, extract longest continuous segment
+                    indices_visible = np.sort(indices_visible)
+                    diff = np.diff(indices_visible)
+                    breaks = np.where(diff > 1)[0]
+                    sequences = np.split(indices_visible, breaks + 1)
+                    indices_visible = max(sequences, key=len) if sequences else []
+                
+            # Select time, magnitude, height, and length above the visibility limit
+            time_visible = self.time_arr[indices_visible]
+            # the rest of the arrays are the same length as time_arr
+            lum_visible = lum_obs_data[indices_visible]
+            ht_visible   = self.brightest_height_arr[indices_visible]
+            len_visible  = self.brightest_length_arr[indices_visible]
+            # mag_visible  = self.abs_magnitude[indices_visible]
+            # vel_visible  = self.leading_frag_vel_arr[indices_visible]
+
+            # Resample the time to the system FPS
+            lum_interpol = scipy.interpolate.CubicSpline(time_visible, lum_visible)
+            ht_interpol  = scipy.interpolate.CubicSpline(time_visible, ht_visible)
+            len_interpol = scipy.interpolate.CubicSpline(time_visible, len_visible)
+            # mag_interpol = scipy.interpolate.CubicSpline(time_visible, mag_visible)
+            # vel_interpol = scipy.interpolate.CubicSpline(time_visible, vel_visible)
+
+            fps_lum = 32
+            if use_CAMO_data:
+                self.fps = 80
+                self.stations = ['01G','02G','01T','02T']
+                self.noise_lag = 5
+                self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
+                # multiply by a number between 0.6 and 0.4 for the time to track for CAMO
+                time_to_track = (time_visible[-1]-time_visible[0])*np.random.uniform(0.4,0.6)
+                time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps,self.stations[2],self.stations[3])
+                time_sampled_lum, stations_array_lum = self.mimic_fps_camera(time_visible,0,fps_lum,self.stations[0],self.stations[1])
+            else:
+                self.fps = 32
+                self.stations = ['01F','02F']
+                self.noise_lag = 40
+                self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
+                time_to_track = 0
+                time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps,self.stations[0],self.stations[1])
+                time_sampled_lum, stations_array_lum = time_sampled_lag, stations_array_lag
+
+            # Create new mag, height and length arrays at FPS frequency
+            self.stations_lum = stations_array_lum
+            self.height_lum = ht_interpol(time_sampled_lum)
+            self.time_lum = time_sampled_lum - time_sampled_lum[0]
+            self.luminosity = lum_interpol(time_sampled_lum)
+            self.absolute_magnitudes = -2.5*np.log10(self.luminosity/self.P_0m) # P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))
+            
+            # mag_sampled = mag_interpol(time_sampled_lum)
+            self.stations_lag = stations_array_lag
+            self.height_lag = ht_interpol(time_sampled_lag)
+            self.time_lag = time_sampled_lag - time_sampled_lag[0]
+
+            # Create new length and velocity arrays at FPS frequency and add noise
+            self.length = len_interpol(time_sampled_lag) + np.random.normal(loc=0, scale=self.noise_lag, size=len(time_sampled_lag))
+            self.length = self.length - self.length[0]
+
+            # # Find the index where time_arr is closest to self.time_arr[np.min(indices_visible)] + time_to_track
+            closest_index_vel = np.argmin(np.abs(self.brightest_height_arr - self.height_lag[0]))
+            
+            # find the velcity at the beginning of the smallest index in observed_index
+            v_first_frame = self.leading_frag_vel_arr[closest_index_vel]
+            # make an empty list for the velocities with zeros for the length of the time_sampled_lag
+            velocities_noise = np.zeros(len(time_sampled_lag))
+            # for each of the unique stations in the stations_lag divided by the time_lag of the station
+            for station in np.unique(self.stations_lag):
+                # find the indices of the station in the stations_lag
+                station_indices = np.where(self.stations_lag == station)
+                # make the difference between the length of the station_indices
+                diff_length = np.diff(self.length[station_indices])
+                # make the difference between the time of the station_indices
+                diff_time = np.diff(self.time_lag[station_indices])
+                # calculate the velocity of the station
+                velocity = np.divide(diff_length,diff_time)
+                # put the first equal to v_first_frame and push the rest of the values
+                velocity = np.insert(velocity,0,v_first_frame)
+                # put in the index of the station_indices the velocities_noise
+                velocities_noise[station_indices] = velocity
+            # concatenate the velocities
+            self.velocities = velocities_noise
+
+            optimized_v_first_frame = self.find_optimal_v_first_frame(v_first_frame)
+
+            # Now use the optimized velocity for computing lag
+            self.lag = self.length - (optimized_v_first_frame * self.time_lag)
+
+            self._save_json_data()
+
+
+    def find_optimal_v_first_frame(self, v_first_frame_initial=60000, bounds=(10000, 72000)):
+        """
+        Optimizes v_first_frame to minimize the difference between observed lag and simulated lag.
+
+        Parameters:
+        v_first_frame_initial (float): Initial guess for v_first_frame.
+        bounds (tuple): Lower and upper bounds for v_first_frame.
+
+        Returns:
+        float: Optimized v_first_frame.
+        """
+
+        def objective(v_first_frame):
+            """Objective function to minimize the difference in lag."""
+            # Compute the lag based on v_first_frame
+            computed_lag = self.length - (v_first_frame * self.time_lag)
+
+            # Find the index closest to the first height without NaNs
+            index = np.argmin(np.abs(self.leading_frag_height_arr[~np.isnan(self.leading_frag_height_arr)]
+                                      - self.height_lag[0]))
+
+            # Compute the theoretical lag (without noise)
+            lag_no_noise = (self.leading_frag_length_arr - self.leading_frag_length_arr[index]) - \
+                           (self.velocities[0] * (self.time_arr - self.time_arr[index]))
+            lag_no_noise -= lag_no_noise[index]
+
+            # Interpolate to align with observed height_lag
+            no_noise_lag = np.interp(self.height_lag,
+                                     np.flip(self.leading_frag_height_arr),
+                                     np.flip(lag_no_noise))
+
+            # Compute the squared error between computed and theoretical lag
+            diff_lag = no_noise_lag - computed_lag
+            return np.sum(diff_lag**2)  # Sum of squared differences
+
+        # Use minimize (which supports an initial guess)
+        result = minimize(objective, x0=[v_first_frame_initial], bounds=[bounds], method='L-BFGS-B')
+
+        print(f"Optimized first frame velocity for lag : {result.x[0]:.2f}")
+        return result.x[0]
+
+
+
+    def mimic_fps_camera(self, time_visible, time_to_track, fps, station1, station2):
+
+        # Sample the time according to the FPS from one camera
+        time_sampled_cam1 = np.arange(np.min(time_visible)+time_to_track, np.max(time_visible), 1.0/fps)
+
+        # Simulate sampling of the data from a second camera, with a random phase shift
+        time_sampled_cam2 = time_sampled_cam1 + np.random.uniform(-1.0/fps, 1.0/fps)
+
+        # The second camera will only capture 50 - 100% of the data, simulate this
+        cam2_portion = np.random.uniform(0.5, 1.0)
+        cam2_start = np.random.uniform(0, 1.0 - cam2_portion)
+        cam2_start_index = int(cam2_start*len(time_sampled_cam2))
+        cam2_end_index = int((cam2_start + cam2_portion)*len(time_sampled_cam2))
+
+        # Cut the cam2 time to the portion of the data it will capture
+        time_sampled_cam2 = time_sampled_cam2[cam2_start_index:cam2_end_index]
+
+        # Cut the time array to the length of the visible data
+        time_sampled_cam2 = time_sampled_cam2[(time_sampled_cam2 >= np.min(time_visible)) 
+                                            & (time_sampled_cam2 <= np.max(time_visible))]
+
+        # Combine the two camera time arrays
+        time_sampled = np.sort(np.concatenate([time_sampled_cam1, time_sampled_cam2]))
+
+        # # find the index of the time_sampled_cam1 in time_sampled
+        # index_cam1 = np.searchsorted(time_sampled,time_sampled_cam1)
+        # find the index of the time_sampled_cam2 in time_sampled
+        index_cam2 = np.searchsorted(time_sampled,time_sampled_cam2)
+        # create a array with self.station[-1] for the length of time_sampled
+        stations = np.array([station1]*len(time_sampled))
+        # replace the values of the index_cam1 with self.stations[0]
+        stations[index_cam2] = station2
         
-    #     # Sample the time according to the FPS from one camera
-    #     time_sampled_cam1 = np.arange(np.min(time_visible), np.max(time_visible), 1.0/params.fps)
+        return time_sampled,stations
 
-    #     # Simulate sampling of the data from a second camera, with a random phase shift
-    #     time_sampled_cam2 = time_sampled_cam1 + np.random.uniform(-1.0/params.fps, 1.0/params.fps)
 
-    #     # The second camera will only capture 50 - 100% of the data, simulate this
-    #     cam2_portion = np.random.uniform(0.5, 1.0)
-    #     cam2_start = np.random.uniform(0, 1.0 - cam2_portion)
-    #     cam2_start_index = int(cam2_start*len(time_sampled_cam2))
-    #     cam2_end_index = int((cam2_start + cam2_portion)*len(time_sampled_cam2))
 
-    #     # Cut the cam2 time to the portion of the data it will capture
-    #     time_sampled_cam2 = time_sampled_cam2[cam2_start_index:cam2_end_index]
 
-    #     # Cut the time array to the length of the visible data
-    #     time_sampled_cam2 = time_sampled_cam2[(time_sampled_cam2 >= np.min(time_visible)) 
-    #                                         & (time_sampled_cam2 <= np.max(time_visible))]
+    def _save_json_data(self):
+        """Save the object to a JSON file."""
 
-    #     # Combine the two camera time arrays
-    #     time_sampled = np.sort(np.concatenate([time_sampled_cam1, time_sampled_cam2]))
+        # Deep copy to avoid modifying the original object
+        json_self_save = copy.deepcopy(self)
+
+        # Convert all numpy arrays in `self2` to lists
+        def convert_to_serializable(obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {k: convert_to_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_serializable(v) for v in obj]
+            elif hasattr(obj, '__dict__'):  # Convert objects with __dict__
+                return convert_to_serializable(obj.__dict__)
+            else:
+                return obj  # Leave as is if it's already serializable
+
+        serializable_dict = convert_to_serializable(json_self_save.__dict__)
+
+        # Define file path for saving
+        json_file_save = os.path.splitext(self.file_name)[0] + "_with_noise.json"
+        # # check if the file exists if so give a _1, _2, _3, etc. at the end of the file name
+        # i_json = 1
+        # if os.path.exists(json_file_save):
+        #     while os.path.exists(json_file_save):
+        #         json_file_save = os.path.splitext(self.file_name)[0] + f"_{i_json}_with_noise.json"
+        #         i_json += 1
+
+        # Write to JSON file
+        with open(json_file_save, 'w') as f:
+            json.dump(serializable_dict, f, indent=4)
+
+        print("Saved fit parameters with noise to:", json_file_save)
+
 
 
 ###############################################################################
@@ -876,19 +1608,207 @@ class find_dynestyfile_and_priors:
 
 
 ###############################################################################
-# EXAMPLE MAIN (as you provided), illustrating usage
+# Function: dynesty
+###############################################################################
+
+class TimeoutException(Exception):
+    """Custom exception for timeouts."""
+    pass
+
+def run_simulation_wrapper(guess_var, obs_metsim_obj, var_names, fix_var, queue):
+    """Wrapper function for multiprocessing to run the simulation."""
+    try:
+        result = run_simulation(guess_var, obs_metsim_obj, var_names, fix_var)
+        queue.put(result)  # Send result back through queue
+    except Exception as e:
+        print(f"Error during simulation: {e}")
+        queue.put(None)  # Indicate failure
+
+
+def run_simulation(parameter_guess, real_event, var_names, fix_var):
+    '''
+        path_and_file = must be a json file generated file from the generate_simulationsm function or from Metsim file
+    '''
+
+    # Load the nominal simulation parameters
+    const_nominal = Constants()
+    const_nominal.dens_co = np.array(const_nominal.dens_co)
+
+    dens_co=real_event.dens_co
+
+    ### Calculate atmosphere density coeffs (down to the bottom observed height, limit to 15 km) ###
+
+    # Assign the density coefficients
+    const_nominal.dens_co = dens_co
+
+    # Turn on plotting of LCs of individual fragments 
+    const_nominal.fragmentation_show_individual_lcs = True
+
+    # for loop for the var_cost that also give a number from 0 to the length of the var_cost
+    for i, var in enumerate(var_names):
+        const_nominal.__dict__[var] = parameter_guess[i]
+
+    var_names_fix = list(fix_var.keys())
+    # for loop for the fix_var that also give a number from 0 to the length of the fix_var
+    for i, var in enumerate(var_names_fix):
+        const_nominal.__dict__[var] = fix_var[var]
+
+    const_nominal.P_0m = real_event.P_0m
+
+    const_nominal.disruption_on = False
+
+    const_nominal.lum_eff_type = 5
+
+    # # Minimum height [m]
+    # const_nominal.h_kill = 60000
+
+    # # Initial meteoroid height [m]
+    # const_nominal.h_init = 180000
+
+    try:
+        # Run the simulation
+        frag_main, results_list, wake_results = runSimulation(const_nominal, compute_wake=False)
+        simulation_MetSim_object = SimulationResults(const_nominal, frag_main, results_list, wake_results)
+    except ZeroDivisionError as e:
+        print(f"Error during simulation: {e}")
+        # run again with the nominal values to avoid the error
+        const_nominal = Constants()
+        # Run the simulation
+        frag_main, results_list, wake_results = runSimulation(const_nominal, compute_wake=False)
+        simulation_MetSim_object = SimulationResults(const_nominal, frag_main, results_list, wake_results)
+
+    return simulation_MetSim_object
+
+
+def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout=10):
+    """
+    Runs the simulation with a timeout in a separate process to allow parallel execution.
+    """
+
+    var_names = list(flags_dict.keys())
+    # check for each var_name in flags_dict if there is "log" in the flags_dict
+    if any('log' in flags_dict[flags_dict[var_name]] for var_name in var_names):
+        guess_var = 10 ** guess_var
+
+    queue = multiprocessing.Queue()
+    process = multiprocessing.Process(target=run_simulation_wrapper, args=(guess_var, obs_metsim_obj, var_names, fix_var, queue))
+
+    process.start()
+    process.join(timeout)  # Wait up to `timeout` seconds
+
+    if process.is_alive():
+        process.terminate()  # Kill process if it's still running
+        print("Timeout occurred")
+        return -np.inf  # Return negative infinity if timed out
+
+    simulation_results = queue.get()  # Retrieve results from queue
+
+    if simulation_results is None:
+        return -np.inf
+
+    simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 
+                                       np.flip(simulation_results.leading_frag_height_arr), 
+                                       np.flip(simulation_results.luminosity_arr))
+
+    lag_sim = simulation_results.leading_frag_length_arr - (obs_metsim_obj.v_init * simulation_results.time_arr)
+
+    simulated_lag = np.interp(obs_metsim_obj.height_lag, 
+                              np.flip(simulation_results.leading_frag_height_arr), 
+                              np.flip(lag_sim))
+
+    lag_sim = simulated_lag - simulated_lag[0]
+
+    ### Log Likelihood ###
+
+    log_likelihood_lum = np.nansum(-0.5 * np.log(2*np.pi*obs_metsim_obj.noise_lum**2) - 0.5 / (obs_metsim_obj.noise_lum**2) * (obs_metsim_obj.luminosity_arr - simulated_lc_intensity) ** 2)
+    log_likelihood_lag = np.nansum(-0.5 * np.log(2*np.pi*obs_metsim_obj.noise_lag**2) - 0.5 / (obs_metsim_obj.noise_lag**2) * (obs_metsim_obj.lag - lag_sim) ** 2)
+
+    log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
+
+    ### Chi Square ###
+
+    # chi_square_lum = - 0.5/(obs_metsim_obj.noise_lum**2) * np.nansum((obs_metsim_obj.luminosity_arr - simulated_lc_intensity) ** 2)  # add the error
+    # chi_square_lag = - 0.5/(obs_metsim_obj.noise_lag**2) * np.nansum((obs_metsim_obj.lag - lag_sim) ** 2)  # add the error
+
+    # log_likelihood_tot = chi_square_lum + chi_square_lag
+
+    return log_likelihood_tot
+
+
+def prior_dynesty(cube,bounds,flags_dict):
+    """
+    Transform the unit cube to a uniform prior
+    """
+    x = np.array(cube)  # Copy u to avoid modifying it directly
+    param_names = list(flags_dict.keys())
+    i_prior=0
+    for (min_or_sigma, MAX_or_mean), param_name in zip(bounds, param_names):
+        # check if the flags_dict at index i is empty
+        if 'norm' in flags_dict[flags_dict[param_name]]:
+            x[i_prior] = scipy.stats.norm.ppf(cube[i_prior], loc=MAX_or_mean, scale=min_or_sigma)
+        else:
+            x[i_prior] = cube[i_prior] * (MAX_or_mean - min_or_sigma) + min_or_sigma  # Scale and shift
+        i_prior += 1
+
+    return x
+
+
+
+def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", file_name=""):
+    """
+    Main function to run dynesty.
+    """
+
+    print("Starting dynesty run...")  
+    # get variable names
+    var_names = list(flags_dict.keys())
+    # get the number of parameters
+    ndim = len(var_names)
+
+    # check if file exists
+    if not os.path.exists(dynesty_file):
+        # Start new run
+        with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
+                               logl_args=(obs_data, flags_dict, fixed_values, 10),
+                               ptform_args=(bounds, flags_dict)) as pool:
+            ### NEW RUN
+            dsampler = dynesty.DynamicNestedSampler(pool.loglike, pool.prior_transform, ndim, pool = pool)
+            dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)
+
+    else:
+        # Resume previous run
+        with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
+                               logl_args=(obs_data, flags_dict, fixed_values, 10),
+                               ptform_args=(bounds, flags_dict)) as pool:
+            ### RESUME:
+            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, pool = pool)
+            dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
+
+    print('done')
+
+    # copy the dynesty file to the output folder if output_folder is a directory
+    if os.path.isdir(output_folder) and output_folder != "":
+        print("Copying dynesty file to output folder...")
+        shutil.copy(dynesty_file, output_folder)
+        print("dynesty file copied to:", output_folder)
+    
+    plot_dynesty(dsampler.results, obs_data, flags_dict, output_folder, file_name)
+
+
+
+
+
+
 ###############################################################################
 if __name__ == "__main__":
 
     import argparse
-    import sys
-    import warnings
 
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/20240305_031927_trajectory.pickle",
+        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\PER_v59_heavy.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
 
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -896,10 +1816,10 @@ if __name__ == "__main__":
         help="Where to store results. If empty, store next to each .dynesty.")
 
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior",
+        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\stony_meteoroid.prior",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
-    arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=True,
+    arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,
         help="If True, use only CAMO data for lag if present in pickle file. If False, do not use CAMO data (by default is False).")
 
     arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
@@ -935,7 +1855,6 @@ if __name__ == "__main__":
     # Process each input path
     for input_dirfile in cml_args.input_dir:
         print(f"Processing {input_dirfile} (this may take a while if subdirectories are large)")
-        print("--------------------------------------------------")
 
         # Use the class to find .dynesty, load prior, and decide output folders
         finder = find_dynestyfile_and_priors(
@@ -955,12 +1874,15 @@ if __name__ == "__main__":
             finder.output_folders
         )):
             dynesty_file, bounds, flags_dict, fixed_values = dynesty_info
+            print("--------------------------------------------------")
             print(f"Entry #{i+1}:", base_name)
             print("  Dynesty file: ", dynesty_file)
             print("  Prior file:   ", prior_path)
             print("  Output folder:", out_folder)
-            print("  Bounds:       ", bounds)
-            print("  Flags:        ", flags_dict)
+            print("  Bounds:")
+            param_names = list(flags_dict.keys())
+            for (low_val, high_val), param_name in zip(bounds, param_names):
+                print(f"    {param_name}: [{low_val}, {high_val}] flags={flags_dict[param_name]}")
             print("  Fixed Values: ", fixed_values)
             print("--------------------------------------------------")
             obs_data = finder.observation_instance()
@@ -980,7 +1902,9 @@ if __name__ == "__main__":
             # print("    stations_lag:", obs_data.stations_lag)
             # print("    stations_lum:", obs_data.stations_lum)
             # print("--------------------------------------------------")
+            # Run the dynesty sampler
             os.makedirs(out_folder, exist_ok=True)
-            plot_data_with_residuals_and_real(obs_data, output_folder=out_folder,file_name=base_name)
+            plot_data_with_residuals_and_real(obs_data, output_folder=out_folder, file_name=base_name)
+            main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
 
 

@@ -9,7 +9,7 @@
 # what is writen after '#' is ignored
 # name var, min/sigma, max/mean, options
 
-v_init,nan,18784.5,norm   		 	    # v_init [m/s]
+v_init,nan,nan,norm   		 	    # v_init [m/s]
 zenith_angle,nan,fix 	            # zenith_angle [rad] (fix by default)
 m_init,nan,nan             			# m_init [kg]
 rho,10,4000,log                  	# rho [kg/m^3] (np.log10 applied)

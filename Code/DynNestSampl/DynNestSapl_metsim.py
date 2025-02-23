@@ -420,6 +420,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     }
 
     labels = [variable_map[variable] for variable in variables]
+    labels_plot = labels. copy() # list for plot labels
 
     ndim = len(variables)
     sim_num = -1
@@ -429,6 +430,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         if 'log' in flags_dict[variable]:  
             samples_equal[:, i] = 10**(samples_equal[:, i])
             best_guess[i] = 10**(best_guess[i])
+            labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
 
     print('Best fit:')
     # write the best fit variable names and then the best guess values
@@ -567,7 +569,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         # 25310it [5:59:39,  1.32s/it, batch: 0 | bound: 10 | nc: 30 | ncall: 395112 | eff(%):  6.326 | loglstar:   -inf < -16256.467 <    inf | logz: -16269.475 +/-  0.049 | dlogz: 15670.753 >  0.010]
         truth_plot = np.array([truth_values_plot[variable] for variable in variables])
 
-        fig, axes = dyplot.traceplot(dynesty_run_results, truths=truth_plot, labels=labels,
+        fig, axes = dyplot.traceplot(dynesty_run_results, truths=truth_plot, labels=labels_plot,
                                     label_kwargs={"fontsize": 10},  # Reduce axis label size
                                     title_kwargs={"fontsize": 10},  # Reduce title font size
                                     title_fmt='.2e',  # Scientific notation for titles
@@ -577,7 +579,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     else:
 
-        fig, axes = dyplot.traceplot(dynesty_run_results, labels=labels,
+        fig, axes = dyplot.traceplot(dynesty_run_results, labels=labels_plot,
                                     label_kwargs={"fontsize": 10},  # Reduce axis label size
                                     title_kwargs={"fontsize": 10},  # Reduce title font size
                                     title_fmt='.2e',  # Scientific notation for titles
@@ -612,7 +614,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             show_titles=True, 
             max_n_ticks=3, 
             quantiles=None, 
-            labels=labels,  # Update axis labels
+            labels=labels_plot,  # Update axis labels
             label_kwargs={"fontsize": 15},  # Reduce axis label size
             title_kwargs={"fontsize": 10},  # Reduce title font size
             title_fmt='.2e',  # Scientific notation for titles
@@ -627,7 +629,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             show_titles=True, 
             max_n_ticks=3, 
             quantiles=None, 
-            labels=labels,  # Update axis labels
+            labels=labels_plot,  # Update axis labels
             label_kwargs={"fontsize": 15},  # Reduce axis label size
             title_kwargs={"fontsize": 10},  # Reduce title font size
             title_fmt='.2e',  # Scientific notation for titles
@@ -1962,8 +1964,13 @@ if __name__ == "__main__":
             plot_data_with_residuals_and_real(obs_data, output_folder=out_folder, file_name=base_name)
             if not cml_args.only_plot:
                 main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
-            else:
+            elif cml_args.only_plot and os.path.isfile(dynesty_file): 
                 print("Only plotting requested. Skipping dynesty run.")
-                # dsampler = dynesty.DynamicNestedSampler.restore(filename)
-                plot_dynesty(dynesty.DynamicNestedSampler.restore(dynesty_file), obs_data, flags_dict, out_folder, base_name)
+                dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+                # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+                plot_dynesty(dsampler.results, obs_data, flags_dict, out_folder, base_name)
 
+             else:
+                print("Fail to Plot, dynasty file not found:",dynesty_file)
+                print("If you want to run the dynasty file set only_plot to False")
+                sys.exit()

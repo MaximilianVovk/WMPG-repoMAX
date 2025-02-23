@@ -371,22 +371,26 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                     sim_diff_lag[np.where(obs_data.stations_lag == station)], '.', \
                         color=station_colors[station], label=station)
 
-    # Save the plot
-    print('file saved: '+out_folder +os.sep+ file_name+'.png')
-    fig.savefig(output_folder +os.sep+ file_name +'.png', dpi=300)
-
-    # Display the plot
-    plt.close(fig)
-
     # ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise, abs_mag_sim_err + mag_noise, color='darkgray', alpha=0.2)
     # ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise * real_original['z_score'], abs_mag_sim_err + mag_noise * real_original['z_score'], color='lightgray', alpha=0.2)
 
     # ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise, vel_kms_err + vel_noise, color='darkgray', alpha=0.2)
     # ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise * real_original['z_score'], vel_kms_err + vel_noise * real_original['z_score'], color='lightgray', alpha=0.2)
 
+    # Save the plot
+    print('file saved: '+out_folder +os.sep+ file_name+'_var_plot.png')
+    fig.savefig(output_folder +os.sep+ file_name +'_var_plot.png', dpi=300)
+
+    # Display the plot
+    plt.close(fig)
+
+
 # Plotting function dynesty
-def plot_dynesty(dynesty_run_results, obs_data, flags_dict, output_folder='', file_name=''):
+def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name=''):
     
+    print(dynesty_run_results.summary())
+    print('information gain:', dynesty_run_results.information[-1])
+
     variables = list(flags_dict.keys())
 
     logwt = dynesty_run_results.logwt
@@ -441,10 +445,29 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, output_folder='', fi
     labels = [variable_map[variable] for variable in variables]
 
     ndim = len(variables)
-                
+    sim_num = -1
+    best_guess = dynesty_run_results.results.samples[sim_num]    
     for variable in variables:
         if 'log' in flags_dict[variable]:  
             samples_equal[:, i] = 10**(samples_equal[:, i])
+            best_guess[i] = 10**(best_guess[i])
+
+    print('num of samples:', len(dynesty_run_results.results.samples))
+    print('Best fit')
+    # write the best fit variable names and then the best guess values
+    for i in range(len(best_guess)):
+        print(variables[i],':\t', best_guess[i])
+
+    ### PLOT best fit ###
+
+    best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
+
+    # Plot the data with residuals and the best fit
+    plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder, file_name + "_best_fit")
+
+
+
+    ### TABLE OF POSTERIOR SUMMARY STATISTICS ###
 
     # Posterior mean (per dimension)
     posterior_mean = np.mean(samples_equal, axis=0)      # shape (ndim,)
@@ -532,12 +555,18 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, output_folder='', fi
 
     # Save to a .tex file
     with open(output_folder+os.sep+file_name+"_results_table.tex", "w") as f:
+        f.write(dynesty_run_results.summary())
+        f.write("\n")
         f.write(latex_str)
+        f.write("\n")
+        for i in range(len(best_guess)):
+            f.write(variables[i],':\t', best_guess[i])
+        f.close()
 
     # Print LaTeX code for quick copy-pasting
     print(latex_str)
 
-    print()
+    ### Plot the trace plot ###
 
     print('saving trace plot...')
 
@@ -571,6 +600,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, output_folder='', fi
 
     # show the trace plot
     # plt.show()
+
+    ### Plot the corner plot ###
 
     print('saving corner plot...')
 
@@ -1792,7 +1823,8 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
         shutil.copy(dynesty_file, output_folder)
         print("dynesty file copied to:", output_folder)
     
-    plot_dynesty(dsampler.results, obs_data, flags_dict, output_folder, file_name)
+    # dsampler = dynesty.DynamicNestedSampler.restore(filename)
+    plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, output_folder, file_name)
 
 
 
@@ -1824,6 +1856,9 @@ if __name__ == "__main__":
 
     arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
         help="If True, resume from existing .dynesty if found. If False, create a new version.")
+    
+    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,
+        help="If True, only plot the results of the dynesty run. If False, run dynesty.")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")
@@ -1905,6 +1940,10 @@ if __name__ == "__main__":
             # Run the dynesty sampler
             os.makedirs(out_folder, exist_ok=True)
             plot_data_with_residuals_and_real(obs_data, output_folder=out_folder, file_name=base_name)
-            main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
-
+            if not cml_args.only_plot:
+                main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
+            else:
+                print("Only plotting requested. Skipping dynesty run.")
+                # dsampler = dynesty.DynamicNestedSampler.restore(filename)
+                plot_dynesty(dynesty.DynamicNestedSampler.restore(dynesty_file), obs_data, flags_dict, out_folder, base_name)
 

@@ -4,6 +4,7 @@ import pickle
 import sys
 import json
 import os
+import io
 import copy
 import matplotlib.pyplot as plt
 import dynesty
@@ -18,6 +19,7 @@ import re
 import matplotlib.gridspec as gridspec
 from scipy.optimize import minimize
 import shutil
+import matplotlib.ticker as ticker
 
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
@@ -378,8 +380,8 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise * real_original['z_score'], vel_kms_err + vel_noise * real_original['z_score'], color='lightgray', alpha=0.2)
 
     # Save the plot
-    print('file saved: '+out_folder +os.sep+ file_name+'_var_plot.png')
-    fig.savefig(output_folder +os.sep+ file_name +'_var_plot.png', dpi=300)
+    print('file saved: '+out_folder +os.sep+ file_name+'_best_fit_plot.png')
+    fig.savefig(output_folder +os.sep+ file_name +'_best_fit_plot.png', dpi=300)
 
     # Display the plot
     plt.close(fig)
@@ -407,8 +409,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Mapping of original variable names to LaTeX-style labels
     variable_map = {
-        'v_init': r"$v_0$ [km/s]",
-        'zenith_angle': r"$z_c$ [deg]",
+        'v_init': r"$v_0$ [m/s]",
+        'zenith_angle': r"$z_c$ [rad]",
         'm_init': r"$m_0$ [kg]",
         'rho': r"$\rho$ [kg/m$^3$]",
         'sigma': r"$\sigma$ [kg/MJ]",
@@ -424,7 +426,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     ndim = len(variables)
     sim_num = -1
-    best_guess = dynesty_run_results.samples[sim_num]    
+    # copy the best guess values
+    best_guess = copy.deepcopy(dynesty_run_results.samples[sim_num])
     # for variable in variables: for 
     for i, variable in enumerate(variables):
         if 'log' in flags_dict[variable]:  
@@ -442,7 +445,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
 
     # Plot the data with residuals and the best fit
-    plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder, file_name + "_best_fit")
+    # plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder, file_name + "_best_fit")
+    plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder, file_name)
 
 
 
@@ -495,8 +499,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
         # Compare to true theta
         bias = posterior_mean - truths
-        abs_error = np.abs(bias)
-        rel_error = abs_error / np.abs(truths)
+        abs_error = np.abs(bias) * 100
+        rel_error = abs_error / np.abs(truths) * 100
 
         # Coverage check
         coverage_mask = (truths >= lower_95) & (truths <= upper_95)
@@ -505,14 +509,14 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
         # Generate LaTeX table
         latex_str = r"""\begin{table}[htbp]
-            \centering
-            \renewcommand{\arraystretch}{1.2} % Increase row height for readability
-            \setlength{\tabcolsep}{4pt} % Adjust column spacing
-            \resizebox{\textwidth}{!}{ % Resizing table to fit page width
-            \begin{tabular}{|l|c|c|c|c|c|c||c|c||c|}
-            \hline
-            Parameter & 2.5\% & True Value & Mean & Median & Mode & 97.5\% & Abs. Error & Rel. Error & Cover \\
-            \hline
+    \centering
+    \renewcommand{\arraystretch}{1.2} % Increase row height for readability
+    \setlength{\tabcolsep}{4pt} % Adjust column spacing
+    \resizebox{\textwidth}{!}{ % Resizing table to fit page width
+    \begin{tabular}{|l|c|c|c|c|c|c||c|c||c|}
+    \hline
+    Parameter & 2.5CI & True Value & Mean & Median & Mode & 97.5CI & Abs.Error\% & Rel.Error\% & Cover \\
+    \hline
         """
         # & Mode
         # {approx_modes[i]:.4g} &
@@ -525,14 +529,14 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     else:
         # Generate LaTeX table
         latex_str = r"""\begin{table}[htbp]
-            \centering
-            \renewcommand{\arraystretch}{1.2} % Increase row height for readability
-            \setlength{\tabcolsep}{4pt} % Adjust column spacing
-            \resizebox{\textwidth}{!}{ % Resizing table to fit page width
-            \begin{tabular}{|l|c|c|c|c|c|}
-            \hline
-            Parameter & 2.5\% & Mean & Median & Mode & 97.5\%\\
-            \hline
+    \centering
+    \renewcommand{\arraystretch}{1.2} % Increase row height for readability
+    \setlength{\tabcolsep}{4pt} % Adjust column spacing
+    \resizebox{\textwidth}{!}{ % Resizing table to fit page width
+    \begin{tabular}{|l|c|c|c|c|c|}
+    \hline
+    Parameter & 2.5CI & Mean & Median & Mode & 97.5CI\\
+    \hline
         """
         # & Mode
         # {approx_modes[i]:.4g} &
@@ -541,19 +545,26 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
                         f"& {posterior_median[i]:.4g} & {approx_modes[i]:.4g} & {upper_95[i]:.4g} \\\\\n    \hline\n")
 
     latex_str += r"""
-        \end{tabular}}
-        \caption{Posterior summary statistics comparing estimated values with the true values. The cover column indicates whether the true value is within the 95\% confidence interval.}
-        \label{tab:posterior_summary}
-    \end{table}"""
+    \end{tabular}}
+    \caption{Posterior summary statistics comparing estimated values with the true values. The cover column indicates whether the true value is within the 95\% confidence interval.}
+    \label{tab:posterior_summary}
+\end{table}"""
+
+    # Capture the printed output of summary()
+    summary_buffer = io.StringIO()
+    sys.stdout = summary_buffer  # Redirect stdout
+    dynesty_run_results.summary()  # This prints to the buffer instead of stdout
+    sys.stdout = sys.__stdout__  # Reset stdout
+    summary_str = summary_buffer.getvalue()  # Get the captured text
 
     # Save to a .tex file
     with open(output_folder+os.sep+file_name+"_results_table.tex", "w") as f:
-        f.write(str(dynesty_run_results.summary()))
-        f.write("H inf.gain:"+str(dynesty_run_results.information[-1]))
-        f.write("niter i.e number of metsim simulated events\n")
-        f.write("Best fit:")
+        f.write(summary_str+'\n')
+        f.write("H info.gain:"+str(dynesty_run_results.information[-1])+'\n')
+        f.write("niter i.e number of metsim simulated events\n\n")
+        f.write("Best fit:\n")
         for i in range(len(best_guess)):
-            f.write(variables[i]+':\t'+str(best_guess[i]))
+            f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
         f.write("\n")
         f.write(latex_str)
         f.close()
@@ -615,7 +626,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             max_n_ticks=3, 
             quantiles=None, 
             labels=labels_plot,  # Update axis labels
-            label_kwargs={"fontsize": 15},  # Reduce axis label size
+            label_kwargs={"fontsize": 10},  # Reduce axis label size
             title_kwargs={"fontsize": 10},  # Reduce title font size
             title_fmt='.2e',  # Scientific notation for titles
             fig=(fig, axes[:, :ndim])
@@ -630,14 +641,11 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             max_n_ticks=3, 
             quantiles=None, 
             labels=labels_plot,  # Update axis labels
-            label_kwargs={"fontsize": 15},  # Reduce axis label size
+            label_kwargs={"fontsize": 10},  # Reduce axis label size
             title_kwargs={"fontsize": 10},  # Reduce title font size
             title_fmt='.2e',  # Scientific notation for titles
             fig=(fig, axes[:, :ndim])
         )
-
-    # Adjust spacing and tick label size
-    fg.subplots_adjust(wspace=0.3, hspace=0.3)  # Increase spacing between plots
 
     # # Reduce tick size
     # for ax_row in ax:
@@ -648,20 +656,44 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     for ax_row in ax:
         for ax_ in ax_row:
             ax_.tick_params(axis='both', labelsize=10, direction='in')
-            
-            # # Apply scientific notation to tick labels
-            # ax_.xaxis.set_major_formatter(ScalarFormatter(useMathText=True))
-            # ax_.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
-            # ax_.xaxis.get_major_formatter().set_scientific(True)
-            # ax_.yaxis.get_major_formatter().set_scientific(True)
-            # ax_.xaxis.get_major_formatter().set_powerlimits((-2, 2))
-            # ax_.yaxis.get_major_formatter().set_powerlimits((-2, 2))
 
             # Set tick labels to be horizontal
             for label in ax_.get_xticklabels():
                 label.set_rotation(0)
             for label in ax_.get_yticklabels():
-                label.set_rotation(0)
+                label.set_rotation(45)
+
+            if ax_ is None:
+                continue  # if cornerplot left some entries as None
+            
+            # Get the actual major tick locations.
+            x_locs = ax_.xaxis.get_majorticklocs()
+            y_locs = ax_.yaxis.get_majorticklocs()
+
+            # Only update the formatter if we actually have tick locations:
+            if len(x_locs) > 0:
+                ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.3g'))
+            if len(y_locs) > 0:
+                ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.3g'))
+
+    for i in range(ndim):
+        for j in range(ndim):
+            # In some corner-plot setups, the upper-right triangle can be None
+            if ax[i, j] is None:
+                continue
+            
+            # Remove y-axis labels (numbers) on the first column (j==0)
+            if j != 0:
+                ax[i, j].set_yticklabels([])  
+                # or ax[i, j].tick_params(labelleft=False) if you prefer
+
+            # Remove x-axis labels (numbers) on the bottom row (i==ndim-1)
+            if i != ndim - 1:
+                ax[i, j].set_xticklabels([])  
+                # or ax[i, j].tick_params(labelbottom=False)
+
+    # Adjust spacing and tick label size
+    fg.subplots_adjust(wspace=0.1, hspace=0.3)  # Increase spacing between plots
 
     # save the figure
     plt.savefig(output_folder+os.sep+file_name+'_corner_plot.png', dpi=300)
@@ -1879,7 +1911,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
         help="If True, resume from existing .dynesty if found. If False, create a new version.")
     
-    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,
+    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=True,
         help="If True, only plot the results of the dynesty run. If False, run dynesty.")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
@@ -1943,34 +1975,20 @@ if __name__ == "__main__":
             print("  Fixed Values: ", fixed_values)
             print("--------------------------------------------------")
             obs_data = finder.observation_instance()
-            # print("  Observation data:")
-            # print("    v_init:", obs_data.v_init)
-            # print("    zenith_angle:", obs_data.zenith_angle)
-            # print("    m_init:", obs_data.m_init)
-            # print("    height_lum:", obs_data.height_lum)
-            # print("    absolute_magnitudes:", obs_data.absolute_magnitudes)
-            # print("    luminosity:", obs_data.luminosity)
-            # print("    time_lum:", obs_data.time_lum)
-            # print("    velocities:", obs_data.velocities)
-            # print("    lag:", obs_data.lag)
-            # print("    length:", obs_data.length)
-            # print("    time_lag:", obs_data.time_lag)
-            # print("    height_lag:", obs_data.height_lag)
-            # print("    stations_lag:", obs_data.stations_lag)
-            # print("    stations_lum:", obs_data.stations_lum)
-            # print("--------------------------------------------------")
             # Run the dynesty sampler
             os.makedirs(out_folder, exist_ok=True)
             plot_data_with_residuals_and_real(obs_data, output_folder=out_folder, file_name=base_name)
+            
             if not cml_args.only_plot:
                 main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
+            
             elif cml_args.only_plot and os.path.isfile(dynesty_file): 
                 print("Only plotting requested. Skipping dynesty run.")
                 dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
                 # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-                plot_dynesty(dsampler.results, obs_data, flags_dict, out_folder, base_name)
+                plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name)
 
-             else:
+            else:
                 print("Fail to Plot, dynasty file not found:",dynesty_file)
                 print("If you want to run the dynasty file set only_plot to False")
                 sys.exit()

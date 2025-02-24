@@ -1,36 +1,56 @@
-NoneH inf.gain:29.12080356877461niter i.e number of metsim simulated events
-Best fit:v_init:	59788.45340397396zenith_angle:	0.6915518517395314m_init:	1.3717158591895072e-05rho:	270.90949155140146sigma:	1.3950428154366499e-08erosion_height_start:	117176.02713820749erosion_coeff:	7.317049514215135e-07erosion_mass_index:	1.7094649034027312erosion_mass_min:	5.297515972729838e-11erosion_mass_max:	6.805814658289938e-10
+Summary
+=======
+niter: 25605
+ncall: 687406
+eff(%):  3.435
+logz: -52.682 +/-  0.164
+
+H info.gain:29.12080356877461
+niter i.e number of metsim simulated events
+
+Best fit:
+v_init:	59788.45340397396
+zenith_angle:	0.6915518517395314
+m_init:	1.3717158591895072e-05
+rho:	270.90949155140146
+sigma:	1.3950428154366499e-08
+erosion_height_start:	117176.02713820749
+erosion_coeff:	7.317049514215135e-07
+erosion_mass_index:	1.7094649034027312
+erosion_mass_min:	5.297515972729838e-11
+erosion_mass_max:	6.805814658289938e-10
+
 \begin{table}[htbp]
-            \centering
-            \renewcommand{\arraystretch}{1.2} % Increase row height for readability
-            \setlength{\tabcolsep}{4pt} % Adjust column spacing
-            \resizebox{\textwidth}{!}{ % Resizing table to fit page width
-            \begin{tabular}{|l|c|c|c|c|c|c||c|c||c|}
-            \hline
-            Parameter & 2.5\% & True Value & Mean & Median & Mode & 97.5\% & Abs. Error & Rel. Error & Cover \\
-            \hline
-            $v_0$ [km/s] & 5.966e+04 & nan & 5.974e+04 & 5.974e+04 & 5.971e+04 & 5.986e+04 & nan & nan & \ding{55} \\
+    \centering
+    \renewcommand{\arraystretch}{1.2} % Increase row height for readability
+    \setlength{\tabcolsep}{4pt} % Adjust column spacing
+    \resizebox{\textwidth}{!}{ % Resizing table to fit page width
+    \begin{tabular}{|l|c|c|c|c|c|c||c|c||c|}
     \hline
-    $z_c$ [deg] & 0.6788 & nan & 0.6926 & 0.693 & 0.6969 & 0.7062 & nan & nan & \ding{55} \\
+    Parameter & 2.5CI & True Value & Mean & Median & Mode & 97.5CI & Abs.Error\% & Rel.Error\% & Cover \\
     \hline
-    $m_0$ [kg] & 1.309e-05 & nan & 1.348e-05 & 1.346e-05 & 1.342e-05 & 1.398e-05 & nan & nan & \ding{55} \\
+    $v_0$ [m/s] & 5.966e+04 & nan & 5.974e+04 & 5.974e+04 & 5.974e+04 & 5.986e+04 & nan & nan & \ding{55} \\
     \hline
-    $\rho$ [kg/m$^3$] & 168.4 & nan & 950 & 801.2 & 316.9 & 2409 & nan & nan & \ding{55} \\
+    $z_c$ [rad] & 0.6787 & nan & 0.6925 & 0.693 & 0.6969 & 0.7061 & nan & nan & \ding{55} \\
     \hline
-    $\sigma$ [kg/MJ] & 1.105e-08 & nan & 1.38e-08 & 1.405e-08 & 1.439e-08 & 1.555e-08 & nan & nan & \ding{55} \\
+    $m_0$ [kg] & 1.309e-05 & nan & 1.348e-05 & 1.346e-05 & 1.341e-05 & 1.398e-05 & nan & nan & \ding{55} \\
+    \hline
+    $\rho$ [kg/m$^3$] & 168.3 & nan & 948.7 & 796.8 & 320.9 & 2414 & nan & nan & \ding{55} \\
+    \hline
+    $\sigma$ [kg/MJ] & 1.105e-08 & nan & 1.38e-08 & 1.404e-08 & 1.436e-08 & 1.556e-08 & nan & nan & \ding{55} \\
     \hline
     $h_e$ [km] & 1.171e+05 & nan & 1.173e+05 & 1.173e+05 & 1.173e+05 & 1.176e+05 & nan & nan & \ding{55} \\
     \hline
-    $\eta$ [kg/MJ] & 5.248e-07 & nan & 1.617e-06 & 1.517e-06 & 7.825e-07 & 3.179e-06 & nan & nan & \ding{55} \\
+    $\eta$ [kg/MJ] & 5.236e-07 & nan & 1.615e-06 & 1.513e-06 & 8.698e-07 & 3.179e-06 & nan & nan & \ding{55} \\
     \hline
-    $s$ & 1.567 & nan & 1.737 & 1.695 & 1.67 & 2.144 & nan & nan & \ding{55} \\
+    $s$ & 1.567 & nan & 1.738 & 1.695 & 1.66 & 2.151 & nan & nan & \ding{55} \\
     \hline
-    $m_{l}$ [kg] & 3.184e-11 & nan & 4.758e-11 & 4.768e-11 & 5.098e-11 & 6.55e-11 & nan & nan & \ding{55} \\
+    $m_{l}$ [kg] & 3.184e-11 & nan & 4.757e-11 & 4.763e-11 & 5.126e-11 & 6.551e-11 & nan & nan & \ding{55} \\
     \hline
-    $m_{u}$ [kg] & 3.745e-10 & nan & 6.656e-10 & 6.812e-10 & 7.091e-10 & 9.394e-10 & nan & nan & \ding{55} \\
+    $m_{u}$ [kg] & 3.75e-10 & nan & 6.653e-10 & 6.802e-10 & 6.501e-10 & 9.415e-10 & nan & nan & \ding{55} \\
     \hline
 
-        \end{tabular}}
-        \caption{Posterior summary statistics comparing estimated values with the true values. The cover column indicates whether the true value is within the 95\% confidence interval.}
-        \label{tab:posterior_summary}
-    \end{table}
+    \end{tabular}}
+    \caption{Posterior summary statistics comparing estimated values with the true values. The cover column indicates whether the true value is within the 95\% confidence interval.}
+    \label{tab:posterior_summary}
+\end{table}

@@ -1832,6 +1832,15 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
         if 'log' in flags_dict[var_name]:
             guess_var[i] = 10 ** guess_var[i]
 
+    # check if among the var_names there is a "erosion_mass_max" and if there is a "erosion_mass_min"
+    if 'erosion_mass_max' in var_names and 'erosion_mass_min' in var_names:
+        # check if the guess_var of the erosion_mass_max is smaller than the guess_var of the erosion_mass_min
+        if guess_var[var_names.index('erosion_mass_max')] < guess_var[var_names.index('erosion_mass_min')]:
+            # # if so, set the guess_var of the erosion_mass_max to the guess_var of the erosion_mass_min
+            # guess_var[var_names.index('erosion_mass_max')] = guess_var[var_names.index('erosion_mass_min')]
+            # unphysical values, return -np.inf
+            return -np.inf  # immediately return -np.inf if times out
+
     ### LINUX ###
 
     # Set timeout handler
@@ -2058,6 +2067,14 @@ if __name__ == "__main__":
             # Run the dynesty sampler
             os.makedirs(out_folder, exist_ok=True)
             plot_data_with_residuals_and_real(obs_data, output_folder=out_folder, file_name=base_name)
+
+            # if prior_path is not in the output directory and is not "" then copy the prior_path to the output directory
+            if prior_path != "":
+                # check if there is a prior file with the same name in the output_folder
+                prior_file_output = os.path.join(out_folder,os.path.basename(prior_path))
+                if not os.path.exists(prior_file_output):
+                    shutil.copy(prior_path, out_folder)
+                    print("prior file copied to output folder:", prior_file_output)
             
             if not cml_args.only_plot:
                 main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)

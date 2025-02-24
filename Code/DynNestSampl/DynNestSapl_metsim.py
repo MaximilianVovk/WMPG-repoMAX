@@ -802,15 +802,16 @@ def read_prior_to_bounds(object_meteor,file_path=""):
             # now check if the values are np.nan and if the flag key is 'norm' then divide by 10
             if np.isnan(bounds[i][0]) and key in object_meteor.__dict__:
                 bounds[i][0] = object_meteor.__dict__[key] - object_meteor.__dict__[key]/10/2
-            elif np.isnan(bounds[i][0]) and key == "erosion_height_start":
-                bounds[i][0] = object_meteor.height_lum[0] - 1000
-            
+            elif np.isnan(bounds[i][0]) and key == "erosion_height_start": # -100- just in case the luminosity is not the maximum at the start
+                bounds[i][0] = object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2
+
+
             if np.isnan(bounds[i][1]) and key in object_meteor.__dict__ and "norm" in flags_dict[key]:
                 bounds[i][1] = object_meteor.__dict__[key]
             elif np.isnan(bounds[i][1]) and key in object_meteor.__dict__:
                 bounds[i][1] = object_meteor.__dict__[key] + object_meteor.__dict__[key]/10/2
             elif np.isnan(bounds[i][1]) and key == "erosion_height_start":
-                bounds[i][1] = object_meteor.height_lum[0] + 4000
+                bounds[i][1] = object_meteor.height_lum[0] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2
             bounds[i] = tuple(bounds[i])  # Convert back to tuple if needed
         # checck if stil any bounds are np.nan and raise an error
         for i, key in enumerate(default_bounds):
@@ -873,7 +874,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                     else:
                         min_val = object_meteor.__dict__[name] - object_meteor.__dict__[name]/10/2
                 elif np.isnan(min_val) and name == "erosion_height_start":
-                    min_val = object_meteor.height_lum[0] - 1000
+                    min_val = object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2 # 2000 
                     if "norm" in flags:
                         min_val = min_val/10
 
@@ -886,7 +887,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                     else:
                         max_val = object_meteor.__dict__[name] + object_meteor.__dict__[name]/10/2
                 elif np.isnan(max_val) and name == "erosion_height_start":
-                    max_val = object_meteor.height_lum[0] + 4000
+                    max_val = object_meteor.height_lum[0] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2 # 3000
                     if "norm" in flags:
                         max_val = object_meteor.height_lum[0]
                 
@@ -1969,7 +1970,7 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
         default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/test_cases/PER_v59_heavy_with_noise.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
 

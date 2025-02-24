@@ -42,6 +42,13 @@ from wmpl.Utils.Pickling import loadPickle
 
 import signal
 
+class TimeoutException(Exception):
+    """Custom exception for timeouts."""
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutException("Function execution timed out")
+
 ###############################################################################
 # Function: plotting function
 ###############################################################################
@@ -1818,24 +1825,46 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
 
     var_names = list(flags_dict.keys())
     # check for each var_name in flags_dict if there is "log" in the flags_dict
-    if any('log' in flags_dict[flags_dict[var_name]] for var_name in var_names):
-        guess_var = 10 ** guess_var
+    for i, var_name in enumerate(var_names):
+        if 'log' in flags_dict[var_name]:
+            guess_var[i] = 10 ** guess_var[i]
 
-    queue = multiprocessing.Queue()
-    process = multiprocessing.Process(target=run_simulation_wrapper, args=(guess_var, obs_metsim_obj, var_names, fix_var, queue))
+    ### LINUX ###
 
-    process.start()
-    process.join(timeout)  # Wait up to `timeout` seconds
+    # Set timeout handler
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(timeout)  # Start the timer for timeout
+    # get simulated LC intensity onthe object
+    try: 
+        # simulation_results = sim_lc(guess_phys_var, obs_metsim_obj)
+        simulation_results = run_simulation(guess_var, obs_metsim_obj, var_names, fix_var)
+    except TimeoutException:
+        print('timeout')
+        return -np.inf  # immediately return -np.inf if times out
+    finally:
+        signal.alarm(0)  # Cancel alarm
+    
+    ### LINUX ###
 
-    if process.is_alive():
-        process.terminate()  # Kill process if it's still running
-        print("Timeout occurred")
-        return -np.inf  # Return negative infinity if timed out
+    ### WINDOWS ### does not work...
 
-    simulation_results = queue.get()  # Retrieve results from queue
+    # queue = multiprocessing.Queue()
+    # process = multiprocessing.Process(target=run_simulation_wrapper, args=(guess_var, obs_metsim_obj, var_names, fix_var, queue))
 
-    if simulation_results is None:
-        return -np.inf
+    # process.start()
+    # process.join(timeout)  # Wait up to `timeout` seconds
+
+    # if process.is_alive():
+    #     process.terminate()  # Kill process if it's still running
+    #     print("Timeout occurred")
+    #     return -np.inf  # Return negative infinity if timed out
+
+    # simulation_results = queue.get()  # Retrieve results from queue
+
+    # if simulation_results is None:
+    #     return -np.inf
+
+    ### WINDOWS ### does not work...
 
     simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 
                                        np.flip(simulation_results.leading_frag_height_arr), 
@@ -1875,7 +1904,7 @@ def prior_dynesty(cube,bounds,flags_dict):
     i_prior=0
     for (min_or_sigma, MAX_or_mean), param_name in zip(bounds, param_names):
         # check if the flags_dict at index i is empty
-        if 'norm' in flags_dict[flags_dict[param_name]]:
+        if 'norm' in flags_dict[param_name]:
             x[i_prior] = scipy.stats.norm.ppf(cube[i_prior], loc=MAX_or_mean, scale=min_or_sigma)
         else:
             x[i_prior] = cube[i_prior] * (MAX_or_mean - min_or_sigma) + min_or_sigma  # Scale and shift
@@ -1941,16 +1970,16 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
-    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
-        default=r"/home/mvovk/Results/Results_Nested/tests/PER_v59_heavy_with_noise.json",
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
+        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\test_cases\PER_v59_heavy_with_noise.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
 
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
         default=r"",
         help="Where to store results. If empty, store next to each .dynesty.")
-    # C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\test_cases\stony_meteoroid.prior
+
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior",
+        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\stony_meteoroid.prior",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,
@@ -1962,7 +1991,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,
         help="If True, only plot the results of the dynesty run. If False, run dynesty.")
 
-    arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
+    arg_parser.add_argument('--cores', metavar='CORES', type=int, default=3,
         help="Number of cores to use. Default = all available.")
 
     # Parse

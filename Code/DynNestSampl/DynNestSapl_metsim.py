@@ -49,6 +49,29 @@ class TimeoutException(Exception):
 def timeout_handler(signum, frame):
     raise TimeoutException("Function execution timed out")
 
+# create a txt file where you save averithing that has been printed
+class Logger(object):
+    def __init__(self, directory=".", filename="log.txt"):
+        self.terminal = sys.stdout
+        # Ensure the directory exists
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        # Combine the directory and filename to create the full path
+        filepath = os.path.join(directory, filename)
+        self.log = open(filepath, "a")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        # This might be necessary as stdout could call flush
+        self.terminal.flush()
+
+    def close(self):
+        # Close the log file when done
+        self.log.close()
+
 ###############################################################################
 # Function: plotting function
 ###############################################################################
@@ -2053,6 +2076,11 @@ if __name__ == "__main__":
         )):
             dynesty_file, bounds, flags_dict, fixed_values = dynesty_info
             print("--------------------------------------------------")
+            # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
+            if os.path.exists(out_folder+os.sep+"log_"+base_name+".txt"):
+                # remove the file
+                os.remove(out_folder+os.sep+"log_"+base_name+".txt")
+            sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
             print(f"Entry #{i+1}:", base_name)
             print("  Dynesty file: ", dynesty_file)
             print("  Prior file:   ", prior_path)
@@ -2062,6 +2090,10 @@ if __name__ == "__main__":
             for (low_val, high_val), param_name in zip(bounds, param_names):
                 print(f"    {param_name}: [{low_val}, {high_val}] flags={flags_dict[param_name]}")
             print("  Fixed Values: ", fixed_values)
+            # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+            sys.stdout.close()
+            # Reset sys.stdout to its original value if needed
+            sys.stdout = sys.__stdout__
             print("--------------------------------------------------")
             obs_data = finder.observation_instance()
             # Run the dynesty sampler

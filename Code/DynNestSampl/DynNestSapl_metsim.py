@@ -29,6 +29,7 @@ import matplotlib.gridspec as gridspec
 from scipy.optimize import minimize
 import shutil
 import matplotlib.ticker as ticker
+import multiprocessing
 
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
@@ -1972,7 +1973,6 @@ if __name__ == "__main__":
 
     # If no core count given, use all
     if cml_args.cores is None:
-        import multiprocessing
         cml_args.cores = multiprocessing.cpu_count()
 
     # If user specified a non-empty prior but the file doesn't exist, exit

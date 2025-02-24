@@ -1959,7 +1959,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
         help="If True, resume from existing .dynesty if found. If False, create a new version.")
     
-    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=True,
+    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,
         help="If True, only plot the results of the dynesty run. If False, run dynesty.")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,

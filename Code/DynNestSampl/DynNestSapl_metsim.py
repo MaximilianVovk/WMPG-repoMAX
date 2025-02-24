@@ -747,7 +747,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "zenith_angle": (0.01, np.nan),
         "m_init": (np.nan, np.nan),
         "rho": (10, 4000),  # log transformation applied later
-        "sigma": (0.008 / 1e6, 0.03 / 1e6),
+        "sigma": (0.001 / 1e6, 0.05 / 1e6),
         "erosion_height_start": (np.nan, np.nan),
         "erosion_coeff": (1 / 1e12, 2 / 1e6),  # log transformation applied later
         "erosion_mass_index": (1, 3),
@@ -793,7 +793,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
             elif np.isnan(bounds[i][1]) and key in object_meteor.__dict__:
                 bounds[i][1] = object_meteor.__dict__[key] + object_meteor.__dict__[key]/10/2
             elif np.isnan(bounds[i][1]) and key == "erosion_height_start":
-                bounds[i][1] = object_meteor.height_lum[0] + 9000
+                bounds[i][1] = object_meteor.height_lum[0] + 4000
             bounds[i] = tuple(bounds[i])  # Convert back to tuple if needed
         # checck if stil any bounds are np.nan and raise an error
         for i, key in enumerate(default_bounds):
@@ -869,7 +869,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                     else:
                         max_val = object_meteor.__dict__[name] + object_meteor.__dict__[name]/10/2
                 elif np.isnan(max_val) and name == "erosion_height_start":
-                    max_val = object_meteor.height_lum[0] + 9000
+                    max_val = object_meteor.height_lum[0] + 4000
                     if "norm" in flags:
                         max_val = object_meteor.height_lum[0]
                 

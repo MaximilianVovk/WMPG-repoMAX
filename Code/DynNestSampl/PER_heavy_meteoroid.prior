@@ -13,9 +13,9 @@ v_init,nan,nan,norm   		 	    # v_init [m/s]
 zenith_angle,nan,fix 	            # zenith_angle [rad] (fix by default)
 m_init,nan,nan             			# m_init [kg]
 rho,10,4000,log                  	# rho [kg/m^3] (np.log10 applied)
-sigma,0.001/1e6,0.05/1e6          	# sigma [kg/J]
+sigma,0.008/1e6,0.03/1e6          	# sigma [kg/J]
 erosion_height_start,nan,nan        # erosion_height_start [m]
 erosion_coeff,0.0,1e-6,log          # erosion_coeff [kg/J] (np.log10 applied)
-erosion_mass_index,1,3          	# erosion_mass_index [-]
-erosion_mass_min,5e-12,1e-9,log     # erosion_mass_min [kg] (np.log10 applied)
-erosion_mass_max,1e-10,1e-7,log     # erosion_mass_max [kg] (np.log10 applied)
+erosion_mass_index,1.5,2.5          # erosion_mass_index [-]
+erosion_mass_min,5e-12,1e-10,log    # erosion_mass_min [kg] (np.log10 applied)
+erosion_mass_max,1e-10,5e-8,log     # erosion_mass_max [kg] (np.log10 applied)

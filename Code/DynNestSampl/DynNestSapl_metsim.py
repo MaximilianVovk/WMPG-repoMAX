@@ -1787,10 +1787,12 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     for i, var in enumerate(var_names):
         const_nominal.__dict__[var] = parameter_guess[i]
 
-    var_names_fix = list(fix_var.keys())
-    # for loop for the fix_var that also give a number from 0 to the length of the fix_var
-    for i, var in enumerate(var_names_fix):
-        const_nominal.__dict__[var] = fix_var[var]
+    # first chack if fix_var is not {}
+    if fix_var:
+        var_names_fix = list(fix_var.keys())
+        # for loop for the fix_var that also give a number from 0 to the length of the fix_var
+        for i, var in enumerate(var_names_fix):
+            const_nominal.__dict__[var] = fix_var[var]
 
     const_nominal.P_0m = real_event.P_0m
 
@@ -1924,6 +1926,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
     var_names = list(flags_dict.keys())
     # get the number of parameters
     ndim = len(var_names)
+    print("Number of parameters:", ndim)
 
     # check if file exists
     if not os.path.exists(dynesty_file):
@@ -1938,6 +1941,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
 
     else:
         print("Resuming previous run:")
+        print('Warning: make sure the number of parameters and the bounds are the same as the previous run!')
         # Resume previous run
         with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
                                logl_args=(obs_data, flags_dict, fixed_values, 10),

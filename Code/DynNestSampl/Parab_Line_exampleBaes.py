@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 """
 Example script demonstrating how to use dynamic nested sampling (via `dynesty`)
 to compare a linear model vs. a second-order polynomial model on synthetic data.
 We also illustrate how to visualize the posterior-derived uncertainty in the model fits.
 
-Author: Your Name
-Date: YYYY-MM-DD
+Author: Maximilian Vovk
+Date: 2025-02-18
 """
 
 import numpy as np

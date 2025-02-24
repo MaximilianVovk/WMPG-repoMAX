@@ -1,3 +1,12 @@
+"""
+Nested sampling with Dynesty for MetSim meteor data, generate plots and tables 
+for given trajectory.pickle file or generate new observation from metsim.json solution file
+for EMCCD and CAMO cameras.
+
+Author: Maximilian Vovk
+Date: 2025-02-25
+"""
+
 import numpy as np
 import pandas as pd
 import pickle

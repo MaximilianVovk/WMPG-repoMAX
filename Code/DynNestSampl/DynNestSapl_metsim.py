@@ -92,7 +92,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     ax1.plot([0, 0], [obs_data.height_lum[0]/1000, obs_data.height_lum[-1]/1000],color='lightgray')
     ax1.set_xlabel('Res.Mag')
     # flip the x-axis
-    ax1.invert_xaxis()
+    # ax1.invert_xaxis()
     # ax1.tick_params(axis='x', rotation=45)
     ax1.tick_params(labelleft=False)  # Hide y-axis tick labels
     ax1.grid(True, linestyle='--', color='lightgray')
@@ -378,6 +378,44 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
     # ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise, vel_kms_err + vel_noise, color='darkgray', alpha=0.2)
     # ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise * real_original['z_score'], vel_kms_err + vel_noise * real_original['z_score'], color='lightgray', alpha=0.2)
+    
+    #### avoid overlapping of the x-axis labels ####
+
+    # After plotting, get the current ticks that matplotlib chose
+    current_ticks = ax1.get_xticks()
+
+    # Suppose you want to ensure 3 ticks, keep the two rightmost plus zero,
+    # i.e., if 0 is not among the rightmost two, force it in.
+    # A simple approach (though not always perfect):
+    rightmost_two = current_ticks[1:]       # the last 2 ticks
+    if 0 not in rightmost_two:
+        new_ticks = [0] + list(rightmost_two)
+    else:
+        # 0 is already there, so just keep the last 3:
+        new_ticks = current_ticks[1:]
+
+    # Now set them
+    ax1.set_xticks(new_ticks)
+    # If you want them labeled as-is:
+    ax1.set_xticklabels([str(tk) for tk in new_ticks])
+
+    # After plotting, get the current ticks that matplotlib chose
+    current_ticks = ax5.get_xticks()
+
+    # Suppose you want to ensure 3 ticks, keep the two rightmost plus zero,
+    # i.e., if 0 is not among the rightmost two, force it in.
+    # A simple approach (though not always perfect):
+    rightmost_two = current_ticks[-2:]       # the last 2 ticks
+    if 0 not in rightmost_two:
+        new_ticks = [0] + list(rightmost_two)
+    else:
+        # 0 is already there, so just keep the last 3:
+        new_ticks = current_ticks[-3:]
+
+    # Now set them
+    ax5.set_xticks(new_ticks)
+    # If you want them labeled as-is:
+    ax5.set_xticklabels([str(tk) for tk in new_ticks])
 
     # Save the plot
     print('file saved: '+out_folder +os.sep+ file_name+'_best_fit_plot.png')

@@ -1835,8 +1835,7 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(timeout)  # Start the timer for timeout
     # get simulated LC intensity onthe object
-    try: 
-        # simulation_results = sim_lc(guess_phys_var, obs_metsim_obj)
+    try: # try to run the simulation
         simulation_results = run_simulation(guess_var, obs_metsim_obj, var_names, fix_var)
     except TimeoutException:
         print('timeout')
@@ -1880,7 +1879,7 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
 
     ### Log Likelihood ###
 
-    log_likelihood_lum = np.nansum(-0.5 * np.log(2*np.pi*obs_metsim_obj.noise_lum**2) - 0.5 / (obs_metsim_obj.noise_lum**2) * (obs_metsim_obj.luminosity_arr - simulated_lc_intensity) ** 2)
+    log_likelihood_lum = np.nansum(-0.5 * np.log(2*np.pi*obs_metsim_obj.noise_lum**2) - 0.5 / (obs_metsim_obj.noise_lum**2) * (obs_metsim_obj.luminosity - simulated_lc_intensity) ** 2)
     log_likelihood_lag = np.nansum(-0.5 * np.log(2*np.pi*obs_metsim_obj.noise_lag**2) - 0.5 / (obs_metsim_obj.noise_lag**2) * (obs_metsim_obj.lag - lag_sim) ** 2)
 
     log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
@@ -1971,7 +1970,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\test_cases\PER_v59_heavy_with_noise.json",
+        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/test_cases/PER_v59_heavy_with_noise.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
 
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -1979,7 +1978,7 @@ if __name__ == "__main__":
         help="Where to store results. If empty, store next to each .dynesty.")
 
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\stony_meteoroid.prior",
+        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,
@@ -1991,7 +1990,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,
         help="If True, only plot the results of the dynesty run. If False, run dynesty.")
 
-    arg_parser.add_argument('--cores', metavar='CORES', type=int, default=3,
+    arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")
 
     # Parse

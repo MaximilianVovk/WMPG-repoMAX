@@ -1969,7 +1969,7 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
         default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/test_cases/PER_v59_heavy_with_noise.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
 

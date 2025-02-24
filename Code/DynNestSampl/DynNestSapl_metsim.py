@@ -451,9 +451,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         'zenith_angle': r"$z_c$ [rad]",
         'm_init': r"$m_0$ [kg]",
         'rho': r"$\rho$ [kg/m$^3$]",
-        'sigma': r"$\sigma$ [kg/MJ]",
-        'erosion_height_start': r"$h_e$ [km]",
-        'erosion_coeff': r"$\eta$ [kg/MJ]",
+        'sigma': r"$\sigma$ [kg/J]",
+        'erosion_height_start': r"$h_e$ [m]",
+        'erosion_coeff': r"$\eta$ [kg/J]",
         'erosion_mass_index': r"$s$",
         'erosion_mass_min': r"$m_{l}$ [kg]",
         'erosion_mass_max': r"$m_{u}$ [kg]"
@@ -710,9 +710,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
             # Only update the formatter if we actually have tick locations:
             if len(x_locs) > 0:
-                ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.3g'))
+                ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
             if len(y_locs) > 0:
-                ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.3g'))
+                ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
 
     for i in range(ndim):
         for j in range(ndim):

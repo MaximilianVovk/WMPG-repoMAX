@@ -1940,8 +1940,8 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\test_cases\PER_v59_heavy_with_noise.json",
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
+        default=r"/home/mvovk/Results/Results_Nested/tests/PER_v59_heavy_with_noise.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
 
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -1949,7 +1949,7 @@ if __name__ == "__main__":
         help="Where to store results. If empty, store next to each .dynesty.")
     # C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\test_cases\stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"",
+        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,

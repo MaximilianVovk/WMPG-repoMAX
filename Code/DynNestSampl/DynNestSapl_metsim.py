@@ -466,11 +466,15 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
 # Plotting function dynesty
 def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name=''):
-    
+
     print(dynesty_run_results.summary())
     print('information gain:', dynesty_run_results.information[-1])
     print('niter i.e number of metsim simulated events\n')
-    
+
+    fig, axes = dyplot.runplot(dynesty_run_results,label_kwargs={"fontsize": 10})  # Reduce title font size)
+    plt.savefig(output_folder +os.sep+ file_name +'_dynesty_runplot.png', dpi=300)
+    plt.close(fig)
+
     variables = list(flags_dict.keys())
 
     logwt = dynesty_run_results.logwt
@@ -683,6 +687,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # show the trace plot
     # plt.show()
+    plt.close(fig)
 
     ### Plot the corner plot ###
 
@@ -775,6 +780,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     # save the figure
     plt.savefig(output_folder+os.sep+file_name+'_corner_plot.png', dpi=300)
 
+    # close the figure
+    plt.close(fig)
 
 ###############################################################################
 # Function: read prior to generate bounds

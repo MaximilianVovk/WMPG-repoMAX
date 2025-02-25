@@ -21,12 +21,11 @@ from dynesty import plotting as dyplot
 import time
 from matplotlib.ticker import ScalarFormatter
 import scipy
-from scipy.stats import norm
-from scipy.stats import multivariate_normal
 import warnings
 import re
 import matplotlib.gridspec as gridspec
 from scipy.optimize import minimize
+from scipy.stats import norm, invgamma
 import shutil
 import matplotlib.ticker as ticker
 import multiprocessing
@@ -788,11 +787,15 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "m_init": (np.nan, np.nan),
         "rho": (10, 4000),  # log transformation applied later
         "sigma": (0.001 / 1e6, 0.05 / 1e6),
-        "erosion_height_start": (np.nan, np.nan),
+        "erosion_height_start": (\
+            object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
+            object_meteor.height_lum[0] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
         "erosion_coeff": (1 / 1e12, 2 / 1e6),  # log transformation applied later
         "erosion_mass_index": (1, 3),
         "erosion_mass_min": (5e-12, 1e-9),  # log transformation applied later
         "erosion_mass_max": (1e-10, 1e-7),  # log transformation applied later
+        "noise_lag": (3, object_meteor.noise_lag),
+        "noise_lum": (3, object_meteor.noise_lum)
     }
 
     default_flags = {
@@ -805,7 +808,9 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "erosion_coeff": ["log"],
         "erosion_mass_index": [],
         "erosion_mass_min": ["log"],
-        "erosion_mass_max": ["log"]
+        "erosion_mass_max": ["log"],
+        "noise_lag": ["invgamma"],
+        "noise_lum": ["invgamma"]
         }
 
     # Default values if no file path is provided
@@ -825,16 +830,11 @@ def read_prior_to_bounds(object_meteor,file_path=""):
             # now check if the values are np.nan and if the flag key is 'norm' then divide by 10
             if np.isnan(bounds[i][0]) and key in object_meteor.__dict__:
                 bounds[i][0] = object_meteor.__dict__[key] - object_meteor.__dict__[key]/10/2
-            elif np.isnan(bounds[i][0]) and key == "erosion_height_start": # -100- just in case the luminosity is not the maximum at the start
-                bounds[i][0] = object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2
-
 
             if np.isnan(bounds[i][1]) and key in object_meteor.__dict__ and "norm" in flags_dict[key]:
                 bounds[i][1] = object_meteor.__dict__[key]
             elif np.isnan(bounds[i][1]) and key in object_meteor.__dict__:
                 bounds[i][1] = object_meteor.__dict__[key] + object_meteor.__dict__[key]/10/2
-            elif np.isnan(bounds[i][1]) and key == "erosion_height_start":
-                bounds[i][1] = object_meteor.height_lum[0] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2
             bounds[i] = tuple(bounds[i])  # Convert back to tuple if needed
         # checck if stil any bounds are np.nan and raise an error
         for i, key in enumerate(default_bounds):
@@ -881,9 +881,10 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                 flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
                 
                 # Handle NaN values and default replacement
-                min_val = safe_eval(min_val) if min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
-                max_val = safe_eval(max_val) if max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
+                min_val = safe_eval(min_val) if min_val.lower() != "nan" else np.nan
+                max_val = safe_eval(max_val) if max_val.lower() != "nan" else np.nan
 
+                #### vel, mass, zenith ####
                 # check if name=='v_init' or zenith_angle or m_init or erosion_height_start values are np.nan and replace them with the object_meteor values
                 if np.isnan(min_val) and name in object_meteor.__dict__ and "norm" in flags:
                     if "norm" in default_flags[name]:
@@ -896,10 +897,6 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                         min_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
                     else:
                         min_val = object_meteor.__dict__[name] - object_meteor.__dict__[name]/10/2
-                elif np.isnan(min_val) and name == "erosion_height_start":
-                    min_val = object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2 # 2000 
-                    if "norm" in flags:
-                        min_val = min_val/10
 
                 if np.isnan(max_val) and name in object_meteor.__dict__ and "norm" in flags:
                     max_val = object_meteor.__dict__[name]
@@ -909,13 +906,26 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                         max_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
                     else:
                         max_val = object_meteor.__dict__[name] + object_meteor.__dict__[name]/10/2
-                elif np.isnan(max_val) and name == "erosion_height_start":
-                    max_val = object_meteor.height_lum[0] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2 # 3000
-                    if "norm" in flags:
-                        max_val = object_meteor.height_lum[0]
+                
+                #### rest of variables ####
+                if np.isnan(min_val) and ("norm" in flags or "invgamma" in flags):
+                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
+                        min_val = default_bounds.get(name, (np.nan, np.nan))[0]
+                    else:
+                        min_val = (default_bounds.get(name, (np.nan, np.nan))[1]-default_bounds.get(name, (np.nan, np.nan))[0])/10/2
+                elif np.isnan(min_val):
+                    min_val = default_bounds.get(name, (np.nan, np.nan))[0]
+                
+                if np.isnan(max_val) and ("norm" in flags or "invgamma" in flags):
+                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
+                        max_val = default_bounds.get(name, (np.nan, np.nan))[1]
+                    else:
+                        max_val = np.mean([default_bounds.get(name,(np.nan, np.nan))[1],default_bounds.get(name,(np.nan, np.nan))[0]])
+                elif np.isnan(max_val):
+                    max_val = default_bounds.get(name, (np.nan, np.nan))[1]
                 
                 # check if min_val > max_val, then swap them cannot have negative values
-                if min_val > max_val:
+                if min_val > max_val and "invgamma" not in flags:
                     print(f"Min/sigma > MAX/mean : Swapping {min_val} and {max_val} for {name}")
                     min_val, max_val = max_val, min_val
 
@@ -929,9 +939,26 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                         min_val = 1/1e12
                     # Apply log10 transformation
                     min_val, max_val = np.log10(min_val), np.log10(max_val)
-                
+
+                # check if any of the values are np.nan raise an error
+                if np.isnan(min_val) or np.isnan(max_val):
+                    raise ValueError(f"The value for {name} is np.nan and it is not in the dictionary")
+                # check if inf in the values and raise an error
+                if np.isinf(min_val) or np.isinf(max_val):
+                    raise ValueError(f"The value for {name} is inf and it is not in the dictionary")
+
                 bounds.append((min_val, max_val))
     
+    # take the key of the fixed_values and append flags_dict
+    variable_loaded = list(fixed_values.keys()) + list(flags_dict.keys())
+    # check if among the variable_loaded if there is 'v_init' or 'zenith_angle' or 'm_init' in case are not in the variable_loaded put it in to fixed_values
+    if 'v_init' not in variable_loaded:
+        fixed_values['v_init'] = object_meteor.v_init
+    if 'zenith_angle' not in variable_loaded:
+        fixed_values['zenith_angle'] = object_meteor.zenith_angle
+    if 'm_init' not in variable_loaded:
+        fixed_values['m_init'] = object_meteor.m_init
+
     # check if the bounds the len(bounds) + len(fixed_values) =>10
     if len(bounds) + len(fixed_values) < 10:
         raise ValueError("The number of bounds and fixed values should 10 or above")
@@ -1854,6 +1881,10 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     for i, var_name in enumerate(var_names):
         if 'log' in flags_dict[var_name]:
             guess_var[i] = 10 ** guess_var[i]
+        if var_name == 'noise_lag':
+            obs_metsim_obj.noise_lag = guess_var[i]
+        if var_name == 'noise_lum':
+            obs_metsim_obj.noise_lum = guess_var[i]
 
     # check if among the var_names there is a "erosion_mass_max" and if there is a "erosion_mass_min"
     if 'erosion_mass_max' in var_names and 'erosion_mass_min' in var_names:
@@ -1939,7 +1970,9 @@ def prior_dynesty(cube,bounds,flags_dict):
     for (min_or_sigma, MAX_or_mean), param_name in zip(bounds, param_names):
         # check if the flags_dict at index i is empty
         if 'norm' in flags_dict[param_name]:
-            x[i_prior] = scipy.stats.norm.ppf(cube[i_prior], loc=MAX_or_mean, scale=min_or_sigma)
+            x[i_prior] = norm.ppf(cube[i_prior], loc=MAX_or_mean, scale=min_or_sigma)
+        elif 'invgamma' in flags_dict[param_name]:
+            x[i_prior] = invgamma.ppf(cube[i_prior], min_or_sigma, scale=MAX_or_mean * (min_or_sigma + 1))
         else:
             x[i_prior] = cube[i_prior] * (MAX_or_mean - min_or_sigma) + min_or_sigma  # Scale and shift
         i_prior += 1
@@ -1959,6 +1992,19 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
     # get the number of parameters
     ndim = len(var_names)
     print("Number of parameters:", ndim)
+
+    # first chack if fix_var is not {}
+    if fixed_values:
+        var_names_fix = list(fixed_values.keys())
+        # check if among the noise_lum and noise_lag there is a "noise_lum" and if there is a "noise_lag"
+        if 'noise_lum' in var_names_fix:
+            # if so, set the noise_lum to the fixed value
+            obs_data.noise_lum = fixed_values['noise_lum']
+            print("Fixed noise in luminosity to:", fixed_values['noise_lum'])
+        if 'noise_lag' in var_names_fix:
+            # if so, set the noise_lag to the fixed value
+            obs_data.noise_lag = fixed_values['noise_lag']
+            print("Fixed noise in lag to:", fixed_values['noise_lag'])
 
     # check if file exists
     if not os.path.exists(dynesty_file):

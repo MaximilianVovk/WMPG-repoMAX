@@ -420,41 +420,37 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     
     #### avoid overlapping of the x-axis labels ####
 
-    # After plotting, get the current ticks that matplotlib chose
-    current_ticks = ax1.get_xticks()
+    # # After plotting, get the current ticks that matplotlib chose
+    # current_ticks = ax1.get_xticks()
+    # # Suppose you want to ensure 3 ticks, keep the two rightmost plus zero,
+    # # i.e., if 0 is not among the rightmost two, force it in.
+    # # A simple approach (though not always perfect):
+    # rightmost_two = current_ticks[1:]       # the last 2 ticks
+    # if 0 not in rightmost_two:
+    #     new_ticks = [0] + list(rightmost_two)
+    # else:
+    #     # 0 is already there, so just keep the last 3:
+    #     new_ticks = current_ticks[1:]
+    # # Now set them
+    # ax1.set_xticks(new_ticks)
+    # # If you want them labeled as-is:
+    # ax1.set_xticklabels([str(tk) for tk in new_ticks])
 
-    # Suppose you want to ensure 3 ticks, keep the two rightmost plus zero,
-    # i.e., if 0 is not among the rightmost two, force it in.
-    # A simple approach (though not always perfect):
-    rightmost_two = current_ticks[1:]       # the last 2 ticks
-    if 0 not in rightmost_two:
-        new_ticks = [0] + list(rightmost_two)
-    else:
-        # 0 is already there, so just keep the last 3:
-        new_ticks = current_ticks[1:]
-
-    # Now set them
-    ax1.set_xticks(new_ticks)
-    # If you want them labeled as-is:
-    ax1.set_xticklabels([str(tk) for tk in new_ticks])
-
-    # After plotting, get the current ticks that matplotlib chose
-    current_ticks = ax5.get_xticks()
-
-    # Suppose you want to ensure 3 ticks, keep the two rightmost plus zero,
-    # i.e., if 0 is not among the rightmost two, force it in.
-    # A simple approach (though not always perfect):
-    rightmost_two = current_ticks[-2:]       # the last 2 ticks
-    if 0 not in rightmost_two:
-        new_ticks = [0] + list(rightmost_two)
-    else:
-        # 0 is already there, so just keep the last 3:
-        new_ticks = current_ticks[-3:]
-
-    # Now set them
-    ax5.set_xticks(new_ticks)
-    # If you want them labeled as-is:
-    ax5.set_xticklabels([str(tk) for tk in new_ticks])
+    # # After plotting, get the current ticks that matplotlib chose
+    # current_ticks = ax5.get_xticks()
+    # # Suppose you want to ensure 3 ticks, keep the two rightmost plus zero,
+    # # i.e., if 0 is not among the rightmost two, force it in.
+    # # A simple approach (though not always perfect):
+    # rightmost_two = current_ticks[-2:]       # the last 2 ticks
+    # if 0 not in rightmost_two:
+    #     new_ticks = [0] + list(rightmost_two)
+    # else:
+    #     # 0 is already there, so just keep the last 3:
+    #     new_ticks = current_ticks[-3:]
+    # # Now set them
+    # ax5.set_xticks(new_ticks)
+    # # If you want them labeled as-is:
+    # ax5.set_xticklabels([str(tk) for tk in new_ticks])
 
     # Save the plot
     print('file saved: '+out_folder +os.sep+ file_name+'_best_fit_plot.png')
@@ -1443,8 +1439,9 @@ class observation_data:
             self.time_lag = time_sampled_lag - time_sampled_lag[0]
 
             # Create new length and velocity arrays at FPS frequency and add noise
-            self.length = len_interpol(time_sampled_lag) + np.random.normal(loc=0, scale=self.noise_lag, size=len(time_sampled_lag))
+            self.length = len_interpol(time_sampled_lag) 
             self.length = self.length - self.length[0]
+            self.length = self.length + np.random.normal(loc=0, scale=self.noise_lag, size=len(time_sampled_lag))
 
             # # Find the index where time_arr is closest to self.time_arr[np.min(indices_visible)] + time_to_track
             closest_index_vel = np.argmin(np.abs(self.brightest_height_arr - self.height_lag[0]))
@@ -1469,6 +1466,8 @@ class observation_data:
                 velocities_noise[station_indices] = velocity
             # concatenate the velocities
             self.velocities = velocities_noise
+
+            optimized_v_first_frame = v_first_frame
 
             optimized_v_first_frame = self.find_optimal_v_first_frame(v_first_frame)
 
@@ -2059,8 +2058,8 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
-    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/test_cases/PER_v59_heavy_with_noise.json",
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
+        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
 
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -2068,7 +2067,7 @@ if __name__ == "__main__":
         help="Where to store results. If empty, store next to each .dynesty.")
 
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior",
+        default=r"",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,
@@ -2077,7 +2076,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
         help="If True, resume from existing .dynesty if found. If False, create a new version.")
     
-    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,
+    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=True,
         help="If True, only plot the results of the dynesty run. If False, run dynesty.")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
@@ -2129,11 +2128,12 @@ if __name__ == "__main__":
         )):
             dynesty_file, bounds, flags_dict, fixed_values = dynesty_info
             print("--------------------------------------------------")
-            # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-            if os.path.exists(out_folder+os.sep+"log_"+base_name+".txt"):
-                # remove the file
-                os.remove(out_folder+os.sep+"log_"+base_name+".txt")
-            sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
+            if not cml_args.only_plot:
+                # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
+                if os.path.exists(out_folder+os.sep+"log_"+base_name+".txt"):
+                    # remove the file
+                    os.remove(out_folder+os.sep+"log_"+base_name+".txt")
+                sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
             print(f"Entry #{i+1}:", base_name)
             print("  Dynesty file: ", dynesty_file)
             print("  Prior file:   ", prior_path)
@@ -2143,10 +2143,11 @@ if __name__ == "__main__":
             for (low_val, high_val), param_name in zip(bounds, param_names):
                 print(f"    {param_name}: [{low_val}, {high_val}] flags={flags_dict[param_name]}")
             print("  Fixed Values: ", fixed_values)
-            # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-            sys.stdout.close()
-            # Reset sys.stdout to its original value if needed
-            sys.stdout = sys.__stdout__
+            if not cml_args.only_plot:
+                # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+                sys.stdout.close()
+                # Reset sys.stdout to its original value if needed
+                sys.stdout = sys.__stdout__
             print("--------------------------------------------------")
             obs_data = finder.observation_instance()
             # Run the dynesty sampler

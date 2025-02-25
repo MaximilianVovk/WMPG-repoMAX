@@ -1628,6 +1628,9 @@ class observation_data:
                 json_file_save = os.path.splitext(self.file_name)[0] + f"_{i_json}_with_noise.json"
                 i_json += 1
 
+        # update the file name
+        self.file_name = json_file_save
+
         # Write to JSON file
         with open(json_file_save, 'w') as f:
             json.dump(serializable_dict, f, indent=4)
@@ -2179,6 +2182,7 @@ if __name__ == "__main__":
             finder.output_folders
         )):
             dynesty_file, bounds, flags_dict, fixed_values = dynesty_info
+            obs_data = finder.observation_instance()
             print("--------------------------------------------------")
             # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
             if os.path.exists(out_folder+os.sep+"log_"+base_name+".txt"):
@@ -2186,6 +2190,7 @@ if __name__ == "__main__":
                 os.remove(out_folder+os.sep+"log_"+base_name+".txt")
             sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
             print(f"Meteor:", base_name)
+            print("  File name:    ", obs_data.file_name)
             print("  Dynesty file: ", dynesty_file)
             print("  Prior file:   ", prior_path)
             print("  Output folder:", out_folder)
@@ -2199,7 +2204,6 @@ if __name__ == "__main__":
             # Reset sys.stdout to its original value if needed
             sys.stdout = sys.__stdout__
             print("--------------------------------------------------")
-            obs_data = finder.observation_instance()
             # Run the dynesty sampler
             os.makedirs(out_folder, exist_ok=True)
             plot_data_with_residuals_and_real(obs_data, output_folder=out_folder, file_name=base_name)
@@ -2211,6 +2215,12 @@ if __name__ == "__main__":
                 if not os.path.exists(prior_file_output):
                     shutil.copy(prior_path, out_folder)
                     print("prior file copied to output folder:", prior_file_output)
+            # check if obs_data.file_name is not in the output directory
+            if not os.path.exists(os.path.join(out_folder,os.path.basename(obs_data.file_name))) and os.path.isfile(obs_data.file_name):
+                shutil.copy(obs_data.file_name, out_folder)
+                print("observation file copied to output folder:", os.path.join(out_folder,os.path.basename(obs_data.file_name)))
+            elif not os.path.isfile(obs_data.file_name):
+                print("original observation file not found, not copied:",obs_data.file_name)
             
             if not cml_args.only_plot:
                 main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)

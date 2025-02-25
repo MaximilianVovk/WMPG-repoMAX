@@ -1,5 +1,5 @@
 {
-    "file_name": "C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\Shower\\EMCCD\\DRA_mode\\DRA_mode.json",
+    "file_name": "C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\Shower\\EMCCD\\DRA_mode\\DRA_mode_EMCCD_with_noise.json",
     "const": {
         "dt": 0.005,
         "total_time": 6.264999999999889,

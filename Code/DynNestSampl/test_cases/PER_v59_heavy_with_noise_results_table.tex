@@ -1,24 +1,25 @@
 Summary
 =======
-niter: 25605
-ncall: 687406
-eff(%):  3.435
-logz: -52.682 +/-  0.164
+niter: 9813
+ncall: 265819
+eff(%):  3.685
+logz: -297.463 +/-  0.000
 
-H info.gain:29.12080356877461
+H info.gain:19.96114968481777
 niter i.e number of metsim simulated events
 
 Best fit:
-v_init:	59788.45340397396
-zenith_angle:	0.6915518517395314
-m_init:	1.3717158591895072e-05
-rho:	270.90949155140146
-sigma:	1.3950428154366499e-08
-erosion_height_start:	117176.02713820749
-erosion_coeff:	7.317049514215135e-07
-erosion_mass_index:	1.7094649034027312
-erosion_mass_min:	5.297515972729838e-11
-erosion_mass_max:	6.805814658289938e-10
+v_init:	59780.55826865703
+m_init:	1.3785371634844432e-05
+rho:	277.51114869166344
+sigma:	1.3611294562735601e-08
+erosion_height_start:	118149.83494794683
+erosion_coeff:	7.092665558971141e-07
+erosion_mass_index:	1.402208698650195
+erosion_mass_min:	3.6835064199562505e-11
+erosion_mass_max:	5.282456803675109e-10
+noise_lag:	42.126569791395255
+noise_lum:	6.697206687638547
 
 \begin{table}[htbp]
     \centering
@@ -29,25 +30,27 @@ erosion_mass_max:	6.805814658289938e-10
     \hline
     Parameter & 2.5CI & True Value & Mean & Median & Mode & 97.5CI & Abs.Error\% & Rel.Error\% & Cover \\
     \hline
-            $v_0$ [m/s] & 5.966e+04 & nan & 5.974e+04 & 5.974e+04 & 5.975e+04 & 5.986e+04 & nan & nan & \ding{55} \\
+            $v_0$ [m/s] & 5.968e+04 & nan & 5.984e+04 & 5.984e+04 & 5.984e+04 & 6.004e+04 & nan & nan & \ding{55} \\
     \hline
-    $z_c$ [rad] & 0.6788 & nan & 0.6925 & 0.6929 & 0.6969 & 0.7061 & nan & nan & \ding{55} \\
+    $m_0$ [kg] & 1.34e-05 & nan & 1.398e-05 & 1.397e-05 & 1.427e-05 & 1.443e-05 & nan & nan & \ding{55} \\
     \hline
-    $m_0$ [kg] & 1.309e-05 & nan & 1.348e-05 & 1.346e-05 & 1.343e-05 & 1.398e-05 & nan & nan & \ding{55} \\
+    $\rho$ [kg/m$^3$] & 55.45 & nan & 225.5 & 212.3 & 99.01 & 444.8 & nan & nan & \ding{55} \\
     \hline
-    $\rho$ [kg/m$^3$] & 168.7 & nan & 950.3 & 801.1 & 317.2 & 2414 & nan & nan & \ding{55} \\
+    $\sigma$ [kg/J] & 1.149e-08 & nan & 1.457e-08 & 1.45e-08 & 1.466e-08 & 1.859e-08 & nan & nan & \ding{55} \\
     \hline
-    $\sigma$ [kg/J] & 1.105e-08 & nan & 1.379e-08 & 1.404e-08 & 1.439e-08 & 1.554e-08 & nan & nan & \ding{55} \\
+    $h_e$ [m] & 1.161e+05 & nan & 1.173e+05 & 1.173e+05 & 1.173e+05 & 1.183e+05 & nan & nan & \ding{55} \\
     \hline
-    $h_e$ [m] & 1.171e+05 & nan & 1.173e+05 & 1.173e+05 & 1.173e+05 & 1.176e+05 & nan & nan & \ding{55} \\
+    $\eta$ [kg/J] & 2.457e-07 & nan & 6.143e-07 & 6.255e-07 & 7.788e-07 & 9.891e-07 & nan & nan & \ding{55} \\
     \hline
-    $\eta$ [kg/J] & 5.281e-07 & nan & 1.617e-06 & 1.518e-06 & 7.869e-07 & 3.179e-06 & nan & nan & \ding{55} \\
+    $s$ & 1.068 & nan & 1.723 & 1.632 & 1.415 & 2.706 & nan & nan & \ding{55} \\
     \hline
-    $s$ & 1.568 & nan & 1.738 & 1.695 & 1.662 & 2.147 & nan & nan & \ding{55} \\
+    $m_{l}$ [kg] & 1.955e-11 & nan & 6.057e-11 & 5.652e-11 & 4.518e-11 & 1.222e-10 & nan & nan & \ding{55} \\
     \hline
-    $m_{l}$ [kg] & 3.184e-11 & nan & 4.755e-11 & 4.764e-11 & 5.136e-11 & 6.545e-11 & nan & nan & \ding{55} \\
+    $m_{u}$ [kg] & 3.542e-10 & nan & 8.325e-10 & 7.506e-10 & 6.731e-10 & 1.581e-09 & nan & nan & \ding{55} \\
     \hline
-    $m_{u}$ [kg] & 3.745e-10 & nan & 6.65e-10 & 6.801e-10 & 7.125e-10 & 9.379e-10 & nan & nan & \ding{55} \\
+    $\varepsilon_{lag}$ [m] & 27.78 & nan & 44.79 & 44.07 & 50.05 & 69.68 & nan & nan & \ding{55} \\
+    \hline
+    $\varepsilon_{lum}$ & 5.882 & nan & 7.959 & 7.702 & 6.997 & 11.63 & nan & nan & \ding{55} \\
     \hline
 
     \end{tabular}}

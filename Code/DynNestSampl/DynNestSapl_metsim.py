@@ -495,9 +495,17 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         'erosion_coeff': r"$\eta$ [kg/J]",
         'erosion_mass_index': r"$s$",
         'erosion_mass_min': r"$m_{l}$ [kg]",
-        'erosion_mass_max': r"$m_{u}$ [kg]"
+        'erosion_mass_max': r"$m_{u}$ [kg]",
+        'noise_lag': r"$\varepsilon_{lag}$ [m]",
+        'noise_lum': r"$\varepsilon_{lum}$ [J/s]"
     }
 
+    # check if there are variables in the flags_dict that are not in the variable_map
+    for variable in variables:
+        if variable not in variable_map:
+            print(f"Warning: {variable} not found in variable_map")
+            # Add the variable to the map with a default label
+            variable_map[variable] = variable
     labels = [variable_map[variable] for variable in variables]
     labels_plot = labels. copy() # list for plot labels
 
@@ -552,6 +560,12 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     if hasattr(obs_data, 'const'):
 
         truth_values_plot = {}
+        # if 'noise_lag' take it from obs_data.noise_lag
+        if 'noise_lag' in flags_dict.keys():
+            truth_values_plot['noise_lag'] = obs_data.noise_lag
+        # if 'noise_mag' take it from obs_data.noise_mag
+        if 'noise_lum' in flags_dict.keys():
+            truth_values_plot['noise_lum'] = obs_data.noise_lum
 
         # Extract values from dictionary
         for variable in variables:
@@ -560,11 +574,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             else:
                 print(f"Warning: {variable} not found in obs_data.const")
 
-        # Debugging: Print extracted values before applying log
-        print("Truth values before log processing:", truth_values_plot)
-
         # Convert to array safely
-        truths = np.array([truth_values_plot.get(label, np.nan) for label in labels])
+        truths = np.array([truth_values_plot.get(variable, np.nan) for variable in variables])
 
         # Apply log10 safely if needed
         for variable in variables:
@@ -797,8 +808,8 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "erosion_mass_index": (1, 3),
         "erosion_mass_min": (5e-12, 1e-9),  # log transformation applied later
         "erosion_mass_max": (1e-10, 1e-7),  # log transformation applied later
-        "noise_lag": (3, object_meteor.noise_lag),
-        "noise_lum": (3, object_meteor.noise_lum)
+        "noise_lag": (10, object_meteor.noise_lag), # more of a peak around the real value
+        "noise_lum": (3, object_meteor.noise_lum) # look for more values at higher uncertainty can be because of the noise
     }
 
     default_flags = {
@@ -2059,7 +2070,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode.json",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\dynesty_run\Heavy PER\PER_v59_heavy_with_noise.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
 
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -2067,7 +2078,7 @@ if __name__ == "__main__":
         help="Where to store results. If empty, store next to each .dynesty.")
 
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\dynesty_run\Heavy PER\PER_meteoroid.prior",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,

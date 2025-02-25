@@ -20,5 +20,5 @@ erosion_coeff,0.0,1e-6,log          # erosion_coeff [kg/J] (np.log10 applied)
 erosion_mass_index,1,3          	# erosion_mass_index [-]
 erosion_mass_min,5e-12,1e-9,log     # erosion_mass_min [kg] (np.log10 applied)
 erosion_mass_max,1e-10,1e-7,log     # erosion_mass_max [kg] (np.log10 applied)
-noise_lag,3,40,invgamma             # noise_lag [m] (inverse gamma distribution)
+noise_lag,10,nan,invgamma            # noise_lag [m] (inverse gamma distribution)
 noise_lum,3,2.5,invgamma            # noise_lum [J/s] (inverse gamma distribution)

@@ -808,6 +808,13 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "erosion_mass_index": (1, 3),
         "erosion_mass_min": (5e-12, 1e-9),  # log transformation applied later
         "erosion_mass_max": (1e-10, 1e-7),  # log transformation applied later
+        "rho_grain": (3000, 3500),
+        "erosion_height_change": (\
+            object_meteor.height_lum[-1]+100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
+            object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
+        "erosion_coeff_change": (1 / 1e12, 2 / 1e6),  # log transformation applied later
+        "erosion_rho_change": (10, 4000),  # log transformation applied later
+        "erosion_sigma_change": (0.001 / 1e6, 0.05 / 1e6),
         "noise_lag": (10, object_meteor.noise_lag), # more of a peak around the real value
         "noise_lum": (3, object_meteor.noise_lum) # look for more values at higher uncertainty can be because of the noise
     }
@@ -823,14 +830,30 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "erosion_mass_index": [],
         "erosion_mass_min": ["log"],
         "erosion_mass_max": ["log"],
+        "rho_grain": [],
+        "erosion_height_change": [],
+        "erosion_coeff_change": ["log"],
+        "erosion_rho_change": ["log"],
+        "erosion_sigma_change": [],
         "noise_lag": ["invgamma"],
         "noise_lum": ["invgamma"]
         }
 
+    rho_grain_real = 3000
+    # check if object_meteor.const.rho_grain exist
+    if hasattr(object_meteor, 'const'):
+        rho_grain_real = object_meteor.const["rho_grain"]
+
     # Default values if no file path is provided
     if file_path == "":
-        # delete from the default_bounds the zenith_angle
-        # default_bounds.pop("zenith_angle")
+        # delete from the default_bounds the "zenith_angle","rho_grain","erosion_height_change","erosion_coeff_change","erosion_rho_change","erosion_sigma_change"
+        default_bounds.pop("zenith_angle")
+        default_bounds.pop("rho_grain")
+        default_bounds.pop("erosion_height_change")
+        default_bounds.pop("erosion_coeff_change")
+        default_bounds.pop("erosion_rho_change")
+        default_bounds.pop("erosion_sigma_change")
+        
         bounds = [default_bounds[key] for key in default_bounds]
         flags_dict = {key: default_flags.get(key, []) for key in default_bounds}
         # for the one that have log transformation, apply it
@@ -855,10 +878,14 @@ def read_prior_to_bounds(object_meteor,file_path=""):
             if np.isnan(bounds[i][0]) or np.isnan(bounds[i][1]):
                 raise ValueError(f"The value for {key} is np.nan and it is not in the dictionary")
 
-        fixed_values = {}  
-        # fixed_values = {
-        #     "zenith_angle": np.nan,
-        # }
+        fixed_values = {
+            "zenith_angle": object_meteor.zenith_angle,
+            "rho_grain": rho_grain_real,
+            "erosion_height_change": 1, # deactivate the erosion height change
+            "erosion_coeff_change": 1 / 1e7,
+            "erosion_rho_change": rho_grain_real,
+            "erosion_sigma_change": 0.001 / 1e6
+        }
 
     else:
         bounds = []
@@ -900,23 +927,23 @@ def read_prior_to_bounds(object_meteor,file_path=""):
 
                 #### vel, mass, zenith ####
                 # check if name=='v_init' or zenith_angle or m_init or erosion_height_start values are np.nan and replace them with the object_meteor values
-                if np.isnan(min_val) and name in object_meteor.__dict__ and "norm" in flags:
-                    if "norm" in default_flags[name]:
+                if np.isnan(min_val) and name in object_meteor.__dict__ and ("norm" in flags or "invgamma" in flags):
+                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
                         min_val = default_bounds.get(name, (np.nan, np.nan))[0]
                     else:
                         min_val = object_meteor.__dict__[name]/10/2
                 if np.isnan(min_val) and name in object_meteor.__dict__:
                     # if norm in default_flags[name] then divide by 10
-                    if "norm" in default_flags[name]:
+                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
                         min_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
                     else:
                         min_val = object_meteor.__dict__[name] - object_meteor.__dict__[name]/10/2
 
-                if np.isnan(max_val) and name in object_meteor.__dict__ and "norm" in flags:
+                if np.isnan(max_val) and name in object_meteor.__dict__ and ("norm" in flags or "invgamma" in flags):
                     max_val = object_meteor.__dict__[name]
                 if np.isnan(max_val) and name in object_meteor.__dict__:
                     # if norm in default_flags[name] then divide by 10
-                    if "norm" in default_flags[name]:
+                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
                         max_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
                     else:
                         max_val = object_meteor.__dict__[name] + object_meteor.__dict__[name]/10/2
@@ -972,6 +999,10 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         fixed_values['zenith_angle'] = object_meteor.zenith_angle
     if 'm_init' not in variable_loaded:
         fixed_values['m_init'] = object_meteor.m_init
+    if 'rho_grain' not in variable_loaded:
+        fixed_values['rho_grain'] = rho_grain_real
+    if 'erosion_height_change' not in variable_loaded:
+        fixed_values['erosion_height_change'] = 1
 
     # check if the bounds the len(bounds) + len(fixed_values) =>10
     if len(bounds) + len(fixed_values) < 10:
@@ -1676,6 +1707,8 @@ class find_dynestyfile_and_priors:
                 folder = os.path.dirname(self.input_dir_or_file)
                 prior_path = self._find_prior_in_folder(folder)
                 if prior_path:
+                    # print the prior path has been found
+                    print(f"Prior file found in the same folder as the observation file: {prior_path}")
                     bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj,prior_path)
                 else:
                     # default
@@ -1734,6 +1767,8 @@ class find_dynestyfile_and_priors:
                         # Look for local .prior
                         prior_path = self._find_prior_in_folder(root)
                         if prior_path:
+                            # print the prior path has been found
+                            print(f"Prior file found in the same folder as the observation file: {prior_path}")
                             bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj,prior_path)
                         else:
                             # default
@@ -2068,26 +2103,27 @@ if __name__ == "__main__":
 
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
-
+    # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
+    # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\dynesty_run\Heavy PER\PER_v59_heavy_with_noise.json",
+        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
-
+    # /home/mvovk/Results/Results_Nested/validation/
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"",
+        default=r"/home/mvovk/Results/Results_Nested/validation/",
         help="Where to store results. If empty, store next to each .dynesty.")
-
+    # /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\dynesty_run\Heavy PER\PER_meteoroid.prior",
+        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,
-        help="If True, use only CAMO data for lag if present in pickle file. If False, do not use CAMO data (by default is False).")
+        help="If True, use only CAMO data for lag if present in pickle file, or generate json file with CAMO noise. If False, do not use/generate CAMO data (by default is False).")
 
     arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
         help="If True, resume from existing .dynesty if found. If False, create a new version.")
     
-    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=True,
+    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,
         help="If True, only plot the results of the dynesty run. If False, run dynesty.")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
@@ -2118,7 +2154,7 @@ if __name__ == "__main__":
 
     # Process each input path
     for input_dirfile in cml_args.input_dir:
-        print(f"Processing {input_dirfile} (this may take a while if subdirectories are large)")
+        print(f"Processing {input_dirfile} look for all files...")
 
         # Use the class to find .dynesty, load prior, and decide output folders
         finder = find_dynestyfile_and_priors(
@@ -2128,6 +2164,11 @@ if __name__ == "__main__":
             output_dir=cml_args.output_dir,
             use_CAMO_data=cml_args.use_CAMO_data
         )
+
+        # check if finder is empty
+        if not finder.base_names:
+            print("No files found in the input directory.")
+            continue
 
         # Each discovered or created .dynesty is in input_folder_file
         # with its matching prior info
@@ -2139,13 +2180,12 @@ if __name__ == "__main__":
         )):
             dynesty_file, bounds, flags_dict, fixed_values = dynesty_info
             print("--------------------------------------------------")
-            if not cml_args.only_plot:
-                # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-                if os.path.exists(out_folder+os.sep+"log_"+base_name+".txt"):
-                    # remove the file
-                    os.remove(out_folder+os.sep+"log_"+base_name+".txt")
-                sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
-            print(f"Entry #{i+1}:", base_name)
+            # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
+            if os.path.exists(out_folder+os.sep+"log_"+base_name+".txt"):
+                # remove the file
+                os.remove(out_folder+os.sep+"log_"+base_name+".txt")
+            sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
+            print(f"Meteor:", base_name)
             print("  Dynesty file: ", dynesty_file)
             print("  Prior file:   ", prior_path)
             print("  Output folder:", out_folder)
@@ -2154,11 +2194,10 @@ if __name__ == "__main__":
             for (low_val, high_val), param_name in zip(bounds, param_names):
                 print(f"    {param_name}: [{low_val}, {high_val}] flags={flags_dict[param_name]}")
             print("  Fixed Values: ", fixed_values)
-            if not cml_args.only_plot:
-                # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-                sys.stdout.close()
-                # Reset sys.stdout to its original value if needed
-                sys.stdout = sys.__stdout__
+            # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+            sys.stdout.close()
+            # Reset sys.stdout to its original value if needed
+            sys.stdout = sys.__stdout__
             print("--------------------------------------------------")
             obs_data = finder.observation_instance()
             # Run the dynesty sampler
@@ -2183,6 +2222,5 @@ if __name__ == "__main__":
                 plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name)
 
             else:
-                print("Fail to Plot, dynasty file not found:",dynesty_file)
+                print("Fail to generate dynesty plots, dynasty file not found:",dynesty_file)
                 print("If you want to run the dynasty file set only_plot to False")
-                sys.exit()

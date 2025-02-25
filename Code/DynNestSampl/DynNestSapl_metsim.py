@@ -453,7 +453,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # ax5.set_xticklabels([str(tk) for tk in new_ticks])
 
     # Save the plot
-    print('file saved: '+out_folder +os.sep+ file_name+'_best_fit_plot.png')
+    print('file saved: '+output_folder +os.sep+ file_name+'_best_fit_plot.png')
     fig.savefig(output_folder +os.sep+ file_name +'_best_fit_plot.png', dpi=300)
 
     # Display the plot
@@ -524,7 +524,28 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     # write the best fit variable names and then the best guess values
     for i in range(len(best_guess)):
         print(variables[i],':\t', best_guess[i])
+    print('logL:', dynesty_run_results.logl[sim_num])
+    real_logL = None
+    diff_logL = None
+    if hasattr(obs_data, 'const'):
+        simulated_lc_intensity = np.interp(obs_data.height_lum, 
+                                        np.flip(obs_data.leading_frag_height_arr), 
+                                        np.flip(obs_data.luminosity_arr))
 
+        lag_sim = obs_data.leading_frag_length_arr - (obs_data.v_init * obs_data.time_arr)
+        simulated_lag = np.interp(obs_data.height_lag, 
+                                np.flip(obs_data.leading_frag_height_arr), 
+                                np.flip(lag_sim))
+        lag_sim = simulated_lag - simulated_lag[0]
+
+        ### Log Likelihood ###
+        log_likelihood_lum = np.nansum(-0.5 * np.log(2*np.pi*obs_data.noise_lum**2) - 0.5 / (obs_data.noise_lum**2) * (obs_data.luminosity - simulated_lc_intensity) ** 2)
+        log_likelihood_lag = np.nansum(-0.5 * np.log(2*np.pi*obs_data.noise_lag**2) - 0.5 / (obs_data.noise_lag**2) * (obs_data.lag - lag_sim) ** 2)
+        real_logL = log_likelihood_lum + log_likelihood_lag
+        diff_logL = dynesty_run_results.logl[sim_num] - real_logL
+        # use log_likelihood_dynesty to compute the logL
+        print('REAL logL:', real_logL)
+        print('DIFF logL:', diff_logL)
     ### PLOT best fit ###
 
     best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
@@ -653,6 +674,10 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         f.write("Best fit:\n")
         for i in range(len(best_guess)):
             f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
+        f.write('logL:'+str(dynesty_run_results.logl[sim_num])+'\n')
+        if diff_logL is not None:
+            f.write('REAL logL:'+str(real_logL)+'\n')
+            f.write('diff logL:'+str(diff_logL)+'\n')
         f.write("\n")
         f.write(latex_str)
         f.close()
@@ -2109,7 +2134,7 @@ if __name__ == "__main__":
     # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
     # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json",
+        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

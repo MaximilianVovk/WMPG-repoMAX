@@ -2147,7 +2147,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,
         help="If True, use only CAMO data for lag if present in pickle file, or generate json file with CAMO noise. If False, do not use/generate CAMO data (by default is False).")
 
-    arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=False,
+    arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
         help="If True, resume from existing .dynesty if found. If False, create a new version.")
     
     arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,

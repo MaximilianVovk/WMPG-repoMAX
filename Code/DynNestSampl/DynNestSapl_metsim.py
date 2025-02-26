@@ -1975,7 +1975,7 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
             # unphysical values, return -np.inf
             return -np.inf  # immediately return -np.inf if times out
 
-    ### LINUX ###
+    ### ONLY on LINUX ###
 
     # Set timeout handler
     signal.signal(signal.SIGALRM, timeout_handler)
@@ -1989,38 +1989,19 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     finally:
         signal.alarm(0)  # Cancel alarm
     
-    ### LINUX ###
+    ### ONLY on LINUX ###
 
-    ### WINDOWS ### does not work...
-
-    # queue = multiprocessing.Queue()
-    # process = multiprocessing.Process(target=run_simulation_wrapper, args=(guess_var, obs_metsim_obj, var_names, fix_var, queue))
-
-    # process.start()
-    # process.join(timeout)  # Wait up to `timeout` seconds
-
-    # if process.is_alive():
-    #     process.terminate()  # Kill process if it's still running
-    #     print("Timeout occurred")
-    #     return -np.inf  # Return negative infinity if timed out
-
-    # simulation_results = queue.get()  # Retrieve results from queue
-
-    # if simulation_results is None:
+    # time constait
+    # # find the time_arr index in simulation_results that are above the np.min(obs_metsim_obj.luminosity) and are after height_lum[0] (the leading_frag_height_arr[-1] is nan)
+    # indices_visible = np.where((simulation_results.luminosity_arr[:-1] > np.min(obs_metsim_obj.luminosity)) & (simulation_results.leading_frag_height_arr[:-1] < obs_metsim_obj.height_lum[0]))[0]
+    # # check if indices_visible is empty
+    # if len(indices_visible) == 0:
     #     return -np.inf
-
-    ### WINDOWS ### does not work...
-
-    # find the time_arr index in simulation_results that are above the np.min(obs_metsim_obj.luminosity) and are after height_lum[0] (the leading_frag_height_arr[-1] is nan)
-    indices_visible = np.where((simulation_results.luminosity_arr[:-1] > np.min(obs_metsim_obj.luminosity)) & (simulation_results.leading_frag_height_arr[:-1] < obs_metsim_obj.height_lum[0]))[0]
-    # check if indices_visible is empty
-    if len(indices_visible) == 0:
-        return -np.inf
-    real_time_visible = obs_metsim_obj.time_lum[-1]-obs_metsim_obj.time_lum[0]
-    simulated_time_visible = simulation_results.time_arr[indices_visible][-1]-simulation_results.time_arr[indices_visible][0]
-    # check if is too short and the time difference is smaller than 60% of the real time difference
-    if simulated_time_visible < 0.6*real_time_visible:
-        return -np.inf
+    # real_time_visible = obs_metsim_obj.time_lum[-1]-obs_metsim_obj.time_lum[0]
+    # simulated_time_visible = simulation_results.time_arr[indices_visible][-1]-simulation_results.time_arr[indices_visible][0]
+    # # check if is too short and the time difference is smaller than 60% of the real time difference
+    # if simulated_time_visible < 0.6*real_time_visible:
+    #     return -np.inf
     
     simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 
                                        np.flip(simulation_results.leading_frag_height_arr), 
@@ -2033,6 +2014,13 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
                               np.flip(lag_sim))
 
     lag_sim = simulated_lag - simulated_lag[0]
+
+    # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
+    if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
+        return -np.inf
+    # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
+    if np.sum(~np.isnan(lag_sim)) != np.sum(~np.isnan(obs_metsim_obj.lag)):
+        return -np.inf
 
     ### Log Likelihood ###
 

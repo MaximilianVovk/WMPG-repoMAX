@@ -2214,7 +2214,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
                                logl_args=(obs_data, flags_dict, fixed_values, 10),
                                ptform_args=(bounds, flags_dict)) as pool:
             ### NEW RUN
-            dsampler = dynesty.DynamicNestedSampler(pool.loglike, pool.prior_transform, ndim, pool = pool)
+            dsampler = dynesty.DynamicNestedSampler(pool.loglike, pool.prior_transform, ndim, nlive=250, pool = pool)
             dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)
 
     else:
@@ -2225,7 +2225,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
                                logl_args=(obs_data, flags_dict, fixed_values, 10),
                                ptform_args=(bounds, flags_dict)) as pool:
             ### RESUME:
-            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, pool = pool)
+            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, nlive=250, pool = pool)
             dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
 
     print('SUCCESS: dynesty results ready!\n')

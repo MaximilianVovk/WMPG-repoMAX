@@ -77,6 +77,7 @@ class Logger(object):
 
 # Plotting function
 def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',file_name=''):
+    ''' Plot the data with residuals and real data '''
 
     # Create the figure and main GridSpec with specified height ratios
     fig = plt.figure(figsize=(14, 6))
@@ -462,6 +463,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
 # Plotting function dynesty
 def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name=''):
+    ''' Plot the dynesty results '''
 
     print(dynesty_run_results.summary())
     print('information gain:', dynesty_run_results.information[-1])
@@ -819,6 +821,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 # Function: read prior to generate bounds
 ###############################################################################
 def read_prior_to_bounds(object_meteor,file_path=""):
+    ''' Read the prior file and generate the bounds for the dynesty sampler '''
     # Default bounds
     default_bounds = {
         "v_init": (500, np.nan),
@@ -867,7 +870,12 @@ def read_prior_to_bounds(object_meteor,file_path=""):
     rho_grain_real = 3000
     # check if object_meteor.const.rho_grain exist
     if hasattr(object_meteor, 'const'):
-        rho_grain_real = object_meteor.const["rho_grain"]
+        # check if object_meteor.const.rho_grain exist
+        if "rho_grain" in object_meteor.const:
+            rho_grain_real = object_meteor.const["rho_grain"]
+        # chack if object_meteor.const.rho_grain exist as key
+        if "rho_grain" in object_meteor.const.keys():
+            rho_grain_real = object_meteor.const["rho_grain"]
 
     # Default values if no file path is provided
     if file_path == "":
@@ -1037,9 +1045,10 @@ def read_prior_to_bounds(object_meteor,file_path=""):
 
 
 ###############################################################################
-# Load observation data
+# Load observation data and create an object
 ###############################################################################
 class observation_data:
+    ''' class to load the observation data and create an object '''
     def __init__(self, obs_file_path,use_CAMO_data):
         self.file_name = obs_file_path
         # check if the file is a json file
@@ -1665,33 +1674,184 @@ class observation_data:
 
 
 ###############################################################################
-# Class: find_dynestyfile_and_priors
+# find dynestyfile and priors
 ###############################################################################
+
+def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_CAMO_data=True, only_plot=True, cores=None):
+    """
+    Create the output folder if it doesn't exist.
+    """
+
+    # initlize cml_args
+    class cml_args:
+        pass
+
+    cml_args.input_dir = input_dir
+    cml_args.output_dir = output_dir
+    cml_args.prior = prior
+    cml_args.use_CAMO_data = use_CAMO_data
+    cml_args.resume = resume
+    cml_args.only_plot = only_plot
+    cml_args.cores = cores
+
+    # If no core count given, use all
+    if cml_args.cores is None:
+        cml_args.cores = multiprocessing.cpu_count()
+
+    # If user specified a non-empty prior but the file doesn't exist, exit
+    if cml_args.prior != "" and not os.path.isfile(cml_args.prior):
+        print(f"File {cml_args.prior} not found.")
+        print("Specify a valid .prior path or leave it empty.")
+        sys.exit()
+
+    # Handle comma-separated input paths
+    if ',' in cml_args.input_dir:
+        cml_args.input_dir = cml_args.input_dir.split(',')
+        print('Number of input directories/files:', len(cml_args.input_dir))
+    else:
+        cml_args.input_dir = [cml_args.input_dir]
+
+    # Process each input path
+    for input_dirfile in cml_args.input_dir:
+        print(f"Processing {input_dirfile} look for all files...")
+
+        # Use the class to find .dynesty, load prior, and decide output folders
+        finder = find_dynestyfile_and_priors(
+            input_dir_or_file=input_dirfile,
+            prior_file=cml_args.prior,
+            resume=cml_args.resume,
+            output_dir=cml_args.output_dir,
+            use_CAMO_data=cml_args.use_CAMO_data
+        )
+
+        # check if finder is empty
+        if not finder.base_names:
+            print("No files found in the input directory.")
+            continue
+
+        # Each discovered or created .dynesty is in input_folder_file
+        # with its matching prior info
+        for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(
+            finder.base_names,
+            finder.input_folder_file,
+            finder.priors,
+            finder.output_folders
+        )):
+            dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
+            obs_data = finder.observation_instance()
+            obs_data.file_name = pickle_file # update teh file name in the observation_data object
+
+            dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name)
+            
+            if not cml_args.only_plot:
+                main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
+            
+            elif cml_args.only_plot and os.path.isfile(dynesty_file): 
+                print("Only plotting requested. Skipping dynesty run.")
+                dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+                # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+                plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name)
+
+            else:
+                print("Fail to generate dynesty plots, dynasty file not found:",dynesty_file)
+                print("If you want to run the dynasty file set only_plot to False")
+
+
+
+def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file='', dynesty_file='', prior_path='', base_name=''):
+
+    print("--------------------------------------------------")
+    # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
+    if os.path.exists(out_folder+os.sep+"log_"+base_name+".txt"):
+        # remove the file
+        os.remove(out_folder+os.sep+"log_"+base_name+".txt")
+    sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
+    print(f"Meteor:", base_name)
+    print("  File name:    ", pickle_file)
+    print("  Dynesty file: ", dynesty_file)
+    print("  Prior file:   ", prior_path)
+    print("  Output folder:", out_folder)
+    print("  Bounds:")
+    param_names = list(flags_dict.keys())
+    for (low_val, high_val), param_name in zip(bounds, param_names):
+        print(f"    {param_name}: [{low_val}, {high_val}] flags={flags_dict[param_name]}")
+    print("  Fixed Values: ", fixed_values)
+    # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+    sys.stdout.close()
+    # Reset sys.stdout to its original value if needed
+    sys.stdout = sys.__stdout__
+    print("--------------------------------------------------")
+
+    # create output folder and put the image
+    os.makedirs(out_folder, exist_ok=True)
+    plot_data_with_residuals_and_real(obs_data, output_folder=out_folder, file_name=base_name)
+    
+    dynesty_file_in_output_path = os.path.join(out_folder,os.path.basename(dynesty_file))
+    # copy the dynesty file to the output folder if not already there
+    if not os.path.exists(dynesty_file_in_output_path) and os.path.isfile(dynesty_file):
+        shutil.copy(dynesty_file, out_folder)
+        print("dynesty file copied to output folder:", dynesty_file_in_output_path)
+
+    # add the prior pr
+    if prior_path != "":
+        # check if there is a prior file with the same name in the output_folder
+        prior_file_output = os.path.join(out_folder,os.path.basename(prior_path))
+        if not os.path.exists(prior_file_output):
+            shutil.copy(prior_path, out_folder)
+            print("prior file copied to output folder:", prior_file_output)
+        # folder where is stored the pickle_file
+        prior_file_input = os.path.join(os.path.dirname(pickle_file),os.path.basename(prior_path))
+        if not os.path.exists(prior_file_input):
+            shutil.copy(prior_path, os.path.dirname(pickle_file))
+            print("prior file copied to input folder:", prior_file_input)
+    # check if pickle_file is not in the output directory
+    if not os.path.exists(os.path.join(out_folder,os.path.basename(pickle_file))) and os.path.isfile(pickle_file):
+        shutil.copy(pickle_file, out_folder)
+        print("observation file copied to output folder:", os.path.join(out_folder,os.path.basename(pickle_file)))
+    elif not os.path.isfile(pickle_file):
+        print("original observation file not found, not copied:",pickle_file)
+
+    return dynesty_file_in_output_path
+
+
+
 class find_dynestyfile_and_priors:
     """
-    1. If `input_dir_or_file` is a file:
-       - Strip extension => add ".dynesty"
-       - If `prior_file` is a valid file, use it (read_prior_to_bounds).
-         Otherwise, look for a .prior in the same folder.
-         If still none, use defaults.
+    This class automates the setup of .dynesty output files and associated prior configurations 
+    for observation data. It handles both single file inputs and directories containing multiple 
+    .pickle files, applying a consistent naming and resume logic to avoid file collisions.
 
-    2. If `input_dir_or_file` is a directory:
-       - For each .pickle found:
-         - Decide .dynesty name (check existing, apply resume logic).
-         - If `prior_file` is valid, use it.
-           Otherwise, look for a .prior in that folder.
-           If none, default.
+    1. Input Handling:
+       - **Single File Input:**  
+         - When `input_dir_or_file` is a file, its extension is stripped and replaced with ".dynesty".
+         - If the provided `prior_file` exists, it is used to extract bounds, flags, and fixed values.
+         - Otherwise, the class searches the file's folder for a .prior file; if none is found, defaults are used.
+       - **Directory Input:**  
+         - The class recursively traverses the directory, looking for files ending in ".pickle".
+         - For each .pickle file, it constructs a corresponding .dynesty filename based on the file’s base name.
+         - The same prior selection logic is applied: use the provided `prior_file` if valid, otherwise search 
+           the current folder for a .prior file, defaulting if needed.
 
-    3. `resume=True`: Reuse existing .dynesty if it exists.
-       `resume=False`: Create new .dynesty name (append _n1, _n2, etc.) if found.
+    2. Dynesty File Naming and Resume Logic:
+       - If a .dynesty file with the derived name already exists in the target folder:
+         - With `resume=True`, the existing file is reused.
+         - With `resume=False`, a new .dynesty filename is generated by appending suffixes (e.g., _n1, _n2) 
+           to prevent overwriting.
+       - If no .dynesty file exists, one is created from the base name of the corresponding .pickle file.
 
-    4. If `output_dir != ""`, create a subfolder named after the .dynesty base name.
-       Otherwise, store results in the same folder as the .dynesty.
+    3. Output Directory Management:
+       - If an `output_dir` is specified, a subfolder (named after the .dynesty base name) is created to store results.
+       - If no output directory is provided, results are stored in the same folder as the .dynesty file.
 
-    5. Stored results:
-       - `self.input_folder_file`: List of (dynesty_file, bounds, flags_dict, fixed_values)
-       - `self.priors`: List of the .prior paths used (or "") for each entry
-       - `self.output_folders`: Where results are stored for each entry
+    4. Result Storage:
+       - The class collects and stores key information:
+         - `self.input_folder_file`: A list of tuples containing (dynesty file path, input file path, bounds, flags, and fixed values).
+         - `self.priors`: A list of the .prior file paths used (or an empty string if defaults were applied).
+         - `self.output_folders`: The output folder for each processed input.
+       - An observation instance is created for each input file, accessible via the `observation_instance()` method.
+
+    Overall, this design provides a flexible and automated approach to preparing observation data for further 
+    processing, ensuring that each input is properly paired with a .dynesty configuration and the relevant prior settings.
     """
 
     def __init__(self, input_dir_or_file, prior_file, resume, output_dir="", use_CAMO_data=False):
@@ -1702,8 +1862,8 @@ class find_dynestyfile_and_priors:
         self.use_CAMO_data = use_CAMO_data
 
         # Prepare placeholders
-        self.base_names = []        # [base_name, ...] 
-        self.input_folder_file = [] # [(dynesty_file, bounds, flags_dict, fixed_values), ...]
+        self.base_names = []        # [base_name, ...] (no extension)
+        self.input_folder_file = [] # [(dynesty_file, input_file, bounds, flags_dict, fixed_values), ...]
         self.priors = []            # [used_prior_path_or_empty_string, ...]
         self.output_folders = []    # [output_folder_for_this_dynesty, ...]
 
@@ -1714,43 +1874,11 @@ class find_dynestyfile_and_priors:
         """Decide if input is file or directory, build .dynesty, figure out prior, and store results."""
         if os.path.isfile(self.input_dir_or_file):
             # Single file case
-            root, _ = os.path.splitext(self.input_dir_or_file)
-            dynesty_file = root + ".dynesty"
-
-            if os.path.exists(dynesty_file):
-                # Matches the .dynesty base
-                if self.resume==False:
-                    dynesty_file = self._build_new_dynesty_name(dynesty_file)
-
-            self.observation_obj = observation_data(self.input_dir_or_file, self.use_CAMO_data)
-            # If user gave a valid .prior path, read it once.
-            # We'll reuse this for every .dynesty discovered.
-            if os.path.isfile(self.prior_file):
-                self.user_prior = read_prior_to_bounds(self.observation_obj,self.prior_file)
-                # We already read a user-provided prior
-                bounds, flags_dict, fixed_values = self.user_prior
-                prior_path = self.prior_file
-            else:
-                # If no user-prior, check for a local .prior
-                folder = os.path.dirname(self.input_dir_or_file)
-                prior_path = self._find_prior_in_folder(folder)
-                if prior_path:
-                    # print the prior path has been found
-                    print(f"Prior file found in the same folder as the observation file: {prior_path}")
-                    bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj,prior_path)
-                else:
-                    # default
-                    prior_path = ""
-                    bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj)
-
-            # Decide output folder
-            output_folder = self._decide_output_folder(dynesty_file)
-
-            # Store in class variables
-            self.base_names.append(self._extract_base_name(self.input_dir_or_file))
-            self.input_folder_file.append((dynesty_file, bounds, flags_dict, fixed_values))
-            self.priors.append(prior_path)
-            self.output_folders.append(output_folder)
+            input_file = self.input_dir_or_file
+            root = os.path.dirname(input_file)
+            # take all the files in the folder
+            files = os.listdir(root)
+            self._main_folder_costructor(input_file,root,files)
 
         else:
             # Directory case
@@ -1760,57 +1888,65 @@ class find_dynestyfile_and_priors:
                     continue
 
                 for pf in pickle_files:
-                    base_name = os.path.splitext(pf)[0]
-                    possible_dynesty = os.path.join(root, base_name + ".dynesty")
+                    input_file = os.path.join(root, pf)
+                    self._main_folder_costructor(input_file,root,files)
+                    
 
-                    # Check for existing .dynesty in the same folder
-                    existing_dynesty_list = [f for f in files if f.endswith(".dynesty")]
+    def _main_folder_costructor(self, input_file, root, files):
+        """ Main function to return the observation instance """
+        # separete the base name from the folder
+        file_name_no_ext = os.path.splitext(os.path.basename(input_file))[0] # Extract just the file name without extension
+        possible_dynesty = os.path.join(root, file_name_no_ext + ".dynesty")
 
-                    if existing_dynesty_list:
-                        # There is at least one .dynesty in this folder
-                        if os.path.exists(possible_dynesty):
-                            # Matches the .pickle base
-                            if self.resume:
-                                dynesty_file = possible_dynesty
-                            else:
-                                dynesty_file = self._build_new_dynesty_name(possible_dynesty)
-                        else:
-                            # There's a .dynesty, but not matching the base name
-                            first_dynesty_found = os.path.join(root, existing_dynesty_list[0])
-                            if self.resume:
-                                dynesty_file = first_dynesty_found
-                            else:
-                                dynesty_file = self._build_new_dynesty_name(first_dynesty_found)
-                    else:
-                        # No .dynesty => create from .pickle base name
-                        dynesty_file = possible_dynesty
+        # Check for existing .dynesty in the same folder
+        existing_dynesty_list = [f for f in files if f.endswith(".dynesty")]
 
-                    self.observation_obj = observation_data(pf, self.use_CAMO_data)
+        if self.output_dir=="":
+            # Output folder is not specified
+            output_folder = root
+        else:
+            # Output folder is specified
+            output_folder = os.path.join(self.output_dir, self._extract_base_name(input_file))
 
-                    # If user gave a valid .prior path, read it once.
-                    # We'll reuse this for every .dynesty discovered.
-                    if os.path.isfile(self.prior_file):
-                        bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj,self.prior_file)
-                    else:
-                        # Look for local .prior
-                        prior_path = self._find_prior_in_folder(root)
-                        if prior_path:
-                            # print the prior path has been found
-                            print(f"Prior file found in the same folder as the observation file: {prior_path}")
-                            bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj,prior_path)
-                        else:
-                            # default
-                            prior_path = ""
-                            bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj)
+        if existing_dynesty_list:
+            # There is at least one .dynesty in this folder
+            if os.path.exists(possible_dynesty):
+                # Matches the .pickle base
+                if self.resume:
+                    dynesty_file = possible_dynesty
+                else:
+                    dynesty_file = self._build_new_dynesty_name(possible_dynesty)
+            else:
+                dynesty_file = possible_dynesty
+        else:
+            # No .dynesty => create from .pickle base name
+            dynesty_file = possible_dynesty
 
-                    # Decide the output folder
-                    output_folder = self._decide_output_folder(dynesty_file)
+        self.observation_obj = observation_data(input_file, self.use_CAMO_data)
 
-                    # Store results
-                    self.base_names.append(self._extract_base_name(pf))
-                    self.input_folder_file.append((dynesty_file, bounds, flags_dict, fixed_values))
-                    self.priors.append(prior_path)
-                    self.output_folders.append(output_folder)
+        # If user gave a valid .prior path, read it once.
+        if os.path.isfile(self.prior_file):
+            prior_path = self.prior_file
+            bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj,self.prior_file)
+        else:
+
+            # Look for local .prior
+            existing_prior_list = [f for f in files if f.endswith(".prior")]
+            if existing_prior_list:
+                prior_path = os.path.join(root, existing_prior_list[0])
+                # print the prior path has been found
+                print(f"Take the first Prior file found in the same folder as the observation file: {prior_path}")
+                bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj,prior_path)
+            else:
+                # default
+                prior_path = ""
+                bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj)
+
+        # Store results
+        self.base_names.append(self._extract_base_name(input_file))
+        self.input_folder_file.append((dynesty_file, input_file, bounds, flags_dict, fixed_values))
+        self.priors.append(prior_path)
+        self.output_folders.append(output_folder)
 
     def observation_instance(self):
         """Return the PriorHandler instance for further use."""
@@ -1860,21 +1996,6 @@ class find_dynestyfile_and_priors:
                 return new_path
             counter += 1
 
-    def _decide_output_folder(self, dynesty_file_path):
-        """
-        Decide where to store results:
-          - If self.output_dir is empty, use the .dynesty file's folder.
-          - Otherwise, create a subdirectory named after the .dynesty base name.
-        """
-        if not self.output_dir:
-            return os.path.dirname(dynesty_file_path)
-
-        # If output_dir is given, create a named subdirectory
-        subfolder_name = os.path.splitext(os.path.basename(dynesty_file_path))[0]
-        final_output_dir = os.path.join(self.output_dir, subfolder_name+"_dynesty")
-        # os.makedirs(final_output_dir, exist_ok=True)
-        return final_output_dir
-
 
 ###############################################################################
 # Function: dynesty
@@ -1896,7 +2017,7 @@ def run_simulation_wrapper(guess_var, obs_metsim_obj, var_names, fix_var, queue)
 
 def run_simulation(parameter_guess, real_event, var_names, fix_var):
     '''
-        path_and_file = must be a json file generated file from the generate_simulationsm function or from Metsim file
+    path_and_file = must be a json file generated file from the generate_simulationsm function or from Metsim file
     '''
 
     # Load the nominal simulation parameters
@@ -2123,6 +2244,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
 
 
 
+
 ###############################################################################
 if __name__ == "__main__":
 
@@ -2141,13 +2263,13 @@ if __name__ == "__main__":
         help="Where to store results. If empty, store next to each .dynesty.")
     # /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior",
+        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid_fix_noise.prior",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,
         help="If True, use only CAMO data for lag if present in pickle file, or generate json file with CAMO noise. If False, do not use/generate CAMO data (by default is False).")
 
-    arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
+    arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=False,
         help="If True, resume from existing .dynesty if found. If False, create a new version.")
     
     arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,
@@ -2156,105 +2278,11 @@ if __name__ == "__main__":
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")
 
-    # Parse
-    cml_args = arg_parser.parse_args()
 
     # Optional: suppress warnings
     # warnings.filterwarnings('ignore')
 
-    # If no core count given, use all
-    if cml_args.cores is None:
-        cml_args.cores = multiprocessing.cpu_count()
+    # Parse
+    cml_args = arg_parser.parse_args()
 
-    # If user specified a non-empty prior but the file doesn't exist, exit
-    if cml_args.prior != "" and not os.path.isfile(cml_args.prior):
-        print(f"File {cml_args.prior} not found.")
-        print("Specify a valid .prior path or leave it empty.")
-        sys.exit()
-
-    # Handle comma-separated input paths
-    if ',' in cml_args.input_dir:
-        cml_args.input_dir = cml_args.input_dir.split(',')
-        print('Number of input directories/files:', len(cml_args.input_dir))
-    else:
-        cml_args.input_dir = [cml_args.input_dir]
-
-    # Process each input path
-    for input_dirfile in cml_args.input_dir:
-        print(f"Processing {input_dirfile} look for all files...")
-
-        # Use the class to find .dynesty, load prior, and decide output folders
-        finder = find_dynestyfile_and_priors(
-            input_dir_or_file=input_dirfile,
-            prior_file=cml_args.prior,
-            resume=cml_args.resume,
-            output_dir=cml_args.output_dir,
-            use_CAMO_data=cml_args.use_CAMO_data
-        )
-
-        # check if finder is empty
-        if not finder.base_names:
-            print("No files found in the input directory.")
-            continue
-
-        # Each discovered or created .dynesty is in input_folder_file
-        # with its matching prior info
-        for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(
-            finder.base_names,
-            finder.input_folder_file,
-            finder.priors,
-            finder.output_folders
-        )):
-            dynesty_file, bounds, flags_dict, fixed_values = dynesty_info
-            obs_data = finder.observation_instance()
-            print("--------------------------------------------------")
-            # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-            if os.path.exists(out_folder+os.sep+"log_"+base_name+".txt"):
-                # remove the file
-                os.remove(out_folder+os.sep+"log_"+base_name+".txt")
-            sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
-            print(f"Meteor:", base_name)
-            print("  File name:    ", obs_data.file_name)
-            print("  Dynesty file: ", dynesty_file)
-            print("  Prior file:   ", prior_path)
-            print("  Output folder:", out_folder)
-            print("  Bounds:")
-            param_names = list(flags_dict.keys())
-            for (low_val, high_val), param_name in zip(bounds, param_names):
-                print(f"    {param_name}: [{low_val}, {high_val}] flags={flags_dict[param_name]}")
-            print("  Fixed Values: ", fixed_values)
-            # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-            sys.stdout.close()
-            # Reset sys.stdout to its original value if needed
-            sys.stdout = sys.__stdout__
-            print("--------------------------------------------------")
-            # Run the dynesty sampler
-            os.makedirs(out_folder, exist_ok=True)
-            plot_data_with_residuals_and_real(obs_data, output_folder=out_folder, file_name=base_name)
-
-            # if prior_path is not in the output directory and is not "" then copy the prior_path to the output directory
-            if prior_path != "":
-                # check if there is a prior file with the same name in the output_folder
-                prior_file_output = os.path.join(out_folder,os.path.basename(prior_path))
-                if not os.path.exists(prior_file_output):
-                    shutil.copy(prior_path, out_folder)
-                    print("prior file copied to output folder:", prior_file_output)
-            # check if obs_data.file_name is not in the output directory
-            if not os.path.exists(os.path.join(out_folder,os.path.basename(obs_data.file_name))) and os.path.isfile(obs_data.file_name):
-                shutil.copy(obs_data.file_name, out_folder)
-                print("observation file copied to output folder:", os.path.join(out_folder,os.path.basename(obs_data.file_name)))
-            elif not os.path.isfile(obs_data.file_name):
-                print("original observation file not found, not copied:",obs_data.file_name)
-            
-            if not cml_args.only_plot:
-                main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
-            
-            elif cml_args.only_plot and os.path.isfile(dynesty_file): 
-                print("Only plotting requested. Skipping dynesty run.")
-                dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-                # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-                plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name)
-
-            else:
-                print("Fail to generate dynesty plots, dynasty file not found:",dynesty_file)
-                print("If you want to run the dynasty file set only_plot to False")
+    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.resume, cml_args.use_CAMO_data, cml_args.only_plot, cml_args.cores)

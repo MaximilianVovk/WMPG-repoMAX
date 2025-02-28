@@ -583,12 +583,6 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     if hasattr(obs_data, 'const'):
 
         truth_values_plot = {}
-        # if 'noise_lag' take it from obs_data.noise_lag
-        if 'noise_lag' in flags_dict.keys():
-            truth_values_plot['noise_lag'] = obs_data.noise_lag
-        # if 'noise_mag' take it from obs_data.noise_mag
-        if 'noise_lum' in flags_dict.keys():
-            truth_values_plot['noise_lum'] = obs_data.noise_lum
 
         # Extract values from dictionary
         for variable in variables:
@@ -596,6 +590,13 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
                 truth_values_plot[variable] = obs_data.const[variable]
             else:
                 print(f"Warning: {variable} not found in obs_data.const")
+
+        # if 'noise_lag' take it from obs_data.noise_lag
+        if 'noise_lag' in flags_dict.keys():
+            truth_values_plot['noise_lag'] = obs_data.noise_lag
+        # if 'noise_mag' take it from obs_data.noise_mag
+        if 'noise_lum' in flags_dict.keys():
+            truth_values_plot['noise_lum'] = obs_data.noise_lum
 
         # Convert to array safely
         truths = np.array([truth_values_plot.get(variable, np.nan) for variable in variables])
@@ -610,7 +611,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
         # Compare to true theta
         bias = posterior_mean - truths
-        abs_error = np.abs(bias) * 100
+        abs_error = np.abs(bias)
         rel_error = abs_error / np.abs(truths) * 100
 
         # Coverage check
@@ -626,7 +627,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \resizebox{\textwidth}{!}{ % Resizing table to fit page width
     \begin{tabular}{|l|c|c|c|c|c|c||c|c||c|}
     \hline
-    Parameter & 2.5CI & True Value & Mean & Median & Mode & 97.5CI & Abs.Error\% & Rel.Error\% & Cover \\
+    Parameter & 2.5CI & True Value & Mean & Median & Mode & 97.5CI & Abs.Error & Rel.Error\% & Cover \\
     \hline
         """
         # & Mode
@@ -635,7 +636,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             coverage_val = "\ding{51}" if coverage_mask[i] else "\ding{55}"  # Use checkmark/x for coverage
             latex_str += (f"    {label} & {lower_95[i]:.4g} & {truths[i]:.4g} & {posterior_mean[i]:.4g} "
                         f"& {posterior_median[i]:.4g} & {approx_modes[i]:.4g} & {upper_95[i]:.4g} "
-                        f"& {abs_error[i]:.4g} & {rel_error[i]:.4g} & {coverage_val} \\\\\n    \hline\n")
+                        f"& {abs_error[i]:.4g} & {rel_error[i]:.4g}\% & {coverage_val} \\\\\n    \hline\n")
 
     else:
         # Generate LaTeX table
@@ -2113,16 +2114,16 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     ### ONLY on LINUX ###
 
     # time constait
-    # # find the time_arr index in simulation_results that are above the np.min(obs_metsim_obj.luminosity) and are after height_lum[0] (the leading_frag_height_arr[-1] is nan)
-    # indices_visible = np.where((simulation_results.luminosity_arr[:-1] > np.min(obs_metsim_obj.luminosity)) & (simulation_results.leading_frag_height_arr[:-1] < obs_metsim_obj.height_lum[0]))[0]
-    # # check if indices_visible is empty
-    # if len(indices_visible) == 0:
-    #     return -np.inf
-    # real_time_visible = obs_metsim_obj.time_lum[-1]-obs_metsim_obj.time_lum[0]
-    # simulated_time_visible = simulation_results.time_arr[indices_visible][-1]-simulation_results.time_arr[indices_visible][0]
-    # # check if is too short and the time difference is smaller than 60% of the real time difference
-    # if simulated_time_visible < 0.6*real_time_visible:
-    #     return -np.inf
+    # find the time_arr index in simulation_results that are above the np.min(obs_metsim_obj.luminosity) and are after height_lum[0] (the leading_frag_height_arr[-1] is nan)
+    indices_visible = np.where((simulation_results.luminosity_arr[:-1] > np.min(obs_metsim_obj.luminosity)) & (simulation_results.leading_frag_height_arr[:-1] < obs_metsim_obj.height_lum[0]))[0]
+    # check if indices_visible is empty
+    if len(indices_visible) == 0:
+        return -np.inf
+    real_time_visible = obs_metsim_obj.time_lum[-1]-obs_metsim_obj.time_lum[0]
+    simulated_time_visible = simulation_results.time_arr[indices_visible][-1]-simulation_results.time_arr[indices_visible][0]
+    # check if is too short and the time difference is smaller than 60% of the real time difference
+    if simulated_time_visible < 0.6*real_time_visible:
+        return -np.inf
     
     simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 
                                        np.flip(simulation_results.leading_frag_height_arr), 
@@ -2136,12 +2137,12 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
 
     lag_sim = simulated_lag - simulated_lag[0]
 
-    # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
-    if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
-        return -np.inf
-    # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
-    if np.sum(~np.isnan(lag_sim)) != np.sum(~np.isnan(obs_metsim_obj.lag)):
-        return -np.inf
+    # # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
+    # if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
+    #     return -np.inf
+    # # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
+    # if np.sum(~np.isnan(lag_sim)) != np.sum(~np.isnan(obs_metsim_obj.lag)):
+    #     return -np.inf
 
     ### Log Likelihood ###
 
@@ -2216,8 +2217,6 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             ### NEW RUN
             dsampler = dynesty.DynamicNestedSampler(pool.loglike, 
                                                     pool.prior_transform, 
-                                                    ndim, nlive=350, 
-                                                    sample='rslice', 
                                                     pool = pool)
             dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)
 
@@ -2230,11 +2229,10 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
                                ptform_args=(bounds, flags_dict)) as pool:
             ### RESUME:
             dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, 
-                                                            nlive=350, 
-                                                            sample='rslice', 
                                                             pool = pool)
             dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
-
+    # nlive=350, 
+    # sample='rslice', 
     print('SUCCESS: dynesty results ready!\n')
 
     # check if output_folder is different from the dynesty_file folder
@@ -2266,7 +2264,7 @@ if __name__ == "__main__":
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"/home/mvovk/Results/Results_Nested/Validation/",
+        default=r"/home/mvovk/Results/Results_Nested/Validation_test/",
         help="Where to store results. If empty, store next to each .dynesty.")
     # /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,

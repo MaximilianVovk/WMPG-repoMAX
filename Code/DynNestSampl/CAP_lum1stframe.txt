@@ -1,0 +1,18 @@
+CAP
+Pickle files in C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Reductions\CAP
+File 1: 20190726_024149 has 1st frame luminosity 13.878753124251084 and absolute magnitude 4.571152900713725
+File 2: 20190726_030846 has 1st frame luminosity 4.09125626502742 and absolute magnitude 5.8973873187790105
+File 3: 20190801_024424 has 1st frame luminosity 2.940875089717357 and absolute magnitude 6.255837580329233
+File 4: 20190801_035326 has 1st frame luminosity 1.93050478405951 and absolute magnitude 6.7128518216723805
+File 5: 20190801_051431 has 1st frame luminosity 16.576818827608697 and absolute magnitude 4.378276049729439
+File 6: 20190803_031026 has 1st frame luminosity 19.988432321063236 and absolute magnitude 4.175082192087305
+File 7: 20200725_052221 has 1st frame luminosity 2.643557649768134 and absolute magnitude 6.3715570627200115
+File 8: 20200726_032722 has 1st frame luminosity 2.7140067819051406 and absolute magnitude 6.343001705772976
+File 9: 20200726_060419 has 1st frame luminosity 2.8083888266669814 and absolute magnitude 6.3058859359287105
+File 10: 20200726_083536 has 1st frame luminosity 44.441760184369876 and absolute magnitude 3.307550898402762
+File 11: 20200727_054241 has 1st frame luminosity 31.15359198604926 and absolute magnitude 3.6932587078968098
+File 12: 20210802_040738 has 1st frame luminosity 2.3471987067826614 and absolute magnitude 6.500654384132522
+File 13: 20220729_044924 has 1st frame luminosity 2.400191340460772 and absolute magnitude 6.47641436582525
+File 14: 20230722_063500 has 1st frame luminosity 251.57923716379582 and absolute magnitude 1.4253420373674142
+File 15: 20230723_025737 has 1st frame luminosity 150.685528109655 and absolute magnitude 1.9818501658691616
+File 16: 20230731_080719 has 1st frame luminosity 5.46170717962706 and absolute magnitude 5.583707996057722

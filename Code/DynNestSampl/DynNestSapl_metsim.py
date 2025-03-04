@@ -1067,7 +1067,12 @@ class observation_data:
         traj=loadPickle(*os.path.split(self.file_name))
         # get the trajectory
         # v_avg = traj.v_avg
-        self.v_init=traj.orbit.v_init+100
+        # check if orbit exist
+        if not hasattr(traj, 'orbit'):
+            print("Orbit not found in the pickle file")
+            # and return
+            return
+        
         self.stations = []
         obs_data_CAMO = []
         obs_data_EMCCD = []
@@ -1739,7 +1744,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             finder.output_folders
         )):
             dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
-            obs_data = finder.observation_instance()
+            obs_data = finder.observation_instance(base_name)
             obs_data.file_name = pickle_file # update teh file name in the observation_data object
 
             dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name)
@@ -1849,7 +1854,7 @@ class find_dynestyfile_and_priors:
          - `self.input_folder_file`: A list of tuples containing (dynesty file path, input file path, bounds, flags, and fixed values).
          - `self.priors`: A list of the .prior file paths used (or an empty string if defaults were applied).
          - `self.output_folders`: The output folder for each processed input.
-       - An observation instance is created for each input file, accessible via the `observation_instance()` method.
+       - An observation instance is created for each input file, accessible via the `observation_instance(base_name)` method.
 
     Overall, this design provides a flexible and automated approach to preparing observation data for further 
     processing, ensuring that each input is properly paired with a .dynesty configuration and the relevant prior settings.
@@ -1867,6 +1872,7 @@ class find_dynestyfile_and_priors:
         self.input_folder_file = [] # [(dynesty_file, input_file, bounds, flags_dict, fixed_values), ...]
         self.priors = []            # [used_prior_path_or_empty_string, ...]
         self.output_folders = []    # [output_folder_for_this_dynesty, ...]
+        self.observation_objects = {}  # {base_name: observation_instance}
 
         # Kick off processing
         self._process_input()
@@ -1923,12 +1929,12 @@ class find_dynestyfile_and_priors:
             # No .dynesty => create from .pickle base name
             dynesty_file = possible_dynesty
 
-        self.observation_obj = observation_data(input_file, self.use_CAMO_data)
+        observation_instance = observation_data(input_file, self.use_CAMO_data)
 
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
             prior_path = self.prior_file
-            bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj,self.prior_file)
+            bounds, flags_dict, fixed_values = read_prior_to_bounds(observation_instance,self.prior_file)
         else:
 
             # Look for local .prior
@@ -1937,21 +1943,30 @@ class find_dynestyfile_and_priors:
                 prior_path = os.path.join(root, existing_prior_list[0])
                 # print the prior path has been found
                 print(f"Take the first Prior file found in the same folder as the observation file: {prior_path}")
-                bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj,prior_path)
+                bounds, flags_dict, fixed_values = read_prior_to_bounds(observation_instance,prior_path)
             else:
                 # default
                 prior_path = ""
-                bounds, flags_dict, fixed_values = read_prior_to_bounds(self.observation_obj)
+                bounds, flags_dict, fixed_values = read_prior_to_bounds(observation_instance)
+
+        base_name = self._extract_base_name(input_file)
+
+        # Check if base_name already exists, and skip if it does
+        if base_name in self.observation_objects:
+            print(f"Skipping duplicate entry for {base_name}")
+            return  # Exit function to prevent duplicate insertion
 
         # Store results
-        self.base_names.append(self._extract_base_name(input_file))
+        self.base_names.append(base_name)
         self.input_folder_file.append((dynesty_file, input_file, bounds, flags_dict, fixed_values))
         self.priors.append(prior_path)
         self.output_folders.append(output_folder)
+        self.observation_objects[base_name] = observation_instance
 
-    def observation_instance(self):
-        """Return the PriorHandler instance for further use."""
-        return self.observation_obj  # This returns the instance of the other class
+
+    def observation_instance(self, base_name):
+        """Return the observation instance corresponding to a specific base name."""
+        return self.observation_objects.get(base_name, None)
 
     def _extract_base_name(self, file_path):
         """

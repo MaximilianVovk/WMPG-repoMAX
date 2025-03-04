@@ -1050,7 +1050,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
 ###############################################################################
 class observation_data:
     ''' class to load the observation data and create an object '''
-    def __init__(self, obs_file_path,use_CAMO_data):
+    def __init__(self, obs_file_path,use_CAMO_data=False):
         self.file_name = obs_file_path
         # check if the file is a json file
         if obs_file_path.endswith('.pickle'):
@@ -1223,10 +1223,10 @@ class observation_data:
         self.noise_lum = 2.5
         self.noise_mag = 0.1
 
-        # Ensure there are exactly two unique stations before proceeding
-        unique_stations = np.unique(self.stations_lum)
-        if len(unique_stations) == 2:
-            self._photometric_adjustment(unique_stations,peak_abs_mag_CAMO)
+        # # Ensure there are exactly two unique stations before proceeding
+        # unique_stations = np.unique(self.stations_lum)
+        # if len(unique_stations) == 2:
+        #     self._photometric_adjustment(unique_stations,peak_abs_mag_CAMO)
 
         dens_fit_ht_beg = 180000
         dens_fit_ht_end = traj.rend_ele - 5000
@@ -1855,7 +1855,7 @@ class find_dynestyfile_and_priors:
     processing, ensuring that each input is properly paired with a .dynesty configuration and the relevant prior settings.
     """
 
-    def __init__(self, input_dir_or_file, prior_file, resume, output_dir="", use_CAMO_data=False):
+    def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_CAMO_data=False):
         self.input_dir_or_file = input_dir_or_file
         self.prior_file = prior_file
         self.resume = resume

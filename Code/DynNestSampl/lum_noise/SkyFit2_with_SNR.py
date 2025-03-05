@@ -2872,12 +2872,23 @@ class PlateTool(QtWidgets.QMainWindow):
         # Give it any name you like; here we call it 'SNR_values.txt'
         out_file = os.path.join(dir_path, namefile+"SNR_values.txt")
 
-        # If you want the SNR to be updated (by computing intensity sums) before writing,
-        # you can loop through `pick_list` and call self.computeIntensitySum() for each pick’s frame.
-        # For example:
-        # for frame in self.pick_list:
-        #     self.img.setFrame(frame)
-        #     self.computeIntensitySum()
+        print("[INFO] Recomputing SNR for all picks...")
+        
+        # Remember the user’s current frame so we can restore it at the end
+        saved_current_frame = self.img.getFrame()
+
+        # Go through every pick in sorted order
+        for frame, pick in sorted(self.pick_list.items()):
+            # Only refresh if there is a real pick
+            if pick.get("x_centroid") is not None:
+                # Jump to that frame in the video/image set
+                self.img.setFrame(frame)
+                # This call will update pick['snr'] for the *current* frame:
+                self.computeIntensitySum()
+
+        # Restore the user’s original frame
+        self.img.setFrame(saved_current_frame)
+        print("[INFO] Done re-running SNR calculations for all picks!")
 
         with open(out_file, "w") as f:
             f.write("# Frame, SNR, log10SNR, mag_data\n")

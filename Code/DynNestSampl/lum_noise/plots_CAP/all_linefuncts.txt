@@ -1,0 +1,41 @@
+# All regression line functions (after outlier removal):
+
+2020-07-25_05:22:21elgin_SNR_values.txt: y = -2.6850x + 8.5698
+2020-07-25_05:22:21tavis_SNR_values.txt: y = -1.5322x + 7.8233
+2021-08-02_05:59:39elgin_SNR_values.txt: y = -0.6552x + 7.0007
+2021-08-02_05:59:39tavis_SNR_values.txt: y = -3.0441x + 8.6189
+2019-08-01_02:44:24elgin_SNR_values.txt: y = -2.4323x + 8.1718
+2019-08-01_02:44:24tavis_SNR_values.txt: y = -3.2712x + 8.8252
+2019-08-03_03:10:26elgin_SNR_values.txt: y = -1.9188x + 8.1767
+2019-08-03_03:10:26tavis_SNR_values.txt: y = -2.9094x + 8.8156
+2023-07-23_02:57:38elgin_SNR_values.txt: y = -0.5064x + 5.4864
+2023-07-23_02:57:37tavis_SNR_values.txt: y = -3.4872x + 8.3531
+2019-07-26_03:08:46elgin_SNR_values.txt: y = -2.4029x + 7.8837
+2019-07-26_03:08:46tavis_SNR_values.txt: y = -3.9803x + 9.0747
+2019-08-01_03:27:25elgin_SNR_values.txt: y = -2.8364x + 9.0532
+2019-08-01_03:27:25tavis_SNR_values.txt: y = -2.4249x + 8.5907
+2022-07-29_04:49:24tavis_SNR_values.txt: y = -2.5831x + 7.9111
+2022-07-29_04:49:24elgin_SNR_values.txt: y = -2.9313x + 8.2332
+2022-07-29_04:49:24elgin_SNR_values.txt: y = -2.8765x + 8.6414
+2022-07-29_04:49:24tavis_SNR_values.txt: y = -3.0315x + 9.1880
+2020-07-26_03:27:22tavis_SNR_values.txt: y = -3.0718x + 7.8158
+2020-07-26_03:27:22elgin_SNR_values.txt: y = -2.1402x + 8.0005
+2020-07-26_03:27:22elgin_SNR_values.txt: y = -1.6375x + 8.7455
+2020-07-26_03:27:22tavis_SNR_values.txt: y = -2.3962x + 9.0478
+2022-07-26_07:08:31tavis_SNR_values.txt: y = -2.8218x + 7.6122
+2022-07-26_07:08:31elgin_SNR_values.txt: y = -2.6557x + 7.3672
+2022-07-26_07:08:31elgin_SNR_values.txt: y = -2.4674x + 7.0904
+2022-07-26_07:08:31tavis_SNR_values.txt: y = -3.1370x + 8.4237
+2019-08-01_05:14:31elgin_SNR_values.txt: y = -3.5594x + 8.9648
+2019-08-01_05:14:31tavis_SNR_values.txt: y = -1.8844x + 8.0797
+2019-08-08_06:16:12elgin_SNR_values.txt: y = -3.1152x + 8.4401
+2019-08-08_06:16:12tavis_SNR_values.txt: y = -2.6887x + 8.8986
+2023-07-31_08:07:19elgin_SNR_values.txt: y = -2.9301x + 7.4544
+2023-07-31_08:07:19tavis_SNR_values.txt: y = -3.1766x + 8.2086
+2022-08-01_03:38:22elgin_SNR_values.txt: y = -4.1309x + 8.6139
+2022-08-01_03:38:22tavis_SNR_values.txt: y = -2.4244x + 8.6601
+2023-07-22_06:35:00elgin_SNR_values.txt: y = -2.6075x + 6.2927
+2023-07-22_06:35:00tavis_SNR_values.txt: y = -1.9553x + 6.7962
+
+Mean of slope and stand.dev.: -2.6197 ± 0.7532
+Mean of const and stand.dev.: 8.2127 ± 0.6949

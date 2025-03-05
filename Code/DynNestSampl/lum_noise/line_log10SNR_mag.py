@@ -90,30 +90,46 @@ def process_snr_files(input_dir):
             print(f"No valid data in {snr_file}. Skipping.")
             continue
 
-        # Initial fit
-        m_init, c_init = np.polyfit(x_vals, y_vals, 1)
-        y_fit_init = m_init * x_vals + c_init
+        # # Initial fit
+        # m_init, c_init = np.polyfit(x_vals, y_vals, 1)
+        # y_fit_init = m_init * x_vals + c_init
 
-        # Residuals and z-scores
-        residuals = y_vals - y_fit_init
-        residuals_z = zscore(residuals)
+        # # Residuals and z-scores
+        # residuals = y_vals - y_fit_init
+        # residuals_z = zscore(residuals)
 
-        # Inliers if |zscore| < threshold
-        inlier_mask = np.abs(residuals_z) < zscore_threshold
+        # # Inliers if |zscore| < threshold
+        # inlier_mask = np.abs(residuals_z) < zscore_threshold
 
-        # Count how many inliers vs outliers
-        num_inliers = np.count_nonzero(inlier_mask)
-        num_total = len(x_vals)
-        num_outliers = num_total - num_inliers
-        print(f"{snr_file}: Found {num_outliers} outliers, {num_inliers} inliers.")
+        # # Count how many inliers vs outliers
+        # num_inliers = np.count_nonzero(inlier_mask)
+        # num_total = len(x_vals)
+        # num_outliers = num_total - num_inliers
+        # print(f"{snr_file}: Found {num_outliers} outliers, {num_inliers} inliers.")
 
-        # If everything is an inlier, that means no outliers at this threshold
-        if num_inliers == 0:
-            print("All points were outliers, skipping plot.")
+        # # If everything is an inlier, that means no outliers at this threshold
+        # if num_inliers == 0:
+        #     print("All points were outliers, skipping plot.")
+        #     continue
+
+        # x_inliers = x_vals[inlier_mask]
+        # y_inliers = y_vals[inlier_mask]
+
+        x_inliers = -2.5*np.array(x_vals)
+        y_inliers = np.array(y_vals)
+
+        # check if all the values are the same
+        if np.all(x_inliers == x_inliers[0]) or np.all(y_inliers == y_inliers[0]):
+            print(f"All values are the same in {snr_file}. Skipping.")
             continue
 
-        x_inliers = x_vals[inlier_mask]
-        y_inliers = y_vals[inlier_mask]
+        # delete inf values of x_inliers on both x and y
+        y_inliers = y_inliers[np.isfinite(x_inliers)]
+        x_inliers = x_inliers[np.isfinite(x_inliers)]
+        # delete nan values of y_inliers on both x and y
+        x_inliers = x_inliers[np.isfinite(y_inliers)]
+        y_inliers = y_inliers[np.isfinite(y_inliers)]
+
 
         # Final fit on inliers
         m_final, c_final = np.polyfit(x_inliers, y_inliers, 1)
@@ -125,9 +141,10 @@ def process_snr_files(input_dir):
         plt.figure()
         plt.scatter(x_inliers, y_inliers, label='Inliers')
         plt.plot(x_inliers, y_fit_final, label=f'y = {m_final:.4f}x + {c_final:.4f}')
-        plt.xlabel('log10SNR')
-        plt.ylabel('mag_data')
-        plt.title('log10SNR vs mag_data (Z-score outlier removal)')
+        # use the latex format for the labels for the x and y axis
+        plt.xlabel(r'$-2.5\times log_{10}(SNR)$')
+        plt.ylabel('magnitude')
+        plt.title('log10SNR vs mag_data')
         plt.legend()
         plt.grid(True)
 
@@ -140,7 +157,7 @@ def process_snr_files(input_dir):
 
         # Write line function
         with open(all_linefuncts_path, 'a') as f:
-            f.write(f"{base_name}: y = {m_final:.4f}x + {c_final:.4f} the SNR=1 is {m_final * 1 + c_final}\n")
+            f.write(f"{base_name}: y = {m_final:.4f}x + {c_final:.4f}\n")
 
         print(f"Processed {snr_file} -> {plot_filename}")
 
@@ -160,9 +177,8 @@ def process_snr_files(input_dir):
 
     # write the mean and standard deviation to the file
     with open(all_linefuncts_path, 'a') as f:
-        f.write(f"\nMean of inclin: {mean_inclin:.4f} ± {std_inclin:.4f}\n")
-        f.write(f"Mean of const: {mean_const:.4f} ± {std_const:.4f}\n")
-        f.write(f"avg SNR=1 is {mean_inclin * 1 + mean_const}\n")
+        f.write(f"\nMean of slope and stand.dev.: {mean_inclin:.4f} ± {std_inclin:.4f}\n")
+        f.write(f"Mean of const and stand.dev.: {mean_const:.4f} ± {std_const:.4f}\n")
 
 
     print(f"\nAll line functions saved to: {all_linefuncts_path}")
@@ -173,6 +189,6 @@ def process_snr_files(input_dir):
 if __name__ == "__main__":
     # Example usage:
     # Replace 'path/to/directory' with the directory containing your SNR_values.txt files
-    directory_with_txt = "/srv/meteor/reductions/emccd/mvovk_pca_project/CAP"
+    directory_with_txt = "/home/mvovk/Documents/2ndPaper/Reductions/ORI"
     run_skyfit_on_all_states(directory_with_txt)
     process_snr_files(directory_with_txt)

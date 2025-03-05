@@ -21,3 +21,5 @@ File 18: 20221025_095334 has 1st frame luminosity 7.184569717408733 and absolute
 File 19: 20221027_075003 has 1st frame luminosity 7.117230019738173 and absolute magnitude 5.296251522446515
 File 20: 20231019_093613 has 1st frame luminosity 7.8524790716091735 and absolute magnitude 5.189512058200183
 File 21: 20231019_095615 has 1st frame luminosity 6.607700835469661 and absolute magnitude 5.376903097138169
+Absolute magnitude: Mean ≈ 4.96, Variance ≈ 0.19
+Luminosity: Mean ≈ 10.69, Variance ≈ 40.25

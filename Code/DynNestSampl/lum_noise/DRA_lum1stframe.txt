@@ -15,3 +15,5 @@ File 12: 20241008_031944 has 1st frame luminosity 1.0094934493160994 and absolut
 File 13: 20241008_035151 has 1st frame luminosity 0.9996721079889508 and absolute magnitude 7.427385089787174
 File 14: 20241008_035829 has 1st frame luminosity 0.8489772128689853 and absolute magnitude 7.604788943085161
 File 15: 20241008_042435 has 1st frame luminosity 1.4725189692284482 and absolute magnitude 7.006876781813281
+Absolute magnitude: Mean ≈ 7.46, Variance ≈ 0.20
+Luminosity: Mean ≈ 1.09, Variance ≈ 0.43

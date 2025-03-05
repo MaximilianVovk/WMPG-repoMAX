@@ -2863,6 +2863,7 @@ class PlateTool(QtWidgets.QMainWindow):
         namefile = os.path.splitext(os.path.basename(self.img_handle.name()))[0]
         # substitute space with underscore and put the name of the directory
         namefile = namefile.replace(" ", "_")
+        namefile = namefile.replace(":", "_")
         # check if there is tavis in dir_path
         if "tavis" in dir_path:
             namefile = namefile+"tavis_"

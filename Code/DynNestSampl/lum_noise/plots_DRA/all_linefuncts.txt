@@ -1,0 +1,40 @@
+# All regression line functions (after outlier removal):
+
+20241008_035152_emccd_skyfit20SNR_values.txt: y = -3.4657x + 9.9094 the SNR=1 is 6.443698222652957
+2024-10-08_04:24:35elgin_SNR_values.txt: y = -4.4306x + 10.6999 the SNR=1 is 6.269361211150022
+2024-10-08_04:24:35tavis_SNR_values.txt: y = -3.6766x + 8.6510 the SNR=1 is 4.9744142307896055
+2024-10-08_01:51:39elgin_SNR_values.txt: y = -3.3621x + 10.0276 the SNR=1 is 6.665488721804508
+2024-10-08_01:51:39tavis_SNR_values.txt: y = -3.6754x + 10.9562 the SNR=1 is 7.280778624413381
+2024-10-08_03:19:44tavis_SNR_values.txt: y = -0.9414x + 6.4657 the SNR=1 is 5.52422593555352
+2024-10-08_03:19:44elgin_SNR_values.txt: y = -2.6605x + 8.9636 the SNR=1 is 6.303047321886351
+2024-10-08_02:45:04elgin_SNR_values.txt: y = -2.4162x + 8.6313 the SNR=1 is 6.215068025316454
+2024-10-08_02:45:04tavis_SNR_values.txt: y = -3.6922x + 10.9853 the SNR=1 is 7.293094700020628
+2024-10-08_02:44:46elgin_SNR_values.txt: y = -2.9509x + 9.7666 the SNR=1 is 6.815651273640043
+2024-10-08_02:44:46tavis_SNR_values.txt: y = -3.2274x + 10.3423 the SNR=1 is 7.114945923583821
+2024-10-08_02:20:48tavis_SNR_values.txt: y = -3.9624x + 11.2614 the SNR=1 is 7.298961867745939
+2024-10-08_02:20:48elgin_SNR_values.txt: y = -3.5082x + 10.3783 the SNR=1 is 6.870074645014265
+2024-10-08_00:37:07tavis_SNR_values.txt: y = -1.9707x + 7.6274 the SNR=1 is 5.656789915854901
+2024-10-08_00:37:07elgin_SNR_values.txt: y = -3.6086x + 10.4939 the SNR=1 is 6.885297655685222
+2024-10-08_00:37:07tavis_SNR_values.txt: y = -1.8264x + 7.2848 the SNR=1 is 5.458488095795877
+2024-10-08_00:37:07elgin_SNR_values.txt: y = -3.0761x + 9.2882 the SNR=1 is 6.212141170487156
+2024-10-08_01:26:04tavis_SNR_values.txt: y = -1.2233x + 8.5075 the SNR=1 is 7.284275496753404
+2024-10-08_01:26:04elgin_SNR_values.txt: y = -3.3674x + 10.4570 the SNR=1 is 7.089558570845176
+2024-10-08_02:18:29elgin_SNR_values.txt: y = -3.3126x + 9.9165 the SNR=1 is 6.603872590139213
+2024-10-08_02:18:29tavis_SNR_values.txt: y = -3.7549x + 10.6785 the SNR=1 is 6.92351138522669
+2024-10-08_02:18:29elgin_SNR_values.txt: y = -3.7452x + 9.8654 the SNR=1 is 6.120245904806058
+2024-10-08_03:51:51tavis_SNR_values.txt: y = -3.4657x + 9.9094 the SNR=1 is 6.443698222652957
+2024-10-08_03:51:51elgin_SNR_values.txt: y = -3.1105x + 9.5006 the SNR=1 is 6.390114466842732
+2024-10-08_01:21:29elgin_SNR_values.txt: y = -2.7810x + 10.0394 the SNR=1 is 7.258342257855993
+2024-10-08_01:21:29tavis_SNR_values.txt: y = -3.1221x + 10.5935 the SNR=1 is 7.471427651767123
+2024-10-08_03:58:29elgin_SNR_values.txt: y = -3.8201x + 10.7357 the SNR=1 is 6.9155146476837945
+2024-10-08_03:58:29tavis_SNR_values.txt: y = -3.5497x + 10.0191 the SNR=1 is 6.469389117240713
+2024-10-08_03:08:38tavis_SNR_values.txt: y = -2.6108x + 10.2571 the SNR=1 is 7.646348104209334
+2024-10-08_03:08:38elgin_SNR_values.txt: y = -2.2997x + 9.5532 the SNR=1 is 7.253519792849033
+2024-10-08_01:53:03elgin_SNR_values.txt: y = -3.2087x + 9.8717 the SNR=1 is 6.663079338459614
+2024-10-08_01:53:03tavis_SNR_values.txt: y = -0.8622x + 8.1993 the SNR=1 is 7.337056666813532
+2024-10-08_01:32:56elgin_SNR_values.txt: y = -2.3987x + 8.0552 the SNR=1 is 5.656483681299514
+2024-10-08_01:32:56tavis_SNR_values.txt: y = -0.1941x + 5.0160 the SNR=1 is 4.821946123905788
+
+Mean of inclin: -2.9199 ± 0.9639
+Mean of const: 9.6331 ± 1.1314
+avg SNR=1 is 6.713145875789074

@@ -1069,10 +1069,11 @@ class observation_data:
         # v_avg = traj.v_avg
         # check if orbit exist
         if not hasattr(traj, 'orbit'):
-            print("Orbit not found in the pickle file")
+            print("Trajectory data not found in the pickle file")
             # and return
             return
         
+        self.v_init=traj.orbit.v_init+100
         self.stations = []
         obs_data_CAMO = []
         obs_data_EMCCD = []
@@ -1087,7 +1088,7 @@ class observation_data:
                     peak_abs_mag_CAMO = np.min(obs.absolute_magnitudes)
 
             # check if among obs.station_id there is one of the following 01T or 02T
-            if (obs.station_id == "01T" or obs.station_id == "02T" or obs.station_id == "01T'-Mirfit" or obs.station_id == "02T'-Mirfit") and use_CAMO_data==True:
+            if ("01T" in obs.station_id or "02T" in obs.station_id or "01T'-Mirfit" in obs.station_id or "02T'-Mirfit" in obs.station_id) and use_CAMO_data==True:
                 P_0m = 840
                 obs_dict_CAMO = {
                     # make an array that is long as len(obs.model_ht) and has only obs.station_id
@@ -1107,7 +1108,7 @@ class observation_data:
                 self.stations.append(obs.station_id)
                 obs_data_CAMO.append(obs_dict_CAMO)
                 flag_there_is_CAMO_data = True
-            elif obs.station_id == "01G" or obs.station_id == "02G" or obs.station_id == "01F" or obs.station_id == "02F" or obs.station_id == "1G" or obs.station_id == "2G" or obs.station_id == "1F" or obs.station_id == "2F":
+            elif "01G" in obs.station_id or "02G" in obs.station_id or "01F" in obs.station_id or "02F" in obs.station_id:
                 P_0m = 935
                 obs_dict_EMCCD = {
                     # make an array that is long as len(obs.model_ht) and has only obs.station_id
@@ -1132,6 +1133,10 @@ class observation_data:
                 continue
         
         print('Stations:',self.stations)
+        # check if self.stations is empty
+        if len(self.stations) == 0:
+            print('No station data found')
+            return
         
         # Combine all observations
         combined_obs_CAMO = {}
@@ -1930,6 +1935,9 @@ class find_dynestyfile_and_priors:
             dynesty_file = possible_dynesty
 
         observation_instance = observation_data(input_file, self.use_CAMO_data)
+        # check observation_instance has v_init
+        if not hasattr(observation_instance, 'v_init'):
+            return
 
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):

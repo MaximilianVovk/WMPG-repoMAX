@@ -29,6 +29,7 @@ from scipy.stats import norm, invgamma
 import shutil
 import matplotlib.ticker as ticker
 import multiprocessing
+import math
 
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
@@ -70,6 +71,12 @@ class Logger(object):
     def close(self):
         # Close the log file when done
         self.log.close()
+
+
+# 100^((m-6.96)/5) =(114007.25/100000)^2
+# math.log((114007.25/100000)^2, 100)*5+6.96
+def meteor_abs_magnitude_to_apparent(abs_mag, distance):
+    return math.log((distance/100000)^2, 100)*5+abs_mag
 
 ###############################################################################
 # Function: plotting function

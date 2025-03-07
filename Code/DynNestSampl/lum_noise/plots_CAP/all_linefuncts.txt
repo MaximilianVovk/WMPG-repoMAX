@@ -12,3 +12,5 @@ Mean of const and stand.dev.: 8.2007 ± 0.5015
 
 All data fit: y = 0.9614x + 7.6708 
 stand.dev 0.5014
+
+Fixed line const and stand.dev.: 7.6708 ± 0.1968

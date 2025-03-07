@@ -281,6 +281,12 @@ def process_snr_files(input_dir):
     # Plot the regression line with slope=1 and calculated intercept
     x_range = np.linspace(x_values.min(), x_values.max(), 100)
     y_fit = inclin * x_range + c_all
+
+    # Compute standard deviation of c_all
+    N = len(x_values)
+    x_mean = np.mean(x_values)
+    x_variance = np.sum((x_values - x_mean) ** 2)
+    std_c_all = std_all * np.sqrt((1/N) + (x_mean**2 / x_variance))
     plt.plot(x_range, y_fit, color='black', linestyle='--', label=f"y = {inclin}x + {c_all:.4f}")
 
     # Add text with the calculated intercept and standard deviation
@@ -340,6 +346,8 @@ def process_snr_files(input_dir):
         f.write(f"Mean of const and stand.dev.: {mean_const:.4f} ± {std_const:.4f}\n")
         # write the value of the slope and the constant for the all data fit
         f.write(f"\nAll data fit: y = {m_all:.4f}x + {c_all:.4f} \nstand.dev {std_all:.4f}\n")
+        # for fix line
+        f.write(f"\nFixed line const and stand.dev.: {c_all:.4f} ± {std_c_all:.4f}\n")
 
 
     print(f"\nAll line functions saved to: {all_linefuncts_path}")
@@ -403,6 +411,6 @@ def parse_rms_file(lines_or_path):
 if __name__ == "__main__":
     # Example usage:
     # Replace 'path/to/directory' with the directory containing your SNR_values.txt files
-    directory_with_txt = "/home/mvovk/Documents/2ndPaper/Reductions/DRA"
+    directory_with_txt = "/home/mvovk/Documents/2ndPaper/Reductions/CAP"
     run_skyfit_on_all_states(directory_with_txt)
     process_snr_files(directory_with_txt)

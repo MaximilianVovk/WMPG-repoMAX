@@ -872,11 +872,14 @@ def read_prior_to_bounds(object_meteor,file_path=""):
     # check if object_meteor.const.rho_grain exist
     if hasattr(object_meteor, 'const'):
         # check if object_meteor.const.rho_grain exist
-        if "rho_grain" in object_meteor.const:
-            rho_grain_real = object_meteor.const["rho_grain"]
-        # chack if object_meteor.const.rho_grain exist as key
-        if "rho_grain" in object_meteor.const.keys():
-            rho_grain_real = object_meteor.const["rho_grain"]
+        if hasattr(object_meteor.const, 'rho_grain'):
+            rho_grain_real = object_meteor.const.rho_grain
+        else:
+            if "rho_grain" in object_meteor.const:
+                rho_grain_real = object_meteor.const["rho_grain"]
+            # chack if object_meteor.const.rho_grain exist as key
+            if "rho_grain" in object_meteor.const.keys():
+                rho_grain_real = object_meteor.const["rho_grain"]
 
     # Default values if no file path is provided
     if file_path == "":
@@ -2283,7 +2286,7 @@ if __name__ == "__main__":
     # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
     # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\NoNoise\CAMO\CAP_mean\CAP_mean.json",
+        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\NoNoise\EMCCD\DRA_mean\DRA_mean.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

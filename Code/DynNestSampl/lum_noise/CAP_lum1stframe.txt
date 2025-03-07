@@ -17,4 +17,4 @@ File 14: 20230722_063500 has 1st frame luminosity 251.57923716379582 and absolut
 File 15: 20230723_025737 has 1st frame luminosity 150.685528109655 and absolute magnitude 1.9818501658691616
 File 16: 20230731_080719 has 1st frame luminosity 5.46170717962706 and absolute magnitude 5.583707996057722
 Absolute magnitude: Mean ≈ 5.00, Variance ≈ 2.70
-Luminosity: Mean ≈ 34.73, Variance ≈ 4412.95
+Luminosity: Mean ≈ 34.73, Variance ≈ 44.95

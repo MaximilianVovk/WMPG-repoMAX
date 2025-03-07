@@ -1,0 +1,18 @@
+Meteor: CAP_mean
+  File name:     C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\NoNoise\CAMO\CAP_mean\CAP_mean.json
+  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\NoNoise\CAMO\CAP_mean\CAP_mean.dynesty
+  Prior file:    
+  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\NoNoise\CAMO\CAP_mean
+  Bounds:
+    v_init: [500, 25126.75] flags=['norm']
+    m_init: [9.73809375e-06, 1.076315625e-05] flags=[]
+    rho: [1.0, 3.6020599913279625] flags=['log']
+    sigma: [1e-09, 5.0000000000000004e-08] flags=[]
+    erosion_height_start: [94683.7271712372, 101843.35804616674] flags=[]
+    erosion_coeff: [-12.0, -5.698970004336019] flags=['log']
+    erosion_mass_index: [1, 3] flags=[]
+    erosion_mass_min: [-11.301029995663981, -9.0] flags=['log']
+    erosion_mass_max: [-10.0, -7.0] flags=['log']
+    noise_lag: [10, 5] flags=['invgamma']
+    noise_lum: [3, 2.5] flags=['invgamma']
+  Fixed Values:  {'zenith_angle': 0.9438631511707085, 'rho_grain': 3000.0, 'erosion_height_change': 1, 'erosion_coeff_change': 1e-07, 'erosion_rho_change': 3000.0, 'erosion_sigma_change': 1e-09}

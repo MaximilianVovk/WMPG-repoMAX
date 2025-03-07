@@ -296,6 +296,27 @@ def process_snr_files(input_dir):
     # plt.text(1.05, 0.9, f"y = {m_all:.4f}x + {c_all:.4f} \nstand.dev {std_all:.4f}", transform=plt.gca().transAxes, color='tab:blue')
     # # write the value of the slope and the constant
     # plt.text(0.05, 0.95, f"Mean of slope and stand.dev.: {mean_inclin:.4f} ± {std_inclin:.4f}\nMean of const and stand.dev.: {mean_const:.4f} ± {std_const:.4f}", transform=plt.gca().transAxes)
+    
+    
+    ### change the axis tick values on the x axis to 10**(x/(-2.5)) ###
+
+    # Get the current axis
+    ax = plt.gca()  # Get the current active axis
+
+    # Extract existing x-ticks
+    log_x_ticks = ax.get_xticks()
+
+    # Convert log tick values to SNR
+    snr_ticks = 10**(log_x_ticks / (-2.5))
+
+    # Update tick labels with SNR values
+    ax.set_xticklabels([f'{snr:.2f}' for snr in snr_ticks])
+
+    # Redraw the plot with updated labels
+    plt.draw()
+    # change the x axis label to SNR
+    plt.xlabel('SNR')
+        
     plt.savefig(os.path.join(output_dir, "all_data.png"), dpi=300)
     plt.close()
 
@@ -382,6 +403,6 @@ def parse_rms_file(lines_or_path):
 if __name__ == "__main__":
     # Example usage:
     # Replace 'path/to/directory' with the directory containing your SNR_values.txt files
-    directory_with_txt = "/home/mvovk/Documents/2ndPaper/Reductions/CAP"
+    directory_with_txt = "/home/mvovk/Documents/2ndPaper/Reductions/DRA"
     run_skyfit_on_all_states(directory_with_txt)
     process_snr_files(directory_with_txt)

@@ -1,41 +1,14 @@
 # All regression line functions (after outlier removal):
 
-2020-07-25_05_22_21elgin_SNR_values.txt: y = -2.6850x + 8.5698
-2020-07-25_05_22_21tavis_SNR_values.txt: y = -1.5322x + 7.8233
-2021-08-02_05_59_39elgin_SNR_values.txt: y = -0.6552x + 7.0007
-2021-08-02_05_59_39tavis_SNR_values.txt: y = -3.0441x + 8.6189
-2019-08-01_02_44_24elgin_SNR_values.txt: y = -2.4323x + 8.1718
-2019-08-01_02_44_24tavis_SNR_values.txt: y = -3.2712x + 8.8252
-2019-08-03_03_10_26elgin_SNR_values.txt: y = -1.9188x + 8.1767
-2019-08-03_03_10_26tavis_SNR_values.txt: y = -2.9094x + 8.8156
-2023-07-23_02_57_38elgin_SNR_values.txt: y = -0.5064x + 5.4864
-2023-07-23_02_57_37tavis_SNR_values.txt: y = -3.4872x + 8.3531
-2019-07-26_03_08_46elgin_SNR_values.txt: y = -2.4029x + 7.8837
-2019-07-26_03_08_46tavis_SNR_values.txt: y = -3.9803x + 9.0747
-2019-08-01_03_27_25elgin_SNR_values.txt: y = -2.8364x + 9.0532
-2019-08-01_03_27_25tavis_SNR_values.txt: y = -2.4249x + 8.5907
-2022-07-29_04_49_24tavis_SNR_values.txt: y = -2.5831x + 7.9111
-2022-07-29_04_49_24elgin_SNR_values.txt: y = -2.9313x + 8.2332
-2022-07-29_04_49_24elgin_SNR_values.txt: y = -2.8765x + 8.6414
-2022-07-29_04_49_24tavis_SNR_values.txt: y = -3.0315x + 9.1880
-2020-07-26_03_27_22tavis_SNR_values.txt: y = -3.0718x + 7.8158
-2020-07-26_03_27_22elgin_SNR_values.txt: y = -2.1402x + 8.0005
-2020-07-26_03_27_22elgin_SNR_values.txt: y = -1.6375x + 8.7455
-2020-07-26_03_27_22tavis_SNR_values.txt: y = -2.3962x + 9.0478
-2022-07-26_07_08_31tavis_SNR_values.txt: y = -2.8218x + 7.6122
-2022-07-26_07_08_31elgin_SNR_values.txt: y = -2.6557x + 7.3672
-2022-07-26_07_08_31elgin_SNR_values.txt: y = -2.4674x + 7.0904
-2022-07-26_07_08_31tavis_SNR_values.txt: y = -3.1370x + 8.4237
-2019-08-01_05_14_31elgin_SNR_values.txt: y = -3.5594x + 8.9648
-2019-08-01_05_14_31tavis_SNR_values.txt: y = -1.8844x + 8.0797
-2019-08-08_06_16_12elgin_SNR_values.txt: y = -3.1152x + 8.4401
-2019-08-08_06_16_12tavis_SNR_values.txt: y = -2.6887x + 8.8986
-2023-07-31_08_07_19elgin_SNR_values.txt: y = -2.9301x + 7.4544
-2023-07-31_08_07_19tavis_SNR_values.txt: y = -3.1766x + 8.2086
-2022-08-01_03_38_22elgin_SNR_values.txt: y = -4.1309x + 8.6139
-2022-08-01_03_38_22tavis_SNR_values.txt: y = -2.4244x + 8.6601
-2023-07-22_06_35_00elgin_SNR_values.txt: y = -2.6075x + 6.2927
-2023-07-22_06_35_00tavis_SNR_values.txt: y = -1.9553x + 6.7962
+FTPdetectinfo_02G_20190801_024423_277_0000000_manual.txt: y = 0.8635x + 7.6050
+FTPdetectinfo_01G_20190801_024423_146_0000000_manual.txt: y = 0.9878x + 8.1208
+FTPdetectinfo_02G_20220729_044923_316_0000000_manual.txt: y = 1.1672x + 8.4096
+FTPdetectinfo_01G_20220729_044923_194_0000000_manual.txt: y = 1.2913x + 9.1456
+FTPdetectinfo_02G_20230731_080718_865_0000000_manual.txt: y = 1.2091x + 7.7416
+FTPdetectinfo_01G_20230731_080718_868_0000000_manual.txt: y = 1.2654x + 8.1817
 
-Mean of slope and stand.dev.: -2.6197 ± 0.7532
-Mean of const and stand.dev.: 8.2127 ± 0.6949
+Mean of slope and stand.dev.: 1.1307 ± 0.1545
+Mean of const and stand.dev.: 8.2007 ± 0.5015
+
+All data fit: y = 0.9614x + 7.6708 
+stand.dev 0.5014

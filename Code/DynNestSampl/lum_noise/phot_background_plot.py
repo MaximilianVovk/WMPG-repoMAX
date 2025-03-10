@@ -16,23 +16,35 @@ def extract_time_from_png(filename):
     return None, None
 
 def process_phot_file(phot_path):
-    """Reads a .phot file and extracts time (HH:MM:SS) and poffset."""
+    """Reads a .phot file and extracts all columns into a Pandas DataFrame."""
     data = []
+    
     with open(phot_path, 'r') as file:
         for line in file:
-            if line.startswith("#") or "reject" in line:
+            if line.startswith("#") or "reject" in line:  # Skip header and invalid lines
                 continue
             parts = line.split()
-            if len(parts) >= 5:
-                time = parts[2]
+            if len(parts) >= 9:  # Ensure the line has all necessary columns
+                unix_time = int(parts[0])  # Convert Unix timestamp to integer
+                date = parts[1]  # YYYY-MM-DD format
+                time_str = parts[2]  # HH:MM:SS format
                 poffset = float(parts[3])
-                data.append((time, poffset))
+                perror = float(parts[4])
+                status = parts[5]  # "ok" or other status
+                num_good = int(parts[6])
+                num_bad = int(parts[7])
+                reject_percent = float(parts[8])
 
-    df = pd.DataFrame(data, columns=['time', 'poffset'])
+                data.append((unix_time, date, time_str, poffset, perror, status, num_good, num_bad, reject_percent))
+
+    # Create DataFrame
+    df = pd.DataFrame(data, columns=['unix_time', 'date', 'time', 'poffset', 'perror', 'status', '#good', '#bad', 'reject%'])
     
     if not df.empty:
-        df['time'] = pd.to_datetime(df['time'], format='%H:%M:%S')  # Convert to datetime
+        df['time'] = pd.to_datetime(df['time'], format='%H:%M:%S')  # Convert time to datetime.time
+    
     return df
+
 
 def plot_photometry(input_folder):
     """Processes phot files inside input_folder and plots time vs. poffset as scatter points."""
@@ -41,6 +53,8 @@ def plot_photometry(input_folder):
     phot_files = [f for f in os.listdir(phot_dir) if f.endswith(".phot")]
 
     plt.figure(figsize=(10, 6))
+
+    to_plot='poffset'
 
     color_map = {}  # Store colors for each phot file
     camera_scatter = {}  # Track scatter plots per camera for legend
@@ -54,7 +68,7 @@ def plot_photometry(input_folder):
 
         if not df.empty:
             # Scatter plot instead of lines
-            scatter = plt.scatter(df['time'], df['poffset'], label=f"{date} {camera}", alpha=0.8)
+            scatter = plt.scatter(df['time'], df[to_plot], label=f"{date} {camera}", alpha=0.8)
             color_map[(date, camera)] = scatter.get_facecolor()[0]  # Store color
             camera_scatter[(date, camera)] = scatter  # Store for legend handling
 
@@ -75,8 +89,8 @@ def plot_photometry(input_folder):
                 plt.axvline(png_time_obj, color=color_map.get((date, camera), 'gray'), linestyle=linestyle, alpha=0.7, linewidth=3)
 
     plt.xlabel("Time (HH:MM:SS)")
-    plt.ylabel("Poffset")
-    plt.title("Poffset vs Time")
+    plt.ylabel(to_plot)
+    plt.title(to_plot+" vs Time")
 
     # Format x-axis to show HH:MM:SS properly
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -93,8 +107,8 @@ def plot_photometry(input_folder):
 
     # plt.show()
     # save it with 300 dpi
-    plt.savefig(os.path.join(input_folder, "photometry_plot.png"), dpi=300)
+    plt.savefig(os.path.join(input_folder, "photometry_"+to_plot+"_plot.png"), dpi=300)
 
-# Example usage
-input_folder = "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/lum_noise/plots_DRA"  # Change this to your actual input folder
+# put input folder here with phot folder
+input_folder = "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/lum_noise/plots_ORI"  # Change this to your actual input folder
 plot_photometry(input_folder)

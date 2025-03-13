@@ -1067,7 +1067,9 @@ def read_prior_to_bounds(object_meteor,file_path=""):
 ###############################################################################
 class observation_data:
     ''' class to load the observation data and create an object '''
-    def __init__(self, obs_file_path,use_CAMO_data=False):
+    def __init__(self, obs_file_path,use_CAMO_data=False, lag_noise_prior=40, lum_noise_prior=2.5):
+        self.noise_lag = lag_noise_prior
+        self.noise_lum = lum_noise_prior
         self.file_name = obs_file_path
         # check if the file is a json file
         if obs_file_path.endswith('.pickle'):
@@ -1204,7 +1206,7 @@ class observation_data:
             self.time_lag = combined_obs_CAMO['time_lag'][combined_obs_CAMO['ignore_list'] == 0]
             self.stations_lag = combined_obs_CAMO['flag_station'][combined_obs_CAMO['ignore_list'] == 0]
             self.fps = 80
-            self.noise_lag = 5
+            # self.noise_lag = 5
             self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
             
             if flag_there_is_EMCCD_data==False:
@@ -1239,7 +1241,7 @@ class observation_data:
             self.time_lag = combined_obs_EMCCD['time_lag'][combined_obs_EMCCD['ignore_list'] == 0]
             self.stations_lag = combined_obs_EMCCD['flag_station'][combined_obs_EMCCD['ignore_list'] == 0]
             self.fps = 32
-            self.noise_lag = 40
+            # self.noise_lag = 40
             self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
 
         if flag_there_is_EMCCD_data==False and flag_there_is_CAMO_data==False:
@@ -1251,7 +1253,7 @@ class observation_data:
         self.length = self.length-self.length[0]
         self.time_lag = self.time_lag-self.time_lag[0]
 
-        self.noise_lum = 2.5
+        # self.noise_lum = 2.5
         self.noise_mag = 0.1
 
         # # Ensure there are exactly two unique stations before proceeding
@@ -1447,7 +1449,7 @@ class observation_data:
             # Store results in the object
             self.__dict__.update(simulation_MetSim_object.__dict__)
 
-            self.noise_lum = 2.5
+            # self.noise_lum = 2.5
             self.noise_mag = 0.1
 
             # add a gausian noise to the luminosity of 2.5
@@ -1519,7 +1521,7 @@ class observation_data:
             if use_CAMO_data:
                 self.fps = 80
                 self.stations = ['01G','02G','01T','02T']
-                self.noise_lag = 5
+                # self.noise_lag = 5
                 self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
                 # multiply by a number between 0.6 and 0.4 for the time to track for CAMO
                 time_to_track = (time_visible[-1]-time_visible[0])*np.random.uniform(0.4,0.6)
@@ -1528,7 +1530,7 @@ class observation_data:
             else:
                 self.fps = 32
                 self.stations = ['01F','02F']
-                self.noise_lag = 40
+                # self.noise_lag = 40
                 self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
                 time_to_track = 0
                 time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps,self.stations[0],self.stations[1])
@@ -1771,7 +1773,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
         )):
             dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
             obs_data = finder.observation_instance(base_name)
-            obs_data.file_name = pickle_file # update teh file name in the observation_data object
+            obs_data.file_name = pickle_file # update teh file name in the observation data object
 
             dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name)
             
@@ -1845,6 +1847,74 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
 
     return dynesty_file_in_output_path
 
+
+def read_prior_noise(file_path, use_CAMO_data=False):
+    """
+    chack if present and read the prior file and return the bounds, flags, and fixed values.
+    """
+
+    # defealut noise values
+    if use_CAMO_data:
+        noise_lag_prior = 5
+    else:
+        noise_lag_prior = 40
+    noise_lum_prior = 2.5
+
+    def safe_eval(value):
+        try:    
+            return eval(value, {"__builtins__": {"np": np}}, {})
+        except Exception:
+            return value  # Return as string if evaluation fails
+    
+    # Read .prior file, ignoring comment lines
+    with open(file_path, 'r') as file:
+        for line in file:
+            line = line.strip()
+            if line.startswith('#') or not line:
+                continue
+            parts = line.split('#')[0].strip().split(',')  # Remove inline comments
+            name = parts[0].strip()
+
+            # check if name is noise_lag
+            if name != "noise_lag" and name != "noise_lum":
+                continue
+            else:
+                # Handle fixed values
+                if "fix" in parts:
+                    val = parts[1].strip() if len(parts) > 1 else "nan"
+                    val_fixed = safe_eval(val) if val.lower() != "nan" else np.nan
+                    if not np.isnan(val_fixed):
+                        if name == "noise_lag":
+                            noise_lag_prior = val_fixed
+                        elif name == "noise_lum":
+                            noise_lum_prior = val_fixed
+                                                    
+                min_val = parts[1].strip() if len(parts) > 1 else "nan"
+                max_val = parts[2].strip() if len(parts) > 2 else "nan"
+                flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
+                
+                # Handle NaN values and default replacement
+                min_val = safe_eval(min_val) if min_val.lower() != "nan" else np.nan
+                max_val = safe_eval(max_val) if max_val.lower() != "nan" else np.nan
+
+                #### vel, mass, zenith ####
+                # check if name=='v_init' or zenith_angle or m_init or erosion_height_start values are np.nan and replace them with the object_meteor values
+                if np.isnan(max_val):
+                    continue
+                elif ("norm" in flags or "invgamma" in flags):
+                    if name == "noise_lag":
+                        noise_lag_prior = max_val
+                    elif name == "noise_lum":
+                        noise_lum_prior = max_val
+                else:
+                    if name == "noise_lag":
+                        # do the mean of the max and min values
+                        noise_lag_prior = np.mean([min_val,max_val])
+                    elif name == "noise_lum":
+                        # do the mean of the max and min values
+                        noise_lum_prior = np.mean([min_val,max_val])
+                
+    return noise_lag_prior, noise_lum_prior
 
 
 class find_dynestyfile_and_priors:
@@ -1955,7 +2025,24 @@ class find_dynestyfile_and_priors:
             # No .dynesty => create from .pickle base name
             dynesty_file = possible_dynesty
 
-        observation_instance = observation_data(input_file, self.use_CAMO_data)
+        if self.use_CAMO_data:
+            lag_noise_prior = 5
+        else:
+            lag_noise_prior = 40
+        lum_noise_prior = 2.5
+        # If user gave a valid .prior path, read it once.
+        if os.path.isfile(self.prior_file):
+            prior_path_noise = self.prior_file
+            lag_noise_prior, lum_noise_prior = read_prior_noise(self.prior_file,self.use_CAMO_data)
+        else:
+            # Look for local .prior
+            existing_prior_list = [f for f in files if f.endswith(".prior")]
+            if existing_prior_list:
+                prior_path_noise = os.path.join(root, existing_prior_list[0])
+                lag_noise_prior, lum_noise_prior = read_prior_noise(prior_path_noise,self.use_CAMO_data)
+        print("Assumend noise in lag",lag_noise_prior,"in lum",lum_noise_prior,"J/s")
+
+        observation_instance = observation_data(input_file, self.use_CAMO_data, lag_noise_prior, lum_noise_prior)
         # check observation_instance has v_init
         if not hasattr(observation_instance, 'v_init'):
             return
@@ -2304,7 +2391,7 @@ if __name__ == "__main__":
     # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
     # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-5kg/ORI_mode_with_noise1e-5kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-6kg/ORI_mode_with_noise5e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-6kg/ORI_mode_with_noise1e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-7kg/ORI_mode_with_noise5e-7kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-7kg/ORI_mode_with_noise1e-7kg.json",
+        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-6kg/ORI_mode_with_noise5e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_3e-6kg/ORI_mode_with_noise3e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-6kg/ORI_mode_with_noise1e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_8e-7kg/ORI_mode_with_noise8e-7kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-7kg/ORI_mode_with_noise5e-7kg.json",
         # "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mean/CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mode/CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mean/ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mode/ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mean/CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mode/CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mean/DRA_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mode/DRA_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mean/ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mode/ORI_mode_with_noise.json"
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/

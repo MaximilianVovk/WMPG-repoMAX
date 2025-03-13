@@ -1,14 +1,14 @@
 Meteor: ORI_mode
-  File name:     C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\ORI-mass\Mode_5e-6kg\ORI_mode.json
-  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\ORI-mass\Mode_5e-6kg\ORI_mode.dynesty
+  File name:     C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\ORI-mass\Mode_8e-7kg\ORI_mode.json
+  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\ORI-mass\Mode_8e-7kg\ORI_mode.dynesty
   Prior file:    C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\ORI_noise_EMCCD.prior
-  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\ORI-mass\Mode_5e-6kg
+  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\ORI-mass\Mode_8e-7kg
   Bounds:
     v_init: [500, 67384.0] flags=['norm']
-    m_init: [5.403125e-06, 5.971875e-06] flags=[]
+    m_init: [8.253125000000001e-07, 9.121875e-07] flags=[]
     rho: [1.0, 3.6020599913279625] flags=['log']
     sigma: [1e-09, 5.0000000000000004e-08] flags=[]
-    erosion_height_start: [114904.3812249408, 131743.23010166574] flags=[]
+    erosion_height_start: [112109.83306298006, 121530.6258132098] flags=[]
     erosion_coeff: [-12.0, -6.0] flags=['log']
     erosion_mass_index: [1, 3] flags=[]
     erosion_mass_min: [-11.301029995663981, -9.0] flags=['log']

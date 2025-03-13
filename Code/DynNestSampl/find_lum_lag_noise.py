@@ -14,7 +14,7 @@ import scipy.optimize as opt
 import matplotlib.gridspec as gridspec
 from scipy import stats
 
-dir_pickle_files = r'N:\mvovk\2ndPaper\Reductions\CAP'
+dir_pickle_files = r'C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Reductions\ORI'
 
 const=0
 shower=''
@@ -30,7 +30,7 @@ if dir_pickle_files[-3:] == 'ORI':
     shower = 'ORI'
 
 # outputput fodler is C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation\lum_noise\plots_+shower
-out_folder = r'C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation\noise\plots_'+shower
+out_folder = r'C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation\noise_test\plots_'+shower
 
 # create the output folder if it does not exist
 if not os.path.exists(out_folder):
@@ -323,6 +323,7 @@ for i, (base_name, dynesty_info, prior_path, out_new_folder) in enumerate(zip(
             RMSD_lag = plot_side_by_side(obs_data, base_name, out_folder)
             lag_RMSD_list_EMCCD.append(RMSD_lag)
             print(f'${base_name}$ & {RMSD_lag:.1f} & {apparent_mag:.2f} & {obs_data.luminosity[index]:.2f} & {10**((apparent_mag-const)/(-2.5)):.2f} & {obs_data.luminosity[index]/10**((apparent_mag-const)/(-2.5)):.2f} \\\\')
+        # print('lag noise',obs_data.noise_lag,'lum noise',obs_data.noise_lum)
         print('\hline') 
 
     else:

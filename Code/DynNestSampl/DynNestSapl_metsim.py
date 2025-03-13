@@ -1206,8 +1206,6 @@ class observation_data:
             self.time_lag = combined_obs_CAMO['time_lag'][combined_obs_CAMO['ignore_list'] == 0]
             self.stations_lag = combined_obs_CAMO['flag_station'][combined_obs_CAMO['ignore_list'] == 0]
             self.fps = 80
-            # self.noise_lag = 5
-            self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
             
             if flag_there_is_EMCCD_data==False:
 
@@ -1241,8 +1239,6 @@ class observation_data:
             self.time_lag = combined_obs_EMCCD['time_lag'][combined_obs_EMCCD['ignore_list'] == 0]
             self.stations_lag = combined_obs_EMCCD['flag_station'][combined_obs_EMCCD['ignore_list'] == 0]
             self.fps = 32
-            # self.noise_lag = 40
-            self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
 
         if flag_there_is_EMCCD_data==False and flag_there_is_CAMO_data==False:
             raise ValueError("No data found for EMCCD and CAMO in the pickle file")
@@ -1253,8 +1249,17 @@ class observation_data:
         self.length = self.length-self.length[0]
         self.time_lag = self.time_lag-self.time_lag[0]
 
-        # self.noise_lum = 2.5
+        # usually noise_lum = 2.5
+        if np.isnan(self.noise_lum):
+            self.noise_lum = self.define_SNR_lum_noise()
+            print('Assumed Noise in luminosity based on SNR:',self.noise_lum)
         self.noise_mag = 0.1
+        
+        # usually noise_lag = 40 or 5 for CAMO
+        if np.isnan(self.noise_lag):
+            self.noise_lag = self.define_polyn_fit_lag_noise()
+            print('Assumed Noise in lag based on polynomial fit:',self.noise_lag)
+        self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
 
         # # Ensure there are exactly two unique stations before proceeding
         # unique_stations = np.unique(self.stations_lum)
@@ -1313,6 +1318,128 @@ class observation_data:
 
         self.m_init = photom_mass
 
+    def define_polyn_fit_lag_noise(self):
+        ''' Define the lag fit noise '''
+        # Fit a polynomial to the lag data
+
+        def polyn_lag(t, a, b, c, t0):
+            """
+            Quadratic lag function.
+            """
+
+            # Only take times <= t0
+            t_before = t[t <= t0]
+
+            # Only take times > t0
+            t_after = t[t > t0]
+
+            # Compute the lag linearly before t0
+            l_before = np.zeros_like(t_before) # +c
+
+            # Compute the lag quadratically after t0
+            l_after = -abs(a)*(t_after - t0)**3 - abs(b)*(t_after - t0)**2
+
+            c = 0
+
+            lag_funct = np.concatenate((l_before, l_after))
+
+            lag_funct = lag_funct - lag_funct[0]
+
+            return lag_funct
+        
+        def lag_residual_polyn(params, t_time, l_data):
+            """
+            Residual function for the optimization.
+            """
+
+            return np.sum((l_data - polyn_lag(t_time, *params))**2)
+
+        # initial guess of deceleration decel equal to linear fit of velocity
+        p0 = [np.mean(self.lag), 0, 0, np.mean(self.time_lag)]
+
+        opt_res = minimize(lag_residual_polyn, p0, args=(np.array(self.time_lag), np.array(self.lag)), method='Nelder-Mead')
+
+        # sample the fit for the velocity and acceleration
+        a_t0, b_t0, c_t0, t0 = opt_res.x
+        fitted_lag_t0 = polyn_lag(self.time_lag, a_t0, b_t0, c_t0, t0)
+        residuals_t0 = self.lag - fitted_lag_t0
+        # avg_residual = np.mean(abs(residuals))
+        rmsd_lag_polyn = np.sqrt(np.mean(residuals_t0**2))
+
+        return rmsd_lag_polyn
+    
+    def define_SNR_lum_noise(self):
+        ''' Define the SNR luminosity noise '''
+        # Compute the SNR of the luminosity data
+        shower_code = self.find_IAU_code()
+        # check if shower_code is None
+        if shower_code is None:
+            print("No IAU code found")
+        else:
+            print("Shower code:", shower_code)
+
+        const = np.nan
+        # if the last 3 letters of dir_pickle_files are DRA set const 8.0671
+        if shower_code == 'DRA':
+            const = 8.0671
+        elif shower_code == 'CAP':
+            const = 7.8009
+        elif shower_code == 'ORI':
+            const = 7.3346
+
+        if np.isnan(const):
+            # inverse polinomial fit
+            velocities = np.array([20, 23, 66])*1000 # km/s
+            offsets = np.array([8.0671, 7.8009, 7.3346]) # constant values
+            
+            log_velocities = np.log(velocities)
+            log_offsets = np.log(offsets)
+
+            b, log_a = np.polyfit(log_velocities, log_offsets, 1)
+            a = np.exp(log_a)
+        
+            const = a * self.v_init**b
+
+        apparent_mag = np.max(self.apparent_magnitudes)
+        # find the index of the apparent magnitude in the list
+        index = np.where(np.array(self.apparent_magnitudes) == apparent_mag)[0][0]
+
+        lum_noise = self.luminosity[index]/10**((apparent_mag-const)/(-2.5))
+
+        return lum_noise
+
+    def find_IAU_code(self):
+        # Get the directory where self.file_name is stored
+        file_dir = os.path.dirname(self.file_name)
+        
+        # Define the filenames to look for
+        report_file = None
+        for file_name in os.listdir(file_dir):
+            if file_name.endswith("report.txt"):
+                print("Found report.txt file to extract IAU code")
+                report_file = file_name
+                break
+        if report_file is None:
+            for file_name in os.listdir(file_dir):
+                if file_name.endswith("report_sim.txt"):
+                    print("Found report_sim.txt file to extract IAU code")
+                    report_file = file_name
+                    break
+        
+        # If no report file is found, return None
+        if report_file is None:
+            print("No report .txt file found in the directory")
+            return None
+        
+        # Open and read the report file
+        report_path = os.path.join(file_dir, report_file)
+        with open(report_path, 'r', encoding='utf-8') as file:
+            for line in file:
+                match = re.search(r"IAU code =\s+(\S+)", line)
+                if match:
+                    return match.group(1)  # Extracted IAU code
+        
+        return None  # Return None if no match is found
 
     def _photometric_adjustment(self,unique_stations,peak_abs_mag_CAMO):
         
@@ -1450,6 +1577,9 @@ class observation_data:
             self.__dict__.update(simulation_MetSim_object.__dict__)
 
             # self.noise_lum = 2.5
+            if np.isnan(self.noise_lum):
+                self.noise_lum = 2.5
+                print('Assumed default Noise in luminosity:',self.noise_lum)
             self.noise_mag = 0.1
 
             # add a gausian noise to the luminosity of 2.5
@@ -1522,6 +1652,8 @@ class observation_data:
                 self.fps = 80
                 self.stations = ['01G','02G','01T','02T']
                 # self.noise_lag = 5
+                if np.isnan(self.noise_lag):
+                    self.noise_lag = 5
                 self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
                 # multiply by a number between 0.6 and 0.4 for the time to track for CAMO
                 time_to_track = (time_visible[-1]-time_visible[0])*np.random.uniform(0.4,0.6)
@@ -1531,6 +1663,8 @@ class observation_data:
                 self.fps = 32
                 self.stations = ['01F','02F']
                 # self.noise_lag = 40
+                if np.isnan(self.noise_lag):
+                    self.noise_lag = 40
                 self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
                 time_to_track = 0
                 time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps,self.stations[0],self.stations[1])
@@ -1848,17 +1982,14 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
     return dynesty_file_in_output_path
 
 
-def read_prior_noise(file_path, use_CAMO_data=False):
+def read_prior_noise(file_path):
     """
     chack if present and read the prior file and return the bounds, flags, and fixed values.
     """
 
     # defealut noise values
-    if use_CAMO_data:
-        noise_lag_prior = 5
-    else:
-        noise_lag_prior = 40
-    noise_lum_prior = 2.5
+    noise_lag_prior = np.nan
+    noise_lum_prior = np.nan
 
     def safe_eval(value):
         try:    
@@ -2025,11 +2156,8 @@ class find_dynestyfile_and_priors:
             # No .dynesty => create from .pickle base name
             dynesty_file = possible_dynesty
 
-        if self.use_CAMO_data:
-            lag_noise_prior = 5
-        else:
-            lag_noise_prior = 40
-        lum_noise_prior = 2.5
+        lag_noise_prior = np.nan
+        lum_noise_prior = np.nan
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
             prior_path_noise = self.prior_file
@@ -2040,7 +2168,13 @@ class find_dynestyfile_and_priors:
             if existing_prior_list:
                 prior_path_noise = os.path.join(root, existing_prior_list[0])
                 lag_noise_prior, lum_noise_prior = read_prior_noise(prior_path_noise,self.use_CAMO_data)
-        print("Assumend noise in lag",lag_noise_prior,"in lum",lum_noise_prior,"J/s")
+        if np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior):
+            if np.isnan(lag_noise_prior):
+                print("NO NOISE values found in prior file for lag.")
+            if np.isnan(lum_noise_prior):
+                print("NO NOISE values found in prior file for lum.")
+        else:
+            print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
 
         observation_instance = observation_data(input_file, self.use_CAMO_data, lag_noise_prior, lum_noise_prior)
         # check observation_instance has v_init

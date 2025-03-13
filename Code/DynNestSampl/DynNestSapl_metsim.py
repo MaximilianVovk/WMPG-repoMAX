@@ -2161,13 +2161,13 @@ class find_dynestyfile_and_priors:
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
             prior_path_noise = self.prior_file
-            lag_noise_prior, lum_noise_prior = read_prior_noise(self.prior_file,self.use_CAMO_data)
+            lag_noise_prior, lum_noise_prior = read_prior_noise(self.prior_file)
         else:
             # Look for local .prior
             existing_prior_list = [f for f in files if f.endswith(".prior")]
             if existing_prior_list:
                 prior_path_noise = os.path.join(root, existing_prior_list[0])
-                lag_noise_prior, lum_noise_prior = read_prior_noise(prior_path_noise,self.use_CAMO_data)
+                lag_noise_prior, lum_noise_prior = read_prior_noise(prior_path_noise)
         if np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior):
             if np.isnan(lag_noise_prior):
                 print("NO NOISE values found in prior file for lag.")

@@ -2378,17 +2378,17 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     
     ### ONLY on LINUX ###
 
-    # time constait
-    # find the time_arr index in simulation_results that are above the np.min(obs_metsim_obj.luminosity) and are after height_lum[0] (the leading_frag_height_arr[-1] is nan)
-    indices_visible = np.where((simulation_results.luminosity_arr[:-1] > np.min(obs_metsim_obj.luminosity)) & (simulation_results.leading_frag_height_arr[:-1] < obs_metsim_obj.height_lum[0]))[0]
-    # check if indices_visible is empty
-    if len(indices_visible) == 0:
-        return -np.inf
-    real_time_visible = obs_metsim_obj.time_lum[-1]-obs_metsim_obj.time_lum[0]
-    simulated_time_visible = simulation_results.time_arr[indices_visible][-1]-simulation_results.time_arr[indices_visible][0]
-    # check if is too short and the time difference is smaller than 60% of the real time difference
-    if simulated_time_visible < 0.6*real_time_visible:
-        return -np.inf
+    # # time constait
+    # # find the time_arr index in simulation_results that are above the np.min(obs_metsim_obj.luminosity) and are after height_lum[0] (the leading_frag_height_arr[-1] is nan)
+    # indices_visible = np.where((simulation_results.luminosity_arr[:-1] > np.min(obs_metsim_obj.luminosity)) & (simulation_results.leading_frag_height_arr[:-1] < obs_metsim_obj.height_lum[0]))[0]
+    # # check if indices_visible is empty
+    # if len(indices_visible) == 0:
+    #     return -np.inf
+    # real_time_visible = obs_metsim_obj.time_lum[-1]-obs_metsim_obj.time_lum[0]
+    # simulated_time_visible = simulation_results.time_arr[indices_visible][-1]-simulation_results.time_arr[indices_visible][0]
+    # # check if is too short and the time difference is smaller than 60% of the real time difference
+    # if simulated_time_visible < 0.6*real_time_visible:
+    #     return -np.inf
     
     simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 
                                        np.flip(simulation_results.leading_frag_height_arr), 
@@ -2402,12 +2402,12 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
 
     lag_sim = simulated_lag - simulated_lag[0]
 
-    # # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
-    # if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
-    #     return -np.inf
-    # # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
-    # if np.sum(~np.isnan(lag_sim)) != np.sum(~np.isnan(obs_metsim_obj.lag)):
-    #     return -np.inf
+    # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
+    if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
+        return -np.inf
+    # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
+    if np.sum(~np.isnan(lag_sim)) != np.sum(~np.isnan(obs_metsim_obj.lag)):
+        return -np.inf
 
     ### Log Likelihood ###
 

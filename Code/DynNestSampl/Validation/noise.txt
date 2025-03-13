@@ -1,0 +1,8 @@
+ORI lag Noise [m]: mean 16.922 mode 10.466 
+ORI lum Noise [W]: mean 2.47 mode 2.33
+
+CAP lag Noise [m]: mean 25.368 mode 25.120
+CAP lum Noise [W]: mean 1.701 mode 1.294
+
+DRA lag Noise [m]: mean 72.949 mode 57.861
+DRA lum Noise [W]: mean 0.996 mode 0.876

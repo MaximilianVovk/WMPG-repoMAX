@@ -76,7 +76,14 @@ class Logger(object):
 # 100^((m-6.96)/5) =(114007.25/100000)^2
 # math.log((114007.25/100000)^2, 100)*5+6.96
 def meteor_abs_magnitude_to_apparent(abs_mag, distance):
-    return math.log((distance/100000)^2, 100)*5+abs_mag
+    apparent_mag = []
+    # check if it is an array
+    if isinstance(abs_mag, np.ndarray):
+        for ii in range(len(abs_mag)):
+            apparent_mag.append(math.log((distance[ii]/100000)**2, 100)*5+abs_mag[ii])
+    else: 
+        apparent_mag = math.log((distance/100000)**2, 100)*5+abs_mag
+    return apparent_mag
 
 ###############################################################################
 # Function: plotting function
@@ -1091,14 +1098,14 @@ class observation_data:
         flag_there_is_CAMO_data = False
         flag_there_is_EMCCD_data = False
         for obs in traj.observations:
-            if (obs.station_id == "01T" or obs.station_id == "02T" or obs.station_id == "01T'-Mirfit" or obs.station_id == "02T'-Mirfit"):
+            if (obs.station_id == "1T" or obs.station_id == "2T" or obs.station_id == "01T'-Mirfit" or obs.station_id == "02T'-Mirfit"):
                 if peak_abs_mag_CAMO is None:
                     peak_abs_mag_CAMO = np.min(obs.absolute_magnitudes)
                 elif peak_abs_mag_CAMO > np.min(obs.absolute_magnitudes):
                     peak_abs_mag_CAMO = np.min(obs.absolute_magnitudes)
 
             # check if among obs.station_id there is one of the following 01T or 02T
-            if ("01T" in obs.station_id or "02T" in obs.station_id or "01T'-Mirfit" in obs.station_id or "02T'-Mirfit" in obs.station_id) and use_CAMO_data==True:
+            if ("1T" in obs.station_id or "2T" in obs.station_id or "01T'-Mirfit" in obs.station_id or "02T'-Mirfit" in obs.station_id) and use_CAMO_data==True:
                 P_0m = 840
                 obs_dict_CAMO = {
                     # make an array that is long as len(obs.model_ht) and has only obs.station_id
@@ -1112,13 +1119,14 @@ class observation_data:
                     'lag': np.array(obs.lag), # m
                     'length': np.array(obs.state_vect_dist), # m
                     'time_lag': np.array(obs.time_data), # s
-                    'height_lag': np.array(obs.model_ht) # m
+                    'height_lag': np.array(obs.model_ht), # m
+                    'apparent_magnitudes': np.array(meteor_abs_magnitude_to_apparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
                     }
                 obs_dict_CAMO['velocities'][0] = obs.v_init
                 self.stations.append(obs.station_id)
                 obs_data_CAMO.append(obs_dict_CAMO)
                 flag_there_is_CAMO_data = True
-            elif "01G" in obs.station_id or "02G" in obs.station_id or "01F" in obs.station_id or "02F" in obs.station_id:
+            elif "1G" in obs.station_id or "2G" in obs.station_id or "1F" in obs.station_id or "2F" in obs.station_id:
                 P_0m = 935
                 obs_dict_EMCCD = {
                     # make an array that is long as len(obs.model_ht) and has only obs.station_id
@@ -1132,7 +1140,8 @@ class observation_data:
                     'lag': np.array(obs.lag), # m
                     'length': np.array(obs.state_vect_dist), # m
                     'time_lag': np.array(obs.time_data), # s
-                    'height_lag': np.array(obs.model_ht) # m
+                    'height_lag': np.array(obs.model_ht), # m
+                    'apparent_magnitudes': np.array(meteor_abs_magnitude_to_apparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
                     }
                 obs_dict_EMCCD['velocities'][0] = obs.v_init
                 self.stations.append(obs.station_id)
@@ -1174,6 +1183,7 @@ class observation_data:
             self.luminosity = combined_obs_EMCCD['luminosity']
             self.time_lum = combined_obs_EMCCD['time']
             self.stations_lum = combined_obs_EMCCD['flag_station']
+            self.apparent_magnitudes = combined_obs_EMCCD['apparent_magnitudes']
 
         if flag_there_is_CAMO_data and use_CAMO_data:
 
@@ -1219,6 +1229,7 @@ class observation_data:
                 self.luminosity = combined_obs_CAMO['luminosity']
                 self.time_lum = combined_obs_CAMO['time']
                 self.stations_lum = combined_obs_CAMO['flag_station']
+                self.apparent_magnitudes = combined_obs_CAMO['apparent_magnitudes']
         else:
             # if there is not, use the EMCCD data for position and velocity
             self.velocities = combined_obs_EMCCD['velocities'][combined_obs_EMCCD['ignore_list'] == 0]
@@ -2293,7 +2304,7 @@ if __name__ == "__main__":
     # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
     # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\NoNoise\EMCCD\DRA_mean\DRA_mean.json",
+        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode\DRA_mode.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -2301,7 +2312,7 @@ if __name__ == "__main__":
         help="Where to store results. If empty, store next to each .dynesty.")
     # /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
-        default=r"",
+        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_noise_EMCCD.prior",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
     arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=False,

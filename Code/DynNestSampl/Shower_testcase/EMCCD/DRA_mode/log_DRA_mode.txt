@@ -1,0 +1,18 @@
+Meteor: DRA_mode
+  File name:     C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode\DRA_mode.json
+  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode\DRA_mode.dynesty
+  Prior file:    C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_noise_EMCCD.prior
+  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode
+  Bounds:
+    v_init: [500, 23640.416666666664] flags=['norm']
+    m_init: [2.0961749999999995e-06, 2.3168249999999996e-06] flags=[]
+    rho: [1.0, 3.6020599913279625] flags=['log']
+    sigma: [1e-09, 5.0000000000000004e-08] flags=[]
+    erosion_height_start: [98542.0985540421, 102750.54463979854] flags=[]
+    erosion_coeff: [-12.0, -6.0] flags=['log']
+    erosion_mass_index: [1, 3] flags=[]
+    erosion_mass_min: [-11.301029995663981, -9.0] flags=['log']
+    erosion_mass_max: [-10.0, -7.0] flags=['log']
+    noise_lag: [10, 75] flags=['invgamma']
+    noise_lum: [5, 1.0] flags=['invgamma']
+  Fixed Values:  {'zenith_angle': 0.6528142267696991, 'rho_grain': 3500.0, 'erosion_height_change': 1}

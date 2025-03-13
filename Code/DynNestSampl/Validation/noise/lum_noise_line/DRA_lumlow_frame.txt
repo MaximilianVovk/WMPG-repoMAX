@@ -1,0 +1,18 @@
+Pickle files in C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Reductions\DRA
+File 1: 20241008_003707 has the highest apparent magnitude of 8.37999998899308 with a luminosity 0.8153723390642799
+File 2: 20241008_012129 has the highest apparent magnitude of 8.679999999431244 with a luminosity 0.6386063555279888
+File 3: 20241008_012605 has the highest apparent magnitude of 8.479999999902395 with a luminosity 0.6006224506684177
+File 4: 20241008_013256 has the highest apparent magnitude of 6.749999999936696 with a luminosity 2.57192143403951
+File 5: 20241008_015139 has the highest apparent magnitude of 8.219999999734714 with a luminosity 0.6331238307015181
+File 6: 20241008_015303 has the highest apparent magnitude of 8.10999999531071 with a luminosity 0.6202356037510212
+File 7: 20241008_021829 has the highest apparent magnitude of 8.05999996729825 with a luminosity 0.7805879004113917
+File 8: 20241008_022048 has the highest apparent magnitude of 7.849999999982443 with a luminosity 1.2801953154943808
+File 9: 20241008_024446 has the highest apparent magnitude of 8.269999998651178 with a luminosity 0.6214631637395482
+File 10: 20241008_024504 has the highest apparent magnitude of 8.459999999672942 with a luminosity 0.7271385249197793
+File 11: 20241008_030838 has the highest apparent magnitude of 8.3499999900116 with a luminosity 0.6324167401408723
+File 12: 20241008_031944 has the highest apparent magnitude of 8.379999934150344 with a luminosity 0.778985364586504
+File 13: 20241008_035151 has the highest apparent magnitude of 7.819999997769269 with a luminosity 0.9704383158041449
+File 14: 20241008_035829 has the highest apparent magnitude of 8.629999995904106 with a luminosity 0.6938019319656052
+File 15: 20241008_042435 has the highest apparent magnitude of 7.819999980417523 with a luminosity 1.4725189692284482
+Mean luminosity of the dimmest frame: 0.922495216002894
+Mean apparent magnitude of the dimmest frame: 8.150666656477766

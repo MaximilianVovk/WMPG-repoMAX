@@ -1,0 +1,21 @@
+CAP
+Skipping duplicate entry for 20230731_080719
+Pickle files in C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Reductions\CAP
+File 1: 20190726_024149 has the highest apparent magnitude of 5.209999993291251 with a luminosity 11.24986761921865
+File 2: 20190726_030846 has the highest apparent magnitude of 6.459999999439869 with a luminosity 4.09125626502742
+File 3: 20190801_024424 has the highest apparent magnitude of 6.659999999999992 with a luminosity 2.940875089717357
+File 4: 20190801_035326 has the highest apparent magnitude of 7.339999998625775 with a luminosity 1.93050478405951
+File 5: 20190801_051431 has the highest apparent magnitude of 6.909999999767006 with a luminosity 2.0621507742443685
+File 6: 20190803_031026 has the highest apparent magnitude of 7.659999970721832 with a luminosity 1.081231283095191
+File 7: 20200725_052221 has the highest apparent magnitude of 7.049999999530405 with a luminosity 2.643557649768134
+File 8: 20200726_032722 has the highest apparent magnitude of 8.05999997412687 with a luminosity 0.824665022062773
+File 9: 20200726_060419 has the highest apparent magnitude of 6.909999990442308 with a luminosity 2.8083888266669814
+File 10: 20200726_083536 has the highest apparent magnitude of 5.800000000000002 with a luminosity 5.793586304715092
+File 11: 20200727_054241 has the highest apparent magnitude of 6.449999999924889 with a luminosity 3.2906814227546604
+File 12: 20210802_040738 has the highest apparent magnitude of 7.079999977499851 with a luminosity 2.3471987067826614
+File 13: 20220729_044924 has the highest apparent magnitude of 7.019999936848107 with a luminosity 2.400191340460772
+File 14: 20230722_063500 has the highest apparent magnitude of 4.319999922152649 with a luminosity 25.048506866516643
+File 15: 20230723_025737 has the highest apparent magnitude of 4.699999999350732 with a luminosity 17.7037075348176
+File 16: 20230731_080719 has the highest apparent magnitude of 6.179999998525705 with a luminosity 5.016712865091312
+Mean luminosity of the dimmest frame: 5.702067647187445
+Mean apparent magnitude of the dimmest frame: 6.488124985015452

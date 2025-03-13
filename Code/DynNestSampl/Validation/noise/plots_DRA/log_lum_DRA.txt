@@ -1,0 +1,55 @@
+DRA
+linear fit x:-2.5log10(SNR) y:Apparent Meteor Magnitude
+y = x + 8.0671
+
+\hline
+Name & RMSD lag [m] & MAX App.Mag. & MIN Lum [J/s] & SNR & Lum/SNR [J/s] \\
+\hline
+Pickle files in N:\mvovk\2ndPaper\Reductions\DRA
+$20241008_003707$ & 76.9 & 8.38 & 0.82 & 0.75 & 1.09 \\
+\hline
+$20241008_012129$ & 60.7 & 8.68 & 0.64 & 0.57 & 1.12 \\
+\hline
+$20241008_012605$ & 51.2 & 8.48 & 0.60 & 0.68 & 0.88 \\
+\hline
+$20241008_013256$ & 97.6 & 6.75 & 2.57 & 3.36 & 0.76 \\
+\hline
+$20241008_015139$ & 33.4 & 8.22 & 0.63 & 0.87 & 0.73 \\
+\hline
+$20241008_015303$ & 45.0 & 8.11 & 0.62 & 0.96 & 0.65 \\
+\hline
+$20241008_021829$ & 97.9 & 8.06 & 0.78 & 1.01 & 0.78 \\
+\hline
+$20241008_022048$ & 67.9 & 7.85 & 1.28 & 1.22 & 1.05 \\
+\hline
+$20241008_024446$ & 48.5 & 8.27 & 0.62 & 0.83 & 0.75 \\
+\hline
+$20241008_024504$ & 49.9 & 8.46 & 0.73 & 0.70 & 1.04 \\
+\hline
+$20241008_030838$ & 109.9 & 8.35 & 0.63 & 0.77 & 0.82 \\
+\hline
+$20241008_031944$ & 68.3 & 8.38 & 0.78 & 0.75 & 1.04 \\
+\hline
+$20241008_035151$ & 110.6 & 7.82 & 0.97 & 1.26 & 0.77 \\
+\hline
+$20241008_035829$ & 85.8 & 8.63 & 0.69 & 0.60 & 1.17 \\
+\hline
+$20241008_042435$ & 124.1 & 7.82 & 1.47 & 1.26 & 1.17 \\
+\hline
+
+linear fit x:-2.5log10(SNR) y:Apparent Meteor Magnitude
+y = x + 8.0671
+
+MEAN:
+Mean apparent magnitude of the dimmest frame: 8.150666656477766
+Mean luminosity of the dimmest frame: 0.922495216002894
+SNR from line: 0.925919727933064
+MEAN lum noise : 0.9963015023582934
+MEAN lag EMCCD RMSD mean: 75.17983352409047
+
+MODE:
+Mode of apparent magnitude: 8.269999998651178
+Mode of luminosity: 0.7271385249197793
+SNR from line: 0.8295450965342278
+MODE lum noise : 0.8765509288858497
+MODE lag EMCCD RMSD mode: 60.677170641491784

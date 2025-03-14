@@ -1912,8 +1912,13 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name)
             
             if not cml_args.only_plot:
-                main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
-            
+                 
+                try:
+                    main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
+                except Exception as e:
+                    print(f"Error encountered in main_dynestsy: {e}")
+                    print("Continuing execution with remaining tasks...")
+
             elif cml_args.only_plot and os.path.isfile(dynesty_file): 
                 print("Only plotting requested. Skipping dynesty run.")
                 dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)

@@ -1911,12 +1911,16 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
 
             dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name)
             
-            if not cml_args.only_plot:
-                 
+            if not cml_args.only_plot: 
                 try:
                     main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
                 except Exception as e:
-                    print(f"Error encountered in main_dynestsy: {e}")
+                    # update the log file with the error join out_folder,"log_"+base_name+".txt"
+                    log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
+                    # Open the file in append mode and write the error message
+                    with open(log_file_path, "a") as log_file:
+                        log_file.write(f"\nError encountered in dynestsy run: {e}\n")
+                    print(f"Error encountered in dynestsy run: {e}")
                     print("Continuing execution with remaining tasks...")
 
             elif cml_args.only_plot and os.path.isfile(dynesty_file): 

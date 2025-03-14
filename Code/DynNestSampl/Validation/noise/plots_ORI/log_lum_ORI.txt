@@ -10,13 +10,27 @@ $20191023_084916$ & 11.9 & 5.70 & 10.92 & 4.51 & 2.42 \\
 \hline
 CAMO $20191023_091225$ & 10.5 & 6.05 & 8.64 & 3.26 & 2.65 \\
 \hline
+$20191023_091225_01G_02G$ & 10.5 & 6.12 & 8.26 & 3.06 & 2.70 \\
+\hline
 CAMO $20191023_091310$ & 9.0 & 5.99 & 9.08 & 3.45 & 2.63 \\
+\hline
+$20191023_091310_01G_02G$ & 2.4 & 6.04 & 8.67 & 3.29 & 2.63 \\
+\hline
+$20191023_091310_01G_02G$ & 2.4 & 6.04 & 8.67 & 3.29 & 2.63 \\
 \hline
 $20191026_065837$ & 5.5 & 6.09 & 7.43 & 3.15 & 2.36 \\
 \hline
 CAMO $20201012_081716$ & 5.3 & 5.64 & 8.47 & 4.76 & 1.78 \\
 \hline
+$20201012_081716_01G_02G$ & 8.7 & 5.88 & 6.78 & 3.82 & 1.78 \\
+\hline
+$20201012_081716_01G_02G$ & 8.7 & 5.88 & 6.78 & 3.82 & 1.78 \\
+\hline
 CAMO $20201017_074007$ & 5.4 & 5.95 & 9.47 & 3.58 & 2.65 \\
+\hline
+$20201017_074007_01G_02G$ & 11.6 & 6.06 & 8.56 & 3.23 & 2.65 \\
+\hline
+$20201017_074007_01G_02G$ & 11.6 & 6.06 & 8.56 & 3.23 & 2.65 \\
 \hline
 $20201017_083927$ & 10.0 & 6.70 & 4.48 & 1.79 & 2.50 \\
 \hline
@@ -51,17 +65,17 @@ linear fit x:-2.5log10(SNR) y:Apparent Meteor Magnitude
 y = x + 7.3346
 
 MEAN:
-Mean apparent magnitude of the dimmest frame: 6.035499963690119
-Mean luminosity of the dimmest frame: 8.19290290870081
-SNR from line: 3.308567615499913
-MEAN lum noise : 2.476268845260668
-MEAN lag EMCCD RMSD mean: 18.894656787453947
+Mean apparent magnitude of the dimmest frame: 6.0292592294921
+Mean luminosity of the dimmest frame: 8.154045222759994
+SNR from line: 3.327639786194583
+MEAN lum noise : 2.45039900550197
+MEAN lag EMCCD RMSD mean: 15.582127148520112
 MEAN lag CAMO RMSD mean: 7.538639282244156
 
 MODE:
-Mode of apparent magnitude: 5.989999996449754
-Mode of luminosity: 7.8524790716091735
-SNR from line: 3.450166082314243
-MODE lum noise : 2.2759713255142846
-MODE lag EMCCD RMSD mode: 11.888451510259943
+Mode of apparent magnitude: 6.009999992765144
+Mode of luminosity: 8.26382600728711
+SNR from line: 3.3871934658842777
+MODE lum noise : 2.4397266027229163
+MODE lag EMCCD RMSD mode: 9.408951527774537
 MODE lag CAMO RMSD mode: 5.358153100381233

@@ -14,7 +14,7 @@ import scipy.optimize as opt
 import matplotlib.gridspec as gridspec
 from scipy import stats
 
-dir_pickle_files = r'C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Reductions\ORI'
+dir_pickle_files = r'N:\mvovk\2ndPaper\Reductions\ORI'
 
 const=0
 shower=''
@@ -30,7 +30,7 @@ if dir_pickle_files[-3:] == 'ORI':
     shower = 'ORI'
 
 # outputput fodler is C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation\lum_noise\plots_+shower
-out_folder = r'C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation\noise_test\plots_'+shower
+out_folder = r'C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation\noise\plots_'+shower
 
 # create the output folder if it does not exist
 if not os.path.exists(out_folder):
@@ -187,7 +187,7 @@ def plot_side_by_side(obs_data, file_name='', output=''):
     #           'ro', markersize=10, label=f'Max App.Mag. {apparent_mag:.2f}\nMin Lum {obs_data.luminosity[index]:.2f}\nSNR {SNR_case:.2f}\nLum/SNR {lum_noise:.2f}')
     
     ax2.scatter(np.max(obs_data.apparent_magnitudes), obs_data.height_lum[np.where(obs_data.apparent_magnitudes == np.max(obs_data.apparent_magnitudes))[0][0]]/1000,
-                          s=200, edgecolors='red', facecolors='none', linewidth=2, label=f'Min Lum {obs_data.luminosity[index]:.2f}\nSNR {SNR_case:.2f}\nLum/SNR {lum_noise:.2f}')
+                          s=200, edgecolors='red', facecolors='none', linewidth=2, label=f'Min Lum {obs_data.luminosity[index]:.2f} W\nSNR {SNR_case:.2f}\nLum/SNR {lum_noise:.2f} W')
 
     ax2.set_xlabel('App. Meteor Mag.')
     ax2.set_ylabel('Height [km]')

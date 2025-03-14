@@ -22,6 +22,7 @@ import time
 from matplotlib.ticker import ScalarFormatter
 import scipy
 import warnings
+import datetime
 import re
 import matplotlib.gridspec as gridspec
 from scipy.optimize import minimize
@@ -897,6 +898,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
 
     # Default values if no file path is provided
     if file_path == "":
+        print("No prior file provided. Using default bounds.")
         # delete from the default_bounds the "zenith_angle","rho_grain","erosion_height_change","erosion_coeff_change","erosion_rho_change","erosion_sigma_change"
         default_bounds.pop("zenith_angle")
         default_bounds.pop("rho_grain")
@@ -917,12 +919,12 @@ def read_prior_to_bounds(object_meteor,file_path=""):
             bounds[i] = list(bounds[i])  # Convert tuple to list
             # now check if the values are np.nan and if the flag key is 'norm' then divide by 10
             if np.isnan(bounds[i][0]) and key in object_meteor.__dict__:
-                bounds[i][0] = object_meteor.__dict__[key] - object_meteor.__dict__[key]/10/2
+                bounds[i][0] = object_meteor.__dict__[key] - 10**int(np.floor(np.log10(abs(object_meteor.__dict__[key])))) #object_meteor.__dict__[key]/10/2
 
             if np.isnan(bounds[i][1]) and key in object_meteor.__dict__ and "norm" in flags_dict[key]:
                 bounds[i][1] = object_meteor.__dict__[key]
             elif np.isnan(bounds[i][1]) and key in object_meteor.__dict__:
-                bounds[i][1] = object_meteor.__dict__[key] + object_meteor.__dict__[key]/10/2
+                bounds[i][1] = object_meteor.__dict__[key] + 10**int(np.floor(np.log10(abs(object_meteor.__dict__[key])))) #object_meteor.__dict__[key]/10/2
             bounds[i] = tuple(bounds[i])  # Convert back to tuple if needed
         # checck if stil any bounds are np.nan and raise an error
         for i, key in enumerate(default_bounds):
@@ -973,8 +975,8 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                 flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
                 
                 # Handle NaN values and default replacement
-                min_val = safe_eval(min_val) if min_val.lower() != "nan" else np.nan
-                max_val = safe_eval(max_val) if max_val.lower() != "nan" else np.nan
+                min_val = safe_eval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
+                max_val = safe_eval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
 
                 #### vel, mass, zenith ####
                 # check if name=='v_init' or zenith_angle or m_init or erosion_height_start values are np.nan and replace them with the object_meteor values
@@ -988,7 +990,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                     if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
                         min_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
                     else:
-                        min_val = object_meteor.__dict__[name] - object_meteor.__dict__[name]/10/2
+                        min_val = object_meteor.__dict__[name] - 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
 
                 if np.isnan(max_val) and name in object_meteor.__dict__ and ("norm" in flags or "invgamma" in flags):
                     max_val = object_meteor.__dict__[name]
@@ -997,7 +999,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                     if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
                         max_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
                     else:
-                        max_val = object_meteor.__dict__[name] + object_meteor.__dict__[name]/10/2
+                        max_val = object_meteor.__dict__[name] + 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
                 
                 #### rest of variables ####
                 if np.isnan(min_val) and ("norm" in flags or "invgamma" in flags):
@@ -1912,16 +1914,48 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name)
             
             if not cml_args.only_plot: 
+
+                # update the log file with the error join out_folder,"log_"+base_name+".txt"
+                log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
+
+                # start a timer to check how long it takes to run dynesty
+                start_time = time.time()
+                # Run dynesty
                 try:
                     main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
                 except Exception as e:
-                    # update the log file with the error join out_folder,"log_"+base_name+".txt"
-                    log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
                     # Open the file in append mode and write the error message
                     with open(log_file_path, "a") as log_file:
-                        log_file.write(f"\nError encountered in dynestsy run: {e}\n")
+                        log_file.write(f"\nError encountered in dynestsy run: {e}")
                     print(f"Error encountered in dynestsy run: {e}")
-                    print("Continuing execution with remaining tasks...")
+                    # now try and plot the dynesty file results
+                    try:
+                        dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+                        plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name)
+                    except Exception as e:
+                        with open(log_file_path, "a") as log_file:
+                            log_file.write(f"Error encountered in dynestsy plot: {e}")
+                        print(f"Error encountered in dynestsy plot: {e}")
+                        
+                    # take only the name of the log file and the path
+                    path_log_file, log_file_name = os.path.split(log_file_path)
+                    # chenge the name log_file_name of the log_file_path to log_file_path_error adding error_ at the beginning
+                    log_file_path_error = os.path.join(path_log_file, f"error_{log_file_name}")
+                    # rename the log_file_path to log_file_path_error
+                    os.rename(log_file_path, log_file_path_error)
+                    print(f"Log file renamed to {log_file_path_error}")
+                    log_file_path = log_file_path_error
+
+                # Save the time it took to run dynesty
+                end_time = time.time()
+                elapsed_time = datetime.timedelta(seconds=end_time - start_time)
+
+                # Add this time to the log file (use the correct log file path)
+                with open(log_file_path, "a") as log_file:
+                    log_file.write(f"\nTime to run dynesty: {elapsed_time}")
+
+                # Print the time to run dynesty in hours, minutes, and seconds
+                print(f"Time to run dynesty: {elapsed_time}")
 
             elif cml_args.only_plot and os.path.isfile(dynesty_file): 
                 print("Only plotting requested. Skipping dynesty run.")
@@ -2144,13 +2178,6 @@ class find_dynestyfile_and_priors:
         # Check for existing .dynesty in the same folder
         existing_dynesty_list = [f for f in files if f.endswith(".dynesty")]
 
-        if self.output_dir=="":
-            # Output folder is not specified
-            output_folder = root
-        else:
-            # Output folder is specified
-            output_folder = os.path.join(self.output_dir, self._extract_base_name(input_file))
-
         if existing_dynesty_list:
             # There is at least one .dynesty in this folder
             if os.path.exists(possible_dynesty):
@@ -2212,8 +2239,27 @@ class find_dynestyfile_and_priors:
 
         # Check if base_name already exists, and skip if it does
         if base_name in self.observation_objects:
-            print(f"Skipping duplicate entry for {base_name}")
-            return  # Exit function to prevent duplicate insertion
+            # Convert to sets for comparison
+            existing_stations = set(self.observation_objects[base_name].stations)
+            new_stations = set(observation_instance.stations)
+            # Find stations that are unique to each list (not in both)
+            unique_stations = existing_stations.symmetric_difference(new_stations)
+
+            if unique_stations:
+                # Sort to ensure deterministic order (optional)
+                new_stations = sorted(new_stations)
+                base_name = base_name + "_" + "_".join(new_stations)
+                print(f"Updated base name: {base_name}")
+            else:
+                print(f"Skipping duplicate entry for {base_name}")
+                return  # Exit function to prevent duplicate insertion
+            
+        if self.output_dir=="":
+            # Output folder is not specified
+            output_folder = root
+        else:
+            # Output folder is specified
+            output_folder = os.path.join(self.output_dir, base_name)
 
         # Store results
         self.base_names.append(base_name)
@@ -2319,6 +2365,10 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
         # for loop for the fix_var that also give a number from 0 to the length of the fix_var
         for i, var in enumerate(var_names_fix):
             const_nominal.__dict__[var] = fix_var[var]
+
+    # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
+    if real_event.v_init < 30000:
+        const_nominal.dt = 0.01
 
     const_nominal.P_0m = real_event.P_0m
 
@@ -2533,13 +2583,13 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
     # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-6kg/ORI_mode_with_noise5e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_3e-6kg/ORI_mode_with_noise3e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-6kg/ORI_mode_with_noise1e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_8e-7kg/ORI_mode_with_noise8e-7kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-7kg/ORI_mode_with_noise5e-7kg.json",
-        # "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mean/CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mode/CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mean/ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mode/ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mean/CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mode/CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mean/DRA_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mode/DRA_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mean/ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mode/ORI_mode_with_noise.json"
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
+        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mean/ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mode/ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mean/CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mode/CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mean/CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mode/CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mean/CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mode/CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mean/DRA_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mode/DRA_mode_with_noise.json",
+        # "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-6kg/ORI_mode_with_noise5e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_3e-6kg/ORI_mode_with_noise3e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-6kg/ORI_mode_with_noise1e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_8e-7kg/ORI_mode_with_noise8e-7kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-7kg/ORI_mode_with_noise5e-7kg.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"/home/mvovk/Results/Results_Nested/Validation_massMag/",
+        default=r"/home/mvovk/Results/Results_Nested/Validation_CAMO-EMCCD_dt/",
         help="Where to store results. If empty, store next to each .dynesty.")
     # /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,

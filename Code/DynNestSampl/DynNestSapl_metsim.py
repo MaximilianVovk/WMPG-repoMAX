@@ -1966,8 +1966,6 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             else:
                 print("Fail to generate dynesty plots, dynasty file not found:",dynesty_file)
                 print("If you want to run the dynasty file set only_plot to False")
-        
-        print("DONE: Completed processing of all files in the input directory.")    
 
 
 def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file='', dynesty_file='', prior_path='', base_name=''):
@@ -2590,7 +2588,7 @@ if __name__ == "__main__":
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"/home/mvovk/Results/Results_Nested/Validation_CAMO-EMCCD_dt0.01/",
+        default=r"/home/mvovk/Results/Results_Nested/Validation_CAMO-EMCCD_dt01/",
         help="Where to store results. If empty, store next to each .dynesty.")
     # /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
@@ -2617,4 +2615,6 @@ if __name__ == "__main__":
     cml_args = arg_parser.parse_args()
 
     setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.resume, cml_args.use_CAMO_data, cml_args.only_plot, cml_args.cores)
+
+    print("DONE: Completed processing of all files in the input directory.")    
     

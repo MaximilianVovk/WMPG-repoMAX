@@ -331,7 +331,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
         # plot lag_arr vs leading_frag_time_arr withouth nan values
         lag_no_noise = (obs_data.leading_frag_length_arr-obs_data.leading_frag_length_arr[index])\
-              - ((obs_data.velocities[0])*(obs_data.time_arr-obs_data.time_arr[index]))
+              - ((obs_data.v_init)*(obs_data.time_arr-obs_data.time_arr[index]))
         lag_no_noise -= lag_no_noise[index]
         # plot lag_arr vs leading_frag_time_arr
         ax3.plot(obs_data.time_arr-obs_data.time_arr[index], \
@@ -1637,17 +1637,17 @@ class observation_data:
             time_visible = self.time_arr[indices_visible]
             # the rest of the arrays are the same length as time_arr
             lum_visible = lum_obs_data[indices_visible]
-            ht_visible   = self.brightest_height_arr[indices_visible]
-            len_visible  = self.brightest_length_arr[indices_visible]
+            ht_visible   = self.leading_frag_height_arr[indices_visible]
+            len_visible  = self.leading_frag_length_arr[indices_visible]
             # mag_visible  = self.abs_magnitude[indices_visible]
-            # vel_visible  = self.leading_frag_vel_arr[indices_visible]
+            vel_visible  = self.leading_frag_vel_arr[indices_visible]
 
             # Resample the time to the system FPS
             lum_interpol = scipy.interpolate.CubicSpline(time_visible, lum_visible)
             ht_interpol  = scipy.interpolate.CubicSpline(time_visible, ht_visible)
             len_interpol = scipy.interpolate.CubicSpline(time_visible, len_visible)
             # mag_interpol = scipy.interpolate.CubicSpline(time_visible, mag_visible)
-            # vel_interpol = scipy.interpolate.CubicSpline(time_visible, vel_visible)
+            vel_interpol = scipy.interpolate.CubicSpline(time_visible, vel_visible)
 
             fps_lum = 32
             if use_CAMO_data:
@@ -1684,86 +1684,26 @@ class observation_data:
             self.height_lag = ht_interpol(time_sampled_lag)
             self.time_lag = time_sampled_lag - time_sampled_lag[0]
 
-            # Create new length and velocity arrays at FPS frequency and add noise
-            self.length = len_interpol(time_sampled_lag) 
-            self.length = self.length - self.length[0]
-            self.length = self.length + np.random.normal(loc=0, scale=self.noise_lag, size=len(time_sampled_lag))
-
-            # # Find the index where time_arr is closest to self.time_arr[np.min(indices_visible)] + time_to_track
-            closest_index_vel = np.argmin(np.abs(self.brightest_height_arr - self.height_lag[0]))
-            
-            # find the velcity at the beginning of the smallest index in observed_index
-            v_first_frame = self.leading_frag_vel_arr[closest_index_vel]
-            # make an empty list for the velocities with zeros for the length of the time_sampled_lag
-            velocities_noise = np.zeros(len(time_sampled_lag))
-            # for each of the unique stations in the stations_lag divided by the time_lag of the station
-            for station in np.unique(self.stations_lag):
-                # find the indices of the station in the stations_lag
-                station_indices = np.where(self.stations_lag == station)
-                # make the difference between the length of the station_indices
-                diff_length = np.diff(self.length[station_indices])
-                # make the difference between the time of the station_indices
-                diff_time = np.diff(self.time_lag[station_indices])
-                # calculate the velocity of the station
-                velocity = np.divide(diff_length,diff_time)
-                # put the first equal to v_first_frame and push the rest of the values
-                velocity = np.insert(velocity,0,v_first_frame)
-                # put in the index of the station_indices the velocities_noise
-                velocities_noise[station_indices] = velocity
-            # concatenate the velocities
-            self.velocities = velocities_noise
-
-            optimized_v_first_frame = v_first_frame
-
-            optimized_v_first_frame = self.find_optimal_v_first_frame(v_first_frame)
-
-            # Now use the optimized velocity for computing lag
-            self.lag = self.length - (optimized_v_first_frame * self.time_lag)
-
-            self._save_json_data()
-
-
-    def find_optimal_v_first_frame(self, v_first_frame_initial=60000, bounds=(10000, 72000)):
-        """
-        Optimizes v_first_frame to minimize the difference between observed lag and simulated lag.
-
-        Parameters:
-        v_first_frame_initial (float): Initial guess for v_first_frame.
-        bounds (tuple): Lower and upper bounds for v_first_frame.
-
-        Returns:
-        float: Optimized v_first_frame.
-        """
-
-        def objective(v_first_frame):
-            """Objective function to minimize the difference in lag."""
-            # Compute the lag based on v_first_frame
-            computed_lag = self.length - (v_first_frame * self.time_lag)
-
             # Find the index closest to the first height without NaNs
             index = np.argmin(np.abs(self.leading_frag_height_arr[~np.isnan(self.leading_frag_height_arr)]
                                       - self.height_lag[0]))
 
             # Compute the theoretical lag (without noise)
             lag_no_noise = (self.leading_frag_length_arr - self.leading_frag_length_arr[index]) - \
-                           (self.velocities[0] * (self.time_arr - self.time_arr[index]))
+                           (self.v_init * (self.time_arr - self.time_arr[index]))
             lag_no_noise -= lag_no_noise[index]
 
             # Interpolate to align with observed height_lag
-            no_noise_lag = np.interp(self.height_lag,
-                                     np.flip(self.leading_frag_height_arr),
-                                     np.flip(lag_no_noise))
+            self.lag = np.interp(self.height_lag, np.flip(self.leading_frag_height_arr), np.flip(lag_no_noise)) + np.random.normal(loc=0, scale=self.noise_lag, size=len(time_sampled_lag))
 
-            # Compute the squared error between computed and theoretical lag
-            diff_lag = no_noise_lag - computed_lag
-            return np.sum(diff_lag**2)  # Sum of squared differences
+            self.length = len_interpol(time_sampled_lag) 
+            self.length = self.length - self.length[0]
+            self.length = self.length + np.random.normal(loc=0, scale=self.noise_lag, size=len(time_sampled_lag))
 
-        # Use minimize (which supports an initial guess)
-        result = minimize(objective, x0=[v_first_frame_initial], bounds=[bounds], method='L-BFGS-B')
-
-        print(f"Optimized first frame velocity for lag : {result.x[0]:.2f}")
-        return result.x[0]
-
+            # velocity noise
+            self.velocities = vel_interpol(time_sampled_lag) + np.random.normal(loc=0, scale=self.noise_vel, size=len(time_sampled_lag))
+            
+            self._save_json_data()
 
 
     def mimic_fps_camera(self, time_visible, time_to_track, fps, station1, station2):
@@ -1773,6 +1713,9 @@ class observation_data:
 
         # Simulate sampling of the data from a second camera, with a random phase shift
         time_sampled_cam2 = time_sampled_cam1 + np.random.uniform(-1.0/fps, 1.0/fps)
+
+        # Ensure second camera does not start before time_visible[0]
+        time_sampled_cam2 = time_sampled_cam2[time_sampled_cam2 >= np.min(time_visible)]
 
         # The second camera will only capture 50 - 100% of the data, simulate this
         cam2_portion = np.random.uniform(0.5, 1.0)
@@ -2375,9 +2318,9 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
 
     const_nominal.lum_eff_type = 5
 
-    # # Minimum height [m]
-    # const_nominal.h_kill = 60000
-
+    # Minimum height [m]
+    const_nominal.h_kill = np.min([real_event.height_lum[-1],real_event.height_lag[-1]])-1000
+    
     # # Initial meteoroid height [m]
     # const_nominal.h_init = 180000
 
@@ -2616,5 +2559,4 @@ if __name__ == "__main__":
 
     setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.resume, cml_args.use_CAMO_data, cml_args.only_plot, cml_args.cores)
 
-    print("DONE: Completed processing of all files in the input directory.")    
-    
+    print("\nDONE: Completed processing of all files in the input directory.\n")    

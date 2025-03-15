@@ -5,10 +5,10 @@ Meteor: CAP_mean
   Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\CAP_mean
   Bounds:
     v_init: [500, 25126.75] flags=['norm']
-    m_init: [9.73809375e-06, 1.076315625e-05] flags=[]
+    m_init: [2.50624999999999e-07, 2.0250625e-05] flags=[]
     rho: [1.0, 3.6020599913279625] flags=['log']
     sigma: [1e-09, 5.0000000000000004e-08] flags=[]
-    erosion_height_start: [94241.14906658497, 101999.4676983185] flags=[]
+    erosion_height_start: [94447.25303347925, 102652.88779710802] flags=[]
     erosion_coeff: [-12.0, -6.0] flags=['log']
     erosion_mass_index: [1, 3] flags=[]
     erosion_mass_min: [-11.301029995663981, -9.0] flags=['log']

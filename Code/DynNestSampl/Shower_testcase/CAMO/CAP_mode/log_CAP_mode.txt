@@ -5,10 +5,10 @@ Meteor: CAP_mode
   Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\CAMO\CAP_mode
   Bounds:
     v_init: [500, 25355.300000000003] flags=['norm']
-    m_init: [3.4838281250000003e-06, 3.8505468750000005e-06] flags=[]
+    m_init: [2.6671875000000005e-06, 4.6671875e-06] flags=[]
     rho: [1.0, 3.6020599913279625] flags=['log']
     sigma: [1e-09, 5.0000000000000004e-08] flags=[]
-    erosion_height_start: [93440.44180374997, 100501.11487786294] flags=[]
+    erosion_height_start: [93471.4539929168, 101109.17277112568] flags=[]
     erosion_coeff: [-12.0, -6.0] flags=['log']
     erosion_mass_index: [1, 3] flags=[]
     erosion_mass_min: [-11.301029995663981, -9.0] flags=['log']

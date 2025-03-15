@@ -1966,7 +1966,8 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             else:
                 print("Fail to generate dynesty plots, dynasty file not found:",dynesty_file)
                 print("If you want to run the dynasty file set only_plot to False")
-
+        
+        print("DONE: Completed processing of all files in the input directory.")    
 
 
 def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file='', dynesty_file='', prior_path='', base_name=''):
@@ -2583,13 +2584,13 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
     # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
-    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
         default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mean/ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mode/ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mean/ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mean/ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mean/CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mode/CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mean/CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mode/CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mean/DRA_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mode/DRA_mode_with_noise.json",
         # "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-6kg/ORI_mode_with_noise5e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_3e-6kg/ORI_mode_with_noise3e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-6kg/ORI_mode_with_noise1e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_8e-7kg/ORI_mode_with_noise8e-7kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-7kg/ORI_mode_with_noise5e-7kg.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"/home/mvovk/Results/Results_Nested/Validation_CAMO-EMCCD_dt/",
+        default=r"/home/mvovk/Results/Results_Nested/Validation_CAMO-EMCCD_dt0.01/",
         help="Where to store results. If empty, store next to each .dynesty.")
     # /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,

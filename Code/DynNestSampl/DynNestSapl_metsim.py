@@ -122,8 +122,16 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                  color=station_colors[station], label=station)
     # chek if np.unique(obs_data.stations_lag) and np.unique(obs_data.stations_lum) are the same
     if not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
+        # take the one that are not in the other in lag
+        stations_lag = np.setdiff1d(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum))
+        # Suppose stations_lag is your array of station IDs you care about
+        mask = np.isin(obs_data.stations_lag, stations_lag)
+        # Filter heights for only those stations
+        filtered_heights = obs_data.height_lag[mask]
+        # Get the maximum of that subset
+        max_height_lag = filtered_heights.max()
         # print a horizonal along the x axis at the height_lag[0] darkgray
-        ax0.axhline(y=obs_data.height_lag[0]/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(np.unique(obs_data.stations_lag))}", zorder=2)
+        ax0.axhline(y=max_height_lag/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(stations_lag)}", zorder=2)
 
     ax0.set_xlabel('Absolute Magnitudes')
     # flip the x-axis
@@ -173,7 +181,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # chek if np.unique(obs_data.stations_lag) and np.unique(obs_data.stations_lum) are the same
     if not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
         # print a horizonal along the x axis at the height_lag[0] darkgray
-        ax4.axhline(y=obs_data.height_lag[0]/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(np.unique(obs_data.stations_lag))}", zorder=2)
+        ax4.axhline(y=max_height_lag/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(stations_lag)}", zorder=2)
     ax4.set_xlabel('Luminosity [J/s]')
     # ax4.tick_params(axis='x', rotation=45)
     ax4.set_ylabel('Height (km)')
@@ -1200,6 +1208,25 @@ class observation_data:
             for key in obs_dict_CAMO.keys():
                 combined_obs_CAMO[key] = combined_obs_CAMO[key][sorted_indices]
 
+            if flag_there_is_EMCCD_data:
+                
+                # add also the emccd data
+                for key in obs_dict_EMCCD.keys():
+                    combined_obs_EMCCD[key] = np.concatenate([obs[key] for obs in obs_data_EMCCD])
+
+                sorted_indices = np.argsort(combined_obs_EMCCD['time'])
+                for key in obs_dict_EMCCD.keys():
+                    combined_obs_EMCCD[key] = combined_obs_EMCCD[key][sorted_indices]
+                
+                # add that to the CAMO data
+                for key in obs_dict_EMCCD.keys():
+                    combined_obs_CAMO[key] = np.concatenate([combined_obs_CAMO[key],combined_obs_EMCCD[key]])
+                
+                # sort the indices
+                sorted_indices = np.argsort(combined_obs_CAMO['time'])
+                for key in obs_dict_CAMO.keys():
+                    combined_obs_CAMO[key] = combined_obs_CAMO[key][sorted_indices]
+
             # if there is, use the CAMO data for position and velocity and the ignore_list == 0
             self.velocities = combined_obs_CAMO['velocities'][combined_obs_CAMO['ignore_list'] == 0]
             self.lag = combined_obs_CAMO['lag'][combined_obs_CAMO['ignore_list'] == 0]
@@ -1208,6 +1235,11 @@ class observation_data:
             self.time_lag = combined_obs_CAMO['time_lag'][combined_obs_CAMO['ignore_list'] == 0]
             self.stations_lag = combined_obs_CAMO['flag_station'][combined_obs_CAMO['ignore_list'] == 0]
             self.fps = 80
+
+            if flag_there_is_EMCCD_data:
+                
+                self.fps = 32
+                
             
             if flag_there_is_EMCCD_data==False:
 
@@ -2319,7 +2351,10 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     const_nominal.lum_eff_type = 5
 
     # Minimum height [m]
-    const_nominal.h_kill = np.min([real_event.height_lum[-1],real_event.height_lag[-1]])-1000
+    const_nominal.h_kill = np.min([real_event.height_lum[-1],real_event.height_lag[-1]])-5000
+    # check if the h_kill is smaller than 0
+    if const_nominal.h_kill < 0:
+        const_nominal.h_kill = 1
     
     # # Initial meteoroid height [m]
     # const_nominal.h_init = 180000

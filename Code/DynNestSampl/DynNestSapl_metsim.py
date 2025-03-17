@@ -1208,24 +1208,24 @@ class observation_data:
             for key in obs_dict_CAMO.keys():
                 combined_obs_CAMO[key] = combined_obs_CAMO[key][sorted_indices]
 
-            if flag_there_is_EMCCD_data:
+            # if flag_there_is_EMCCD_data:
                 
-                # add also the emccd data
-                for key in obs_dict_EMCCD.keys():
-                    combined_obs_EMCCD[key] = np.concatenate([obs[key] for obs in obs_data_EMCCD])
+            #     # add also the emccd data
+            #     for key in obs_dict_EMCCD.keys():
+            #         combined_obs_EMCCD[key] = np.concatenate([obs[key] for obs in obs_data_EMCCD])
 
-                sorted_indices = np.argsort(combined_obs_EMCCD['time'])
-                for key in obs_dict_EMCCD.keys():
-                    combined_obs_EMCCD[key] = combined_obs_EMCCD[key][sorted_indices]
+            #     sorted_indices = np.argsort(combined_obs_EMCCD['time'])
+            #     for key in obs_dict_EMCCD.keys():
+            #         combined_obs_EMCCD[key] = combined_obs_EMCCD[key][sorted_indices]
                 
-                # add that to the CAMO data
-                for key in obs_dict_EMCCD.keys():
-                    combined_obs_CAMO[key] = np.concatenate([combined_obs_CAMO[key],combined_obs_EMCCD[key]])
+            #     # add that to the CAMO data
+            #     for key in obs_dict_EMCCD.keys():
+            #         combined_obs_CAMO[key] = np.concatenate([combined_obs_CAMO[key],combined_obs_EMCCD[key]])
                 
-                # sort the indices
-                sorted_indices = np.argsort(combined_obs_CAMO['time'])
-                for key in obs_dict_CAMO.keys():
-                    combined_obs_CAMO[key] = combined_obs_CAMO[key][sorted_indices]
+            #     # sort the indices
+            #     sorted_indices = np.argsort(combined_obs_CAMO['time'])
+            #     for key in obs_dict_CAMO.keys():
+            #         combined_obs_CAMO[key] = combined_obs_CAMO[key][sorted_indices]
 
             # if there is, use the CAMO data for position and velocity and the ignore_list == 0
             self.velocities = combined_obs_CAMO['velocities'][combined_obs_CAMO['ignore_list'] == 0]
@@ -1236,9 +1236,9 @@ class observation_data:
             self.stations_lag = combined_obs_CAMO['flag_station'][combined_obs_CAMO['ignore_list'] == 0]
             self.fps = 80
 
-            if flag_there_is_EMCCD_data:
+            # if flag_there_is_EMCCD_data:
                 
-                self.fps = 32
+            #     self.fps = 32
                 
             
             if flag_there_is_EMCCD_data==False:

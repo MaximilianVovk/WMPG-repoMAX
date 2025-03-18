@@ -372,8 +372,8 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         # for each station in obs_data_plot
         for station in np.unique(obs_data.stations_lum):
             # plot the height vs. absolute_magnitudes
-            ax1.plot(sim_diff_mag[np.where(obs_data.stations_lag == station)], \
-                    obs_data.height_lum[np.where(obs_data.stations_lag == station)]/1000, '.', \
+            ax1.plot(sim_diff_mag[np.where(obs_data.stations_lum == station)], \
+                    obs_data.height_lum[np.where(obs_data.stations_lum == station)]/1000, '.', \
                     color=station_colors[station], label=station)
 
         ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000, color='black', label='Best guess') 
@@ -388,8 +388,8 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         # for each station in obs_data_plot
         for station in np.unique(obs_data.stations_lum):
             # plot the height vs. absolute_magnitudes
-            ax5.plot(sim_diff_lum[np.where(obs_data.stations_lag == station)], \
-                    obs_data.height_lum[np.where(obs_data.stations_lag == station)]/1000, '.', \
+            ax5.plot(sim_diff_lum[np.where(obs_data.stations_lum == station)], \
+                    obs_data.height_lum[np.where(obs_data.stations_lum == station)]/1000, '.', \
                     color=station_colors[station], label=station)
 
         # find the obs_data.leading_frag_height_arr index is close to obs_data.height_lum[0] wihouth nan

@@ -90,12 +90,14 @@ def plot_photometry(input_folder):
 
     plt.xlabel("Time (HH:MM:SS)")
     plt.ylabel(to_plot)
-    plt.title(to_plot+" vs Time")
+    # plt.title(to_plot+" vs Time")
 
     # Format x-axis to show HH:MM:SS properly
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
     plt.gca().xaxis.set_major_locator(mdates.AutoDateLocator())  # Auto-adjust ticks for readability
     plt.xticks(rotation=45)
+    # make x axis from 00:00:00 to 12:00:00
+    plt.xlim(datetime.datetime.strptime('00:00:00', '%H:%M:%S'), datetime.datetime.strptime('10:00:00', '%H:%M:%S'))
 
     plt.grid(True, linestyle='--', alpha=0.6)
 
@@ -110,5 +112,5 @@ def plot_photometry(input_folder):
     plt.savefig(os.path.join(input_folder, "photometry_"+to_plot+"_plot.png"), dpi=300)
 
 # put input folder here with phot folder
-input_folder = "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/lum_noise/plots_ORI"  # Change this to your actual input folder
+input_folder = r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation\noise\lum_noise_line\CAP"  # Change this to your actual input folder
 plot_photometry(input_folder)

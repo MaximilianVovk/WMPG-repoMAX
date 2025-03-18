@@ -511,16 +511,20 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Mapping of original variable names to LaTeX-style labels
     variable_map = {
-        'v_init': r"$v_0$ [m/s]",
+        'v_init': r"$v_0$ [km/s]",
         'zenith_angle': r"$z_c$ [rad]",
         'm_init': r"$m_0$ [kg]",
         'rho': r"$\rho$ [kg/m$^3$]",
-        'sigma': r"$\sigma$ [kg/J]",
-        'erosion_height_start': r"$h_e$ [m]",
-        'erosion_coeff': r"$\eta$ [kg/J]",
+        'sigma': r"$\sigma$ [kg/MJ]",
+        'erosion_height_start': r"$h_e$ [km]",
+        'erosion_coeff': r"$\eta$ [kg/MJ]",
         'erosion_mass_index': r"$s$",
         'erosion_mass_min': r"$m_{l}$ [kg]",
         'erosion_mass_max': r"$m_{u}$ [kg]",
+        'erosion_height_change': r"$h_{e2}$ [km]",
+        'erosion_coeff_change': r"$\eta_{2}$ [kg/MJ]",
+        'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
+        'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
         'noise_lag': r"$\varepsilon_{lag}$ [m]",
         'noise_lum': r"$\varepsilon_{lum}$ [J/s]"
     }
@@ -544,6 +548,12 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             samples_equal[:, i] = 10**(samples_equal[:, i])
             best_guess[i] = 10**(best_guess[i])
             labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
+        # check variable is 'v_init' or 'erosion_height_start' divide by 1000
+        if variable == 'v_init' or variable == 'erosion_height_start' or variable == 'erosion_height_change':
+            samples_equal[:, i] = samples_equal[:, i] / 1000
+        # check variable is 'erosion_coeff' or 'sigma' divide by 1e6
+        if variable == 'erosion_coeff' or variable == 'sigma' or variable == 'erosion_coeff_change' or variable == 'erosion_sigma_change':
+            samples_equal[:, i] = samples_equal[:, i] * 1e6
 
     print('Best fit:')
     # write the best fit variable names and then the best guess values
@@ -2561,7 +2571,7 @@ if __name__ == "__main__":
     # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
     # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mode/EMCCD_ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mean/EMCCD_ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mode/CAMO_ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mean/CAMO_ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mean/EMCCD_CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mode/EMCCD_CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mean/CAMO_CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mode/CAMO_CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mean/EMCCD_DRA_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mode/EMCCD_DRA_mode_with_noise.json",
+        default=r"N:\mvovk\2ndPaper\Results\ORI-EMCCD-CAMO\ORI_CAMO-dynesty\20191023_091225_CAMO",
         # "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-6kg/ORI_mode_with_noise5e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_3e-6kg/ORI_mode_with_noise3e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-6kg/ORI_mode_with_noise1e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_8e-7kg/ORI_mode_with_noise8e-7kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-7kg/ORI_mode_with_noise5e-7kg.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/

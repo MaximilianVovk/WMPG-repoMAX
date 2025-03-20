@@ -121,17 +121,22 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                  obs_data.height_lum[np.where(obs_data.stations_lum == station)]/1000, 'x--', \
                  color=station_colors[station], label=station)
     # chek if np.unique(obs_data.stations_lag) and np.unique(obs_data.stations_lum) are the same
+    # print('testing unique stations plot',np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum))
     if not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
         # take the one that are not in the other in lag
         stations_lag = np.setdiff1d(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum))
-        # Suppose stations_lag is your array of station IDs you care about
-        mask = np.isin(obs_data.stations_lag, stations_lag)
-        # Filter heights for only those stations
-        filtered_heights = obs_data.height_lag[mask]
-        # Get the maximum of that subset
-        max_height_lag = filtered_heights.max()
-        # print a horizonal along the x axis at the height_lag[0] darkgray
-        ax0.axhline(y=max_height_lag/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(stations_lag)}", zorder=2)
+        if len(stations_lag) != 0:
+            # take the one that are shared between lag and lum
+            # stations_lag = np.intersect1d(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum))
+            # print('stations_lag',stations_lag)
+            # Suppose stations_lag is your array of station IDs you care about
+            mask = np.isin(obs_data.stations_lag, stations_lag)
+            # Filter heights for only those stations
+            filtered_heights = obs_data.height_lag[mask]
+            # Get the maximum of that subset
+            max_height_lag = filtered_heights.max()
+            # print a horizonal along the x axis at the height_lag[0] darkgray
+            ax0.axhline(y=max_height_lag/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(stations_lag)}", zorder=2)
 
     ax0.set_xlabel('Absolute Magnitudes')
     # flip the x-axis
@@ -180,8 +185,9 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                  color=station_colors[station], label=station)
     # chek if np.unique(obs_data.stations_lag) and np.unique(obs_data.stations_lum) are the same
     if not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
-        # print a horizonal along the x axis at the height_lag[0] darkgray
-        ax4.axhline(y=max_height_lag/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(stations_lag)}", zorder=2)
+        if len(stations_lag) != 0:
+            # print a horizonal along the x axis at the height_lag[0] darkgray
+            ax4.axhline(y=max_height_lag/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(stations_lag)}", zorder=2)
     ax4.set_xlabel('Luminosity [J/s]')
     # ax4.tick_params(axis='x', rotation=45)
     ax4.set_ylabel('Height (km)')
@@ -1089,7 +1095,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
 ###############################################################################
 class observation_data:
     ''' class to load the observation data and create an object '''
-    def __init__(self, obs_file_path,use_CAMO_data=False, lag_noise_prior=40, lum_noise_prior=2.5):
+    def __init__(self, obs_file_path,use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5):
         self.noise_lag = lag_noise_prior
         self.noise_lum = lum_noise_prior
         self.file_name = obs_file_path
@@ -1100,9 +1106,9 @@ class observation_data:
 
         # check if the file is a json file
         if obs_file_path.endswith('.pickle'):
-            self.load_pickle_data(use_CAMO_data)
+            self.load_pickle_data(use_all_cameras)
         elif obs_file_path.endswith('.json'):
-            self.load_json_data(use_CAMO_data)
+            self.load_json_data(use_all_cameras)
         else:
             # file type not supported
             raise ValueError("File type not supported, only .json and .pickle files are supported")
@@ -1121,7 +1127,9 @@ class observation_data:
         const = Constants()
         # check if it is not an array
         if not isinstance(self.file_name, list):
-            self.file_name = [self.file_name]        
+            self.file_name = [self.file_name]     
+
+        obs_dict = []  # accumulates everything from all files   
         # Loop over each pickle file
         for current_file_name in self.file_name:
             traj = loadPickle(*os.path.split(current_file_name))
@@ -1134,13 +1142,14 @@ class observation_data:
             # self.v_init=traj.orbit.v_init+100
             # self.stations = []
 
-            obs_dict = []
+            obs_data_dict = []
             for obs in traj.observations:
+                # print('Station:', obs.station_id)
 
                 # check if among obs.station_id there is one of the following 01T or 02T
                 if "1T" in obs.station_id or "2T" in obs.station_id:
                     P_0m = 840
-                elif "1K" in obs.station_id or "2K":
+                elif "1K" in obs.station_id or "2K" in obs.station_id:
                     P_0m = 840
                 elif "1G" in obs.station_id or "2G" in obs.station_id or "1F" in obs.station_id or "2F" in obs.station_id:
                     P_0m = 935
@@ -1151,7 +1160,7 @@ class observation_data:
                 # check if obs.absolute_magnitudes is a 'NoneType' object
                 if obs.absolute_magnitudes is None:
                     # create an array with the same length as obs.model_ht and fill it with 15
-                    obs.absolute_magnitudes = np.array([15]*len(obs.model_ht))
+                    obs.absolute_magnitudes = np.array([15.5]*len(obs.model_ht))
 
                 obs_data_camera = {
                     # make an array that is long as len(obs.model_ht) and has only obs.station_id
@@ -1170,7 +1179,9 @@ class observation_data:
                     'apparent_magnitudes': np.array(meteor_abs_magnitude_to_apparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
                     }
                 obs_data_camera['velocities'][0] = obs.v_init
-                obs_dict.append(obs_data_camera)
+                obs_data_dict.append(obs_data_camera)
+            
+                obs_dict.extend(obs_data_dict)  # Add this file's data to the big list
             
         # ceck if obs_dict is empty
         if len(obs_dict) == 0:
@@ -1187,6 +1198,7 @@ class observation_data:
 
         # take all the unique values of the flag_station
         unique_stations = np.unique(combined_obs_dict['flag_station'])
+        # print('Unique stations:', unique_stations)
 
         # check if among the unique_stations there is one of the following 01T or 02T
         if use_all_cameras==False:
@@ -1229,6 +1241,10 @@ class observation_data:
             lum_files = self.file_name
             lag_files = self.file_name
 
+            # if it is a list of files consider a warning
+            if len(lag_files) > 1:
+                print('WARNING: Multiple files detected. Using all cameras for lag, the recorded data might have different starting time.')
+
             if any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
                 self.P_0m = 840
                 self.fps = 80
@@ -1252,6 +1268,9 @@ class observation_data:
         # print(lum_files)
         # print(lag_files)
         
+        self.lum_files = lum_files
+        self.lag_files = lag_files
+
         # put all the lag_data in the object
         self.velocities = lag_data['velocities']
         self.lag = lag_data['lag']
@@ -1272,6 +1291,16 @@ class observation_data:
         self.time_lag = self.time_lag-self.time_lag[0]
         self.time_lum = self.time_lum-self.time_lum[0]
 
+        v_init_list = []
+        for curr_lag_file in lag_files:
+            # take the v_init from the trajectory file
+            traj=loadPickle(*os.path.split(curr_lag_file))
+            # get the trajectory
+            # v_avg = traj.v_avg
+            v_init_list.append(traj.orbit.v_init+100)
+        # do the mean of the v_init_list
+        self.v_init = np.mean(v_init_list)
+
         # usually noise_lum = 2.5
         if np.isnan(self.noise_lum):
             self.noise_lum = self.define_SNR_lum_noise()
@@ -1283,16 +1312,6 @@ class observation_data:
             self.noise_lag = self.define_polyn_fit_lag_noise()
             print('Assumed Noise in lag based on polynomial fit:',self.noise_lag)
         self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
-
-        v_init_list = []
-        for curr_lag_file in lag_files:
-            # take the v_init from the trajectory file
-            traj=loadPickle(*os.path.split(curr_lag_file))
-            # get the trajectory
-            # v_avg = traj.v_avg
-            v_init_list.append(traj.orbit.v_init+100)
-        # do the mean of the v_init_list
-        self.v_init = np.mean(v_init_list)
 
         zenith_angle_list = []
         m_init_list = []
@@ -1431,275 +1450,6 @@ class observation_data:
 
         return combined_lum_dict, lum_files
         
-
-    def load_pickle_data_old(self,use_CAMO_data):
-        print('Loading pickle file:',self.file_name)
-        # load the pickle file
-        traj=loadPickle(*os.path.split(self.file_name))
-        # get the trajectory
-        # v_avg = traj.v_avg
-        # check if orbit exist
-        if not hasattr(traj, 'orbit'):
-            print("Trajectory data not found in the pickle file")
-            # and return
-            return
-        
-        self.v_init=traj.orbit.v_init+100
-        self.stations = []
-        obs_data_CAMO = []
-        obs_data_EMCCD = []
-        peak_abs_mag_CAMO = None
-        flag_there_is_CAMO_data = False
-        flag_there_is_EMCCD_data = False
-        for obs in traj.observations:
-            if (obs.station_id == "1T" or obs.station_id == "2T" or obs.station_id == "01T'-Mirfit" or obs.station_id == "02T'-Mirfit"):
-                if peak_abs_mag_CAMO is None:
-                    peak_abs_mag_CAMO = np.min(obs.absolute_magnitudes)
-                elif peak_abs_mag_CAMO > np.min(obs.absolute_magnitudes):
-                    peak_abs_mag_CAMO = np.min(obs.absolute_magnitudes)
-
-            # check if among obs.station_id there is one of the following 01T or 02T
-            if ("1T" in obs.station_id or "2T" in obs.station_id or "01T'-Mirfit" in obs.station_id or "02T'-Mirfit" in obs.station_id) and use_CAMO_data==True:
-                P_0m = 840
-                obs_dict_CAMO = {
-                    # make an array that is long as len(obs.model_ht) and has only obs.station_id
-                    'flag_station': np.array([obs.station_id]*len(obs.model_ht)),
-                    'height': np.array(obs.model_ht), # m
-                    'absolute_magnitudes': np.array(obs.absolute_magnitudes),
-                    'luminosity': np.array(P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))), # const.P_0m)
-                    'time': np.array(obs.time_data), # s
-                    'ignore_list': np.array(obs.ignore_list),
-                    'velocities': np.array(obs.velocities), # m/s
-                    'lag': np.array(obs.lag), # m
-                    'length': np.array(obs.state_vect_dist), # m
-                    'time_lag': np.array(obs.time_data), # s
-                    'height_lag': np.array(obs.model_ht), # m
-                    'apparent_magnitudes': np.array(meteor_abs_magnitude_to_apparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
-                    }
-                obs_dict_CAMO['velocities'][0] = obs.v_init
-                self.stations.append(obs.station_id)
-                obs_data_CAMO.append(obs_dict_CAMO)
-                flag_there_is_CAMO_data = True
-            elif "1G" in obs.station_id or "2G" in obs.station_id or "1F" in obs.station_id or "2F" in obs.station_id:
-                P_0m = 935
-                obs_dict_EMCCD = {
-                    # make an array that is long as len(obs.model_ht) and has only obs.station_id
-                    'flag_station': np.array([obs.station_id]*len(obs.model_ht)),
-                    'height': np.array(obs.model_ht), # m
-                    'absolute_magnitudes': np.array(obs.absolute_magnitudes),
-                    'luminosity': np.array(P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))), # const.P_0m)
-                    'time': np.array(obs.time_data), # s
-                    'ignore_list': np.array(obs.ignore_list),
-                    'velocities': np.array(obs.velocities), # m/s
-                    'lag': np.array(obs.lag), # m
-                    'length': np.array(obs.state_vect_dist), # m
-                    'time_lag': np.array(obs.time_data), # s
-                    'height_lag': np.array(obs.model_ht), # m
-                    'apparent_magnitudes': np.array(meteor_abs_magnitude_to_apparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
-                    }
-                obs_dict_EMCCD['velocities'][0] = obs.v_init
-                self.stations.append(obs.station_id)
-                obs_data_EMCCD.append(obs_dict_EMCCD)
-                flag_there_is_EMCCD_data = True
-            else:
-                print(obs.station_id,'Station data not considered')
-                continue
-        
-        print('Stations:',self.stations)
-        # check if self.stations is empty
-        if len(self.stations) == 0:
-            print('No station data found')
-            return
-        
-        # Combine all observations
-        combined_obs_CAMO = {}
-        combined_obs_EMCCD = {}
-
-        if flag_there_is_EMCCD_data:
-
-            # Combine obs1 and obs2
-            for key in obs_dict_EMCCD.keys():
-                combined_obs_EMCCD[key] = np.concatenate([obs[key] for obs in obs_data_EMCCD])
-
-            sorted_indices = np.argsort(combined_obs_EMCCD['time'])
-            for key in obs_dict_EMCCD.keys():
-                combined_obs_EMCCD[key] = combined_obs_EMCCD[key][sorted_indices]
-
-            # check if any value is below 8 absolute_magnitudes and print find values below 8 absolute_magnitudes
-            if np.any(combined_obs_EMCCD['absolute_magnitudes'] > 8):
-                print('Found values below 8 absolute magnitudes:', combined_obs_EMCCD['absolute_magnitudes'][combined_obs_EMCCD['absolute_magnitudes'] > 8])
-                # delete any values above 8 absolute_magnitudes and delete the corresponding values in the other arrays
-                combined_obs_EMCCD = {key: combined_obs_EMCCD[key][combined_obs_EMCCD['absolute_magnitudes'] < 8] for key in combined_obs_EMCCD.keys()}
-
-            self.P_0m = 935
-            self.height_lum = combined_obs_EMCCD['height']
-            self.absolute_magnitudes = combined_obs_EMCCD['absolute_magnitudes']
-            self.luminosity = combined_obs_EMCCD['luminosity']
-            self.time_lum = combined_obs_EMCCD['time']
-            self.stations_lum = combined_obs_EMCCD['flag_station']
-            self.apparent_magnitudes = combined_obs_EMCCD['apparent_magnitudes']
-
-        if flag_there_is_CAMO_data and use_CAMO_data:
-
-            # Combine obs1 and obs2
-            for key in obs_dict_CAMO.keys():
-                combined_obs_CAMO[key] = np.concatenate([obs[key] for obs in obs_data_CAMO])
-
-            # sort the indices
-            sorted_indices = np.argsort(combined_obs_CAMO['time'])
-            for key in obs_dict_CAMO.keys():
-                combined_obs_CAMO[key] = combined_obs_CAMO[key][sorted_indices]
-
-            # if flag_there_is_EMCCD_data:
-                
-            #     # add also the emccd data
-            #     for key in obs_dict_EMCCD.keys():
-            #         combined_obs_EMCCD[key] = np.concatenate([obs[key] for obs in obs_data_EMCCD])
-
-            #     sorted_indices = np.argsort(combined_obs_EMCCD['time'])
-            #     for key in obs_dict_EMCCD.keys():
-            #         combined_obs_EMCCD[key] = combined_obs_EMCCD[key][sorted_indices]
-                
-            #     # add that to the CAMO data
-            #     for key in obs_dict_EMCCD.keys():
-            #         combined_obs_CAMO[key] = np.concatenate([combined_obs_CAMO[key],combined_obs_EMCCD[key]])
-                
-            #     # sort the indices
-            #     sorted_indices = np.argsort(combined_obs_CAMO['time'])
-            #     for key in obs_dict_CAMO.keys():
-            #         combined_obs_CAMO[key] = combined_obs_CAMO[key][sorted_indices]
-
-            # if there is, use the CAMO data for position and velocity and the ignore_list == 0
-            self.velocities = combined_obs_CAMO['velocities'][combined_obs_CAMO['ignore_list'] == 0]
-            self.lag = combined_obs_CAMO['lag'][combined_obs_CAMO['ignore_list'] == 0]
-            self.length = combined_obs_CAMO['length'][combined_obs_CAMO['ignore_list'] == 0]
-            self.height_lag = combined_obs_CAMO['height_lag'][combined_obs_CAMO['ignore_list'] == 0]
-            self.time_lag = combined_obs_CAMO['time_lag'][combined_obs_CAMO['ignore_list'] == 0]
-            self.stations_lag = combined_obs_CAMO['flag_station'][combined_obs_CAMO['ignore_list'] == 0]
-            self.fps = 80
-
-            # if flag_there_is_EMCCD_data:
-                
-            #     self.fps = 32
-                
-            
-            if flag_there_is_EMCCD_data==False:
-
-                # check if any value is below 8 absolute_magnitudes and print find values below 8 absolute_magnitudes
-                if np.any(combined_obs_CAMO['absolute_magnitudes'] > 8):
-                    print('Found values below 8 absolute magnitudes:', combined_obs_CAMO['absolute_magnitudes'][combined_obs_CAMO['absolute_magnitudes'] > 8])
-                
-                # delete any values above 8 absolute_magnitudes and delete the corresponding values in the other arrays
-                combined_obs_CAMO = {key: combined_obs_CAMO[key][combined_obs_CAMO['absolute_magnitudes'] < 8] for key in combined_obs_CAMO.keys()}
-
-                # check if any value is below 8 absolute_magnitudes and print find values below 8 absolute_magnitudes
-                if np.any(combined_obs_CAMO['absolute_magnitudes'] > 8):
-                    print('Found values below 8 absolute magnitudes:', combined_obs_CAMO['absolute_magnitudes'][combined_obs_CAMO['absolute_magnitudes'] > 8])
-                    # delete any values above 8 absolute_magnitudes and delete the corresponding values in the other arrays
-                    combined_obs_CAMO = {key: combined_obs_CAMO[key][combined_obs_CAMO['absolute_magnitudes'] < 8] for key in combined_obs_CAMO.keys()}
-
-                # if there is not, use the EMCCD data for position and velocity
-                self.P_0m = 840
-                self.height_lum = combined_obs_CAMO['height']
-                self.absolute_magnitudes = combined_obs_CAMO['absolute_magnitudes']
-                self.luminosity = combined_obs_CAMO['luminosity']
-                self.time_lum = combined_obs_CAMO['time']
-                self.stations_lum = combined_obs_CAMO['flag_station']
-                self.apparent_magnitudes = combined_obs_CAMO['apparent_magnitudes']
-        else:
-            # if there is not, use the EMCCD data for position and velocity
-            self.velocities = combined_obs_EMCCD['velocities'][combined_obs_EMCCD['ignore_list'] == 0]
-            self.lag = combined_obs_EMCCD['lag'][combined_obs_EMCCD['ignore_list'] == 0]
-            self.length = combined_obs_EMCCD['length'][combined_obs_EMCCD['ignore_list'] == 0]
-            self.height_lag = combined_obs_EMCCD['height_lag'][combined_obs_EMCCD['ignore_list'] == 0]
-            self.time_lag = combined_obs_EMCCD['time_lag'][combined_obs_EMCCD['ignore_list'] == 0]
-            self.stations_lag = combined_obs_EMCCD['flag_station'][combined_obs_EMCCD['ignore_list'] == 0]
-            self.fps = 32
-
-        if flag_there_is_EMCCD_data==False and flag_there_is_CAMO_data==False:
-            raise ValueError("No data found for EMCCD and CAMO in the pickle file")
-        if flag_there_is_EMCCD_data==False and flag_there_is_CAMO_data==True and use_CAMO_data==False:
-            raise ValueError("No data found for EMCCD in the pickle file but CAMO data is available (set use_CAMO_data=True)")
-        
-        # for lag measurements start from 0 for length and time
-        self.length = self.length-self.length[0]
-        self.time_lag = self.time_lag-self.time_lag[0]
-
-        # usually noise_lum = 2.5
-        if np.isnan(self.noise_lum):
-            self.noise_lum = self.define_SNR_lum_noise()
-            print('Assumed Noise in luminosity based on SNR:',self.noise_lum)
-        self.noise_mag = 0.1
-        
-        # usually noise_lag = 40 or 5 for CAMO
-        if np.isnan(self.noise_lag):
-            self.noise_lag = self.define_polyn_fit_lag_noise()
-            print('Assumed Noise in lag based on polynomial fit:',self.noise_lag)
-        self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
-
-        # # Ensure there are exactly two unique stations before proceeding
-        # unique_stations = np.unique(self.stations_lum)
-        # if len(unique_stations) == 2:
-        #     self._photometric_adjustment(unique_stations,peak_abs_mag_CAMO)
-
-        dens_fit_ht_beg = 180000
-        dens_fit_ht_end = traj.rend_ele - 5000
-        if dens_fit_ht_end < 14000:
-            dens_fit_ht_end = 14000
-
-        lat_mean = np.mean([traj.rbeg_lat, traj.rend_lat])
-        lon_mean = meanAngle([traj.rbeg_lon, traj.rend_lon])
-        jd_dat=traj.jdt_ref
-
-        # Fit the polynomail describing the density
-        self.dens_co = fitAtmPoly(lat_mean, lon_mean, dens_fit_ht_end, dens_fit_ht_beg, jd_dat)
-
-        const=Constants()
-        self.zenith_angle=zenithAngleAtSimulationBegin(const.h_init, traj.rbeg_ele, traj.orbit.zc, const.r_earth)
-
-        time_mag_arr = []
-        avg_t_diff_max = 0
-        # take ony the stations that are unique in the stations_lum
-        lum_stations = np.unique(self.stations_lum)
-        # Extract time vs. magnitudes from the trajectory pickle file
-        for obs in traj.observations:
-
-            # check if the station_id is not in the lum_stations and continue
-            if obs.station_id not in lum_stations:
-                continue
-
-            # If there are not magnitudes for this site, skip it
-            if obs.absolute_magnitudes is None:
-                continue
-
-            # Compute average time difference
-            avg_t_diff_max = max(avg_t_diff_max, np.median(obs.time_data[1:] - obs.time_data[:-1]))
-
-            for t, mag in zip(obs.time_data[obs.ignore_list == 0], \
-                obs.absolute_magnitudes[obs.ignore_list == 0]):
-
-                if (mag is not None) and (not np.isnan(mag)) and (not np.isinf(mag)):
-                    time_mag_arr.append([t, mag])
-
-
-        print("NOTE: The mass was computing using a constant luminous efficiency 0.7!")
-
-        # Sort array by time
-        time_mag_arr = np.array(sorted(time_mag_arr, key=lambda x: x[0]))
-
-        time_arr, mag_arr = time_mag_arr.T
-
-        # Average out the magnitudes
-        time_arr, mag_arr = mergeClosePoints(time_arr, mag_arr, avg_t_diff_max, method='avg')
-
-        # # Calculate the radiated energy
-        # radiated_energy = calcRadiatedEnergy(np.array(time_arr), np.array(mag_arr), P_0m=self.P_0m)
-
-        # Compute the photometric mass
-        photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=0.7/100, P_0m=self.P_0m)
-
-        self.m_init = photom_mass
-
     def define_polyn_fit_lag_noise(self):
         ''' Define the lag fit noise '''
         # Fit a polynomial to the lag data
@@ -1889,7 +1639,7 @@ class observation_data:
 
 
 
-    def load_json_data(self,use_CAMO_data):
+    def load_json_data(self,use_all_cameras):
 
         '''
         dict_keys(['const', 'frag_main', 'time_arr', 'luminosity_arr', 'luminosity_main_arr', 'luminosity_eroded_arr', 
@@ -2036,7 +1786,7 @@ class observation_data:
             vel_interpol = scipy.interpolate.CubicSpline(time_visible, vel_visible)
 
             fps_lum = 32
-            if use_CAMO_data:
+            if use_all_cameras:
                 self.fps = 80
                 self.stations = ['01G','02G','01T','02T']
                 # self.noise_lag = 5
@@ -2176,7 +1926,7 @@ class observation_data:
 # find dynestyfile and priors
 ###############################################################################
 
-def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_CAMO_data=True, only_plot=True, cores=None):
+def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, only_plot=True, cores=None):
     """
     Create the output folder if it doesn't exist.
     """
@@ -2188,7 +1938,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
     cml_args.input_dir = input_dir
     cml_args.output_dir = output_dir
     cml_args.prior = prior
-    cml_args.use_CAMO_data = use_CAMO_data
+    cml_args.use_all_cameras = use_all_cameras
     cml_args.resume = resume
     cml_args.only_plot = only_plot
     cml_args.cores = cores
@@ -2220,7 +1970,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             prior_file=cml_args.prior,
             resume=cml_args.resume,
             output_dir=cml_args.output_dir,
-            use_CAMO_data=cml_args.use_CAMO_data
+            use_all_cameras=cml_args.use_all_cameras
         )
 
         # check if finder is empty
@@ -2297,7 +2047,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                 print("If you want to run the dynasty file set only_plot to False")
 
 
-def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file='', dynesty_file='', prior_path='', base_name=''):
+def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_files='', dynesty_file='', prior_path='', base_name=''):
 
     print("--------------------------------------------------")
     # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
@@ -2306,7 +2056,7 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
         os.remove(out_folder+os.sep+"log_"+base_name+".txt")
     sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
     print(f"Meteor:", base_name)
-    print("  File name:    ", pickle_file)
+    print("  File name:    ", pickle_files)
     print("  Dynesty file: ", dynesty_file)
     print("  Prior file:   ", prior_path)
     print("  Output folder:", out_folder)
@@ -2338,17 +2088,60 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
         if not os.path.exists(prior_file_output):
             shutil.copy(prior_path, out_folder)
             print("prior file copied to output folder:", prior_file_output)
-        # folder where is stored the pickle_file
-        prior_file_input = os.path.join(os.path.dirname(pickle_file),os.path.basename(prior_path))
-        if not os.path.exists(prior_file_input):
-            shutil.copy(prior_path, os.path.dirname(pickle_file))
-            print("prior file copied to input folder:", prior_file_input)
-    # check if pickle_file is not in the output directory
-    if not os.path.exists(os.path.join(out_folder,os.path.basename(pickle_file))) and os.path.isfile(pickle_file):
-        shutil.copy(pickle_file, out_folder)
-        print("observation file copied to output folder:", os.path.join(out_folder,os.path.basename(pickle_file)))
-    elif not os.path.isfile(pickle_file):
-        print("original observation file not found, not copied:",pickle_file)
+        # # folder where is stored the pickle_file
+        # prior_file_input = os.path.join(os.path.dirname(pickle_file),os.path.basename(prior_path))
+        # if not os.path.exists(prior_file_input):
+        #     shutil.copy(prior_path, os.path.dirname(pickle_file))
+        #     print("prior file copied to input folder:", prior_file_input)
+
+    # Dictionary to track count of each base name
+    base_name_counter = {}
+
+    for pickle_file in pickle_files:
+        
+        # Check that the file actually exists
+        if not os.path.isfile(pickle_file):
+            print("Original observation file not found, not copied:", pickle_file)
+            continue
+        
+        # Extract the base filename
+        base_name = os.path.basename(pickle_file)
+        
+        # Check if we've seen this filename before
+        if base_name in base_name_counter:
+            base_name_counter[base_name] += 1
+            # Insert a suffix to differentiate
+            root, ext = os.path.splitext(base_name)
+            new_base_name = f"{root}_{base_name_counter[base_name]}{ext}"
+        else:
+            # First time seeing this base_name
+            base_name_counter[base_name] = 0
+            new_base_name = base_name
+
+        # Compute the destination path
+        dest_path = os.path.join(out_folder, new_base_name)
+
+        # check if pickle_file and dest_path are the same
+        if pickle_file != dest_path:
+            # Copy the file
+            shutil.copy(pickle_file, dest_path)
+            print(f"Copied {pickle_file} to {dest_path}")
+
+    # # look at all the fill pickle_files and copy them to the output folder conider the pickle_files to be a list
+    # for pickle_file in pickle_files:
+    #     # check if pickle_file is not in the output directory
+    #     if not os.path.exists(os.path.join(out_folder,os.path.basename(pickle_file))) and os.path.isfile(pickle_file):
+    #         shutil.copy(pickle_file, out_folder)
+    #         print("observation file copied to output folder:", os.path.join(out_folder,os.path.basename(pickle_file)))
+    #     elif not os.path.isfile(pickle_file):
+    #         print("original observation file not found, not copied:",pickle_file)
+                    
+    # # check if pickle_file is not in the output directory
+    # if not os.path.exists(os.path.join(out_folder,os.path.basename(pickle_file))) and os.path.isfile(pickle_file):
+    #     shutil.copy(pickle_file, out_folder)
+    #     print("observation file copied to output folder:", os.path.join(out_folder,os.path.basename(pickle_file)))
+    # elif not os.path.isfile(pickle_file):
+    #     print("original observation file not found, not copied:",pickle_file)
 
     return dynesty_file_in_output_path
 
@@ -2458,12 +2251,12 @@ class find_dynestyfile_and_priors:
     processing, ensuring that each input is properly paired with a .dynesty configuration and the relevant prior settings.
     """
 
-    def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_CAMO_data=False):
+    def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False):
         self.input_dir_or_file = input_dir_or_file
         self.prior_file = prior_file
         self.resume = resume
         self.output_dir = output_dir
-        self.use_CAMO_data = use_CAMO_data
+        self.use_all_cameras = use_all_cameras
 
         # Prepare placeholders
         self.base_names = []        # [base_name, ...] (no extension)
@@ -2505,12 +2298,12 @@ class find_dynestyfile_and_priors:
 
             print(f"Found {len(clusters)} meteors in {self.input_dir_or_file}")
             for i, cluster_info in enumerate(clusters, start=1):
-                print(f"Cluster #{i}")
+                # print(f"Cluster #{i}")
                 print("meteor:", cluster_info['cluster_name'])
-                print("Filenames:", cluster_info['filenames'])
+                # print("Filenames:", cluster_info['filenames'])
                 print("Union stations:", cluster_info['union_stations'])
-                print("JD Time range:", cluster_info['jd_range'])
-                print("-----------------")
+                # print("Time range:", cluster_info['jd_range'])
+                # print("-----------------")
 
                 # now check if only a single file is found in the cluster
                 if len(cluster_info['filenames']) == 1:
@@ -2522,15 +2315,21 @@ class find_dynestyfile_and_priors:
                 elif len(cluster_info['filenames']) > 1:
                     # Combine multiple files into a single observation instance
                     print("Multiple files found in the cluster. Combine them into a single observation instance.")
-                    # join self.input_dir_or_file and cluster_info['cluster_name'] to create a new folder
-                    new_combined_input_folder = os.path.join(self.input_dir_or_file, cluster_info['cluster_name'])
-                    # check if the folder exists
-                    if os.path.exists(new_combined_input_folder):
-                        root = new_combined_input_folder
+                    # chek if all cluster_info['filenames'] are in the same folder already
+                    if all(os.path.dirname(cluster_info['filenames'][0]) == os.path.dirname(f) for f in cluster_info['filenames']):
+                        root = os.path.dirname(cluster_info['filenames'][0])
                         files = os.listdir(root)
                         self._main_folder_costructor(cluster_info['filenames'],root,files,cluster_info['cluster_name'])
                     else:
-                        self._main_folder_costructor(cluster_info['filenames'],new_combined_input_folder,[],cluster_info['cluster_name'])
+                        # join self.input_dir_or_file and cluster_info['cluster_name'] to create a new folder
+                        new_combined_input_folder = os.path.join(self.input_dir_or_file, cluster_info['cluster_name'])
+                        # check if the folder exists
+                        if os.path.exists(new_combined_input_folder):
+                            root = new_combined_input_folder
+                            files = os.listdir(root)
+                            self._main_folder_costructor(cluster_info['filenames'],root,files,cluster_info['cluster_name'])
+                        else:
+                            self._main_folder_costructor(cluster_info['filenames'],new_combined_input_folder,[],cluster_info['cluster_name'])
 
 
 
@@ -2616,14 +2415,23 @@ class find_dynestyfile_and_priors:
 
             min_jd = min(jd_values)
             max_jd = max(jd_values)
-            avg_jd = 0.5 * (min_jd + max_jd)
+            cluster_time = []
+            for jd_value in jd_values:
+                # transform the jd_value to a datetime object
+                timestamp = (jd_value - 2440587.5) * 86400.0
+                dt = datetime.datetime.utcfromtimestamp(timestamp)
+                base_str = dt.strftime("%Y%m%d_%H%M%S")
+                msec = dt.microsecond // 1000
+                cluster_time.append(f"{base_str}.{msec:03d}")
+            # put jd_values in 
+            avg_jd = np.mean(jd_values)
             timestamp = (avg_jd - 2440587.5) * 86400.0
             avg_dt = datetime.datetime.utcfromtimestamp(timestamp)
 
             base_str = avg_dt.strftime("%Y%m%d_%H%M%S")
             msec = avg_dt.microsecond // 1000
-            cluster_name = f"{base_str}-{msec:03d}_combined"
-            # cluster_name = f"{base_str}_combined"
+            # cluster_name = f"{base_str}-{msec:03d}_combined"
+            cluster_name = f"{base_str}_combined"
 
             # 2) See if any file in cluster_rows has ALL stations
             #    i.e., row['stations'] == union_stations
@@ -2647,7 +2455,7 @@ class find_dynestyfile_and_priors:
                 'cluster_name': cluster_name,
                 'filenames': cluster_filenames,
                 'union_stations': sorted(union_stations),
-                'jd_range': (min_jd, max_jd)
+                'jd_range': (cluster_time)
             })
 
         return clusters_result
@@ -2659,8 +2467,10 @@ class find_dynestyfile_and_priors:
         if isinstance(input_file, list):
             # take the first file in the list
             file_name_no_ext = base_name
+            input_files_save = input_file
         else:
             file_name_no_ext = os.path.splitext(input_file)[0]
+            input_files_save = [input_file]
         
         possible_dynesty = os.path.join(root, file_name_no_ext + ".dynesty")
 
@@ -2693,15 +2503,17 @@ class find_dynestyfile_and_priors:
             if existing_prior_list:
                 prior_path_noise = os.path.join(root, existing_prior_list[0])
                 lag_noise_prior, lum_noise_prior = read_prior_noise(prior_path_noise)
-        if np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior):
-            if np.isnan(lag_noise_prior):
-                print("NO NOISE values found in prior file for lag.")
-            if np.isnan(lum_noise_prior):
-                print("NO NOISE values found in prior file for lum.")
-        else:
+        # if np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior):
+        #     if np.isnan(lag_noise_prior):
+        #         print("NO NOISE values found in prior file for lag.")
+        #     if np.isnan(lum_noise_prior):
+        #         print("NO NOISE values found in prior file for lum.")
+        # else:
+        #     print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
+        if not (np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior)):
             print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
 
-        observation_instance = observation_data(input_file, self.use_CAMO_data, lag_noise_prior, lum_noise_prior)
+        observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior)
 
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
@@ -2750,10 +2562,12 @@ class find_dynestyfile_and_priors:
         else:
             # Output folder is specified
             output_folder = os.path.join(self.output_dir, base_name)
+            if not os.path.exists(output_folder):
+                os.makedirs(output_folder)
 
         # Store results
         self.base_names.append(base_name)
-        self.input_folder_file.append((dynesty_file, input_file, bounds, flags_dict, fixed_values))
+        self.input_folder_file.append((dynesty_file, input_files_save, bounds, flags_dict, fixed_values))
         self.priors.append(prior_path)
         self.output_folders.append(output_folder)
         self.observation_objects[base_name] = observation_instance
@@ -3094,7 +2908,7 @@ if __name__ == "__main__":
         default=r"",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
-    arg_parser.add_argument('--use_CAMO_data', metavar='USE_CAMO_DATA', type=bool, default=True,
+    arg_parser.add_argument('--use_all_cameras', metavar='USE_ALL_CAMERAS', type=bool, default=True,
         help="If True, use only CAMO data for lag if present in pickle file, or generate json file with CAMO noise. If False, do not use/generate CAMO data (by default is False).")
 
     arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
@@ -3113,6 +2927,6 @@ if __name__ == "__main__":
     # Parse
     cml_args = arg_parser.parse_args()
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.resume, cml_args.use_CAMO_data, cml_args.only_plot, cml_args.cores)
+    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.resume, cml_args.use_all_cameras, cml_args.only_plot, cml_args.cores)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")    

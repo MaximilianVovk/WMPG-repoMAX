@@ -1008,7 +1008,8 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                     if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
                         min_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
                     else:
-                        min_val = object_meteor.__dict__[name] - 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
+                        # min_val = object_meteor.__dict__[name] - 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
+                        min_val = 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))) - 1)#object_meteor.__dict__[name]/10/2
 
                 if np.isnan(max_val) and name in object_meteor.__dict__ and ("norm" in flags or "invgamma" in flags):
                     max_val = object_meteor.__dict__[name]
@@ -1017,8 +1018,9 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                     if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
                         max_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
                     else:
-                        max_val = object_meteor.__dict__[name] + 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
-                
+                        # max_val = object_meteor.__dict__[name] + 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
+                        max_val = 2 * 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))) + 1)#object_meteor.__dict__[name]/10/2
+                                
                 #### rest of variables ####
                 if np.isnan(min_val) and ("norm" in flags or "invgamma" in flags):
                     if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
@@ -1091,6 +1093,11 @@ class observation_data:
         self.noise_lag = lag_noise_prior
         self.noise_lum = lum_noise_prior
         self.file_name = obs_file_path
+
+        # check obs_file_path is a list if so take the first element
+        if isinstance(obs_file_path, list):
+            obs_file_path = obs_file_path[0]
+
         # check if the file is a json file
         if obs_file_path.endswith('.pickle'):
             self.load_pickle_data(use_CAMO_data)
@@ -1100,7 +1107,332 @@ class observation_data:
             # file type not supported
             raise ValueError("File type not supported, only .json and .pickle files are supported")
 
-    def load_pickle_data(self,use_CAMO_data):
+
+    def load_pickle_data(self, use_all_cameras=False):
+        """
+        Load the pickle file(s) and create a dictionary keyed by each file name.
+        Each files data (e.g., list of station IDs, dens_co, zenith_angle, etc.)
+        goes into a sub-dict.
+        """
+        print('Loading pickle file(s):', self.file_name)
+        
+        # Top-level dictionary.
+        combined_obs_dict = {}
+        const = Constants()
+        # check if it is not an array
+        if not isinstance(self.file_name, list):
+            self.file_name = [self.file_name]        
+        # Loop over each pickle file
+        for current_file_name in self.file_name:
+            traj = loadPickle(*os.path.split(current_file_name))
+
+            # Skip if there's no .orbit attribute
+            if not hasattr(traj, 'orbit'):
+                print(f"Trajectory data not found in file: {current_file_name}")
+                continue
+
+            # self.v_init=traj.orbit.v_init+100
+            # self.stations = []
+
+            obs_dict = []
+            for obs in traj.observations:
+
+                # check if among obs.station_id there is one of the following 01T or 02T
+                if "1T" in obs.station_id or "2T" in obs.station_id:
+                    P_0m = 840
+                elif "1K" in obs.station_id or "2K":
+                    P_0m = 840
+                elif "1G" in obs.station_id or "2G" in obs.station_id or "1F" in obs.station_id or "2F" in obs.station_id:
+                    P_0m = 935
+                else:
+                    print(obs.station_id,'Station uknown\nMake sure the station is either EMCCD or CAMO (i.e. contains in the name 1T, 2T, 1K, 2K, 1G, 2G, 1F, 2F)')
+                    continue
+
+                # check if obs.absolute_magnitudes is a 'NoneType' object
+                if obs.absolute_magnitudes is None:
+                    # create an array with the same length as obs.model_ht and fill it with 15
+                    obs.absolute_magnitudes = np.array([15]*len(obs.model_ht))
+
+                obs_data_camera = {
+                    # make an array that is long as len(obs.model_ht) and has only obs.station_id
+                    'flag_station': np.array([obs.station_id]*len(obs.model_ht)),
+                    'flag_file': np.array([current_file_name]*len(obs.model_ht)),
+                    'height': np.array(obs.model_ht), # m
+                    'absolute_magnitudes': np.array(obs.absolute_magnitudes),
+                    'luminosity': np.array(P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))), # const.P_0m)
+                    'time': np.array(obs.time_data), # s
+                    'ignore_list': np.array(obs.ignore_list),
+                    'velocities': np.array(obs.velocities), # m/s
+                    'lag': np.array(obs.lag), # m
+                    'length': np.array(obs.state_vect_dist), # m
+                    'time_lag': np.array(obs.time_data), # s
+                    'height_lag': np.array(obs.model_ht), # m
+                    'apparent_magnitudes': np.array(meteor_abs_magnitude_to_apparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
+                    }
+                obs_data_camera['velocities'][0] = obs.v_init
+                obs_dict.append(obs_data_camera)
+            
+        # ceck if obs_dict is empty
+        if len(obs_dict) == 0:
+            print('No valid station data found')
+            return
+
+        # Combine obs1 and obs2
+        for key in obs_dict[0].keys():
+            combined_obs_dict[key] = np.concatenate([obs[key] for obs in obs_dict])
+
+        sorted_indices = np.argsort(combined_obs_dict['time'])
+        for key in obs_dict[0].keys():
+            combined_obs_dict[key] = combined_obs_dict[key][sorted_indices]
+
+        # take all the unique values of the flag_station
+        unique_stations = np.unique(combined_obs_dict['flag_station'])
+
+        # check if among the unique_stations there is one of the following 01T or 02T
+        if use_all_cameras==False:
+            # check if among unique_stations there is one of the following 01T or 02T  
+            if any(("1T" in station) or ("2T" in station) for station in unique_stations):
+                # find the name of the camera that has 1T or 2T
+                camera_name_lag = [camera for camera in unique_stations if "1T" in camera or "2T" in camera]
+                lag_data, lag_files = self.extract_lag_data(combined_obs_dict, camera_name_lag)
+                self.fps = 80
+            elif any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
+                # find the name of the camera that has 1G or 2G or 1F or 2F
+                camera_name_lag = [camera for camera in unique_stations if "1G" in camera or "2G" in camera or "1F" in camera or "2F" in camera]
+                lag_data, lag_files = self.extract_lag_data(combined_obs_dict, camera_name_lag)
+                self.fps = 32
+            elif any(("1K" in station) or ("2K" in station) for station in unique_stations):
+                # find the name of the camera that has 1K or 2K
+                camera_name_lag = [camera for camera in unique_stations if "1K" in camera or "2K" in camera]
+                lag_data, lag_files = self.extract_lag_data(combined_obs_dict, camera_name_lag)
+                self.fps = 80
+            else:
+                # print the unique_stations
+                print(unique_stations,'no known camera found')
+                return
+            
+            if any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
+                camera_name_lag = [camera for camera in unique_stations if "1G" in camera or "2G" in camera or "1F" in camera or "2F" in camera]
+                lum_data, lum_files = self.extract_lum_data(combined_obs_dict, camera_name_lag)
+                self.P_0m = 935
+            elif any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
+                camera_name_lag = [camera for camera in unique_stations if "1K" in camera or "2K" in camera or "1T" in camera or "2T" in camera]
+                lum_data, lum_files = self.extract_lum_data(combined_obs_dict, camera_name_lag)
+                self.P_0m = 840
+            else:
+                # print the unique_stations
+                print(unique_stations,'no known camera found')
+                return
+        else:
+            lag_data = combined_obs_dict
+            lum_data = combined_obs_dict
+            lum_files = self.file_name
+            lag_files = self.file_name
+
+            if any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
+                self.P_0m = 840
+                self.fps = 80
+            elif any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
+                self.P_0m = 935
+                self.fps = 32
+            else:
+                print(unique_stations,'no known camera found')
+                return
+            
+        # for the lum data delete all the keys that have values above 8
+        if np.any(lum_data['absolute_magnitudes'] > 8):
+            print(obs.station_id,'Found values below 8 absolute magnitudes :', lum_data['absolute_magnitudes'][lum_data['absolute_magnitudes'] > 8])
+            # delete any values above 8 absolute_magnitudes and delete the corresponding values in the other arrays
+            lum_data = {key: lum_data[key][lum_data['absolute_magnitudes'] < 8] for key in lum_data.keys()}
+
+        # # print all the keys in the lag_data
+        # print('Keys in lag_data:',lag_data.keys())
+        # # print all the keys in the lum_data
+        # print('Keys in lum_data:',lum_data.keys())
+        # print(lum_files)
+        # print(lag_files)
+        
+        # put all the lag_data in the object
+        self.velocities = lag_data['velocities']
+        self.lag = lag_data['lag']
+        self.length = lag_data['length']
+        self.height_lag = lag_data['height']
+        self.time_lag = lag_data['time']
+        self.stations_lag = lag_data['flag_station']
+        # put all the lum_data in the object
+        self.height_lum = lum_data['height']
+        self.absolute_magnitudes = lum_data['absolute_magnitudes']
+        self.luminosity = lum_data['luminosity']
+        self.time_lum = lum_data['time']
+        self.stations_lum = lum_data['flag_station']
+        self.apparent_magnitudes = lum_data['apparent_magnitudes']
+
+        # for lag measurements start from 0 for length and time
+        self.length = self.length-self.length[0]
+        self.time_lag = self.time_lag-self.time_lag[0]
+        self.time_lum = self.time_lum-self.time_lum[0]
+
+        # usually noise_lum = 2.5
+        if np.isnan(self.noise_lum):
+            self.noise_lum = self.define_SNR_lum_noise()
+            print('Assumed Noise in luminosity based on SNR:',self.noise_lum)
+        self.noise_mag = 0.1
+        
+        # usually noise_lag = 40 or 5 for CAMO
+        if np.isnan(self.noise_lag):
+            self.noise_lag = self.define_polyn_fit_lag_noise()
+            print('Assumed Noise in lag based on polynomial fit:',self.noise_lag)
+        self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
+
+        v_init_list = []
+        for curr_lag_file in lag_files:
+            # take the v_init from the trajectory file
+            traj=loadPickle(*os.path.split(curr_lag_file))
+            # get the trajectory
+            # v_avg = traj.v_avg
+            v_init_list.append(traj.orbit.v_init+100)
+        # do the mean of the v_init_list
+        self.v_init = np.mean(v_init_list)
+
+        zenith_angle_list = []
+        m_init_list = []
+        for curr_lum_file in lum_files:
+            # take the m_init_list from the trajectory file
+            traj=loadPickle(*os.path.split(curr_lum_file))
+
+            # now find the zenith angle mass v_init and dens_co
+            dens_fit_ht_beg = 180000
+            dens_fit_ht_end = traj.rend_ele - 5000
+            if dens_fit_ht_end < 14000:
+                dens_fit_ht_end = 14000
+
+            lat_mean = np.mean([traj.rbeg_lat, traj.rend_lat])
+            lon_mean = meanAngle([traj.rbeg_lon, traj.rend_lon])
+            jd_dat=traj.jdt_ref
+
+            # Fit the polynomail describing the density
+            self.dens_co = fitAtmPoly(lat_mean, lon_mean, dens_fit_ht_end, dens_fit_ht_beg, jd_dat)
+
+            zenith_angle_list.append(zenithAngleAtSimulationBegin(const.h_init, traj.rbeg_ele, traj.orbit.zc, const.r_earth))
+
+            time_mag_arr = []
+            avg_t_diff_max = 0
+            # take only the stations that are unique in the stations_lum
+            lum_stations = np.unique(self.stations_lum)
+            # Extract time vs. magnitudes from the trajectory pickle file
+            for obs in traj.observations:
+
+                # check if the station_id is not in the lum_stations and continue
+                if obs.station_id not in lum_stations:
+                    continue
+
+                # If there are not magnitudes for this site, skip it
+                if obs.absolute_magnitudes is None:
+                    continue
+
+                # Compute average time difference
+                avg_t_diff_max = max(avg_t_diff_max, np.median(obs.time_data[1:] - obs.time_data[:-1]))
+
+                for t, mag in zip(obs.time_data[obs.ignore_list == 0], \
+                    obs.absolute_magnitudes[obs.ignore_list == 0]):
+
+                    if (mag is not None) and (not np.isnan(mag)) and (not np.isinf(mag)):
+                        time_mag_arr.append([t, mag])
+
+            print("NOTE: The mass was computing using a constant luminous efficiency 0.7!")
+
+            # Sort array by time
+            time_mag_arr = np.array(sorted(time_mag_arr, key=lambda x: x[0]))
+
+            # check if not enough values to unpack (expected 2, got 0)
+            if len(time_mag_arr) == 0:
+                print('No valid luminosity data found')
+                continue
+
+            time_arr, mag_arr = time_mag_arr.T
+
+            # Average out the magnitudes
+            time_arr, mag_arr = mergeClosePoints(time_arr, mag_arr, avg_t_diff_max, method='avg')
+
+            # # Calculate the radiated energy
+            # radiated_energy = calcRadiatedEnergy(np.array(time_arr), np.array(mag_arr), P_0m=self.P_0m)
+
+            # Compute the photometric mass
+            photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=0.7/100, P_0m=self.P_0m)
+
+            m_init_list.append(photom_mass)
+
+        # do the mean of the zenith_angle_list and m_init_list
+        self.zenith_angle = np.mean(zenith_angle_list)
+        self.m_init = np.mean(m_init_list)
+                    
+    def extract_lag_data(self, combined_obs_dict, camera_name_lag):
+        lag_dict = []
+        combined_lag_dict = {}
+        lag_files = []
+        # now for each of the camera_name save it in the lag_data
+        for camera in camera_name_lag:
+            lag_file=np.unique(combined_obs_dict['flag_file'][combined_obs_dict['flag_station'] == camera])[0]
+            # the velocities, lag, height, time, flag_station and the unique flag_file
+            lag_data = {
+                'velocities': combined_obs_dict['velocities'][combined_obs_dict['flag_station'] == camera],
+                'lag': combined_obs_dict['lag'][combined_obs_dict['flag_station'] == camera],
+                'length': combined_obs_dict['length'][combined_obs_dict['flag_station'] == camera],
+                'height': combined_obs_dict['height_lag'][combined_obs_dict['flag_station'] == camera],
+                'time': combined_obs_dict['time_lag'][combined_obs_dict['flag_station'] == camera],
+                'flag_station': combined_obs_dict['flag_station'][combined_obs_dict['flag_station'] == camera],
+                'ignore_list': combined_obs_dict['ignore_list'][combined_obs_dict['flag_station'] == camera]
+            }
+            # Create a mask of all rows which have ignore_list == 0
+            ignore_mask = (lag_data['ignore_list'] == 0)
+
+            # Now rebuild lag_data so that each array is filtered by ignore_mask
+            lag_data = {key: lag_data[key][ignore_mask] for key in lag_data.keys()}
+
+            lag_dict.append(lag_data)
+            lag_files.append(lag_file)
+
+        # sort the indices by time in lag_dict
+        for key in lag_dict[0].keys():
+            combined_lag_dict[key] = np.concatenate([obs[key] for obs in lag_dict])
+
+        sorted_indices = np.argsort(combined_lag_dict['time'])
+        for key in lag_dict[0].keys():
+            combined_lag_dict[key] = combined_lag_dict[key][sorted_indices]
+
+        return combined_lag_dict, lag_files
+    
+    def extract_lum_data(self, combined_obs_dict, camera_name_lum):
+        # consider that has to have height_lum absolute_magnitudes luminosity time_lum stations_lum apparent_magnitudes
+        lum_dict = []
+        combined_lum_dict = {}
+        lum_files = []
+        # now for each of the camera_name save it in the lum_data
+        for camera in camera_name_lum:
+            lum_file=np.unique(combined_obs_dict['flag_file'][combined_obs_dict['flag_station'] == camera])[0]
+            # the velocities, lag, height, time, flag_station and the unique flag_file
+            lum_data = {
+                'height': combined_obs_dict['height'][combined_obs_dict['flag_station'] == camera],
+                'absolute_magnitudes': combined_obs_dict['absolute_magnitudes'][combined_obs_dict['flag_station'] == camera],
+                'luminosity': combined_obs_dict['luminosity'][combined_obs_dict['flag_station'] == camera],
+                'time': combined_obs_dict['time'][combined_obs_dict['flag_station'] == camera],
+                'flag_station': combined_obs_dict['flag_station'][combined_obs_dict['flag_station'] == camera],
+                'apparent_magnitudes': combined_obs_dict['apparent_magnitudes'][combined_obs_dict['flag_station'] == camera]
+            }
+            lum_dict.append(lum_data)
+            lum_files.append(lum_file)
+        # sort the indices by time in lum_dict
+        for key in lum_dict[0].keys():
+            combined_lum_dict[key] = np.concatenate([obs[key] for obs in lum_dict])
+
+        sorted_indices = np.argsort(combined_lum_dict['time'])
+        for key in lum_dict[0].keys():
+            combined_lum_dict[key] = combined_lum_dict[key][sorted_indices]
+
+        return combined_lum_dict, lum_files
+        
+
+    def load_pickle_data_old(self,use_CAMO_data):
         print('Loading pickle file:',self.file_name)
         # load the pickle file
         traj=loadPickle(*os.path.split(self.file_name))
@@ -1327,8 +1659,14 @@ class observation_data:
 
         time_mag_arr = []
         avg_t_diff_max = 0
+        # take ony the stations that are unique in the stations_lum
+        lum_stations = np.unique(self.stations_lum)
         # Extract time vs. magnitudes from the trajectory pickle file
         for obs in traj.observations:
+
+            # check if the station_id is not in the lum_stations and continue
+            if obs.station_id not in lum_stations:
+                continue
 
             # If there are not magnitudes for this site, skip it
             if obs.absolute_magnitudes is None:
@@ -1453,8 +1791,14 @@ class observation_data:
         return lum_noise
 
     def find_IAU_code(self):
+        # check if self.file_name is a array or a string
+        if not isinstance(self.file_name, str):
+            # take the first element of the array
+            file_name_IAU = self.file_name[0]
+        else:
+            file_name_IAU = self.file_name
         # Get the directory where self.file_name is stored
-        file_dir = os.path.dirname(self.file_name)
+        file_dir = os.path.dirname(file_name_IAU)
         
         # Define the filenames to look for
         report_file = None
@@ -2142,21 +2486,182 @@ class find_dynestyfile_and_priors:
             self._main_folder_costructor(input_file,root,files)
 
         else:
-            # Directory case
+
+            all_pickle_files = []
+
+            # Walk through all subdirectories and find pickle files
             for root, dirs, files in os.walk(self.input_dir_or_file):
                 pickle_files = [f for f in files if f.endswith('.pickle')]
                 if not pickle_files:
                     continue
 
-                for pf in pickle_files:
-                    input_file = os.path.join(root, pf)
-                    self._main_folder_costructor(input_file,root,files)
-                    
+                # Flatten list using extend (instead of appending a list inside a list)
+                all_pickle_files.extend(os.path.join(root, f) for f in pickle_files)
 
-    def _main_folder_costructor(self, input_file, root, files):
+            print(all_pickle_files)
+
+            # Call function to process found pickle files
+            clusters = self._combine_meteor_camera_pickle(all_pickle_files)
+
+            print(f"Found {len(clusters)} meteors in {self.input_dir_or_file}")
+            for i, cluster_info in enumerate(clusters, start=1):
+                print(f"Cluster #{i}")
+                print("meteor:", cluster_info['cluster_name'])
+                print("Filenames:", cluster_info['filenames'])
+                print("Union stations:", cluster_info['union_stations'])
+                print("JD Time range:", cluster_info['jd_range'])
+                print("-----------------")
+
+                # now check if only a single file is found in the cluster
+                if len(cluster_info['filenames']) == 1:
+                    input_file = cluster_info['filenames'][0]
+                    root = os.path.dirname(input_file)
+                    files = os.listdir(root)
+                    self._main_folder_costructor(input_file,root,files)
+
+                elif len(cluster_info['filenames']) > 1:
+                    # Combine multiple files into a single observation instance
+                    print("Multiple files found in the cluster. Combine them into a single observation instance.")
+                    # join self.input_dir_or_file and cluster_info['cluster_name'] to create a new folder
+                    new_combined_input_folder = os.path.join(self.input_dir_or_file, cluster_info['cluster_name'])
+                    # check if the folder exists
+                    if os.path.exists(new_combined_input_folder):
+                        root = new_combined_input_folder
+                        files = os.listdir(root)
+                        self._main_folder_costructor(cluster_info['filenames'],root,files,cluster_info['cluster_name'])
+                    else:
+                        self._main_folder_costructor(cluster_info['filenames'],new_combined_input_folder,[],cluster_info['cluster_name'])
+
+
+
+    def _combine_meteor_camera_pickle(self, all_pickle_files, time_threshold=1/86400):
+        """
+        Group the given pickle files by time (within `time_threshold` in JD).
+        
+        For each group (cluster):
+        1) Compute the union of all stations (cameras) in that cluster.
+        2) If at least one file in the cluster already has ALL stations, 
+            pick ONLY that/those file(s). 
+            Otherwise, pick all unique station sets (removing exact duplicates).
+        3) Return a list of dicts, each with:
+            'filenames':       the .pickle files selected for that cluster
+            'union_stations':  sorted list of all stations
+            'jd_range':        (min_jd, max_jd)
+            'cluster_name':    string like "YYYYMMDD_HHMMSS.sss" from avg(min_jd, max_jd)
+        """
+        data = []
+        for fullpath in all_pickle_files:
+            folder, fname = os.path.split(fullpath)
+            try:
+                traj = loadPickle(folder, fname)  # your existing load function
+            except Exception as e:
+                print(f"Cannot load pickle {fullpath}: {e}")
+                continue
+            
+            if not hasattr(traj, 'orbit'):
+                print(f"Trajectory data not found in {fullpath}")
+                continue
+            
+            jdt_ref = getattr(traj, 'jdt_ref', None)
+            if jdt_ref is None:
+                print(f"No jdt_ref found in {fullpath}")
+                continue
+            
+            station_ids = []
+            for obs in getattr(traj, 'observations', []):
+                station_ids.append(obs.station_id)
+            
+            data.append({
+                'filename': fullpath,
+                'jdt_ref': jdt_ref,
+                'stations': frozenset(station_ids)
+            })
+        
+        if not data:
+            print("No valid trajectory data found.")
+            return []
+
+        # Sort by time
+        df = pd.DataFrame(data).sort_values('jdt_ref').reset_index(drop=True)
+
+        # ---------------------------------------------
+        # Cluster by checking consecutive files' times
+        # ---------------------------------------------
+        clusters_raw = []
+        current_cluster = [df.iloc[0]]
+
+        for i in range(1, len(df)):
+            curr_row = df.iloc[i]
+            prev_row = current_cluster[-1]
+            if abs(curr_row['jdt_ref'] - prev_row['jdt_ref']) <= time_threshold:
+                current_cluster.append(curr_row)
+            else:
+                clusters_raw.append(current_cluster)
+                current_cluster = [curr_row]
+
+        if current_cluster:
+            clusters_raw.append(current_cluster)
+
+        # -------------------------------------------------
+        # Build final clusters, check for "all cameras" file
+        # -------------------------------------------------
+        clusters_result = []
+        for cluster_rows in clusters_raw:
+            # 1) Compute the union of all stations in this cluster
+            union_stations = set()
+            jd_values = []
+            for row in cluster_rows:
+                union_stations |= row['stations']
+                jd_values.append(row['jdt_ref'])
+
+            min_jd = min(jd_values)
+            max_jd = max(jd_values)
+            avg_jd = 0.5 * (min_jd + max_jd)
+            timestamp = (avg_jd - 2440587.5) * 86400.0
+            avg_dt = datetime.datetime.utcfromtimestamp(timestamp)
+
+            base_str = avg_dt.strftime("%Y%m%d_%H%M%S")
+            msec = avg_dt.microsecond // 1000
+            cluster_name = f"{base_str}-{msec:03d}_combined"
+            # cluster_name = f"{base_str}_combined"
+
+            # 2) See if any file in cluster_rows has ALL stations
+            #    i.e., row['stations'] == union_stations
+            files_with_all = [r for r in cluster_rows if r['stations'] == union_stations]
+
+            if files_with_all:
+                # Keep only the FIRST file that has the entire station set
+                # If you prefer the last, do [-1] instead
+                chosen = files_with_all[0]  
+                cluster_filenames = [chosen['filename']]
+            else:
+                # Otherwise, keep all unique station sets
+                used_station_sets = set()
+                cluster_filenames = []
+                for row in cluster_rows:
+                    if row['stations'] not in used_station_sets:
+                        used_station_sets.add(row['stations'])
+                        cluster_filenames.append(row['filename'])
+
+            clusters_result.append({
+                'cluster_name': cluster_name,
+                'filenames': cluster_filenames,
+                'union_stations': sorted(union_stations),
+                'jd_range': (min_jd, max_jd)
+            })
+
+        return clusters_result
+
+
+    def _main_folder_costructor(self, input_file, root, files, base_name=""):
         """ Main function to return the observation instance """
-        # separete the base name from the folder
-        file_name_no_ext = os.path.splitext(os.path.basename(input_file))[0] # Extract just the file name without extension
+        # check if input_file is a list
+        if isinstance(input_file, list):
+            # take the first file in the list
+            file_name_no_ext = base_name
+        else:
+            file_name_no_ext = os.path.splitext(input_file)[0]
+        
         possible_dynesty = os.path.join(root, file_name_no_ext + ".dynesty")
 
         # Check for existing .dynesty in the same folder
@@ -2197,9 +2702,6 @@ class find_dynestyfile_and_priors:
             print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
 
         observation_instance = observation_data(input_file, self.use_CAMO_data, lag_noise_prior, lum_noise_prior)
-        # check observation_instance has v_init
-        if not hasattr(observation_instance, 'v_init'):
-            return
 
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
@@ -2219,26 +2721,30 @@ class find_dynestyfile_and_priors:
                 prior_path = ""
                 bounds, flags_dict, fixed_values = read_prior_to_bounds(observation_instance)
 
-        base_name = self._extract_base_name(input_file)
+        if base_name == "":
+            base_name = self._extract_base_name(input_file)
 
-        # Check if base_name already exists, and skip if it does
-        if base_name in self.observation_objects:
-            # Convert to sets for comparison
-            existing_stations = set(self.observation_objects[base_name].stations)
-            new_stations = set(observation_instance.stations)
-            # Find stations that are unique to each list (not in both)
-            unique_stations = existing_stations.symmetric_difference(new_stations)
+        # # Check if base_name already exists, and skip if it does
+        # if base_name in self.observation_objects:
+        #     # Convert to sets for comparison
+        #     existing_stations = set(self.observation_objects[base_name].stations)
+        #     new_stations = set(observation_instance.stations)
+        #     # Find stations that are unique to each list (not in both)
+        #     unique_stations = existing_stations.symmetric_difference(new_stations)
 
-            if unique_stations:
-                # Sort to ensure deterministic order (optional)
-                new_stations = sorted(new_stations)
-                base_name = base_name + "_" + "_".join(new_stations)
-                print(f"Updated base name: {base_name}")
-            else:
-                print(f"Skipping duplicate entry for {base_name}")
-                return  # Exit function to prevent duplicate insertion
+        #     if unique_stations:
+        #         # Sort to ensure deterministic order (optional)
+        #         new_stations = sorted(new_stations)
+        #         base_name = base_name + "_" + "_".join(new_stations)
+        #         print(f"Updated base name: {base_name}")
+        #     else:
+        #         print(f"Skipping duplicate entry for {base_name}")
+        #         return  # Exit function to prevent duplicate insertion
             
         if self.output_dir=="":
+            # if root do not exist create it
+            if not os.path.exists(root):
+                os.makedirs(root)
             # Output folder is not specified
             output_folder = root
         else:
@@ -2407,6 +2913,11 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
             # guess_var[var_names.index('erosion_mass_max')] = guess_var[var_names.index('erosion_mass_min')]
             # unphysical values, return -np.inf
             return -np.inf  # immediately return -np.inf if times out
+    
+    if 'erosion_mass_max' in var_names and 'm_init' in var_names:
+        # check if the guess_var of the erosion_mass_max is smaller than the guess_var of the m_init
+        if guess_var[var_names.index('erosion_mass_max')] > guess_var[var_names.index('m_init')]:
+            return -np.inf
 
     ### ONLY on LINUX ###
 

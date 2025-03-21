@@ -2673,6 +2673,7 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
     if real_event.v_init < 30000:
         const_nominal.dt = 0.01
+        # const_nominal.erosion_bins_per_10mass = 5
 
     const_nominal.P_0m = real_event.P_0m
 

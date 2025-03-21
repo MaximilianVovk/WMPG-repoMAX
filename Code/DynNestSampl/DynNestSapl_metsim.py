@@ -561,6 +561,50 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         if variable == 'erosion_coeff' or variable == 'sigma' or variable == 'erosion_coeff_change' or variable == 'erosion_sigma_change':
             samples_equal[:, i] = samples_equal[:, i] * 1e6
 
+    constjson_bestfit = Constants()
+    # change Constants that have the same variable names and the one fixed
+    for variable in variables:
+        if variable in constjson_bestfit.__dict__.keys():
+            constjson_bestfit.__dict__[variable] = best_guess[variables.index(variable)]
+
+    # do te same for the fixed values
+    for variable in fixed_values.keys():
+        if variable in constjson_bestfit.__dict__.keys():
+            constjson_bestfit.__dict__[variable] = fixed_values[variable]
+
+    constjson_bestfit.__dict__['P_0m'] = obs_data.P_0m
+    constjson_bestfit.__dict__['lum_eff_type'] = obs_data.lum_eff_type
+    constjson_bestfit.__dict__['dens_co'] = obs_data.dens_co
+    constjson_bestfit.__dict__['dt'] = obs_data.dt
+    constjson_bestfit.__dict__['h_kill'] = obs_data.h_kill
+
+    def convert_to_serializable(obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.integer, np.int32, np.int64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, (np.bool_)):
+            return bool(obj)
+        elif obj is None:
+            return None
+        elif isinstance(obj, dict):
+            return {key: convert_to_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_to_serializable(item) for item in obj]
+        else:
+            return obj
+
+    # Prepare dictionary and convert all values to serializable format
+    constjson_bestfit_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
+
+    # Save as JSON
+    output_path = os.path.join(output_folder, file_name + '_sim_fit_dynesty_BestGuess.json')
+    with open(output_path, 'w') as f:
+        json.dump(constjson_bestfit_dict, f, indent=4)
+
+
     print('Best fit:')
     # write the best fit variable names and then the best guess values
     for i in range(len(best_guess)):
@@ -718,17 +762,17 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Save to a .tex file
     with open(output_folder+os.sep+file_name+"_results_table.tex", "w") as f:
-        f.write(summary_str+'\n')
-        f.write("H info.gain:"+str(dynesty_run_results.information[-1])+'\n')
-        f.write("niter i.e number of metsim simulated events\n\n")
-        f.write("Best fit:\n")
-        for i in range(len(best_guess)):
-            f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
-        f.write('logL:'+str(dynesty_run_results.logl[sim_num])+'\n')
-        if diff_logL is not None:
-            f.write('REAL logL:'+str(real_logL)+'\n')
-            f.write('diff logL:'+str(diff_logL)+'\n')
-        f.write("\n")
+        # f.write(summary_str+'\n')
+        # f.write("H info.gain:"+str(dynesty_run_results.information[-1])+'\n')
+        # f.write("niter i.e number of metsim simulated events\n\n")
+        # f.write("Best fit:\n")
+        # for i in range(len(best_guess)):
+        #     f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
+        # f.write('logL:'+str(dynesty_run_results.logl[sim_num])+'\n')
+        # if diff_logL is not None:
+        #     f.write('REAL logL:'+str(real_logL)+'\n')
+        #     f.write('diff logL:'+str(diff_logL)+'\n')
+        # f.write("\n")
         f.write(latex_str)
         f.close()
 
@@ -2000,6 +2044,27 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
 
             dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name)
             
+            ### set up obs_data const values to run same simultaions in run_simulation #################
+
+            # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
+            if obs_data.v_init < 30000:
+                obs_data.dt = 0.01
+                # const_nominal.erosion_bins_per_10mass = 5
+            else:
+                obs_data.dt = 0.005
+                # const_nominal.erosion_bins_per_10mass = 10
+
+            obs_data.disruption_on = False
+
+            obs_data.lum_eff_type = 5
+
+            obs_data.h_kill = np.min([obs_data.height_lum[-1],obs_data.height_lag[-1]])-5000
+            # check if the h_kill is smaller than 0
+            if obs_data.h_kill < 0:
+                obs_data.h_kill = 1
+
+            ##################################################################################################
+
             if not cml_args.only_plot: 
 
                 # update the log file with the error join out_folder,"log_"+base_name+".txt"
@@ -2638,7 +2703,7 @@ class TimeoutException(Exception):
     """Custom exception for timeouts."""
     pass
 
-def run_simulation_wrapper(guess_var, obs_metsim_obj, var_names, fix_var, queue):
+def RunSimulationWrapper(guess_var, obs_metsim_obj, var_names, fix_var, queue):
     """Wrapper function for multiprocessing to run the simulation."""
     try:
         result = run_simulation(guess_var, obs_metsim_obj, var_names, fix_var)
@@ -2664,8 +2729,8 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     # Assign the density coefficients
     const_nominal.dens_co = dens_co
 
-    # Turn on plotting of LCs of individual fragments 
-    const_nominal.fragmentation_show_individual_lcs = True
+    # # Turn on plotting of LCs of individual fragments 
+    # const_nominal.fragmentation_show_individual_lcs = True
 
     # for loop for the var_cost that also give a number from 0 to the length of the var_cost
     for i, var in enumerate(var_names):
@@ -2679,21 +2744,17 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
             const_nominal.__dict__[var] = fix_var[var]
 
     # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
-    if real_event.v_init < 30000:
-        const_nominal.dt = 0.01
-        # const_nominal.erosion_bins_per_10mass = 5
+    const_nominal.dt = real_event.dt
+    # const_nominal.erosion_bins_per_10mass = 5
 
     const_nominal.P_0m = real_event.P_0m
 
-    const_nominal.disruption_on = False
+    const_nominal.disruption_on = real_event.disruption_on
 
-    const_nominal.lum_eff_type = 5
+    const_nominal.lum_eff_type = real_event.lum_eff_type
 
     # Minimum height [m]
-    const_nominal.h_kill = np.min([real_event.height_lum[-1],real_event.height_lag[-1]])-5000
-    # check if the h_kill is smaller than 0
-    if const_nominal.h_kill < 0:
-        const_nominal.h_kill = 1
+    const_nominal.h_kill = real_event.h_kill 
     
     # # Initial meteoroid height [m]
     # const_nominal.h_init = 180000

@@ -66,11 +66,51 @@ def plot_photometry(input_folder):
         date = phot_file.split('_')[1]  # Extract date in yyyymmdd format
         df = process_phot_file(phot_path)
 
+
+        # DRA
+        manual_color_map = {
+            ('20241008', '01G'): 'tab:blue',
+            ('20241008', '02G'): 'tab:orange',
+            ('20241008', '01F'): 'tab:green',
+            ('20241008', '02F'): 'tab:red',
+            ('20241008', '02G'): 'tab:purple',
+            ('20241008', '01G'): 'tab:brown',
+            # Add more as needed
+        }
+
+        # # CAP
+        # manual_color_map = {
+        #     ('20190801', '02G'): 'tab:blue',
+        #     ('20190801', '01G'): 'tab:orange',
+        #     ('20220729', '02G'): 'tab:green',
+        #     ('20220729', '01G'): 'tab:red',
+        #     ('20230731', '02G'): 'tab:purple',
+        #     ('20230731', '01G'): 'tab:brown',
+        #     # Add more as needed
+        # }
+
+        # # ORI
+        # manual_color_map = {
+        #     ('20191026', '02G'): 'tab:blue',
+        #     ('20191026', '01G'): 'tab:orange',
+        #     ('20201017', '02G'): 'tab:green',
+        #     ('20201017', '01G'): 'tab:red',
+        #     ('20221024', '02G'): 'tab:purple',
+        #     ('20221024', '01G'): 'tab:brown',
+        #     # Add more as needed
+        # }
+
         if not df.empty:
-            # Scatter plot instead of lines
-            scatter = plt.scatter(df['time'], df[to_plot], label=f"{date} {camera}", alpha=0.8)
-            color_map[(date, camera)] = scatter.get_facecolor()[0]  # Store color
-            camera_scatter[(date, camera)] = scatter  # Store for legend handling
+            color = manual_color_map.get((date, camera), 'gray')  # Default to gray if not defined
+            scatter = plt.scatter(df['time'], df[to_plot], label=f"{date} {camera}", alpha=0.8, color=color)
+            color_map[(date, camera)] = scatter.get_facecolor()[0]
+            camera_scatter[(date, camera)] = scatter
+            
+        # if not df.empty:
+        #     # Scatter plot instead of lines
+        #     scatter = plt.scatter(df['time'], df[to_plot], label=f"{date} {camera}", alpha=0.8)
+        #     color_map[(date, camera)] = scatter.get_facecolor()[0]  # Store color
+        #     camera_scatter[(date, camera)] = scatter  # Store for legend handling
 
         # Find corresponding png file with matching date and camera
         for png_file in png_files:
@@ -84,9 +124,8 @@ def plot_photometry(input_folder):
                     linestyle = '--'  # Differentiate overlapping camera detections
                 else:
                     linestyle = '-'
-
-                # Draw vertical line for detection time
                 plt.axvline(png_time_obj, color=color_map.get((date, camera), 'gray'), linestyle=linestyle, alpha=0.7, linewidth=3)
+                # plt.axvline(png_time_obj, color='black', linestyle=linestyle, alpha=0.7, linewidth=3)
 
     plt.xlabel("Time (HH:MM:SS)")
     plt.ylabel(to_plot)
@@ -112,5 +151,5 @@ def plot_photometry(input_folder):
     plt.savefig(os.path.join(input_folder, "photometry_"+to_plot+"_plot.png"), dpi=300)
 
 # put input folder here with phot folder
-input_folder = r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation\noise\lum_noise_line\CAP"  # Change this to your actual input folder
+input_folder = r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation_noise\noise\lum_noise_line\DRA"  # Change this to your actual input folder
 plot_photometry(input_folder)

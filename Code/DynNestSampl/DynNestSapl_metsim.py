@@ -648,6 +648,14 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
                 else:
                     print(f"Skipping {variable}: Missing from truth_values_plot")
 
+        for i, variable in enumerate(variables): 
+            # check variable is 'v_init' or 'erosion_height_start' divide by 1000
+            if variable == 'v_init' or variable == 'erosion_height_start' or variable == 'erosion_height_change':
+                truths[i] = truths[i] / 1000
+            # check variable is 'erosion_coeff' or 'sigma' divide by 1e6
+            if variable == 'erosion_coeff' or variable == 'sigma' or variable == 'erosion_coeff_change' or variable == 'erosion_sigma_change':
+                truths[i] = truths[i] * 1e6
+
         # Compare to true theta
         bias = posterior_mean - truths
         abs_error = np.abs(bias)

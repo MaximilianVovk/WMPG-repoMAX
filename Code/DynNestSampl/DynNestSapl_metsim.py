@@ -491,8 +491,11 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
 
 # Plotting function dynesty
-def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name=''):
+def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name='', log_file=''):
     ''' Plot the dynesty results '''
+
+    if log_file == '':
+        log_file = os.path.join(output_folder, f"log_{file_name}.txt")
 
     print(dynesty_run_results.summary())
     print('information gain:', dynesty_run_results.information[-1])
@@ -762,19 +765,28 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Save to a .tex file
     with open(output_folder+os.sep+file_name+"_results_table.tex", "w") as f:
-        # f.write(summary_str+'\n')
-        # f.write("H info.gain:"+str(dynesty_run_results.information[-1])+'\n')
-        # f.write("niter i.e number of metsim simulated events\n\n")
-        # f.write("Best fit:\n")
-        # for i in range(len(best_guess)):
-        #     f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
-        # f.write('logL:'+str(dynesty_run_results.logl[sim_num])+'\n')
-        # if diff_logL is not None:
-        #     f.write('REAL logL:'+str(real_logL)+'\n')
-        #     f.write('diff logL:'+str(diff_logL)+'\n')
-        # f.write("\n")
         f.write(latex_str)
         f.close()
+
+    # add to the log_file
+    with open(log_file, "a") as f:
+        f.write('\n'+summary_str)
+        f.write("H info.gain: "+str(np.round(dynesty_run_results.information[-1],3))+'\n')
+        f.write("niter i.e number of metsim simulated events\n")
+        f.write("ncall i.e. number of likelihood evaluations\n")
+        f.write("eff(%) i.e. (niter/ncall)*100 eff. of the logL call \n")
+        f.write("logz i.e. final estimated evidence\n")
+        f.write("H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need or a lot of live points\n")
+        f.write("\nBest fit:\n")
+        for i in range(len(best_guess)):
+            f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
+        f.write('\nBest fit logL: '+str(dynesty_run_results.logl[sim_num])+'\n')
+        if diff_logL is not None:
+            f.write('REAL logL: '+str(real_logL)+'\n')
+            f.write('Diff logL (Best fit - REAL): '+str(diff_logL)+'\n')
+            f.write('Rel.Error % diff logL: '+str(abs(diff_logL/real_logL)*100)+'%\n')
+            f.write('\nCoverage mask per dimension: '+str(coverage_mask)+'\n')
+            f.write('Fraction of dimensions covered: '+str(coverage_mask.mean())+'\n')
 
     # Print LaTeX code for quick copy-pasting
     print(latex_str)
@@ -1781,6 +1793,7 @@ class observation_data:
             # If no positive values exist, return empty list
             if len(positive_indices) == 0:
                 indices_visible = []
+                return
             else:
                 # Find differences between consecutive indices
                 diff = np.diff(positive_indices)
@@ -1820,7 +1833,11 @@ class observation_data:
                     breaks = np.where(diff > 1)[0]
                     sequences = np.split(indices_visible, breaks + 1)
                     indices_visible = max(sequences, key=len) if sequences else []
-                
+            
+            # extra filter that ensures no NaNs remain in the height array:
+            finite_mask = np.isfinite(self.leading_frag_height_arr[indices_visible])
+            indices_visible = indices_visible[finite_mask]
+
             # Select time, magnitude, height, and length above the visibility limit
             time_visible = self.time_arr[indices_visible]
             # the rest of the arrays are the same length as time_arr
@@ -2042,7 +2059,10 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             obs_data = finder.observation_instance(base_name)
             obs_data.file_name = pickle_file # update teh file name in the observation data object
 
-            dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name)
+            # update the log file with the error join out_folder,"log_"+base_name+".txt"
+            log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
+
+            dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name, log_file_path)
             
             ### set up obs_data const values to run same simultaions in run_simulation #################
 
@@ -2067,14 +2087,11 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
 
             if not cml_args.only_plot: 
 
-                # update the log file with the error join out_folder,"log_"+base_name+".txt"
-                log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
-
                 # start a timer to check how long it takes to run dynesty
                 start_time = time.time()
                 # Run dynesty
                 try:
-                    main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name)
+                    main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name, log_file_path=log_file_path)
                 except Exception as e:
                     # Open the file in append mode and write the error message
                     with open(log_file_path, "a") as log_file:
@@ -2083,7 +2100,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                     # now try and plot the dynesty file results
                     try:
                         dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-                        plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name)
+                        plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path)
                     except Exception as e:
                         with open(log_file_path, "a") as log_file:
                             log_file.write(f"Error encountered in dynestsy plot: {e}")
@@ -2113,21 +2130,27 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                 print("Only plotting requested. Skipping dynesty run.")
                 dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
                 # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-                plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name)
+                plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path)
 
             else:
                 print("Fail to generate dynesty plots, dynasty file not found:",dynesty_file)
                 print("If you want to run the dynasty file set only_plot to False")
 
 
-def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_files='', dynesty_file='', prior_path='', base_name=''):
+def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_files='', dynesty_file='', prior_path='', base_name='', log_file_path=''):
+
+    if log_file_path == '':
+        log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
+        base_name_log = "log_{base_name}.txt"
+    else:
+        base_name_log = os.path.basename(log_file_path)
 
     print("--------------------------------------------------")
     # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-    if os.path.exists(out_folder+os.sep+"log_"+base_name+".txt"):
+    if os.path.exists(log_file_path):
         # remove the file
-        os.remove(out_folder+os.sep+"log_"+base_name+".txt")
-    sys.stdout = Logger(out_folder,"log_"+base_name+".txt") # 
+        os.remove(log_file_path)
+    sys.stdout = Logger(out_folder,base_name_log) # 
     print(f"Meteor:", base_name)
     print("  File name:    ", pickle_files)
     print("  Dynesty file: ", dynesty_file)
@@ -2888,7 +2911,7 @@ def prior_dynesty(cube,bounds,flags_dict):
 
 
 
-def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", file_name=""):
+def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", file_name="",log_file_path=""):
     """
     Main function to run dynesty.
     """
@@ -2924,7 +2947,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             dsampler = dynesty.DynamicNestedSampler(pool.loglike, 
                                                     pool.prior_transform, ndim,
                                                     pool = pool)
-            dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)
+            dsampler.run_nested(print_progress=True, dlogz_init=0.001, checkpoint_file=dynesty_file)
 
     else:
         print("Resuming previous run:")
@@ -2936,10 +2959,20 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             ### RESUME:
             dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, 
                                                             pool = pool)
-            dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
+            dsampler.run_nested(resume=True, print_progress=True, dlogz_init=0.001, checkpoint_file=dynesty_file)
     # nlive=350, 
     # sample='rslice', 
     print('SUCCESS: dynesty results ready!\n')
+
+    # dsampler.run_nested(
+    #     nlive_init=500,         # or override if you prefer a different baseline
+    #     maxiter=100000,         # overall max number of iterations
+    #     maxcall=2000000,        # overall max number of likelihood calls
+    #     dlogz_init=0.001,       # tighten from default 0.01 
+    #     print_progress=True,
+    #     checkpoint_file='mcmc_checkpoint.dynesty',
+    #     checkpoint_every=60,    # how often (in seconds) to write checkpoint
+    # )
 
     # check if output_folder is different from the dynesty_file folder
     if output_folder != os.path.dirname(dynesty_file):
@@ -2948,7 +2981,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
         print("dynesty file copied to:", output_folder)
     
     # dsampler = dynesty.DynamicNestedSampler.restore(filename)
-    plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, output_folder, file_name)
+    plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, output_folder, file_name,log_file_path)
 
 
 

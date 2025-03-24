@@ -2084,7 +2084,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
 
             obs_data.lum_eff_type = 5
 
-            obs_data.h_kill = np.min([obs_data.height_lum[-1],obs_data.height_lag[-1]])-5000
+            obs_data.h_kill = np.min([obs_data.height_lum[-1],obs_data.height_lag[-1]])-1000
             # check if the h_kill is smaller than 0
             if obs_data.h_kill < 0:
                 obs_data.h_kill = 1
@@ -2787,10 +2787,6 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     const_nominal.disruption_on = real_event.disruption_on
 
     const_nominal.lum_eff_type = real_event.lum_eff_type
-
-    # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
-    if real_event.v_init < 30000:
-        const_nominal.dt = 0.01
 
     # Minimum height [m]
     const_nominal.h_kill = real_event.h_kill 

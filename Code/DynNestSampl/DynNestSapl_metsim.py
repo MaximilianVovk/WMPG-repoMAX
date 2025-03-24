@@ -1908,7 +1908,11 @@ class observation_data:
             # velocity noise
             self.velocities = vel_interpol(time_sampled_lag) + np.random.normal(loc=0, scale=self.noise_vel, size=len(time_sampled_lag))
             
-            self._save_json_data()
+            # Make const behave like a dict
+            if hasattr(self, 'const'):
+                self.const = self.const.__dict__
+
+            self.new_json_file_save = self._save_json_data()
 
 
     def mimic_fps_camera(self, time_visible, time_to_track, fps, station1, station2):
@@ -1988,6 +1992,8 @@ class observation_data:
             json.dump(serializable_dict, f, indent=4)
 
         print("Saved fit parameters with noise to:", json_file_save)
+
+        return json_file_save
 
 
 
@@ -2559,6 +2565,36 @@ class find_dynestyfile_and_priors:
 
     def _main_folder_costructor(self, input_file, root, files, base_name=""):
         """ Main function to return the observation instance """
+
+        lag_noise_prior = np.nan
+        lum_noise_prior = np.nan
+        # If user gave a valid .prior path, read it once.
+        if os.path.isfile(self.prior_file):
+            prior_path_noise = self.prior_file
+            lag_noise_prior, lum_noise_prior = read_prior_noise(self.prior_file)
+        else:
+            # Look for local .prior
+            existing_prior_list = [f for f in files if f.endswith(".prior")]
+            if existing_prior_list:
+                prior_path_noise = os.path.join(root, existing_prior_list[0])
+                lag_noise_prior, lum_noise_prior = read_prior_noise(prior_path_noise)
+        # if np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior):
+        #     if np.isnan(lag_noise_prior):
+        #         print("NO NOISE values found in prior file for lag.")
+        #     if np.isnan(lum_noise_prior):
+        #         print("NO NOISE values found in prior file for lum.")
+        # else:
+        #     print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
+        if not (np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior)):
+            print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
+
+        observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior)
+
+        # check if new_json_file_save is present in observation_instance
+        if hasattr(observation_instance, 'new_json_file_save'):
+            # change the input_file to the new_json_file_save
+            input_file = observation_instance.new_json_file_save
+
         # check if input_file is a list
         if isinstance(input_file, list):
             # take the first file in the list
@@ -2586,30 +2622,6 @@ class find_dynestyfile_and_priors:
         else:
             # No .dynesty => create from .pickle base name
             dynesty_file = possible_dynesty
-
-        lag_noise_prior = np.nan
-        lum_noise_prior = np.nan
-        # If user gave a valid .prior path, read it once.
-        if os.path.isfile(self.prior_file):
-            prior_path_noise = self.prior_file
-            lag_noise_prior, lum_noise_prior = read_prior_noise(self.prior_file)
-        else:
-            # Look for local .prior
-            existing_prior_list = [f for f in files if f.endswith(".prior")]
-            if existing_prior_list:
-                prior_path_noise = os.path.join(root, existing_prior_list[0])
-                lag_noise_prior, lum_noise_prior = read_prior_noise(prior_path_noise)
-        # if np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior):
-        #     if np.isnan(lag_noise_prior):
-        #         print("NO NOISE values found in prior file for lag.")
-        #     if np.isnan(lum_noise_prior):
-        #         print("NO NOISE values found in prior file for lum.")
-        # else:
-        #     print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
-        if not (np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior)):
-            print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
-
-        observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior)
 
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
@@ -2775,6 +2787,10 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     const_nominal.disruption_on = real_event.disruption_on
 
     const_nominal.lum_eff_type = real_event.lum_eff_type
+
+    # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
+    if real_event.v_init < 30000:
+        const_nominal.dt = 0.01
 
     # Minimum height [m]
     const_nominal.h_kill = real_event.h_kill 

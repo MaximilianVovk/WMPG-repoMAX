@@ -3099,7 +3099,7 @@ if __name__ == "__main__":
         default=r"",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
     
-    arg_parser.add_argument('--use_all_cameras', metavar='USE_ALL_CAMERAS', type=bool, default=True,
+    arg_parser.add_argument('--use_all_cameras', metavar='USE_ALL_CAMERAS', type=bool, default=False,
         help="If True, use only CAMO data for lag if present in pickle file, or generate json file with CAMO noise. If False, do not use/generate CAMO data (by default is False).")
 
     arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,

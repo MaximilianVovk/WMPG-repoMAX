@@ -2738,16 +2738,16 @@ class find_dynestyfile_and_priors:
         #         return  # Exit function to prevent duplicate insertion
             
         if self.output_dir=="":
-            # if root do not exist create it
-            if not os.path.exists(root):
-                os.makedirs(root)
+            # # if root do not exist create it
+            # if not os.path.exists(root):
+            #     os.makedirs(root)
             # Output folder is not specified
             output_folder = root
         else:
             # Output folder is specified
             output_folder = os.path.join(self.output_dir, base_name)
-            if not os.path.exists(output_folder):
-                os.makedirs(output_folder)
+            # if not os.path.exists(output_folder):
+            #     os.makedirs(output_folder)
 
         # Store results
         self.base_names.append(base_name)

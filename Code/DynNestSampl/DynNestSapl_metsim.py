@@ -91,7 +91,7 @@ def meteor_abs_magnitude_to_apparent(abs_mag, distance):
 ###############################################################################
 
 # Plotting function
-def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',file_name=''):
+def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',file_name='', color_sim='black', label_sim='Best guess'):
     ''' Plot the data with residuals and real data '''
 
     # Create the figure and main GridSpec with specified height ratios
@@ -365,7 +365,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     if sim_data is not None:
 
         # Plot simulated data
-        ax0.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr/1000, color='black', label='Best guess')
+        ax0.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
         ax0.legend()
         
         # inerpoate the abs_magnitude_arr to the leading_frag_height_arr
@@ -382,7 +382,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                     obs_data.height_lum[np.where(obs_data.stations_lum == station)]/1000, '.', \
                     color=station_colors[station], label=station)
 
-        ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000, color='black', label='Best guess') 
+        ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim) 
 
         # interpolate to make sure they are the same length and discard points after height starts increasing if it does at any point obs_metsim_obj.traj.observations[0].model_ht
         sim_lum = np.interp(obs_data.height_lum, 
@@ -401,7 +401,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         # find the obs_data.leading_frag_height_arr index is close to obs_data.height_lum[0] wihouth nan
         index = np.argmin(np.abs(sim_data.leading_frag_height_arr[~np.isnan(sim_data.leading_frag_height_arr)]-obs_data.height_lag[0]))
         # plot velocity_arr vs leading_frag_time_arr
-        ax2.plot(sim_data.time_arr-sim_data.time_arr[index], sim_data.leading_frag_vel_arr/1000, color='black', label='Best guess')
+        ax2.plot(sim_data.time_arr-sim_data.time_arr[index], sim_data.leading_frag_vel_arr/1000, color=color_sim, label=label_sim)
         ax2.legend()
 
         # inerpoate the velocity_arr to the leading_frag_time_arr
@@ -425,7 +425,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         
         sim_lag -= sim_lag[index]
         # plot lag_arr vs leading_frag_time_arr
-        ax3.plot(sim_data.time_arr-sim_data.time_arr[index], sim_lag, color='black', label='Best guess')
+        ax3.plot(sim_data.time_arr-sim_data.time_arr[index], sim_lag, color=color_sim, label=label_sim)
 
         # inerpoate the lag_arr to the leading_frag_time_arr
         sim_lag = np.interp(obs_data.height_lag,
@@ -482,9 +482,13 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # # If you want them labeled as-is:
     # ax5.set_xticklabels([str(tk) for tk in new_ticks])
 
+    # # Save the plot
+    # print('file saved: '+output_folder +os.sep+ file_name+'_best_fit_plot.png')
+    # fig.savefig(output_folder +os.sep+ file_name +'_best_fit_plot.png', dpi=300)
+
     # Save the plot
-    print('file saved: '+output_folder +os.sep+ file_name+'_best_fit_plot.png')
-    fig.savefig(output_folder +os.sep+ file_name +'_best_fit_plot.png', dpi=300)
+    print('file saved: '+output_folder +os.sep+ file_name+'_LumLag_plot.png')
+    fig.savefig(output_folder +os.sep+ file_name +'_LumLag_plot.png', dpi=300)
 
     # Display the plot
     plt.close(fig)
@@ -517,6 +521,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     weights /= np.sum(weights)
 
     samples_equal = dynesty.utils.resample_equal(dynesty_run_results.samples, weights)
+    all_samples = dynesty.utils.resample_equal(dynesty_run_results.samples, weights)
 
     # Mapping of original variable names to LaTeX-style labels
     variable_map = {
@@ -555,6 +560,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     for i, variable in enumerate(variables):
         if 'log' in flags_dict[variable]:  
             samples_equal[:, i] = 10**(samples_equal[:, i])
+            all_samples[:, i] = 10**(all_samples[:, i])
             best_guess[i] = 10**(best_guess[i])
             labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
         # check variable is 'v_init' or 'erosion_height_start' divide by 1000
@@ -599,15 +605,6 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         else:
             return obj
 
-    # Prepare dictionary and convert all values to serializable format
-    constjson_bestfit_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
-
-    # Save as JSON
-    output_path = os.path.join(output_folder, file_name + '_sim_fit_dynesty_BestGuess.json')
-    with open(output_path, 'w') as f:
-        json.dump(constjson_bestfit_dict, f, indent=4)
-
-
     print('Best fit:')
     # write the best fit variable names and then the best guess values
     for i in range(len(best_guess)):
@@ -636,21 +633,32 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         print('DIFF logL:', diff_logL)
     ### PLOT best fit ###
 
+    # create a folder to save the fit plots
+    if not os.path.exists(output_folder +os.sep+ 'fit_plots'):
+        os.makedirs(output_folder +os.sep+ 'fit_plots')
+
     best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
 
     # Plot the data with residuals and the best fit
-    # plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder, file_name + "_best_fit")
-    plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder, file_name)
+    plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
 
+    # Prepare dictionary and convert all values to serializable format
+    constjson_bestfit_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
 
+    # Save as JSON
+    output_path = os.path.join(output_folder +os.sep+ 'fit_plots', file_name + '_sim_fit_dynesty_BestGuess.json')
+    with open(output_path, 'w') as f:
+        json.dump(constjson_bestfit_dict, f, indent=4)
 
     ### TABLE OF POSTERIOR SUMMARY STATISTICS ###
 
     # Posterior mean (per dimension)
     posterior_mean = np.mean(samples_equal, axis=0)      # shape (ndim,)
+    all_samples_mean = np.mean(all_samples, axis=0)      # shape (ndim,)
 
     # Posterior median (per dimension)
     posterior_median = np.median(samples_equal, axis=0)  # shape (ndim,)
+    all_samples_median = np.median(all_samples, axis=0)  # shape (ndim,)
 
     # 95% credible intervals (2.5th and 97.5th percentiles)
     lower_95 = np.percentile(samples_equal, 2.5, axis=0)   # shape (ndim,)
@@ -663,6 +671,61 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         return 0.5 * (bin_edges[idx_max] + bin_edges[idx_max + 1])
 
     approx_modes = [approximate_mode_1d(samples_equal[:, d]) for d in range(ndim)]
+    approx_modes_all = [approximate_mode_1d(all_samples[:, d]) for d in range(ndim)]
+
+    ### MODE PLOT and json ###
+
+    approx_mode_obj_plot = run_simulation(approx_modes_all, obs_data, variables, fixed_values)
+
+    for variable in variables:
+        if variable in constjson_bestfit.__dict__.keys():
+            constjson_bestfit.__dict__[variable] = approx_modes_all[variables.index(variable)]
+
+    # Prepare dictionary and convert all values to serializable format
+    constjson_mode_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
+
+    # Save as JSON
+    with open(os.path.join(output_folder +os.sep+ 'fit_plots', file_name + '_sim_fit_dynesty_mode.json'), 'w') as f:
+        json.dump(constjson_mode_dict, f, indent=4)
+
+    ### MEAN PLOT and json ###
+
+    # Plot the data with residuals and the best fit
+    plot_data_with_residuals_and_real(obs_data, approx_mode_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mode','red', 'Mode')
+
+    mean_obj_plot = run_simulation(all_samples_mean, obs_data, variables, fixed_values)
+
+    for variable in variables:
+        if variable in constjson_bestfit.__dict__.keys():
+            constjson_bestfit.__dict__[variable] = all_samples_mean[variables.index(variable)]
+
+    # Prepare dictionary and convert all values to serializable format
+    constjson_mean_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
+
+    # Save as JSON
+    with open(os.path.join(output_folder +os.sep+ 'fit_plots', file_name + '_sim_fit_dynesty_mean.json'), 'w') as f:
+        json.dump(constjson_mean_dict, f, indent=4)
+
+    ### MEDIAN PLOT and json ###
+
+    # Plot the data with residuals and the best fit
+    plot_data_with_residuals_and_real(obs_data, mean_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mean','blue', 'Mean')
+
+    median_obj_plot = run_simulation(all_samples_median, obs_data, variables, fixed_values)
+
+    # Plot the data with residuals and the best fit
+    plot_data_with_residuals_and_real(obs_data, median_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_median','cornflowerblue', 'Median')
+
+    for variable in variables:
+        if variable in constjson_bestfit.__dict__.keys():
+            constjson_bestfit.__dict__[variable] = all_samples_median[variables.index(variable)]
+
+    # Prepare dictionary and convert all values to serializable format
+    constjson_median_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
+
+    # Save as JSON
+    with open(os.path.join(output_folder +os.sep+ 'fit_plots', file_name + '_sim_fit_dynesty_median.json'), 'w') as f:
+        json.dump(constjson_median_dict, f, indent=4)
 
     truth_values_plot = {}
     # if 'dynesty_run_results has const
@@ -704,7 +767,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
                 truths[i] = truths[i] * 1e6
 
         # Compare to true theta
-        bias = posterior_mean - truths
+        # bias = posterior_mean - truths
+        bias = approx_modes - truths
         abs_error = np.abs(bias)
         rel_error = abs_error / np.abs(truths) * 100
 
@@ -721,15 +785,15 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \resizebox{\textwidth}{!}{ % Resizing table to fit page width
     \begin{tabular}{|l|c|c|c|c|c|c||c|c||c|}
     \hline
-    Parameter & 2.5CI & True Value & Mean & Median & Mode & 97.5CI & Abs.Error & Rel.Error\% & Cover \\
+    Parameter & 2.5CI & True Value & Mode & Mean & Median & 97.5CI & Abs.Error & Rel.Error\% & Cover \\
     \hline
         """
         # & Mode
         # {approx_modes[i]:.4g} &
         for i, label in enumerate(labels):
             coverage_val = "\ding{51}" if coverage_mask[i] else "\ding{55}"  # Use checkmark/x for coverage
-            latex_str += (f"    {label} & {lower_95[i]:.4g} & {truths[i]:.4g} & {posterior_mean[i]:.4g} "
-                        f"& {posterior_median[i]:.4g} & {approx_modes[i]:.4g} & {upper_95[i]:.4g} "
+            latex_str += (f"    {label} & {lower_95[i]:.4g} & {truths[i]:.4g} & {approx_modes[i]:.4g}"
+                        f"& {posterior_mean[i]:.4g} & {posterior_median[i]:.4g} & {upper_95[i]:.4g} "
                         f"& {abs_error[i]:.4g} & {rel_error[i]:.4g}\% & {coverage_val} \\\\\n    \hline\n")
 
     else:
@@ -751,8 +815,20 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
                         f"& {posterior_median[i]:.4g} & {approx_modes[i]:.4g} & {upper_95[i]:.4g} \\\\\n    \hline\n")
 
     latex_str += r"""
-    \end{tabular}}
-    \caption{Posterior summary statistics comparing estimated values with the true values. The cover column indicates whether the true value is within the 95\% confidence interval.}
+    \end{tabular}} 
+    \caption{"""
+
+    # check if the file_name has a _ in it if so put \ before it
+    if '_' in file_name:
+        file_name_caption = file_name.replace('_', '\_')
+    else:
+        file_name_caption = file_name
+
+    if hasattr(obs_data, 'const'):
+        latex_str += f"Posterior summary statistics for {file_name_caption} simulation. Absolute and relative errors are calculated based on the mode. The Cover column indicates whether the true value lies within the 95\% CI."
+    else:
+        latex_str += f"Posterior summary statistics for {file_name_caption} meteor."
+    latex_str += r"""}
     \label{tab:posterior_summary}
 \end{table}"""
 

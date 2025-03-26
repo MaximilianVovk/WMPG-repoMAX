@@ -556,19 +556,23 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     sim_num = -1
     # copy the best guess values
     best_guess = copy.deepcopy(dynesty_run_results.samples[sim_num])
+    best_guess_table = copy.deepcopy(dynesty_run_results.samples[sim_num])
     # for variable in variables: for 
     for i, variable in enumerate(variables):
         if 'log' in flags_dict[variable]:  
             samples_equal[:, i] = 10**(samples_equal[:, i])
             all_samples[:, i] = 10**(all_samples[:, i])
             best_guess[i] = 10**(best_guess[i])
+            best_guess_table[i] = 10**(best_guess_table[i])
             labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
         # check variable is 'v_init' or 'erosion_height_start' divide by 1000
         if variable == 'v_init' or variable == 'erosion_height_start' or variable == 'erosion_height_change':
             samples_equal[:, i] = samples_equal[:, i] / 1000
+            best_guess_table[i] = best_guess_table[i] / 1000
         # check variable is 'erosion_coeff' or 'sigma' divide by 1e6
         if variable == 'erosion_coeff' or variable == 'sigma' or variable == 'erosion_coeff_change' or variable == 'erosion_sigma_change':
             samples_equal[:, i] = samples_equal[:, i] * 1e6
+            best_guess_table[i] = best_guess_table[i] * 1e6
 
     constjson_bestfit = Constants()
     # change Constants that have the same variable names and the one fixed
@@ -783,16 +787,14 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \renewcommand{\arraystretch}{1.2} % Increase row height for readability
     \setlength{\tabcolsep}{4pt} % Adjust column spacing
     \resizebox{\textwidth}{!}{ % Resizing table to fit page width
-    \begin{tabular}{|l|c|c|c|c|c|c||c|c||c|}
+    \begin{tabular}{|l|c|c|c|c|c|c|c||c|c||c|}
     \hline
-    Parameter & 2.5CI & True Value & Mode & Mean & Median & 97.5CI & Abs.Error & Rel.Error\% & Cover \\
+    Parameter & 2.5CI & True Value & Best Guess & Mode & Mean & Median & 97.5CI & Abs.Error & Rel.Error\% & Cover \\
     \hline
         """
-        # & Mode
-        # {approx_modes[i]:.4g} &
         for i, label in enumerate(labels):
             coverage_val = "\ding{51}" if coverage_mask[i] else "\ding{55}"  # Use checkmark/x for coverage
-            latex_str += (f"    {label} & {lower_95[i]:.4g} & {truths[i]:.4g} & {approx_modes[i]:.4g}"
+            latex_str += (f"    {label} & {lower_95[i]:.4g} & {truths[i]:.4g} & {best_guess_table[i]:.4g} & {approx_modes[i]:.4g} "
                         f"& {posterior_mean[i]:.4g} & {posterior_median[i]:.4g} & {upper_95[i]:.4g} "
                         f"& {abs_error[i]:.4g} & {rel_error[i]:.4g}\% & {coverage_val} \\\\\n    \hline\n")
 
@@ -803,16 +805,16 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \renewcommand{\arraystretch}{1.2} % Increase row height for readability
     \setlength{\tabcolsep}{4pt} % Adjust column spacing
     \resizebox{\textwidth}{!}{ % Resizing table to fit page width
-    \begin{tabular}{|l|c|c|c|c|c|}
+    \begin{tabular}{|l|c|c|c|c|c|c|}
     \hline
-    Parameter & 2.5CI & Mean & Median & Mode & 97.5CI\\
+    Parameter & 2.5CI & Best Guess & Mode & Mean & Median & 97.5CI\\
     \hline
         """
         # & Mode
         # {approx_modes[i]:.4g} &
         for i, label in enumerate(labels):
-            latex_str += (f"    {label} & {lower_95[i]:.4g} & {posterior_mean[i]:.4g} "
-                        f"& {posterior_median[i]:.4g} & {approx_modes[i]:.4g} & {upper_95[i]:.4g} \\\\\n    \hline\n")
+            latex_str += (f"    {label} & {lower_95[i]:.4g} & {best_guess_table[i]:.4g} & {approx_modes[i]:.4g} & {posterior_mean[i]:.4g} "
+                        f"& {posterior_median[i]:.4g} & {upper_95[i]:.4g} \\\\\n    \hline\n")
 
     latex_str += r"""
     \end{tabular}} 
@@ -825,9 +827,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         file_name_caption = file_name
 
     if hasattr(obs_data, 'const'):
-        latex_str += f"Posterior summary statistics for {file_name_caption} simulation. Absolute and relative errors are calculated based on the mode. The Cover column indicates whether the true value lies within the 95\% CI."
+        latex_str += f"Posterior summary statistics for {file_name_caption} test case. The Best Guess is the simulation with the highest likelihood. Absolute and relative errors are calculated based on the mode. The Cover column indicates whether the true value lies within the 95\% CI."
     else:
-        latex_str += f"Posterior summary statistics for {file_name_caption} meteor."
+        latex_str += f"Posterior summary statistics for {file_name_caption} meteor. The Best Guess is the simulation with the highest likelihood."
     latex_str += r"""}
     \label{tab:posterior_summary}
 \end{table}"""
@@ -3086,7 +3088,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
     # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
         default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mode/EMCCD_ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mean/EMCCD_ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mode/CAMO_ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mean/CAMO_ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mean/EMCCD_CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mode/EMCCD_CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mean/CAMO_CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mode/CAMO_CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mean/EMCCD_DRA_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mode/EMCCD_DRA_mode_with_noise.json",
         # "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-6kg/ORI_mode_with_noise5e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_3e-6kg/ORI_mode_with_noise3e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-6kg/ORI_mode_with_noise1e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_8e-7kg/ORI_mode_with_noise8e-7kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-7kg/ORI_mode_with_noise5e-7kg.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")

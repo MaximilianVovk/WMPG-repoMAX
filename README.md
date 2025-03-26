@@ -14,6 +14,11 @@ This repository contains a collection of tools and scripts designed for the anal
 ### `Code` Folder
 The `Code` folder contains the main scripts used for data processing and analysis.
 
+#### DynNestSampl
+- **Description**: Implements Principal Dynamuc Nested Sampling to define uncertanty estimate for the meteor. It reads automatically EMCCD and CAMO .pickle data but it can also work with metsim jons data if path and file name are i the input directory.
+- **Usage**: `python "WMPG-repoMAX\Code\DynNestSampl\DynNestSapl_metsim.py" "C:\Users\maxiv\Documents\INPUT-FOLDER" --output_dir "C:\Users\maxiv\Desktop\OUTPUT-FOLDER" --prior "C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\stony_meteoroid.prior"`
+- **Dependencies**: WMPG, Dynesty
+- 
 #### EMCCD_manual-auto_errPlot
 - **Description**: This script generates plots to compare the pixel positions of meteors as determined by manual reductions against those obtained from automated methods.
 - **Usage**: `python -m Plots_LightCurves`
@@ -23,11 +28,6 @@ The `Code` folder contains the main scripts used for data processing and analysi
 - **Description**: Implements Principal Component Analysis (PCA) to identify the closest reduced events to a subset of simulated meteors, using the WMPG's GenerateSimulations.py for simulation.
 - **Usage**: `python -m Faint_meteor_PhysUncert.py /home/mvovk/PCA/PER_1000_1milion_manual /home/mvovk/PCA/ 1000`
 - **Dependencies**: WMPG
-
-#### DynNestSampl
-- **Description**: Implements Principal Dynamuc Nested Sampling to define uncertanty estimate for the meteor. It reads automatically EMCCD and CAMO .pickle data but it can also work with metsim jons data if path and file name are i the input directory.
-- **Usage**: `python "WMPG-repoMAX\Code\DynNestSampl\DynNestSapl_metsim.py" "C:\Users\maxiv\Documents\INPUT-FOLDER" --output_dir "C:\Users\maxiv\Desktop\OUTPUT-FOLDER" --prior ""C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\stony_meteoroid.prior""
-- **Dependencies**: WMPG, Dynesty
 
 #### SSA
 - **Description**: Satellite safety caliubration for EMCCD and LCAM cameras

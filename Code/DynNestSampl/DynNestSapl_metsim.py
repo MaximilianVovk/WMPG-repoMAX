@@ -540,7 +540,27 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
         'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
         'noise_lag': r"$\varepsilon_{lag}$ [m]",
-        'noise_lum': r"$\varepsilon_{lum}$ [J/s]"
+        'noise_lum': r"$\varepsilon_{lum}$ [W]"
+    }
+
+    # Mapping of original variable names to LaTeX-style labels
+    variable_map_plot = {
+        'v_init': r"$v_0$ [m/s]",
+        'zenith_angle': r"$z_c$ [rad]",
+        'm_init': r"$m_0$ [kg]",
+        'rho': r"$\rho$ [kg/m$^3$]",
+        'sigma': r"$\sigma$ [kg/J]",
+        'erosion_height_start': r"$h_e$ [m]",
+        'erosion_coeff': r"$\eta$ [kg/J]",
+        'erosion_mass_index': r"$s$",
+        'erosion_mass_min': r"$m_{l}$ [kg]",
+        'erosion_mass_max': r"$m_{u}$ [kg]",
+        'erosion_height_change': r"$h_{e2}$ [m]",
+        'erosion_coeff_change': r"$\eta_{2}$ [kg/J]",
+        'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
+        'erosion_sigma_change': r"$\sigma_{2}$ [kg/J]",
+        'noise_lag': r"$\varepsilon_{lag}$ [m]",
+        'noise_lum': r"$\varepsilon_{lum}$ [W]"
     }
 
     # check if there are variables in the flags_dict that are not in the variable_map
@@ -550,7 +570,13 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             # Add the variable to the map with a default label
             variable_map[variable] = variable
     labels = [variable_map[variable] for variable in variables]
-    labels_plot = labels. copy() # list for plot labels
+
+    for variable in variables:
+        if variable not in variable_map_plot:
+            print(f"Warning: {variable} not found in variable_map")
+            # Add the variable to the map with a default label
+            variable_map_plot[variable] = variable
+    labels_plot = [variable_map_plot[variable] for variable in variables]
 
     ndim = len(variables)
     sim_num = -1
@@ -2887,7 +2913,7 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     return simulation_MetSim_object
 
 
-def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout=10):
+def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout=20):
     """
     Runs the simulation with a timeout in a separate process to allow parallel execution.
     """
@@ -3031,7 +3057,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
         print("Starting new run:")
         # Start new run
         with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
-                               logl_args=(obs_data, flags_dict, fixed_values, 10),
+                               logl_args=(obs_data, flags_dict, fixed_values, 20),
                                ptform_args=(bounds, flags_dict)) as pool:
             ### NEW RUN
             dsampler = dynesty.DynamicNestedSampler(pool.loglike, 
@@ -3044,7 +3070,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
         print('Warning: make sure the number of parameters and the bounds are the same as the previous run!')
         # Resume previous run
         with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
-                               logl_args=(obs_data, flags_dict, fixed_values, 10),
+                               logl_args=(obs_data, flags_dict, fixed_values, 20),
                                ptform_args=(bounds, flags_dict)) as pool:
             ### RESUME:
             dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, 
@@ -3094,7 +3120,7 @@ if __name__ == "__main__":
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     # /home/mvovk/Results/Results_Nested/validation/
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"/home/mvovk/Results/Results_Nested/Validation_CAMO-EMCCD/",
+        default=r"",
         help="Where to store results. If empty, store next to each .dynesty.")
     # /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,

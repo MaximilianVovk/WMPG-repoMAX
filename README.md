@@ -14,20 +14,28 @@ This repository contains a collection of tools and scripts designed for the anal
 ### `Code` Folder
 The `Code` folder contains the main scripts used for data processing and analysis.
 
-#### ERROR_PLOT
+#### EMCCD_manual-auto_errPlot
 - **Description**: This script generates plots to compare the pixel positions of meteors as determined by manual reductions against those obtained from automated methods.
 - **Usage**: `python -m Plots_LightCurves`
 - **Dependencies**: WMPG
 
-#### PCA
+#### Faint_meteor_PhysUnc_RMSD-PCA
 - **Description**: Implements Principal Component Analysis (PCA) to identify the closest reduced events to a subset of simulated meteors, using the WMPG's GenerateSimulations.py for simulation.
-- **Usage**: `python -m wmpl.MetSim.ML.GenerateSimulations_MAX "C:\Users\maxiv\Documents\UWO\Western Meteor Physics Group\Conferences\20230618 - ACM\Code_use\Simulations_PER" ErosionSimParametersEMCCD_PER 100`
-`python -m EMCCD_PCA_Shower_PhysProp /home/mvovk/PCA/PER_1000_1milion_manual PER /home/mvovk/PCA/ 1000`
-`python -m Plots_LightCurves`
+- **Usage**: `python -m Faint_meteor_PhysUncert.py /home/mvovk/PCA/PER_1000_1milion_manual /home/mvovk/PCA/ 1000`
 - **Dependencies**: WMPG
 
+#### DynNestSampl
+- **Description**: Implements Principal Dynamuc Nested Sampling to define uncertanty estimate for the meteor. It reads automatically EMCCD and CAMO .pickle data but it can also work with metsim jons data if path and file name are i the input directory.
+- **Usage**: `python "WMPG-repoMAX\Code\DynNestSampl\DynNestSapl_metsim.py" "C:\Users\maxiv\Documents\INPUT-FOLDER" --output_dir "C:\Users\maxiv\Desktop\OUTPUT-FOLDER" --prior ""C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\stony_meteoroid.prior""
+- **Dependencies**: WMPG, Dynesty
+
+#### SSA
+- **Description**: Satellite safety caliubration for EMCCD and LCAM cameras
+- **Usage**: `python Plot_AzAltMag_errCamera.py "C:\Users\maxiv\Documents\INPUT-FOLDER" ErosionSimParametersEMCCD_PER 100`
+- **Dependencies**: RMS
+
 #### `Utils` Folder
-This folder contains utility scripts to assist with the preparation of data for METAL MIFIT and SkyFit2 reductions.
+This folder contains utility scripts to assist with the preparation of data for METAL MIFIT and SkyFit2 reductions and conversion between pickle to json file and from.met to .ecsv file for trajectory solution.
 
 ### `Thesis` Folder
 The `Thesis` folder contains the comprehensive 2 pdf.

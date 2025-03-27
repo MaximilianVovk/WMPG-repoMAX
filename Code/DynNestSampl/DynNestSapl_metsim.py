@@ -1046,14 +1046,17 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "erosion_mass_max": (1e-10, 1e-7),  # log transformation applied later
         "rho_grain": (3000, 3500),
         "erosion_height_change": (\
-            object_meteor.height_lum[-1]+100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
-            object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
+            object_meteor.height_lum[-1] -100,\
+            object_meteor.height_lum[0] +100),
         "erosion_coeff_change": (1 / 1e12, 2 / 1e6),  # log transformation applied later
         "erosion_rho_change": (10, 4000),  # log transformation applied later
         "erosion_sigma_change": (0.001 / 1e6, 0.05 / 1e6),
         "noise_lag": (10, object_meteor.noise_lag), # more of a peak around the real value
         "noise_lum": (3, object_meteor.noise_lum) # look for more values at higher uncertainty can be because of the noise
     }
+
+    # object_meteor.height_lum[-1] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
+    # object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
 
     default_flags = {
         "v_init": ["norm"],
@@ -2940,6 +2943,11 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     if 'erosion_mass_max' in var_names and 'm_init' in var_names:
         # check if the guess_var of the erosion_mass_max is smaller than the guess_var of the m_init
         if guess_var[var_names.index('erosion_mass_max')] > guess_var[var_names.index('m_init')]:
+            return -np.inf
+
+    if 'erosion_height_start' in var_names and 'erosion_height_change' in var_names:
+        # check if the guess_var of the erosion_height_start is smaller than the guess_var of the erosion_height_change
+        if guess_var[var_names.index('erosion_height_change')] > guess_var[var_names.index('erosion_height_start')]:
             return -np.inf
 
     ### ONLY on LINUX ###

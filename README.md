@@ -1,13 +1,5 @@
 # WMPG Max'repository
-Western Meteor Physics Group (WMPG) Maximilian Vovk's personal repository.
-
-- **Meteor Light and Atomic Excitation**: Meteor light is mainly produced by atoms in excited states, often neutrals like iron, sodium, and oxygen, released from the meteor body. These atoms get excited and emit light upon colliding with atmospheric molecules. This process generally does not ionize the atoms except at high speeds.
-
-- **Ionization at High Speeds**: At greater velocities, ionization contributes more to meteor light, exemplified by the triple seven line of oxygen, which requires more energy to become visible.
-
-- **Emission Lines**: Meteor light features individual emission lines from excited states of meteoroid material (such as calcium, magnesium, silicon, iron), different from a blackbody spectrum. The light emission occurs when these excited electrons return to a lower energy state.
-
-This repository contains a collection of tools and scripts designed for the analysis and reduction of meteor data. The primary focus is on comparing manual and automated meteor reductions, implementing principal component analysis (PCA) for event classification, and preparing data for advanced reduction techniques.
+Western Meteor Physics Group (WMPG) Maximilian Vovk's personal repository. This repository contains a collection of tools and scripts designed for the analysis and reduction of meteor data. The primary focus is on comparing manual and automated meteor reductions, implementing principal component analysis (PCA) for event classification, and Dynamic Nested Sampling for uncertanty estimation of meteor physical properties.
 
 ## Repository Structure
 
@@ -30,8 +22,8 @@ The `Code` folder contains the main scripts used for data processing and analysi
 - **Dependencies**: WMPG
 
 #### SSA
-- **Description**: Satellite safety caliubration for EMCCD and LCAM cameras
-- **Usage**: `python Plot_AzAltMag_errCamera.py "C:\Users\maxiv\Documents\INPUT-FOLDER" ErosionSimParametersEMCCD_PER 100`
+- **Description**: Satellite calibration for EMCCD and LCAM cameras accuracy checks.
+- **Usage**: `python Plot_AzAltMag_errCamera.py "C:\Users\maxiv\Documents\INPUT-FOLDER"`
 - **Dependencies**: RMS
 
 #### `Utils` Folder

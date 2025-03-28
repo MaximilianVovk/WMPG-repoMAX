@@ -579,7 +579,10 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     labels_plot = [variable_map_plot[variable] for variable in variables]
 
     ndim = len(variables)
-    sim_num = -1
+    sim_num = np.argmax(dynesty_run_results.logl)
+    # print the best guess index and the last index
+    print('Best guess index:', sim_num, 'Last index:', len(dynesty_run_results.logl)-1)
+    # print('Best guess index:', sim_num)
     # copy the best guess values
     best_guess = copy.deepcopy(dynesty_run_results.samples[sim_num])
     best_guess_table = copy.deepcopy(dynesty_run_results.samples[sim_num])
@@ -613,9 +616,11 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     constjson_bestfit.__dict__['P_0m'] = obs_data.P_0m
     constjson_bestfit.__dict__['lum_eff_type'] = obs_data.lum_eff_type
+    constjson_bestfit.__dict__['disruption_on'] = obs_data.disruption_on
     constjson_bestfit.__dict__['dens_co'] = obs_data.dens_co
     constjson_bestfit.__dict__['dt'] = obs_data.dt
     constjson_bestfit.__dict__['h_kill'] = obs_data.h_kill
+    constjson_bestfit.__dict__['v_kill'] = obs_data.v_kill
 
     def convert_to_serializable(obj):
         if isinstance(obj, np.ndarray):
@@ -2195,6 +2200,14 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             # check if the h_kill is smaller than 0
             if obs_data.h_kill < 0:
                 obs_data.h_kill = 1
+            # check if np.min(obs_data.velocity[-1]) is smaller than v_init-10000
+            if np.min(obs_data.velocities) < obs_data.v_init-10000:
+                obs_data.v_kill = obs_data.v_init-10000
+            else:
+                obs_data.v_kill = np.min(obs_data.velocities)-5000
+            # check if the v_kill is smaller than 0
+            if obs_data.v_kill < 0:
+                obs_data.v_kill = 1
 
             ##################################################################################################
 
@@ -2897,6 +2910,9 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
 
     # Minimum height [m]
     const_nominal.h_kill = real_event.h_kill 
+
+    # minim velocity [m/s]
+    const_nominal.v_kill = real_event.v_kill
     
     # # Initial meteoroid height [m]
     # const_nominal.h_init = 180000

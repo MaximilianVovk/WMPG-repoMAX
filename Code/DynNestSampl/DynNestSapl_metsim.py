@@ -1060,6 +1060,9 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "noise_lum": (3, object_meteor.noise_lum) # look for more values at higher uncertainty can be because of the noise
     }
 
+    # object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
+    # object_meteor.height_lum[0] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
+
     # object_meteor.height_lum[-1] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
     # object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
 
@@ -3086,8 +3089,9 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             ### NEW RUN
             dsampler = dynesty.DynamicNestedSampler(pool.loglike, 
                                                     pool.prior_transform, ndim,
+                                                    sample='rslice', nlive=2000,
                                                     pool = pool)
-            dsampler.run_nested(print_progress=True, dlogz_init=0.001, checkpoint_file=dynesty_file)
+            dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file) #  dlogz_init=0.001,
 
     else:
         print("Resuming previous run:")
@@ -3098,8 +3102,9 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
                                ptform_args=(bounds, flags_dict)) as pool:
             ### RESUME:
             dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, 
+                                                            sample='rslice', nlive=2000,
                                                             pool = pool)
-            dsampler.run_nested(resume=True, print_progress=True, dlogz_init=0.001, checkpoint_file=dynesty_file)
+            dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file) #  dlogz_init=0.001,
     # nlive=350, 
     # sample='rslice', 
     print('SUCCESS: dynesty results ready!\n')

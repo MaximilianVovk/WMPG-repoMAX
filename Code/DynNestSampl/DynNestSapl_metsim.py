@@ -3105,8 +3105,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             print('Warning: make sure the number of parameters and the bounds are the same as the previous run!')
 
             ### RESUME:
-            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, 
-                                                            # sample='rslice', nlive=2000,
+            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file,
                                                             pool = pool)
             dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
                 # dlogz_init=0.001,
@@ -3137,8 +3136,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
                                 logl_args=(obs_data, flags_dict, fixed_values, 20),
                                 ptform_args=(bounds, flags_dict)) as pool:
                 ### RESUME:
-                dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, 
-                                                                # sample='rslice', nlive=2000,
+                dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file,
                                                                 pool = pool)
                 dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file) # dlogz_init=0.001,
 

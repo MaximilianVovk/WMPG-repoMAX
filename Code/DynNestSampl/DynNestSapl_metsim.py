@@ -3058,11 +3058,24 @@ def prior_dynesty(cube,bounds,flags_dict):
     return x
 
 
+def prior_dynesty_single_arg(u):
+    """ Use global bounds and flags_dict. """
+    return prior_dynesty(u, GLOBAL_BOUNDS, GLOBAL_FLAGS_DICT)
+
+def log_likelihood_single_arg(u):
+    """ Use global obs_data, flags_dict, and fixed_values. """
+    return log_likelihood_dynesty(u, GLOBAL_OBS_DATA, GLOBAL_FLAGS_DICT, GLOBAL_FIXED_VALUES, 20)
 
 def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", file_name="",log_file_path=""):
     """
     Main function to run dynesty.
     """
+
+    global GLOBAL_BOUNDS, GLOBAL_FLAGS_DICT, GLOBAL_OBS_DATA, GLOBAL_FIXED_VALUES
+    GLOBAL_BOUNDS = bounds
+    GLOBAL_FLAGS_DICT = flags_dict
+    GLOBAL_OBS_DATA = obs_data
+    GLOBAL_FIXED_VALUES = fixed_values
 
     print("Starting dynesty run...")  
     # get variable names
@@ -3091,11 +3104,14 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
         if not pool.is_master():
             pool.wait()
             sys.exit(0)
+
         # check if file exists
         if not os.path.exists(dynesty_file):
             print("Starting new run:")
             ### NEW RUN
-            dsampler = dynesty.DynamicNestedSampler(log_likelihood_dynesty, prior_dynesty, ndim,
+
+            # Provide logl_args and ptform_args with a single argument
+            dsampler = dynesty.DynamicNestedSampler(log_likelihood_single_arg, prior_dynesty_single_arg, ndim,
                                                     # sample='rslice', nlive=2000,
                                                     pool = pool)
             dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)

@@ -31,7 +31,12 @@ import shutil
 import matplotlib.ticker as ticker
 import multiprocessing
 import math
-
+# If MPI is available, we can do:
+try:
+    from schwimmbad import MPIPool
+    USE_MPI = True
+except ImportError:
+    USE_MPI = False
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
 from wmpl.Utils.Math import lineFunc, mergeClosePoints, meanAngle
@@ -3078,46 +3083,66 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             # if so, set the noise_lag to the fixed value
             obs_data.noise_lag = fixed_values['noise_lag']
             print("Fixed noise in lag to:", fixed_values['noise_lag'])
-
-    # check if file exists
-    if not os.path.exists(dynesty_file):
-        print("Starting new run:")
-        # Start new run
-        with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
-                               logl_args=(obs_data, flags_dict, fixed_values, 20),
-                               ptform_args=(bounds, flags_dict)) as pool:
+    
+    if USE_MPI:
+        print("Using MPI for parallelization of multiple nodes")
+        # =============== MPI branch ==================
+        pool = MPIPool()
+        if not pool.is_master():
+            pool.wait()
+            sys.exit(0)
+        # check if file exists
+        if not os.path.exists(dynesty_file):
+            print("Starting new run:")
             ### NEW RUN
-            dsampler = dynesty.DynamicNestedSampler(pool.loglike, 
-                                                    pool.prior_transform, ndim,
-                                                    sample='rslice', nlive=2000,
+            dsampler = dynesty.DynamicNestedSampler(log_likelihood_dynesty, prior_dynesty, ndim,
+                                                    # sample='rslice', nlive=2000,
                                                     pool = pool)
-            dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file) #  dlogz_init=0.001,
+            dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)
+            # dlogz_init=0.001,
+        else:
+            print("Resuming previous run:")
+            print('Warning: make sure the number of parameters and the bounds are the same as the previous run!')
 
-    else:
-        print("Resuming previous run:")
-        print('Warning: make sure the number of parameters and the bounds are the same as the previous run!')
-        # Resume previous run
-        with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
-                               logl_args=(obs_data, flags_dict, fixed_values, 20),
-                               ptform_args=(bounds, flags_dict)) as pool:
             ### RESUME:
             dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, 
-                                                            sample='rslice', nlive=2000,
+                                                            # sample='rslice', nlive=2000,
                                                             pool = pool)
-            dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file) #  dlogz_init=0.001,
-    # nlive=350, 
-    # sample='rslice', 
-    print('SUCCESS: dynesty results ready!\n')
+            dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
+                # dlogz_init=0.001,
+        pool.close()                
 
-    # dsampler.run_nested(
-    #     nlive_init=500,         # or override if you prefer a different baseline
-    #     maxiter=100000,         # overall max number of iterations
-    #     maxcall=2000000,        # overall max number of likelihood calls
-    #     dlogz_init=0.001,       # tighten from default 0.01 
-    #     print_progress=True,
-    #     checkpoint_file='mcmc_checkpoint.dynesty',
-    #     checkpoint_every=60,    # how often (in seconds) to write checkpoint
-    # )
+    else:
+        # =========== Normal multiprocessing ========== 
+
+        # check if file exists
+        if not os.path.exists(dynesty_file):
+            print("Starting new run:")
+            # Start new run
+            with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
+                                logl_args=(obs_data, flags_dict, fixed_values, 20),
+                                ptform_args=(bounds, flags_dict)) as pool:
+                ### NEW RUN
+                dsampler = dynesty.DynamicNestedSampler(pool.loglike, 
+                                                        pool.prior_transform, ndim,
+                                                        # sample='rslice', nlive=2000,
+                                                        pool = pool)
+                dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file) #  dlogz_init=0.001,
+
+        else:
+            print("Resuming previous run:")
+            print('Warning: make sure the number of parameters and the bounds are the same as the previous run!')
+            # Resume previous run
+            with dynesty.pool.Pool(n_core, log_likelihood_dynesty, prior_dynesty,
+                                logl_args=(obs_data, flags_dict, fixed_values, 20),
+                                ptform_args=(bounds, flags_dict)) as pool:
+                ### RESUME:
+                dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, 
+                                                                # sample='rslice', nlive=2000,
+                                                                pool = pool)
+                dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file) # dlogz_init=0.001,
+
+    print('SUCCESS: dynesty results ready!\n')
 
     # check if output_folder is different from the dynesty_file folder
     if output_folder != os.path.dirname(dynesty_file):

@@ -364,7 +364,10 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         # make the difference between the no_noise_lag and the obs_data.lag
         diff_lag = no_noise_lag - obs_data.lag
         ax7.plot(obs_data.time_lag, diff_lag, '.', markersize=3, color='black', label='No Noise')
-
+        
+        fig.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
+    else:
+        fig.suptitle(f"{file_name}", fontsize=16, fontweight='bold')
 
     # Check if sim_data was provided
     if sim_data is not None:
@@ -446,7 +449,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
             ax7.plot(obs_data.time_lag[np.where(obs_data.stations_lag == station)], \
                     sim_diff_lag[np.where(obs_data.stations_lag == station)], '.', \
                         color=station_colors[station], label=station)
-
+        
     # ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise, abs_mag_sim_err + mag_noise, color='darkgray', alpha=0.2)
     # ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise * real_original['z_score'], abs_mag_sim_err + mag_noise * real_original['z_score'], color='lightgray', alpha=0.2)
 
@@ -506,11 +509,18 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     if log_file == '':
         log_file = os.path.join(output_folder, f"log_{file_name}.txt")
 
+    # check if _combined in the file_name
+    if '_combined' in file_name:
+        # remove _combined from the file_name
+        file_name = file_name.replace('_combined', '')
+
     print(dynesty_run_results.summary())
     print('information gain:', dynesty_run_results.information[-1])
     print('niter i.e number of metsim simulated events\n')
 
-    fig, axes = dyplot.runplot(dynesty_run_results,label_kwargs={"fontsize": 10})  # Reduce title font size)
+    fig, axes = dyplot.runplot(dynesty_run_results,
+                                label_kwargs={"fontsize": 15},  # Reduce axis label size
+                                )
     plt.savefig(output_folder +os.sep+ file_name +'_dynesty_runplot.png', dpi=300)
     plt.close(fig)
 
@@ -920,6 +930,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
                                     truth_color='black', show_titles=True,
                                     trace_cmap='viridis', connect=True,
                                     connect_highlight=range(5))
+        # make a super title
+        fig.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
 
     else:
 
@@ -930,6 +942,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
                                     show_titles=True,
                                     trace_cmap='viridis', connect=True,
                                     connect_highlight=range(5))
+        # make a super title
+        fig.suptitle(f"{file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
+
 
     # Adjust spacing and tick label size
     fig.subplots_adjust(hspace=0.5)  # Increase spacing between plots
@@ -965,6 +980,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             title_fmt='.2e',  # Scientific notation for titles
             fig=(fig, axes[:, :ndim])
         )
+        # add a super title
+        fg.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
+
     else:
 
         # Increase spacing between subplots
@@ -980,6 +998,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             title_fmt='.2e',  # Scientific notation for titles
             fig=(fig, axes[:, :ndim])
         )
+        # add a super title
+        fg.suptitle(f"{file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
 
     # # Reduce tick size
     # for ax_row in ax:

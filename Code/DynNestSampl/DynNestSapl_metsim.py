@@ -2146,7 +2146,7 @@ class observation_data:
 # find dynestyfile and priors
 ###############################################################################
 
-def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, only_plot=True, cores=None):
+def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, only_plot=True, cores=None, pool_MPI=None):
     """
     Create the output folder if it doesn't exist.
     """
@@ -2250,7 +2250,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                 start_time = time.time()
                 # Run dynesty
                 try:
-                    main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name, log_file_path=log_file_path)
+                    main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name, log_file_path=log_file_path, poolMPI=pool_MPI)
                 except Exception as e:
                     # Open the file in append mode and write the error message
                     with open(log_file_path, "a") as log_file:
@@ -2307,8 +2307,11 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
     print("--------------------------------------------------")
     # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
     if os.path.exists(log_file_path):
-        # remove the file
-        os.remove(log_file_path)
+        # clear the file
+        with open(log_file_path, "w") as log_file:
+            log_file.write("")
+        # # remove the file
+        # os.remove(log_file_path)
     sys.stdout = Logger(out_folder,base_name_log) # 
     print(f"Meteor:", base_name)
     print("  File name:    ", pickle_files)
@@ -3091,7 +3094,7 @@ def log_likelihood_single_arg(u):
     """ Use global obs_data, flags_dict, and fixed_values. """
     return log_likelihood_dynesty(u, GLOBAL_OBS_DATA, GLOBAL_FLAGS_DICT, GLOBAL_FIXED_VALUES, 20)
 
-def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", file_name="",log_file_path=""):
+def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", file_name="",log_file_path="", pool_MPI=None):
     """
     Main function to run dynesty.
     """
@@ -3122,13 +3125,15 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             obs_data.noise_lag = fixed_values['noise_lag']
             print("Fixed noise in lag to:", fixed_values['noise_lag'])
     
-    if USE_MPI:
+    # Master-only: do any setup that requires file I/O
+    if (pool_MPI is None) or (pool_MPI.is_master()):
+        # e.g. check if dynesty_file exists, remove old logs, etc.
+        pass
+
+    # If using MPI, set up the dynamic sampler with the pool
+    if pool_MPI is not None:
         print("Using MPI for parallelization of multiple nodes")
         # =============== MPI branch ==================
-        pool = MPIPool()
-        if not pool.is_master():
-            pool.wait()
-            sys.exit(0)
 
         # check if file exists
         if not os.path.exists(dynesty_file):
@@ -3138,7 +3143,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             # Provide logl_args and ptform_args with a single argument
             dsampler = dynesty.DynamicNestedSampler(log_likelihood_single_arg, prior_dynesty_single_arg, ndim,
                                                     # sample='rslice', nlive=2000,
-                                                    pool = pool)
+                                                    pool = pool_MPI)
             dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)
             # dlogz_init=0.001,
         else:
@@ -3147,10 +3152,10 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
 
             ### RESUME:
             dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file,
-                                                            pool = pool)
+                                                            pool = pool_MPI)
             dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
                 # dlogz_init=0.001,
-        pool.close()                
+               
 
     else:
         # =========== Normal multiprocessing ========== 
@@ -3201,6 +3206,21 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
 ###############################################################################
 if __name__ == "__main__":
 
+
+    if USE_MPI:
+        print("Using MPI for parallelization of multiple nodes")
+        # 1. Create the MPIPool at the top
+        pool_MPI = MPIPool()
+
+        # 2. If *not* master, all worker processes wait and exit right here
+        if not pool_MPI.is_master():
+            pool_MPI.wait()
+            sys.exit(0)
+    else:
+        # Create the pool for multiprocessing
+        pool_MPI = None
+
+
     import argparse
 
     ### COMMAND LINE ARGUMENTS
@@ -3239,6 +3259,11 @@ if __name__ == "__main__":
     # Parse
     cml_args = arg_parser.parse_args()
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.resume, cml_args.use_all_cameras, cml_args.only_plot, cml_args.cores)
+    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.resume, cml_args.use_all_cameras, cml_args.only_plot, cml_args.cores, pool_MPI)
+
+    # Close the pool if using MPI
+    if pool_MPI is not None:
+        pool_MPI.close()
+        # pool.join()
 
     print("\nDONE: Completed processing of all files in the input directory.\n")    

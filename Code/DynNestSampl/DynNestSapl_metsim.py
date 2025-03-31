@@ -38,8 +38,10 @@ try:
     # Override if not using mpirun
     if not os.environ.get("OMPI_COMM_WORLD_SIZE"):  # Check if running with mpirun
         USE_MPI = False
+        print("Not using mpirun, running without MPI, using dynesty pool.")
 except ImportError:
     USE_MPI = False
+    print("MPI not available, using dynesty pool.")
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
 from wmpl.Utils.Math import lineFunc, mergeClosePoints, meanAngle

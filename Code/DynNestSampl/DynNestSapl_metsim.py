@@ -35,6 +35,9 @@ import math
 try:
     from schwimmbad import MPIPool
     USE_MPI = True
+    # Override if not using mpirun
+    if not os.environ.get("OMPI_COMM_WORLD_SIZE"):  # Check if running with mpirun
+        USE_MPI = False
 except ImportError:
     USE_MPI = False
 from wmpl.MetSim.GUI import loadConstants, SimulationResults

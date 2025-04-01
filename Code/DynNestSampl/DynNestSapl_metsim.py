@@ -31,17 +31,6 @@ import shutil
 import matplotlib.ticker as ticker
 import multiprocessing
 import math
-# If MPI is available, we can do:
-try:
-    from schwimmbad import MPIPool
-    USE_MPI = True
-    # Override if not using mpirun
-    if not os.environ.get("OMPI_COMM_WORLD_SIZE"):  # Check if running with mpirun
-        USE_MPI = False
-        print("Not using mpirun, running without MPI, using dynesty pool.")
-except ImportError:
-    USE_MPI = False
-    print("MPI not available, using dynesty pool.")
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
 from wmpl.Utils.Math import lineFunc, mergeClosePoints, meanAngle
@@ -3193,21 +3182,6 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
 ###############################################################################
 if __name__ == "__main__":
 
-
-    if USE_MPI:
-        print("Using MPI for parallelization of multiple nodes")
-        # 1. Create the MPIPool at the top
-        pool_MPI = MPIPool()
-
-        # 2. If *not* master, all worker processes wait and exit right here
-        if not pool_MPI.is_master():
-            pool_MPI.wait()
-            sys.exit(0)
-    else:
-        # Create the pool for multiprocessing
-        pool_MPI = None
-
-
     import argparse
 
     ### COMMAND LINE ARGUMENTS
@@ -3250,10 +3224,5 @@ if __name__ == "__main__":
     cml_args = arg_parser.parse_args()
 
     setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pool_MPI)
-
-    # Close the pool if using MPI
-    if pool_MPI is not None:
-        pool_MPI.close()
-        # pool.join()
 
     print("\nDONE: Completed processing of all files in the input directory.\n")    

@@ -124,11 +124,11 @@ def plot_photometry(input_folder):
                     linestyle = '--'  # Differentiate overlapping camera detections
                 else:
                     linestyle = '-'
-                plt.axvline(png_time_obj, color=color_map.get((date, camera), 'gray'), linestyle=linestyle, alpha=0.7, linewidth=3)
-                # plt.axvline(png_time_obj, color='black', linestyle=linestyle, alpha=0.7, linewidth=3)
+                # plt.axvline(png_time_obj, color=color_map.get((date, camera), 'gray'), linestyle=linestyle, alpha=0.7, linewidth=3)
+                plt.axvline(png_time_obj, color='black', linestyle=linestyle, alpha=0.7, linewidth=3)
 
     plt.xlabel("Time (HH:MM:SS)")
-    plt.ylabel(to_plot)
+    plt.ylabel('Photometric Offset (mag)')
     # plt.title(to_plot+" vs Time")
 
     # Format x-axis to show HH:MM:SS properly

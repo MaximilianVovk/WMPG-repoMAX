@@ -1,9 +1,9 @@
 """
-Nested sampling with Dynesty for MetSim meteor data ONLY generate plots and tables
-and genreate noise.
+Nested sampling with Dynesty for MetSim meteor data run dynsty and plot everithing using MPIPool 
+in order to run dynesty simulaions with  multiple node cluster.
 
 Author: Maximilian Vovk
-Date: 2025-02-25
+Date: 2025-04-01
 """
 
 from DynNestSapl_metsim import *

@@ -12,10 +12,10 @@ from schwimmbad import MPIPool
 if __name__ == "__main__":
 
     print("Using MPI for parallelization of multiple nodes")
-    # 1. Create the MPIPool at the top
+    # Create the MPIPool at the top
     pool_MPI = MPIPool()
 
-    # 2. If *not* master, all worker processes wait and exit right here
+    # If *not* master, all worker processes wait and exit right here
     if not pool_MPI.is_master():
         pool_MPI.wait()
         sys.exit(0)

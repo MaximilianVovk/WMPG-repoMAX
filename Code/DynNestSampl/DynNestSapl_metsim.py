@@ -2250,7 +2250,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                 start_time = time.time()
                 # Run dynesty
                 try:
-                    main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name, log_file_path=log_file_path, poolMPI=pool_MPI)
+                    main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name, log_file_path=log_file_path, pool_MPI=pool_MPI)
                 except Exception as e:
                     # Open the file in append mode and write the error message
                     with open(log_file_path, "a") as log_file:
@@ -2764,10 +2764,9 @@ class find_dynestyfile_and_priors:
 
         # Check for existing .dynesty in the same folder
         existing_dynesty_list = [f for f in files if f.endswith(".dynesty")]
-
         if existing_dynesty_list:
             # There is at least one .dynesty in this folder
-            if os.path.exists(possible_dynesty):
+            if os.path.exists(possible_dynesty) or (os.path.basename(possible_dynesty) in existing_dynesty_list):
                 # Matches the .pickle base
                 if self.resume:
                     dynesty_file = possible_dynesty
@@ -3086,24 +3085,11 @@ def prior_dynesty(cube,bounds,flags_dict):
     return x
 
 
-def prior_dynesty_single_arg(u):
-    """ Use global bounds and flags_dict. """
-    return prior_dynesty(u, GLOBAL_BOUNDS, GLOBAL_FLAGS_DICT)
-
-def log_likelihood_single_arg(u):
-    """ Use global obs_data, flags_dict, and fixed_values. """
-    return log_likelihood_dynesty(u, GLOBAL_OBS_DATA, GLOBAL_FLAGS_DICT, GLOBAL_FIXED_VALUES, 20)
 
 def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", file_name="",log_file_path="", pool_MPI=None):
     """
     Main function to run dynesty.
     """
-
-    global GLOBAL_BOUNDS, GLOBAL_FLAGS_DICT, GLOBAL_OBS_DATA, GLOBAL_FIXED_VALUES
-    GLOBAL_BOUNDS = bounds
-    GLOBAL_FLAGS_DICT = flags_dict
-    GLOBAL_OBS_DATA = obs_data
-    GLOBAL_FIXED_VALUES = fixed_values
 
     print("Starting dynesty run...")  
     # get variable names
@@ -3141,8 +3127,9 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             ### NEW RUN
 
             # Provide logl_args and ptform_args with a single argument
-            dsampler = dynesty.DynamicNestedSampler(log_likelihood_single_arg, prior_dynesty_single_arg, ndim,
-                                                    # sample='rslice', nlive=2000,
+            dsampler = dynesty.DynamicNestedSampler(log_likelihood_dynesty, prior_dynesty, ndim,
+                                                    logl_args=(obs_data, flags_dict, fixed_values, 20),
+                                                    ptform_args=(bounds, flags_dict),
                                                     pool = pool_MPI)
             dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)
             # dlogz_init=0.001,
@@ -3239,15 +3226,18 @@ if __name__ == "__main__":
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
         default=r"",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
-    
-    arg_parser.add_argument('--use_all_cameras', metavar='USE_ALL_CAMERAS', type=bool, default=False,
-        help="If True, use only CAMO data for lag if present in pickle file, or generate json file with CAMO noise. If False, do not use/generate CAMO data (by default is False).")
 
-    arg_parser.add_argument('--resume', metavar='RESUME', type=bool, default=True,
-        help="If True, resume from existing .dynesty if found. If False, create a new version.")
+    arg_parser.add_argument('-all','--all_cameras',
+        help="If active use all data, if not only CAMO data for lag if present in pickle file, or generate json file with CAMO noise. If False, do not use/generate CAMO data (by default is False).",
+        action="store_true")
+
+    arg_parser.add_argument('-new','--new_dynesty',
+        help="If active restart a new dynesty run if not resume from existing .dynesty if found. If False, create a new version.",
+        action="store_false")
     
-    arg_parser.add_argument('--only_plot', metavar='ONLY_PLOT', type=bool, default=False,
-        help="If True, only plot the results of the dynesty run. If False, run dynesty.")
+    arg_parser.add_argument('-plot','--only_plot',
+        help="If active only plot the results of the dynesty run, if not run dynesty.", 
+        action="store_true")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")
@@ -3259,7 +3249,7 @@ if __name__ == "__main__":
     # Parse
     cml_args = arg_parser.parse_args()
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.resume, cml_args.use_all_cameras, cml_args.only_plot, cml_args.cores, pool_MPI)
+    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pool_MPI)
 
     # Close the pool if using MPI
     if pool_MPI is not None:

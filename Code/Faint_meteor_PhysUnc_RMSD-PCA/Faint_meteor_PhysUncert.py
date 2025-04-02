@@ -5866,7 +5866,7 @@ if __name__ == "__main__":
     # /home/mvovk/Documents/json_test/Simulations_PER_v57_slow/PER_v57_slow.json,/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json,/home/mvovk/Documents/json_test/Simulations_PER_v60_light/PER_v60_light.json,/home/mvovk/Documents/json_test/Simulations_PER_v61_shallow/PER_v61_shallow.json,/home/mvovk/Documents/json_test/Simulations_PER_v62_steep/PER_v62_steep.json,/home/mvovk/Documents/json_test/Simulations_PER_v65_fast/PER_v65_fast.json
     # C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v57_slow\PER_v57_slow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v59_heavy\PER_v59_heavy.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v60_light\PER_v60_light.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v61_shallow\PER_v61_shallow.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v62_steep\PER_v62_steep.json,C:\Users\maxiv\Documents\UWO\Papers\1)PCA\json_test\Simulations_PER_v65_fast\PER_v65_fast.json
     # /home/mvovk/Desktop/Test/20210813-061452.998134
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json', \
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, default=r'/home/mvovk/Documents/json_test/Simulations_PER_v59_heavy/PER_v59_heavy.json', \
        help="Path were are store both simulated and observed shower .csv file.")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, \
     #     help="Path were are store both simulated and observed shower .csv file.")

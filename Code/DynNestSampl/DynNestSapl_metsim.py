@@ -322,7 +322,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                                         np.flip(obs_data.luminosity_arr))
         
         # make the difference between the no_noise_intensity and the obs_data.luminosity_arr
-        diff_lum = no_noise_lum - obs_data.luminosity
+        diff_lum = obs_data.luminosity - no_noise_lum
         ax5.plot(diff_lum, obs_data.height_lum/1000, '.', markersize=3, color='black', label='No Noise')
 
 
@@ -339,7 +339,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                                     np.flip(obs_data.leading_frag_vel_arr))
         
         # make the difference between the no_noise_vel and the obs_data.velocities
-        diff_vel = no_noise_vel - obs_data.velocities
+        diff_vel = obs_data.velocities - no_noise_vel
         ax6.plot(obs_data.time_lag, diff_vel/1000, '.', markersize=3, color='black', label='No Noise')
 
         # plot lag_arr vs leading_frag_time_arr withouth nan values
@@ -356,7 +356,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                                     np.flip(lag_no_noise))
         
         # make the difference between the no_noise_lag and the obs_data.lag
-        diff_lag = no_noise_lag - obs_data.lag
+        diff_lag = obs_data.lag - no_noise_lag 
         ax7.plot(obs_data.time_lag, diff_lag, '.', markersize=3, color='black', label='No Noise')
         
         fig.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
@@ -392,7 +392,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                                         np.flip(sim_data.luminosity_arr))
         
         # make the difference between the no_noise_intensity and the obs_data.luminosity_arr
-        sim_diff_lum = sim_lum - obs_data.luminosity
+        sim_diff_lum = obs_data.luminosity - sim_lum
         # for each station in obs_data_plot
         for station in np.unique(obs_data.stations_lum):
             # plot the height vs. absolute_magnitudes
@@ -412,7 +412,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                                     np.flip(sim_data.leading_frag_vel_arr))
         
         # make the difference between the no_noise_vel and the obs_data.velocities
-        sim_diff_vel = sim_vel - obs_data.velocities
+        sim_diff_vel = obs_data.velocities - sim_vel
 
         # for each station in obs_data_plot
         for station in np.unique(obs_data.stations_lag):
@@ -435,7 +435,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                                     np.flip(sim_lag))
         
         # make the difference between the no_noise_lag and the obs_data.lag
-        sim_diff_lag = sim_lag - obs_data.lag
+        sim_diff_lag = obs_data.lag - sim_lag
         
         # for each station in obs_data_plot
         for station in np.unique(obs_data.stations_lag):
@@ -653,28 +653,43 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     # write the best fit variable names and then the best guess values
     for i in range(len(best_guess)):
         print(variables[i],':\t', best_guess[i])
-    print('logL:', dynesty_run_results.logl[sim_num])
+    # print('logL:', dynesty_run_results.logl[sim_num])
+    best_guess_logL = log_likelihood_dynesty(dynesty_run_results.samples[sim_num], obs_data, flags_dict, fixed_values, timeout=20)
+    print('logL:', best_guess_logL)
     real_logL = None
     diff_logL = None
     if hasattr(obs_data, 'const'):
-        simulated_lc_intensity = np.interp(obs_data.height_lum, 
-                                        np.flip(obs_data.leading_frag_height_arr), 
-                                        np.flip(obs_data.luminosity_arr))
+        
+        # copy the variables list
+        variables_real = copy.deepcopy(variables)
+        flags_dict_real = copy.deepcopy(flags_dict)
+        fixed_values_real = copy.deepcopy(fixed_values)
+        # chek in variables there is noise_lag or noise_lum and if so remove it from the list
+        if 'noise_lag' in variables:
+            variables_real.remove('noise_lag')
+            del flags_dict_real['noise_lag']
+            # add in the fixed_values_real the noise_lag value that was introduced
+            fixed_values_real['noise_lag'] = obs_data.noise_lag
+        if 'noise_lum' in variables:
+            variables_real.remove('noise_lum')
+            del flags_dict_real['noise_lum']
+            # add in the fixed_values_real the noise_lum value that was introduced
+            fixed_values_real['noise_lum'] = obs_data.noise_lum
 
-        lag_sim = obs_data.leading_frag_length_arr - (obs_data.v_init * obs_data.time_arr)
-        simulated_lag = np.interp(obs_data.height_lag, 
-                                np.flip(obs_data.leading_frag_height_arr), 
-                                np.flip(lag_sim))
-        lag_sim = simulated_lag - simulated_lag[0]
+        # feed variables in the obs_data.const of obs_data as guess_var
+        guess_real = [obs_data.const[variable] for variable in variables_real if variable in obs_data.const]
 
-        ### Log Likelihood ###
-        log_likelihood_lum = np.nansum(-0.5 * np.log(2*np.pi*obs_data.noise_lum**2) - 0.5 / (obs_data.noise_lum**2) * (obs_data.luminosity - simulated_lc_intensity) ** 2)
-        log_likelihood_lag = np.nansum(-0.5 * np.log(2*np.pi*obs_data.noise_lag**2) - 0.5 / (obs_data.noise_lag**2) * (obs_data.lag - lag_sim) ** 2)
-        real_logL = log_likelihood_lum + log_likelihood_lag
-        diff_logL = dynesty_run_results.logl[sim_num] - real_logL
+        # remove the 'log' from the flags_dict_copy
+        for variable in variables_real:
+            if 'log' in flags_dict_real[variable]:
+                flags_dict_real[variable] = [flag for flag in flags_dict_real[variable] if flag != 'log']
+
+        real_logL = log_likelihood_dynesty(guess_real, obs_data, flags_dict_real, fixed_values_real, timeout=20)
+        diff_logL = best_guess_logL - real_logL
         # use log_likelihood_dynesty to compute the logL
         print('REAL logL:', real_logL)
         print('DIFF logL:', diff_logL)
+
     ### PLOT best fit ###
 
     # create a folder to save the fit plots
@@ -812,7 +827,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
         # Compare to true theta
         # bias = posterior_mean - truths
-        bias = approx_modes - truths
+        bias = best_guess_table - truths
         abs_error = np.abs(bias)
         rel_error = abs_error / np.abs(truths) * 100
 
@@ -867,7 +882,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         file_name_caption = file_name
 
     if hasattr(obs_data, 'const'):
-        latex_str += f"Posterior summary statistics for {file_name_caption} test case. The Best Guess is the simulation with the highest likelihood. Absolute and relative errors are calculated based on the mode. The Cover column indicates whether the true value lies within the 95\% CI."
+        latex_str += f"Posterior summary statistics for {file_name_caption} test case. The Best Guess is the simulation with the highest likelihood. Absolute and relative errors are calculated based on the Best Guess. The Cover column indicates whether the true value lies within the 95\% CI."
     else:
         latex_str += f"Posterior summary statistics for {file_name_caption} meteor. The Best Guess is the simulation with the highest likelihood."
     latex_str += r"""}
@@ -1477,7 +1492,8 @@ class observation_data:
         self.time_lag = lag_data['time']
         self.stations_lag = lag_data['flag_station']
         # put all the lum_data in the object
-        self.height_lum = lum_data['height']
+        self.height_lum = lum_data['height_middle']
+        self.height_lum_leading = lum_data['height']
         self.absolute_magnitudes = lum_data['absolute_magnitudes']
         self.luminosity = lum_data['luminosity']
         self.time_lum = lum_data['time']
@@ -1636,6 +1652,14 @@ class observation_data:
                 'flag_station': combined_obs_dict['flag_station'][combined_obs_dict['flag_station'] == camera],
                 'apparent_magnitudes': combined_obs_dict['apparent_magnitudes'][combined_obs_dict['flag_station'] == camera]
             }
+            # Extract heights
+            heights = lum_data['height']
+            # Compute differences between consecutive heights
+            diffs = np.diff(heights)
+            # Prepend the first difference to align array lengths
+            diffheight = np.concatenate(([diffs[0]], diffs))
+            # Compute middle heights
+            lum_data['height_middle'] = heights - diffheight / 2
             lum_dict.append(lum_data)
             lum_files.append(lum_file)
         # sort the indices by time in lum_dict
@@ -1978,14 +2002,24 @@ class observation_data:
             lum_visible = lum_obs_data[indices_visible]
             ht_visible   = self.leading_frag_height_arr[indices_visible]
             len_visible  = self.leading_frag_length_arr[indices_visible]
-            # mag_visible  = self.abs_magnitude[indices_visible]
             vel_visible  = self.leading_frag_vel_arr[indices_visible]
+
+            mag_visible  = self.abs_magnitude[indices_visible]
+            maglim=8
+            # check that all are below 8 mag_visible
+            if np.any(mag_visible > maglim):
+                print('Found values below',maglim,'absolute magnitudes:', mag_visible[mag_visible > maglim])
+                # delete any values above 8 absolute_magnitudes and delete the corresponding values in the other arrays
+                time_visible = time_visible[mag_visible < maglim]
+                lum_visible = lum_visible[mag_visible < maglim]
+                ht_visible = ht_visible[mag_visible < maglim]
+                len_visible = len_visible[mag_visible < maglim]
+                vel_visible = vel_visible[mag_visible < maglim]
 
             # Resample the time to the system FPS
             lum_interpol = scipy.interpolate.CubicSpline(time_visible, lum_visible)
             ht_interpol  = scipy.interpolate.CubicSpline(time_visible, ht_visible)
             len_interpol = scipy.interpolate.CubicSpline(time_visible, len_visible)
-            # mag_interpol = scipy.interpolate.CubicSpline(time_visible, mag_visible)
             vel_interpol = scipy.interpolate.CubicSpline(time_visible, vel_visible)
 
             fps_lum = 32
@@ -2013,10 +2047,40 @@ class observation_data:
 
             # Create new mag, height and length arrays at FPS frequency
             self.stations_lum = stations_array_lum
-            self.height_lum = ht_interpol(time_sampled_lum)
+            self.height_lum_leading = ht_interpol(time_sampled_lum)
             self.time_lum = time_sampled_lum - time_sampled_lum[0]
+
+            # integration time step in self.const.dt
+            dt = self.const.dt
             self.luminosity = lum_interpol(time_sampled_lum)
-            self.absolute_magnitudes = -2.5*np.log10(self.luminosity/self.P_0m) # P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))
+            # print('Luminosity:',self.luminosity)
+            # for luminosity take from the time_sampled_lum and integrate lum_obs_data from time_sampled_lag[i]-1/fps and time_sampled_lag[i]
+            for i in range(len(time_sampled_lum)):
+                # pick all the lum_obs_data between time_sampled_lag[i]-1/fps and time_sampled_lag[i] in self.time_arr
+                mask = (self.time_arr > time_sampled_lum[i]-1/self.fps) & (self.time_arr <= time_sampled_lum[i])
+                # sum them together and divide by 1/self.fps
+                self.luminosity[i] = (np.sum(lum_obs_data[mask])*dt)/(1/self.fps)
+            # print('NEW Luminosity:',self.luminosity)
+            self.absolute_magnitudes = -2.5*np.log10(self.luminosity/self.P_0m) # P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))+
+            
+            self.height_lum = ht_interpol(time_sampled_lum)
+            # find the unique values of self.stations_lum and the index of the first value of self.height_lum
+            unique_stations = np.unique(self.stations_lum)
+            # for each station in unique_stations find the index of the first value of self.height_lum
+            for station in unique_stations:
+                # Get all indices where this station appears
+                indices = np.where(self.stations_lum == station)[0]
+
+                # Compute the differences between consecutive heights
+                diffs = np.diff(self.height_lum[indices])
+                
+                # Prepend the first difference to match the array length
+                diffheight = np.concatenate(([diffs[0]], diffs))
+                
+                # Subtract half of diffheight from the heights
+                self.height_lum[indices] = self.height_lum[indices] - diffheight / 2
+            # diffheight = np.concatenate(([np.diff(self.height_lum)[0]], np.diff(self.height_lum)))
+            # self.height_lum = self.height_lum-diffheight/2
             
             # mag_sampled = mag_interpol(time_sampled_lum)
             self.stations_lag = stations_array_lag
@@ -2878,19 +2942,6 @@ class find_dynestyfile_and_priors:
 # Function: dynesty
 ###############################################################################
 
-class TimeoutException(Exception):
-    """Custom exception for timeouts."""
-    pass
-
-def RunSimulationWrapper(guess_var, obs_metsim_obj, var_names, fix_var, queue):
-    """Wrapper function for multiprocessing to run the simulation."""
-    try:
-        result = run_simulation(guess_var, obs_metsim_obj, var_names, fix_var)
-        queue.put(result)  # Send result back through queue
-    except Exception as e:
-        print(f"Error during simulation: {e}")
-        queue.put(None)  # Indicate failure
-
 
 def run_simulation(parameter_guess, real_event, var_names, fix_var):
     '''
@@ -2975,9 +3026,6 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     if 'erosion_mass_max' in var_names and 'erosion_mass_min' in var_names:
         # check if the guess_var of the erosion_mass_max is smaller than the guess_var of the erosion_mass_min
         if guess_var[var_names.index('erosion_mass_max')] < guess_var[var_names.index('erosion_mass_min')]:
-            # # if so, set the guess_var of the erosion_mass_max to the guess_var of the erosion_mass_min
-            # guess_var[var_names.index('erosion_mass_max')] = guess_var[var_names.index('erosion_mass_min')]
-            # unphysical values, return -np.inf
             return -np.inf  # immediately return -np.inf if times out
     
     if 'erosion_mass_max' in var_names and 'm_init' in var_names:
@@ -2992,35 +3040,66 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
 
     ### ONLY on LINUX ###
 
-    # Set timeout handler
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout)  # Start the timer for timeout
-    # get simulated LC intensity onthe object
-    try: # try to run the simulation
+    # check if the OS is not Linux
+    if os.name != 'posix':
+        # If not Linux, run the simulation without timeout
         simulation_results = run_simulation(guess_var, obs_metsim_obj, var_names, fix_var)
-    except TimeoutException:
-        print('timeout')
-        return -np.inf  # immediately return -np.inf if times out
-    finally:
-        signal.alarm(0)  # Cancel alarm
-    
-    ### ONLY on LINUX ###
+    else:
+        # Set timeout handler
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout)  # Start the timer for timeout
+        # get simulated LC intensity onthe object
+        try: # try to run the simulation
+            simulation_results = run_simulation(guess_var, obs_metsim_obj, var_names, fix_var)
+        except TimeoutException:
+            print('timeout')
+            return -np.inf  # immediately return -np.inf if times out
+        finally:
+            signal.alarm(0)  # Cancel alarm
+        
+    ### LUM CALC ###
 
-    # # time constait
-    # # find the time_arr index in simulation_results that are above the np.min(obs_metsim_obj.luminosity) and are after height_lum[0] (the leading_frag_height_arr[-1] is nan)
-    # indices_visible = np.where((simulation_results.luminosity_arr[:-1] > np.min(obs_metsim_obj.luminosity)) & (simulation_results.leading_frag_height_arr[:-1] < obs_metsim_obj.height_lum[0]))[0]
-    # # check if indices_visible is empty
-    # if len(indices_visible) == 0:
+    # simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 
+    #                                    np.flip(simulation_results.leading_frag_height_arr), 
+    #                                    np.flip(simulation_results.luminosity_arr))
+
+    # # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
+    # if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
     #     return -np.inf
-    # real_time_visible = obs_metsim_obj.time_lum[-1]-obs_metsim_obj.time_lum[0]
-    # simulated_time_visible = simulation_results.time_arr[indices_visible][-1]-simulation_results.time_arr[indices_visible][0]
-    # # check if is too short and the time difference is smaller than 60% of the real time difference
-    # if simulated_time_visible < 0.6*real_time_visible:
-    #     return -np.inf
-    
-    simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 
+
+    ## or frame-average integral for luminosity in time
+
+    simulated_time = np.interp(obs_metsim_obj.height_lum_leading, 
                                        np.flip(simulation_results.leading_frag_height_arr), 
-                                       np.flip(simulation_results.luminosity_arr))
+                                       np.flip(simulation_results.time_arr))
+    # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
+    if np.sum(~np.isnan(simulated_time)) != np.sum(~np.isnan(obs_metsim_obj.time_lum)):
+        return -np.inf
+
+    # all simulated time is the time_arr subtract the first time of the simulation
+    all_simulated_time = simulation_results.time_arr-simulated_time[0]
+    simulated_time = simulated_time - simulated_time[0]
+    dt = simulation_results.const.dt
+    # crete an array simulated_lc_intensity with all nans
+    simulated_lc_intensity = np.full(len(obs_metsim_obj.time_lum), np.nan) 
+    for i in range(len(obs_metsim_obj.time_lum)):
+        # pick all the lum_obs_data between time_sampled_lag[i]-1/fps and time_sampled_lag[i] in self.time_arr
+        mask = (all_simulated_time > obs_metsim_obj.time_lum[i]-1/obs_metsim_obj.fps) & (all_simulated_time <= obs_metsim_obj.time_lum[i])
+        # sum them together and divide by 1/self.fps
+        simulated_lc_intensity[i] = (np.sum(simulation_results.luminosity_arr[mask])*dt)/(1/obs_metsim_obj.fps)
+
+    # # plot simulated_lc_intensity and obs_metsim_obj.luminosity
+    # plt.plot(simulated_time, simulated_lc_intensity, label='No Noise data', color='black')
+    # plt.scatter(obs_metsim_obj.time_lum, obs_metsim_obj.luminosity,label='data with noise')
+    # plt.xlabel('Time [s]')
+    # plt.ylabel('Luminosity [J/s]')
+    # plt.legend()
+    # log_likelihood_lum = np.nansum(-0.5 * np.log(2*np.pi*obs_metsim_obj.noise_lum**2) - 0.5 / (obs_metsim_obj.noise_lum**2) * (obs_metsim_obj.luminosity - simulated_lc_intensity) ** 2)
+    # # put as a title log_likelihood_lum
+    # plt.title(f"log_likelihood_lum: {log_likelihood_lum:.5g}")
+    # plt.show()
+
+    ### LAG CALC ###
 
     lag_sim = simulation_results.leading_frag_length_arr - (obs_metsim_obj.v_init * simulation_results.time_arr)
 
@@ -3030,9 +3109,6 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
 
     lag_sim = simulated_lag - simulated_lag[0]
 
-    # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
-    if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
-        return -np.inf
     # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
     if np.sum(~np.isnan(lag_sim)) != np.sum(~np.isnan(obs_metsim_obj.lag)):
         return -np.inf
@@ -3186,17 +3262,14 @@ if __name__ == "__main__":
 
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
-    # r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\ORI_mode\ORI_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\ORI_mode\ORI_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\CAMO\CAP_mode\CAP_mode_CAMO_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\DRA_mode\DRA_mode_EMCCD_with_noise.json,C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower\EMCCD\CAP_mode\CAP_mode_EMCCD_with_noise.json"
-    # r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/ORI_mode/ORI_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/ORI_mode/ORI_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/CAMO/CAP_mode/CAP_mode_CAMO_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/CAP_mode/CAP_mode_EMCCD_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower/EMCCD/DRA_mode/DRA_mode_EMCCD_with_noise.json"
+    
     arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
-        default=r"/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mode/EMCCD_ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/ORI_mean/EMCCD_ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mode/CAMO_ORI_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/ORI_mean/CAMO_ORI_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mean/EMCCD_CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/CAP_mode/EMCCD_CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mean/CAMO_CAP_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/CAMO/CAP_mode/CAMO_CAP_mode_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mean/EMCCD_DRA_mean_with_noise.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/EMCCD/DRA_mode/EMCCD_DRA_mode_with_noise.json",
-        # "/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-6kg/ORI_mode_with_noise5e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_3e-6kg/ORI_mode_with_noise3e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_1e-6kg/ORI_mode_with_noise1e-6kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_8e-7kg/ORI_mode_with_noise8e-7kg.json,/home/mvovk/WMPG-repoMAX/Code/DynNestSampl/Shower_testcase/ORI-mass/Mode_5e-7kg/ORI_mode_with_noise5e-7kg.json",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
-    # /home/mvovk/Results/Results_Nested/validation/
+    
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
         default=r"",
         help="Where to store results. If empty, store next to each .dynesty.")
-    # /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid.prior
+    
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
         default=r"",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
@@ -3223,6 +3296,6 @@ if __name__ == "__main__":
     # Parse
     cml_args = arg_parser.parse_args()
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pool_MPI)
+    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")    

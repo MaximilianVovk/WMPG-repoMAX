@@ -290,15 +290,12 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # check if 'const' in the object obs_data.keys()
     if hasattr(obs_data, 'const'):
 
-        # plot abs_magnitude_arr vs leading_frag_height_arr
         ax0.plot(obs_data.abs_magnitude, obs_data.leading_frag_height_arr/1000, '--', color='black', linewidth=0.5, label='No Noise', zorder=2)
-        ax0.legend()
-
         # inerpoate the abs_magnitude_arr to the leading_frag_height_arr
         no_noise_mag = np.interp(obs_data.height_lum, 
                                         np.flip(obs_data.leading_frag_height_arr), 
                                         np.flip(obs_data.abs_magnitude))
-        
+        ax0.legend()
         # make the difference between the no_noise_mag and the obs_data.abs_magnitude
         diff_mag = no_noise_mag - obs_data.absolute_magnitudes
         ax1.plot(diff_mag, obs_data.height_lum/1000, '.', markersize=3, color='black', label='No Noise')
@@ -313,14 +310,13 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         #                   -2.5*(np.log10((obs_data.luminosity_arr+2*obs_data.noise_lum)/obs_data.P_0m)-np.log10((obs_data.luminosity_arr)/obs_data.P_0m)), \
         #                     color='lightgray', alpha=0.2)
 
-        # plot luminosity_arr vs leading_frag_height_arr
         ax4.plot(obs_data.luminosity_arr, obs_data.leading_frag_height_arr/1000, '--', color='black', linewidth=0.5, label='No Noise', zorder=2)
-
+        
         # interpolate to make sure they are the same length and discard points after height starts increasing if it does at any point obs_metsim_obj.traj.observations[0].model_ht
         no_noise_lum = np.interp(obs_data.height_lum, 
                                         np.flip(obs_data.leading_frag_height_arr), 
                                         np.flip(obs_data.luminosity_arr))
-        
+
         # make the difference between the no_noise_intensity and the obs_data.luminosity_arr
         diff_lum = obs_data.luminosity - no_noise_lum
         ax5.plot(diff_lum, obs_data.height_lum/1000, '.', markersize=3, color='black', label='No Noise')
@@ -365,6 +361,10 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
     # Check if sim_data was provided
     if sim_data is not None:
+
+        # integration time step in self.const.dt for luminosity_integration and abs_magnitude_integration
+        if (1/obs_data.fps) > sim_data.const.dt:
+            sim_data.luminosity_arr, sim_data.abs_magnitude = luminosity_integration(sim_data.time_arr,sim_data.time_arr,sim_data.luminosity_arr,sim_data.const.dt,obs_data.fps,obs_data.P_0m)
 
         # Plot simulated data
         ax0.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
@@ -654,7 +654,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     for i in range(len(best_guess)):
         print(variables[i],':\t', best_guess[i])
     # print('logL:', dynesty_run_results.logl[sim_num])
-    best_guess_logL = log_likelihood_dynesty(dynesty_run_results.samples[sim_num], obs_data, flags_dict, fixed_values, timeout=20)
+    # copy the dynesty_run_results results to a variable avoid overwriting the original one
+    dynesty_run_results_new = copy.deepcopy(dynesty_run_results)
+    best_guess_logL = log_likelihood_dynesty(dynesty_run_results_new.samples[sim_num], obs_data, flags_dict, fixed_values, timeout=20)
     print('logL:', best_guess_logL)
     real_logL = None
     diff_logL = None
@@ -1306,9 +1308,25 @@ def read_prior_to_bounds(object_meteor,file_path=""):
 ###############################################################################
 # Load observation data and create an object
 ###############################################################################
+
+def luminosity_integration(all_simulated_time,time_fps,luminosity_arr,dt,fps,P_0m):
+    ''' Function to integrate the luminosity over time and create a new luminosity array '''
+    # make a copy of the luminosity_arr to make the new_luminosity_arr
+    new_luminosity_arr = np.full(len(time_fps), np.nan) 
+    new_abs_magnitude = np.full(len(time_fps), np.nan)
+    # new_luminosity_arr = self.luminosity_arr
+    for i in range(len(time_fps)):
+        # pick all the self.time_arr between time_sampled_lum[i]-1/fps and time_sampled_lum[i] in self.time_arr
+        mask = (all_simulated_time > time_fps[i]-1/fps) & (all_simulated_time <= time_fps[i])
+        # sum them together and divide by 1/self.fps
+        new_luminosity_arr[i] = (np.sum(luminosity_arr[mask])*dt)/abs(np.max(all_simulated_time[mask])-np.min(all_simulated_time[mask])) # 1/self.fps
+        new_abs_magnitude[i] = -2.5*np.log10(new_luminosity_arr[i]/P_0m)
+    return new_luminosity_arr, new_abs_magnitude
+
+
 class observation_data:
     ''' class to load the observation data and create an object '''
-    def __init__(self, obs_file_path,use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5):
+    def __init__(self, obs_file_path,use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, pick_position=0):
         self.noise_lag = lag_noise_prior
         self.noise_lum = lum_noise_prior
         self.file_name = obs_file_path
@@ -1319,7 +1337,7 @@ class observation_data:
 
         # check if the file is a json file
         if obs_file_path.endswith('.pickle'):
-            self.load_pickle_data(use_all_cameras)
+            self.load_pickle_data(use_all_cameras,pick_position)
         elif obs_file_path.endswith('.json'):
             self.load_json_data(use_all_cameras)
         else:
@@ -1327,7 +1345,7 @@ class observation_data:
             raise ValueError("File type not supported, only .json and .pickle files are supported")
 
 
-    def load_pickle_data(self, use_all_cameras=False):
+    def load_pickle_data(self, use_all_cameras=False, pick_position=0):
         """
         Load the pickle file(s) and create a dictionary keyed by each file name.
         Each files data (e.g., list of station IDs, dens_co, zenith_angle, etc.)
@@ -1492,13 +1510,28 @@ class observation_data:
         self.time_lag = lag_data['time']
         self.stations_lag = lag_data['flag_station']
         # put all the lum_data in the object
-        self.height_lum = lum_data['height_middle']
-        self.height_lum_leading = lum_data['height']
+        self.height_lum = lum_data['height']
         self.absolute_magnitudes = lum_data['absolute_magnitudes']
         self.luminosity = lum_data['luminosity']
         self.time_lum = lum_data['time']
         self.stations_lum = lum_data['flag_station']
         self.apparent_magnitudes = lum_data['apparent_magnitudes']
+
+        # adjusy the pick position to the leading edge of the luminosity if already leading edge useless
+        unique_stations = np.unique(self.stations_lum)
+        # for each station in unique_stations find the index of the first value of self.height_lum
+        for station in unique_stations:
+            # Get all indices where this station appears
+            indices = np.where(self.stations_lum == station)[0]
+
+            # Compute the differences between consecutive heights
+            diffs = np.diff(self.height_lum[indices])
+            
+            # Prepend the first difference to match the array length
+            diffheight = np.concatenate(([diffs[0]], diffs))
+            
+            # Subtract half of diffheight from the heights
+            self.height_lum[indices] = self.height_lum[indices] - diffheight*pick_position
 
         # for lag measurements start from 0 for length and time
         self.length = self.length-self.length[0]
@@ -1942,6 +1975,18 @@ class observation_data:
                 print('Assumed default Noise in luminosity:',self.noise_lum)
             self.noise_mag = 0.1
 
+            self.P_0m = self.const.P_0m
+            if use_all_cameras:
+                # use the first camera to set the fps
+                self.fps = 80
+            else:
+                # use the first camera to set the fps
+                self.fps = 32
+
+            if 1/self.fps > self.const.dt:
+                # integration time step lumionosity
+                self.luminosity_arr, self.abs_magnitude = luminosity_integration(self.time_arr,self.time_arr,self.luminosity_arr,self.const.dt,self.fps,self.P_0m)
+
             # add a gausian noise to the luminosity of 2.5
             lum_obs_data = self.luminosity_arr + np.random.normal(loc=0, scale=self.noise_lum, size=len(self.luminosity_arr))
 
@@ -1970,7 +2015,6 @@ class observation_data:
             self.zenith_angle = self.const.zenith_angle
             self.m_init = self.const.m_init
 
-            self.P_0m = self.const.P_0m
             self.dens_co = np.array(self.const.dens_co) 
 
             # Compute absolute magnitudes
@@ -2024,7 +2068,6 @@ class observation_data:
 
             fps_lum = 32
             if use_all_cameras:
-                self.fps = 80
                 self.stations = ['01G','02G','01T','02T']
                 # self.noise_lag = 5
                 if np.isnan(self.noise_lag):
@@ -2035,7 +2078,6 @@ class observation_data:
                 time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps,self.stations[2],self.stations[3])
                 time_sampled_lum, stations_array_lum = self.mimic_fps_camera(time_visible,0,fps_lum,self.stations[0],self.stations[1])
             else:
-                self.fps = 32
                 self.stations = ['01F','02F']
                 # self.noise_lag = 40
                 if np.isnan(self.noise_lag):
@@ -2047,41 +2089,25 @@ class observation_data:
 
             # Create new mag, height and length arrays at FPS frequency
             self.stations_lum = stations_array_lum
-            self.height_lum_leading = ht_interpol(time_sampled_lum)
             self.time_lum = time_sampled_lum - time_sampled_lum[0]
-
-            # integration time step in self.const.dt
-            dt = self.const.dt
-            self.luminosity = lum_interpol(time_sampled_lum)
-            # print('Luminosity:',self.luminosity)
-            # for luminosity take from the time_sampled_lum and integrate lum_obs_data from time_sampled_lag[i]-1/fps and time_sampled_lag[i]
-            for i in range(len(time_sampled_lum)):
-                # pick all the lum_obs_data between time_sampled_lag[i]-1/fps and time_sampled_lag[i] in self.time_arr
-                mask = (self.time_arr > time_sampled_lum[i]-1/self.fps) & (self.time_arr <= time_sampled_lum[i])
-                # sum them together and divide by 1/self.fps
-                self.luminosity[i] = (np.sum(lum_obs_data[mask])*dt)/(1/self.fps)
-            # print('NEW Luminosity:',self.luminosity)
-            self.absolute_magnitudes = -2.5*np.log10(self.luminosity/self.P_0m) # P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))+
-            
             self.height_lum = ht_interpol(time_sampled_lum)
-            # find the unique values of self.stations_lum and the index of the first value of self.height_lum
-            unique_stations = np.unique(self.stations_lum)
-            # for each station in unique_stations find the index of the first value of self.height_lum
-            for station in unique_stations:
-                # Get all indices where this station appears
-                indices = np.where(self.stations_lum == station)[0]
-
-                # Compute the differences between consecutive heights
-                diffs = np.diff(self.height_lum[indices])
-                
-                # Prepend the first difference to match the array length
-                diffheight = np.concatenate(([diffs[0]], diffs))
-                
-                # Subtract half of diffheight from the heights
-                self.height_lum[indices] = self.height_lum[indices] - diffheight / 2
-            # diffheight = np.concatenate(([np.diff(self.height_lum)[0]], np.diff(self.height_lum)))
-            # self.height_lum = self.height_lum-diffheight/2
+            self.luminosity = lum_interpol(time_sampled_lum) # after the integration
+            self.absolute_magnitudes = -2.5*np.log10(self.luminosity/self.P_0m) # P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))
             
+            # for i in range(len(time_sampled_lum)):
+            #     # pick all the lum_obs_data between time_sampled_lag[i]-1/fps and time_sampled_lag[i] in self.time_arr
+            #     mask = (self.time_arr > time_sampled_lum[i]-1/self.fps) & (self.time_arr <= time_sampled_lum[i])
+            #     # sum them together and divide by 1/self.fps
+            #     self.height_lum[i] = np.mean(self.leading_frag_height_arr[mask])
+                
+            # copy_lum_height_arr = np.copy(self.leading_frag_height_arr)
+            # # new_luminosity_arr = self.luminosity_arr
+            # for i in range(len(self.time_arr)):
+            #     # pick all the self.time_arr between time_sampled_lum[i]-1/fps and time_sampled_lum[i] in self.time_arr
+            #     mask = (self.time_arr > self.time_arr[i]-1/self.fps) & (self.time_arr <= self.time_arr[i])
+            #     copy_lum_height_arr[i] = np.mean(self.leading_frag_height_arr[mask])
+            # self.lum_height_arr = copy_lum_height_arr
+
             # mag_sampled = mag_interpol(time_sampled_lum)
             self.stations_lag = stations_array_lag
             self.height_lag = ht_interpol(time_sampled_lag)
@@ -2199,7 +2225,7 @@ class observation_data:
 # find dynestyfile and priors
 ###############################################################################
 
-def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, only_plot=True, cores=None, pool_MPI=None):
+def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, only_plot=True, cores=None, pool_MPI=None, pick_position=0):
     """
     Create the output folder if it doesn't exist.
     """
@@ -2243,7 +2269,8 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             prior_file=cml_args.prior,
             resume=cml_args.resume,
             output_dir=cml_args.output_dir,
-            use_all_cameras=cml_args.use_all_cameras
+            use_all_cameras=cml_args.use_all_cameras,
+            pick_position=pick_position
         )
 
         # check if finder is empty
@@ -2562,12 +2589,13 @@ class find_dynestyfile_and_priors:
     processing, ensuring that each input is properly paired with a .dynesty configuration and the relevant prior settings.
     """
 
-    def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False):
+    def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False,pick_position=0):
         self.input_dir_or_file = input_dir_or_file
         self.prior_file = prior_file
         self.resume = resume
         self.output_dir = output_dir
         self.use_all_cameras = use_all_cameras
+        self.pick_position = pick_position
 
         # Prepare placeholders
         self.base_names = []        # [base_name, ...] (no extension)
@@ -2797,7 +2825,7 @@ class find_dynestyfile_and_priors:
         if not (np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior)):
             print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
 
-        observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior)
+        observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior,self.pick_position)
 
         # check if new_json_file_save is present in observation_instance
         if hasattr(observation_instance, 'new_json_file_save'):
@@ -3059,17 +3087,7 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
         
     ### LUM CALC ###
 
-    # simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 
-    #                                    np.flip(simulation_results.leading_frag_height_arr), 
-    #                                    np.flip(simulation_results.luminosity_arr))
-
-    # # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
-    # if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
-    #     return -np.inf
-
-    ## or frame-average integral for luminosity in time
-
-    simulated_time = np.interp(obs_metsim_obj.height_lum_leading, 
+    simulated_time = np.interp(obs_metsim_obj.height_lum, 
                                        np.flip(simulation_results.leading_frag_height_arr), 
                                        np.flip(simulation_results.time_arr))
     # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
@@ -3078,15 +3096,28 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
 
     # all simulated time is the time_arr subtract the first time of the simulation
     all_simulated_time = simulation_results.time_arr-simulated_time[0]
-    simulated_time = simulated_time - simulated_time[0]
-    dt = simulation_results.const.dt
-    # crete an array simulated_lc_intensity with all nans
-    simulated_lc_intensity = np.full(len(obs_metsim_obj.time_lum), np.nan) 
-    for i in range(len(obs_metsim_obj.time_lum)):
-        # pick all the lum_obs_data between time_sampled_lag[i]-1/fps and time_sampled_lag[i] in self.time_arr
-        mask = (all_simulated_time > obs_metsim_obj.time_lum[i]-1/obs_metsim_obj.fps) & (all_simulated_time <= obs_metsim_obj.time_lum[i])
-        # sum them together and divide by 1/self.fps
-        simulated_lc_intensity[i] = (np.sum(simulation_results.luminosity_arr[mask])*dt)/(1/obs_metsim_obj.fps)
+
+    # find the integral of the luminosity in time in between FPS
+    if 1/obs_metsim_obj.fps > simulation_results.const.dt: # FPS is lower than the simulation time step need to integrate the luminosity
+        simulated_lc_intensity, _ = luminosity_integration(all_simulated_time,obs_metsim_obj.time_lum,simulation_results.luminosity_arr,simulation_results.const.dt,obs_metsim_obj.fps,obs_metsim_obj.P_0m)
+    else:
+        # too high frame rate, just interpolate the luminosity
+        simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 
+                                           np.flip(simulation_results.leading_frag_height_arr), 
+                                           np.flip(simulation_results.luminosity_arr))
+        # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
+        if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
+            return -np.inf
+        
+    # simulated_time = simulated_time - simulated_time[0]
+    # dt = simulation_results.const.dt
+    # # crete an array simulated_lc_intensity with all nans
+    # simulated_lc_intensity = np.full(len(obs_metsim_obj.time_lum), np.nan) 
+    # for i in range(len(obs_metsim_obj.time_lum)):
+    #     # pick all the lum_obs_data between time_sampled_lag[i]-1/fps and time_sampled_lag[i] in self.time_arr
+    #     mask = (all_simulated_time > obs_metsim_obj.time_lum[i]-1/obs_metsim_obj.fps) & (all_simulated_time <= obs_metsim_obj.time_lum[i])
+    #     # sum them together and divide by 1/self.fps
+    #     simulated_lc_intensity[i] = (np.sum(simulation_results.luminosity_arr[mask])*dt)/abs(np.max(simulation_results.time_arr[mask])-np.min(simulation_results.time_arr[mask]))#(1/obs_metsim_obj.fps)
 
     # # plot simulated_lc_intensity and obs_metsim_obj.luminosity
     # plt.plot(simulated_time, simulated_lc_intensity, label='No Noise data', color='black')
@@ -3286,6 +3317,9 @@ if __name__ == "__main__":
         help="If active only plot the results of the dynesty run, if not run dynesty.", 
         action="store_true")
 
+    arg_parser.add_argument('--pick_position', metavar='PICK_POSITION_REAL', type=int, default=0,
+        help="pick postion in the meteor from 0 to 1, for leading edge pick is 0 for the centroid on the entire meteor is 0.5.")
+
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")
 
@@ -3296,6 +3330,10 @@ if __name__ == "__main__":
     # Parse
     cml_args = arg_parser.parse_args()
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores)
+    # check if the pick position is between 0 and 1
+    if cml_args.pick_position < 0 or cml_args.pick_position > 1:
+        raise ValueError("pick_position must be between 0 and 1, 0 leading edge, 0.5 centroid full meteor, 1 trailing edge.")
 
-    print("\nDONE: Completed processing of all files in the input directory.\n")    
+    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pick_position=cml_args.pick_position)
+
+    print("\nDONE: Completed processing of all files in the input directory.\n")

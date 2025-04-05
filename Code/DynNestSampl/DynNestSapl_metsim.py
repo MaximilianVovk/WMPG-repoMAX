@@ -3253,7 +3253,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
                 ### NEW RUN
                 dsampler = dynesty.DynamicNestedSampler(pool.loglike, 
                                                         pool.prior_transform, ndim,
-                                                        # sample='rslice', nlive=2000,
+                                                        sample='rslice', # nlive=1000,
                                                         pool = pool)
                 dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file) #  dlogz_init=0.001,
 

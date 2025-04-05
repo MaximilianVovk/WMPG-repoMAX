@@ -3318,7 +3318,7 @@ if __name__ == "__main__":
         help="If active only plot the results of the dynesty run, if not run dynesty.", 
         action="store_true")
 
-    arg_parser.add_argument('--pick_position', metavar='PICK_POSITION_REAL', type=int, default=0,
+    arg_parser.add_argument('--pick_pos', metavar='PICK_POSITION_REAL', type=int, default=0,
         help="pick postion in the meteor from 0 to 1, for leading edge pick is 0 for the centroid on the entire meteor is 0.5.")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
@@ -3332,9 +3332,9 @@ if __name__ == "__main__":
     cml_args = arg_parser.parse_args()
 
     # check if the pick position is between 0 and 1
-    if cml_args.pick_position < 0 or cml_args.pick_position > 1:
+    if cml_args.pick_pos < 0 or cml_args.pick_pos > 1:
         raise ValueError("pick_position must be between 0 and 1, 0 leading edge, 0.5 centroid full meteor, 1 trailing edge.")
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pick_position=cml_args.pick_position)
+    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pick_position=cml_args.pick_pos)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

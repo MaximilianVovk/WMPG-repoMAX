@@ -5,6 +5,15 @@ Author: Maximilian Vovk
 Date: 2025-03-04
 """
 
+# main.py (inside my_subfolder)
+import sys
+import os
+
+# Add the parent directory to the sys.path
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
 from DynNestSapl_metsim import *
 from scipy import stats
 
@@ -262,7 +271,7 @@ def plot_side_by_side(obs_data, file_name='', output=''):
 
 
 # Use the class to find .dynesty, load prior, and decide output folders
-finder = find_dynestyfile_and_priors(input_dir_or_file=dir_pickle_files,use_CAMO_data=True)
+finder = find_dynestyfile_and_priors(input_dir_or_file=dir_pickle_files,use_all_cameras=True)
 
 # check if finder is empty
 if not finder.base_names:

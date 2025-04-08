@@ -361,8 +361,12 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
     # Check if sim_data was provided
     if sim_data is not None:
+        
+        # # Plot simulated data
+        # ax0.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr/1000,'--', color=color_sim, label='wmpl')
+        # ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000,'--', color=color_sim, label='wmpl')
 
-        # integration time step in self.const.dt for luminosity_integration and abs_magnitude_integration
+        # integration time step in self.const.dt for luminosity integration and abs_magnitude_integration
         if (1/obs_data.fps) > sim_data.const.dt:
             sim_data.luminosity_arr, sim_data.abs_magnitude = luminosity_integration(sim_data.time_arr,sim_data.time_arr,sim_data.luminosity_arr,sim_data.const.dt,obs_data.fps,obs_data.P_0m)
 
@@ -1319,7 +1323,9 @@ def luminosity_integration(all_simulated_time,time_fps,luminosity_arr,dt,fps,P_0
         # pick all the self.time_arr between time_sampled_lum[i]-1/fps and time_sampled_lum[i] in self.time_arr
         mask = (all_simulated_time > time_fps[i]-1/fps) & (all_simulated_time <= time_fps[i])
         # sum them together and divide by 1/self.fps
-        new_luminosity_arr[i] = (np.sum(luminosity_arr[mask])*dt)/abs(np.max(all_simulated_time[mask])-np.min(all_simulated_time[mask])) # 1/self.fps
+        # new_luminosity_arr[i] = (np.sum(luminosity_arr[mask])*dt)/abs(np.max(all_simulated_time[mask])-np.min(all_simulated_time[mask])) # 1/self.fps
+        # simply take the mean of the luminosity_arr[mask] and assign it to new_luminosity_arr[i]
+        new_luminosity_arr[i] = np.mean(luminosity_arr[mask])
         new_abs_magnitude[i] = -2.5*np.log10(new_luminosity_arr[i]/P_0m)
     return new_luminosity_arr, new_abs_magnitude
 
@@ -1976,13 +1982,13 @@ class observation_data:
             self.noise_mag = 0.1
 
             self.P_0m = self.const.P_0m
-            if use_all_cameras:
+            if use_all_cameras == False:
                 # use the first camera to set the fps
                 self.fps = 80
             else:
                 # use the first camera to set the fps
                 self.fps = 32
-
+           
             if 1/self.fps > self.const.dt:
                 # integration time step lumionosity
                 self.luminosity_arr, self.abs_magnitude = luminosity_integration(self.time_arr,self.time_arr,self.luminosity_arr,self.const.dt,self.fps,self.P_0m)
@@ -2067,7 +2073,7 @@ class observation_data:
             vel_interpol = scipy.interpolate.CubicSpline(time_visible, vel_visible)
 
             fps_lum = 32
-            if use_all_cameras:
+            if use_all_cameras == False:
                 self.stations = ['01G','02G','01T','02T']
                 # self.noise_lag = 5
                 if np.isnan(self.noise_lag):
@@ -2093,20 +2099,6 @@ class observation_data:
             self.height_lum = ht_interpol(time_sampled_lum)
             self.luminosity = lum_interpol(time_sampled_lum) # after the integration
             self.absolute_magnitudes = -2.5*np.log10(self.luminosity/self.P_0m) # P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))
-            
-            # for i in range(len(time_sampled_lum)):
-            #     # pick all the lum_obs_data between time_sampled_lag[i]-1/fps and time_sampled_lag[i] in self.time_arr
-            #     mask = (self.time_arr > time_sampled_lum[i]-1/self.fps) & (self.time_arr <= time_sampled_lum[i])
-            #     # sum them together and divide by 1/self.fps
-            #     self.height_lum[i] = np.mean(self.leading_frag_height_arr[mask])
-                
-            # copy_lum_height_arr = np.copy(self.leading_frag_height_arr)
-            # # new_luminosity_arr = self.luminosity_arr
-            # for i in range(len(self.time_arr)):
-            #     # pick all the self.time_arr between time_sampled_lum[i]-1/fps and time_sampled_lum[i] in self.time_arr
-            #     mask = (self.time_arr > self.time_arr[i]-1/self.fps) & (self.time_arr <= self.time_arr[i])
-            #     copy_lum_height_arr[i] = np.mean(self.leading_frag_height_arr[mask])
-            # self.lum_height_arr = copy_lum_height_arr
 
             # mag_sampled = mag_interpol(time_sampled_lum)
             self.stations_lag = stations_array_lag
@@ -3108,27 +3100,6 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
         # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
         if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
             return -np.inf
-        
-    # simulated_time = simulated_time - simulated_time[0]
-    # dt = simulation_results.const.dt
-    # # crete an array simulated_lc_intensity with all nans
-    # simulated_lc_intensity = np.full(len(obs_metsim_obj.time_lum), np.nan) 
-    # for i in range(len(obs_metsim_obj.time_lum)):
-    #     # pick all the lum_obs_data between time_sampled_lag[i]-1/fps and time_sampled_lag[i] in self.time_arr
-    #     mask = (all_simulated_time > obs_metsim_obj.time_lum[i]-1/obs_metsim_obj.fps) & (all_simulated_time <= obs_metsim_obj.time_lum[i])
-    #     # sum them together and divide by 1/self.fps
-    #     simulated_lc_intensity[i] = (np.sum(simulation_results.luminosity_arr[mask])*dt)/abs(np.max(simulation_results.time_arr[mask])-np.min(simulation_results.time_arr[mask]))#(1/obs_metsim_obj.fps)
-
-    # # plot simulated_lc_intensity and obs_metsim_obj.luminosity
-    # plt.plot(simulated_time, simulated_lc_intensity, label='No Noise data', color='black')
-    # plt.scatter(obs_metsim_obj.time_lum, obs_metsim_obj.luminosity,label='data with noise')
-    # plt.xlabel('Time [s]')
-    # plt.ylabel('Luminosity [J/s]')
-    # plt.legend()
-    # log_likelihood_lum = np.nansum(-0.5 * np.log(2*np.pi*obs_metsim_obj.noise_lum**2) - 0.5 / (obs_metsim_obj.noise_lum**2) * (obs_metsim_obj.luminosity - simulated_lc_intensity) ** 2)
-    # # put as a title log_likelihood_lum
-    # plt.title(f"log_likelihood_lum: {log_likelihood_lum:.5g}")
-    # plt.show()
 
     ### LAG CALC ###
 
@@ -3296,30 +3267,35 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
-        help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
+        help="Path to walk and find .pickle file or specific single file .pickle or .json file."
+        "If you want multiple specific folder or files just divided them by ',' in between.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
         default=r"",
-        help="Where to store results. If empty, store next to each .dynesty.")
+        help="Where to store results. If empty, store in the input directory.")
     
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
         default=r"",
-        help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
+        help="Path to a .prior file. If blank, we look in the .dynesty folder for other .pior files. " \
+        "If no data givn and none found not present resort to default built-in bounds.")
 
     arg_parser.add_argument('-all','--all_cameras',
-        help="If active use all data, if not only CAMO data for lag if present in pickle file, or generate json file with CAMO noise. If False, do not use/generate CAMO data (by default is False).",
+        help="If active use all data, if not only CAMO data for lag if present in pickle file. If False, use CAMO data only for deceleration (by default is False). " \
+        "When gnerating json simulations filr if False create a combination EMCCD CAMO data and if True EMCCD only",
         action="store_true")
 
     arg_parser.add_argument('-new','--new_dynesty',
-        help="If active restart a new dynesty run if not resume from existing .dynesty if found. If False, create a new version.",
+        help="If active restart a new dynesty run if not resume from existing .dynesty if found. " \
+        "If False, create a new dynesty version.",
         action="store_false")
     
     arg_parser.add_argument('-plot','--only_plot',
-        help="If active only plot the results of the dynesty run, if not run dynesty.", 
+        help="If active only plot the results of the dynesty run, if not run dynesty and then plot all when finish.", 
         action="store_true")
 
     arg_parser.add_argument('--pick_pos', metavar='PICK_POSITION_REAL', type=int, default=0,
-        help="pick postion in the meteor from 0 to 1, for leading edge pick is 0 for the centroid on the entire meteor is 0.5.")
+        help="corretion for pick postion in the meteor frame raging from from 0 to 1, " \
+        "for leading edge picks is 0 for the centroid on the entire meteor is 0.5.")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")

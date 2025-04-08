@@ -142,7 +142,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     ax0.invert_xaxis()
     ax0.legend()
     # ax0.tick_params(axis='x', rotation=45)
-    ax0.set_ylabel('Height (km)')
+    ax0.set_ylabel('Height [km]')
     ax0.grid(True, linestyle='--', color='lightgray')
     # save the x-axis limits
     xlim_abs_mag = ax0.get_xlim()
@@ -187,9 +187,9 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         if len(stations_lag) != 0:
             # print a horizonal along the x axis at the height_lag[0] darkgray
             ax4.axhline(y=max_height_lag/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(stations_lag)}", zorder=2)
-    ax4.set_xlabel('Luminosity [J/s]')
+    ax4.set_xlabel('Luminosity [W]')
     # ax4.tick_params(axis='x', rotation=45)
-    ax4.set_ylabel('Height (km)')
+    ax4.set_ylabel('Height [km]')
     ax4.grid(True, linestyle='--', color='lightgray')
     # save the x-axis limits
     xlim_lum = ax4.get_xlim()
@@ -367,8 +367,8 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         # ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000,'--', color=color_sim, label='wmpl')
 
         # integration time step in self.const.dt for luminosity integration and abs_magnitude_integration
-        if (1/obs_data.fps) > sim_data.const.dt:
-            sim_data.luminosity_arr, sim_data.abs_magnitude = luminosity_integration(sim_data.time_arr,sim_data.time_arr,sim_data.luminosity_arr,sim_data.const.dt,obs_data.fps,obs_data.P_0m)
+        if (1/obs_data.fps_lum) > sim_data.const.dt:
+            sim_data.luminosity_arr, sim_data.abs_magnitude = luminosity_integration(sim_data.time_arr,sim_data.time_arr,sim_data.luminosity_arr,sim_data.const.dt,obs_data.fps_lum,obs_data.P_0m)
 
         # Plot simulated data
         ax0.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
@@ -1322,8 +1322,8 @@ def luminosity_integration(all_simulated_time,time_fps,luminosity_arr,dt,fps,P_0
     for i in range(len(time_fps)):
         # pick all the self.time_arr between time_sampled_lum[i]-1/fps and time_sampled_lum[i] in self.time_arr
         mask = (all_simulated_time > time_fps[i]-1/fps) & (all_simulated_time <= time_fps[i])
-        # sum them together and divide by 1/self.fps
-        # new_luminosity_arr[i] = (np.sum(luminosity_arr[mask])*dt)/abs(np.max(all_simulated_time[mask])-np.min(all_simulated_time[mask])) # 1/self.fps
+        # sum them together and divide by 1/self.fps_lum
+        # new_luminosity_arr[i] = (np.sum(luminosity_arr[mask])*dt)/abs(np.max(all_simulated_time[mask])-np.min(all_simulated_time[mask])) # 1/self.fps_lum
         # simply take the mean of the luminosity_arr[mask] and assign it to new_luminosity_arr[i]
         new_luminosity_arr[i] = np.mean(luminosity_arr[mask])
         new_abs_magnitude[i] = -2.5*np.log10(new_luminosity_arr[i]/P_0m)
@@ -1444,17 +1444,17 @@ class observation_data:
                 # find the name of the camera that has 1T or 2T
                 camera_name_lag = [camera for camera in unique_stations if "1T" in camera or "2T" in camera]
                 lag_data, lag_files = self.extract_lag_data(combined_obs_dict, camera_name_lag)
-                self.fps = 80
+                self.fps_lag = 80
             elif any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
                 # find the name of the camera that has 1G or 2G or 1F or 2F
                 camera_name_lag = [camera for camera in unique_stations if "1G" in camera or "2G" in camera or "1F" in camera or "2F" in camera]
                 lag_data, lag_files = self.extract_lag_data(combined_obs_dict, camera_name_lag)
-                self.fps = 32
+                self.fps_lag = 32
             elif any(("1K" in station) or ("2K" in station) for station in unique_stations):
                 # find the name of the camera that has 1K or 2K
                 camera_name_lag = [camera for camera in unique_stations if "1K" in camera or "2K" in camera]
                 lag_data, lag_files = self.extract_lag_data(combined_obs_dict, camera_name_lag)
-                self.fps = 80
+                self.fps_lag = 80
             else:
                 # print the unique_stations
                 print(unique_stations,'no known camera found')
@@ -1464,10 +1464,12 @@ class observation_data:
                 camera_name_lag = [camera for camera in unique_stations if "1G" in camera or "2G" in camera or "1F" in camera or "2F" in camera]
                 lum_data, lum_files = self.extract_lum_data(combined_obs_dict, camera_name_lag)
                 self.P_0m = 935
+                self.fps_lum = 32
             elif any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
                 camera_name_lag = [camera for camera in unique_stations if "1K" in camera or "2K" in camera or "1T" in camera or "2T" in camera]
                 lum_data, lum_files = self.extract_lum_data(combined_obs_dict, camera_name_lag)
                 self.P_0m = 840
+                self.fps_lum = 80
             else:
                 # print the unique_stations
                 print(unique_stations,'no known camera found')
@@ -1484,10 +1486,12 @@ class observation_data:
 
             if any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
                 self.P_0m = 840
-                self.fps = 80
+                self.fps_lag = 80
+                self.fps_lum = 80
             elif any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
                 self.P_0m = 935
-                self.fps = 32
+                self.fps_lum = 32
+                self.fps_lag = 32
             else:
                 print(unique_stations,'no known camera found')
                 return
@@ -1564,7 +1568,7 @@ class observation_data:
         if np.isnan(self.noise_lag):
             self.noise_lag = self.define_polyn_fit_lag_noise()
             print('Assumed Noise in lag based on polynomial fit:',self.noise_lag)
-        self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
+        self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps_lag)
 
         zenith_angle_list = []
         m_init_list = []
@@ -1956,6 +1960,15 @@ class observation_data:
             restored_dict = restore_data(data_dict)
             self.__dict__.update(restored_dict)
 
+            # check if self.fps exist for old version of the code
+            if 'fps' in restored_dict.keys():
+                if restored_dict['fps'] == 32:
+                    self.fps_lum = 32
+                    self.fps_lag = 32
+                else:
+                    self.fps_lum = 32
+                    self.fps_lag = 80
+
         else:
 
             # Load the constants
@@ -1984,14 +1997,14 @@ class observation_data:
             self.P_0m = self.const.P_0m
             if use_all_cameras == False:
                 # use the first camera to set the fps
-                self.fps = 80
+                self.fps_lum = 80
             else:
                 # use the first camera to set the fps
-                self.fps = 32
+                self.fps_lum = 32
            
-            if 1/self.fps > self.const.dt:
+            if 1/self.fps_lum > self.const.dt:
                 # integration time step lumionosity
-                self.luminosity_arr, self.abs_magnitude = luminosity_integration(self.time_arr,self.time_arr,self.luminosity_arr,self.const.dt,self.fps,self.P_0m)
+                self.luminosity_arr, self.abs_magnitude = luminosity_integration(self.time_arr,self.time_arr,self.luminosity_arr,self.const.dt,self.fps_lum,self.P_0m)
 
             # add a gausian noise to the luminosity of 2.5
             lum_obs_data = self.luminosity_arr + np.random.normal(loc=0, scale=self.noise_lum, size=len(self.luminosity_arr))
@@ -2075,22 +2088,24 @@ class observation_data:
             fps_lum = 32
             if use_all_cameras == False:
                 self.stations = ['01G','02G','01T','02T']
+                self.fps_lag = 80
                 # self.noise_lag = 5
                 if np.isnan(self.noise_lag):
                     self.noise_lag = 5
-                self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
+                self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps_lag)
                 # multiply by a number between 0.6 and 0.4 for the time to track for CAMO
                 time_to_track = (time_visible[-1]-time_visible[0])*np.random.uniform(0.4,0.6)
-                time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps,self.stations[2],self.stations[3])
+                time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps_lag,self.stations[2],self.stations[3])
                 time_sampled_lum, stations_array_lum = self.mimic_fps_camera(time_visible,0,fps_lum,self.stations[0],self.stations[1])
             else:
                 self.stations = ['01F','02F']
+                self.fps_lag = 32
                 # self.noise_lag = 40
                 if np.isnan(self.noise_lag):
                     self.noise_lag = 40
-                self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps)
+                self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps_lag)
                 time_to_track = 0
-                time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps,self.stations[0],self.stations[1])
+                time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps_lag,self.stations[0],self.stations[1])
                 time_sampled_lum, stations_array_lum = time_sampled_lag, stations_array_lag
 
             # Create new mag, height and length arrays at FPS frequency
@@ -3090,8 +3105,8 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     all_simulated_time = simulation_results.time_arr-simulated_time[0]
 
     # find the integral of the luminosity in time in between FPS
-    if 1/obs_metsim_obj.fps > simulation_results.const.dt: # FPS is lower than the simulation time step need to integrate the luminosity
-        simulated_lc_intensity, _ = luminosity_integration(all_simulated_time,obs_metsim_obj.time_lum,simulation_results.luminosity_arr,simulation_results.const.dt,obs_metsim_obj.fps,obs_metsim_obj.P_0m)
+    if 1/obs_metsim_obj.fps_lum > simulation_results.const.dt: # FPS is lower than the simulation time step need to integrate the luminosity
+        simulated_lc_intensity, _ = luminosity_integration(all_simulated_time,obs_metsim_obj.time_lum,simulation_results.luminosity_arr,simulation_results.const.dt,obs_metsim_obj.fps_lum,obs_metsim_obj.P_0m)
     else:
         # too high frame rate, just interpolate the luminosity
         simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, 

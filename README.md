@@ -7,7 +7,7 @@ Western Meteor Physics Group (WMPG) Maximilian Vovk's personal repository. This 
 The `Code` folder contains the main scripts used for data processing and analysis.
 
 #### DynNestSampl
-- **Description**: Implements Principal Dynamuc Nested Sampling to define uncertanty estimate for the meteor base on lag and luminosity data. It reads automatically EMCCD and CAMO .pickle data but it can also work with metsim json data if path and file name are in the input directory. You can process specific files or folders by separating them via a ',' comma.
+- **Description**: Implements Principal Dynamic Nested Sampling to define uncertainty estimate for the meteor base on lag and luminosity data. It reads automatically EMCCD and CAMO .pickle data but it can also work with MetSim json data if path and file name are in the input directory. You can process specific files or folders by separating them via a ',' comma.
 - **Usage**: `python "WMPG-repoMAX\Code\DynNestSampl\DynNestSapl_metsim.py" "C:\Users\maxiv\Documents\INPUT-FOLDER" --output_dir "C:\Users\maxiv\Desktop\OUTPUT-FOLDER" --prior "C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\stony_meteoroid.prior"`
 - **Dependencies**: wmpl, Dynesty
 - **Multi Node Cluster Usage**: `mpirun -np 4 python "WMPG-repoMAX\Code\DynNestSampl\multiNode_DynNestSapl_metsim.py" "C:\Users\maxiv\Documents\INPUT-FOLDER" --output_dir "C:\Users\maxiv\Desktop\OUTPUT-FOLDER" --prior "C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\stony_meteoroid.prior"`

@@ -16,8 +16,8 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
-    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\ORI_mean_test\ORI_mean.json",
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
+        default=r"N:\mvovk\2ndPaper\reduction_CAMO+EMCCD\ORI\20191023_084916_skyfit2_ZB",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

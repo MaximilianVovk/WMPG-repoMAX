@@ -23,7 +23,7 @@ import scipy.optimize as opt
 import matplotlib.gridspec as gridspec
 from scipy import stats
 
-input_dirfile = r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\integration_lum"
+input_dirfile = r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\integration_lum\CAP"
 
 # Use the class to find .dynesty, load prior, and decide output folders
 finder = find_dynestyfile_and_priors(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=False,pick_position=0)
@@ -114,10 +114,7 @@ for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder
         ax1.plot(obs_data.time_lum[np.where(obs_data.stations_lum == station)], \
                     obs_data.luminosity[np.where(obs_data.stations_lum == station)], 'x--', \
                     color=station_colors[station], label=station)
-    # save the x-axis limits
-    xlim_lum = ax0.get_xlim()
-    # fix the x-axis limits to xlim_lum
-    ax0.set_xlim(xlim_lum)
+
     # save the y-axis limits
     ylim_lum = ax0.get_ylim()
     # fix the y-axis limits to ylim_lum
@@ -127,17 +124,13 @@ for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder
     xlim_time = ax1.get_xlim()
     # fix the x-axis limits to xlim_time
     ax1.set_xlim(xlim_time)
-    # save the y-axis limits
-    ylim_time = ax1.get_ylim()
-    # fix the y-axis limits to ylim_time
-    ax1.set_ylim(ylim_time)
 
     the_fontsize = 12
 
     # now plot the simulated data
     ax0.set_xlabel('Luminosity [W]', fontsize=the_fontsize)
     # ax4.tick_params(axis='x', rotation=45)
-    ax0.set_ylabel('Height (km)', fontsize=the_fontsize)
+    ax0.set_ylabel('Height [km]', fontsize=the_fontsize)
 
     ax1.set_ylabel('Luminosity [W]', fontsize=the_fontsize)
     # ax4.tick_params(axis='x', rotation=45)
@@ -154,6 +147,16 @@ for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder
     ax0.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000, ':', color='darkgray', label='Simulated',linewidth=2)
     ax1.plot(all_simulated_time, sim_data.luminosity_arr, ':', color='darkgray', label='Simulated',linewidth=2)
 
+    # save the x-axis limits
+    xlim_lum = ax0.get_xlim()
+    # fix the x-axis limits to xlim_lum
+    ax0.set_xlim(xlim_lum)
+
+    # save the y-axis limits
+    ylim_time = ax1.get_ylim()
+    # fix the y-axis limits to ylim_time
+    ax1.set_ylim(ylim_time)
+
     # plot the simulated data with the integration time step in self.const.dt for luminosity integration and abs_magnitude_integration
     if (1/obs_data.fps_lum) > sim_data.const.dt:
         ax0.plot(integr_luminosity_arr, sim_data.leading_frag_height_arr/1000, color='black', label='Simulated Integr.',linewidth=2)
@@ -169,3 +172,4 @@ for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder
 
     plt.savefig(os.path.join(input_dirfile, file_name+'_sim_and_integ_sim.png'), bbox_inches='tight', dpi=300)
     plt.close()
+    print(f"Saved figure for {os.path.join(input_dirfile, file_name+'_sim_and_integ_sim.png')}")

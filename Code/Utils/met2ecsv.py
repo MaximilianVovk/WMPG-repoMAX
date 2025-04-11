@@ -510,7 +510,7 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Translate from .met to .ecsv format.")
 
-    arg_parser.add_argument('--input_dir_file', help="Path and file name of the .met file.", default=r"/home/mvovk/WMPG-repoMAX/Code/Utils/met2ecsv_test_cases/2021/state_1661794057.met")
+    arg_parser.add_argument('--input_dir_file', help="Path and file name of the .met file.", default=r"N:\mvovk\2ndPaper\reduction_CAMO+EMCCD\manualFix-EMCCD+CAMO\CAP\20200726_060419_skyfit2_DONE\20200726_060419_mir\state_1744242752_MAX.met")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--photom', help='Comma-separated list of site=offset pairs, by default "1=16.5,2=16.5"', default="1=16.5,2=16.5")

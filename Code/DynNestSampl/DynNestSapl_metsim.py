@@ -1383,6 +1383,12 @@ class observation_data:
             for obs in traj.observations:
                 # print('Station:', obs.station_id)
 
+                # check if the station_id is in the old format from .Met solution
+                if "1" == obs.station_id:
+                    obs.station_id = obs.station_id.replace("1", "01T")
+                elif "2" == obs.station_id:
+                    obs.station_id = obs.station_id.replace("2", "02T")
+
                 # check if among obs.station_id there is one of the following 01T or 02T
                 if "1T" in obs.station_id or "2T" in obs.station_id:
                     P_0m = 840
@@ -1808,8 +1814,13 @@ class observation_data:
     def find_IAU_code(self):
         # check if self.file_name is a array or a string
         if not isinstance(self.file_name, str):
-            # take the first element of the array
-            file_name_IAU = self.file_name[0]
+            # check if among the file_name there is one that contains _mir if so take it
+            if any("_mir" in f for f in self.file_name):
+                # take the first element of the array that contains _mir
+                file_name_IAU = [f for f in self.file_name if "_mir" in f][0]
+            else:
+                # take the first element of the array
+                file_name_IAU = self.file_name[0]
         else:
             file_name_IAU = self.file_name
         # Get the directory where self.file_name is stored
@@ -2287,11 +2298,12 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
 
         # Each discovered or created .dynesty is in input_folder_file
         # with its matching prior info
-        for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(
+        for i, (base_name, dynesty_info, prior_path, out_folder, report_txt) in enumerate(zip(
             finder.base_names,
             finder.input_folder_file,
             finder.priors,
-            finder.output_folders
+            finder.output_folders,
+            finder.report_txt
         )):
             dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
             obs_data = finder.observation_instance(base_name)
@@ -2300,7 +2312,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             # update the log file with the error join out_folder,"log_"+base_name+".txt"
             log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
 
-            dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name, log_file_path)
+            dynesty_file = setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name, log_file_path, report_txt)
             
             ### set up obs_data const values to run same simultaions in run_simulation #################
 
@@ -2383,8 +2395,11 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                 print("If you want to run the dynasty file set only_plot to False")
 
 
-def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_files='', dynesty_file='', prior_path='', base_name='', log_file_path=''):
-
+def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_files='', dynesty_file='', prior_path='', base_name='', log_file_path='', report_txt=''):
+    """
+    Create the output folder and set up the log file.
+    """
+    # check if the out_folder is empty and set it to the same folder as the dynesty_file
     if log_file_path == '':
         log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
         base_name_log = "log_{base_name}.txt"
@@ -2402,6 +2417,7 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
     sys.stdout = Logger(out_folder,base_name_log) # 
     print(f"Meteor:", base_name)
     print("  File name:    ", pickle_files)
+    print("  Report file: ", report_txt)
     print("  Dynesty file: ", dynesty_file)
     print("  Prior file:   ", prior_path)
     print("  Output folder:", out_folder)
@@ -2425,6 +2441,13 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
     if not os.path.exists(dynesty_file_in_output_path) and os.path.isfile(dynesty_file):
         shutil.copy(dynesty_file, out_folder)
         print("dynesty file copied to output folder:", dynesty_file_in_output_path)
+
+    if os.path.isfile(report_txt):
+        # copy the report file to the output folder if not already there
+        report_txt_in_output_path = os.path.join(out_folder,os.path.basename(report_txt))
+        if not os.path.exists(report_txt_in_output_path):
+            shutil.copy(report_txt, out_folder)
+            print("report file copied to output folder:", report_txt_in_output_path)
 
     # add the prior pr
     if prior_path != "":
@@ -2471,22 +2494,6 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
             # Copy the file
             shutil.copy(pickle_file, dest_path)
             print(f"Copied {pickle_file} to {dest_path}")
-
-    # # look at all the fill pickle_files and copy them to the output folder conider the pickle_files to be a list
-    # for pickle_file in pickle_files:
-    #     # check if pickle_file is not in the output directory
-    #     if not os.path.exists(os.path.join(out_folder,os.path.basename(pickle_file))) and os.path.isfile(pickle_file):
-    #         shutil.copy(pickle_file, out_folder)
-    #         print("observation file copied to output folder:", os.path.join(out_folder,os.path.basename(pickle_file)))
-    #     elif not os.path.isfile(pickle_file):
-    #         print("original observation file not found, not copied:",pickle_file)
-                    
-    # # check if pickle_file is not in the output directory
-    # if not os.path.exists(os.path.join(out_folder,os.path.basename(pickle_file))) and os.path.isfile(pickle_file):
-    #     shutil.copy(pickle_file, out_folder)
-    #     print("observation file copied to output folder:", os.path.join(out_folder,os.path.basename(pickle_file)))
-    # elif not os.path.isfile(pickle_file):
-    #     print("original observation file not found, not copied:",pickle_file)
 
     return dynesty_file_in_output_path
 
@@ -2609,6 +2616,7 @@ class find_dynestyfile_and_priors:
         self.input_folder_file = [] # [(dynesty_file, input_file, bounds, flags_dict, fixed_values), ...]
         self.priors = []            # [used_prior_path_or_empty_string, ...]
         self.output_folders = []    # [output_folder_for_this_dynesty, ...]
+        self.report_txt = []          # [report_txt_path, ...]
         self.observation_objects = {}  # {base_name: observation_instance}
 
         # Kick off processing
@@ -2839,14 +2847,44 @@ class find_dynestyfile_and_priors:
             # change the input_file to the new_json_file_save
             input_file = observation_instance.new_json_file_save
 
+
         # check if input_file is a list
         if isinstance(input_file, list):
             # take the first file in the list
             file_name_no_ext = base_name
             input_files_save = input_file
+            # check if among the file_name there is one that contains _mir if so take it
+            if any("_mir" in f for f in input_file):
+                # take the first element of the array that contains _mir
+                file_name_IAU = [f for f in input_file if "_mir" in f][0]
+            else:
+                # take the first element of the array
+                file_name_IAU = input_file[0]
         else:
             file_name_no_ext = os.path.splitext(input_file)[0]
             input_files_save = [input_file]
+            file_name_IAU = input_file
+        
+        # Get the directory where self.file_name is stored
+        file_dir_IAU = os.path.dirname(file_name_IAU)
+
+        # Define the filenames to look for
+        report_file = None
+        for file_name in os.listdir(file_dir_IAU):
+            if file_name.endswith("report.txt"):
+                print("Found report.txt file to extract IAU code")
+                report_file = file_name
+                break
+        if report_file is None:
+            for file_name in os.listdir(file_dir_IAU):
+                if file_name.endswith("report_sim.txt"):
+                    print("Found report_sim.txt file to extract IAU code")
+                    report_file = file_name
+                    break
+        # If no report file is found, return None
+        if report_file is None:
+            print("No report .txt file found in the directory")
+            report_file = ''
         
         possible_dynesty = os.path.join(root, file_name_no_ext + ".dynesty")
 
@@ -2886,23 +2924,6 @@ class find_dynestyfile_and_priors:
 
         if base_name == "":
             base_name = self._extract_base_name(input_file)
-
-        # # Check if base_name already exists, and skip if it does
-        # if base_name in self.observation_objects:
-        #     # Convert to sets for comparison
-        #     existing_stations = set(self.observation_objects[base_name].stations)
-        #     new_stations = set(observation_instance.stations)
-        #     # Find stations that are unique to each list (not in both)
-        #     unique_stations = existing_stations.symmetric_difference(new_stations)
-
-        #     if unique_stations:
-        #         # Sort to ensure deterministic order (optional)
-        #         new_stations = sorted(new_stations)
-        #         base_name = base_name + "_" + "_".join(new_stations)
-        #         print(f"Updated base name: {base_name}")
-        #     else:
-        #         print(f"Skipping duplicate entry for {base_name}")
-        #         return  # Exit function to prevent duplicate insertion
             
         if self.output_dir=="":
             # # if root do not exist create it
@@ -2921,6 +2942,7 @@ class find_dynestyfile_and_priors:
         self.input_folder_file.append((dynesty_file, input_files_save, bounds, flags_dict, fixed_values))
         self.priors.append(prior_path)
         self.output_folders.append(output_folder)
+        self.report_txt.append(os.path.join(file_dir_IAU, report_file))
         self.observation_objects[base_name] = observation_instance
 
 

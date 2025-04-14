@@ -367,7 +367,7 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         # ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000,'--', color=color_sim, label='wmpl')
 
         # integration time step in self.const.dt for luminosity integration and abs_magnitude_integration check if any sim_data.stations_lum does not have '1T' or '2T' in the name as CAMO narrowfield do not have smearing because it follows the meteor
-        if ((1/obs_data.fps_lum) > sim_data.const.dt) or any('1T' in station for station in obs_data.stations_lum) or any('2T' in station for station in obs_data.stations_lum):
+        if ((1/obs_data.fps_lum) > sim_data.const.dt) and (not any('1T' in station for station in obs_data.stations_lum) or not any('2T' in station for station in obs_data.stations_lum)):
             sim_data.luminosity_arr, sim_data.abs_magnitude = luminosity_integration(sim_data.time_arr,sim_data.time_arr,sim_data.luminosity_arr,sim_data.const.dt,obs_data.fps_lum,obs_data.P_0m)
 
         # Plot simulated data
@@ -3122,7 +3122,7 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     all_simulated_time = simulation_results.time_arr-simulated_time[0]
 
     # find the integral of the luminosity in time in between FPS but not valid for CAMO narrowfield cameras as there is no smearing becuse it follows the meteor
-    if (1/obs_metsim_obj.fps_lum > simulation_results.const.dt) or any('1T' in station for station in obs_metsim_obj.stations_lum) or any('2T' in station for station in obs_metsim_obj.stations_lum): # FPS is lower than the simulation time step need to integrate the luminosity
+    if (1/obs_metsim_obj.fps_lum > simulation_results.const.dt) and (not any('1T' in station for station in obs_metsim_obj.stations_lum) or not any('2T' in station for station in obs_metsim_obj.stations_lum)): # FPS is lower than the simulation time step need to integrate the luminosity
         simulated_lc_intensity, _ = luminosity_integration(all_simulated_time,obs_metsim_obj.time_lum,simulation_results.luminosity_arr,simulation_results.const.dt,obs_metsim_obj.fps_lum,obs_metsim_obj.P_0m)
     else:
         # too high frame rate, just interpolate the luminosity

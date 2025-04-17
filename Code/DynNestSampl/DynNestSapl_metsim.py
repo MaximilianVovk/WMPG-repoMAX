@@ -1080,7 +1080,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "v_init": (500, np.nan),
         "zenith_angle": (0.01, np.nan),
         "m_init": (np.nan, np.nan),
-        "rho": (10, 4000),  # log transformation applied later
+        "rho": (100, 4000),  # log transformation applied later
         "sigma": (0.001 / 1e6, 0.05 / 1e6),
         "erosion_height_start": (\
             object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
@@ -1094,7 +1094,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
             object_meteor.height_lum[-1] -100,\
             object_meteor.height_lum[0] +100),
         "erosion_coeff_change": (1 / 1e12, 2 / 1e6),  # log transformation applied later
-        "erosion_rho_change": (10, 4000),  # log transformation applied later
+        "erosion_rho_change": (100, 4000),  # log transformation applied later
         "erosion_sigma_change": (0.001 / 1e6, 0.05 / 1e6),
         "noise_lag": (10, object_meteor.noise_lag), # more of a peak around the real value
         "noise_lum": (3, object_meteor.noise_lum) # look for more values at higher uncertainty can be because of the noise

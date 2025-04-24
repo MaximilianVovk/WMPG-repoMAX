@@ -1377,6 +1377,8 @@ $m_l$:'+str('{:.2e}'.format(data['erosion_mass_min'],1))+'kg $m_u$:'+str('{:.2e}
 
     # Save the plot
     print('file saved: '+output_dir +os.sep+ file_name)
+    full_path = os.path.join(output_dir, file_name)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)  # Ensure directory exists
     fig.savefig(output_dir +os.sep+ file_name, dpi=300)
 
     # Display the plot
@@ -1551,14 +1553,16 @@ def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, out
     for ax_index, var in enumerate(to_plot):
         ax = axes[ax_index]
         # ax.set_title(var, fontsize=10)
-        ax.set_xlabel(to_plot_unit[ax_index], fontsize=9)
+        ax.set_xlabel(to_plot_unit[ax_index], fontsize=15)
         # now put the x axis range from the highest to the smallest value in df_sel_sim but 
         ax.set_xlim([df_limits[var].min(), df_limits[var].max()])
         # tilt thicks 45 degrees
         # ax.tick_params(axis='x', rotation=45)
         ax.xaxis.set_major_locator(ticker.MaxNLocator(4))
+        ax.tick_params(axis='both', labelsize=12)
         # ax.set_ylabel('$\sigma$', fontsize=9)
-        ax.set_ylabel('RMSD', fontsize=9)
+        ax.set_ylabel('RMSD', fontsize=15)
+        # ax.set_ylabel('Dist%', fontsize=15)
         # # set thicks along y axis as lendata
         # ax.set_yticks(sigma_values)
         # ax.set_yticklabels(lendata_sigma)
@@ -1620,6 +1624,7 @@ def sigma_waterfallPLOT(df_result, df_sim_range, realRMSD_mag, realRMSD_lag, out
     fig.subplots_adjust(right=0.85)
     cbar_ax = fig.add_axes([0.9, 0.15, 0.02, 0.7])
     cbar = plt.colorbar(sc, cax=cbar_ax, label='Density (normalized)')
+    cbar.set_label('Density (normalized)', fontsize=15)  # Set fontsize here
 
     plt.tight_layout(rect=[0, 0, 0.9, 1])
 
@@ -4286,6 +4291,13 @@ def correlation_selPLOT(pd_dataframe_ranges, curr_sel, output_dir='', pca_N_comp
     # pairgrid.map_diag(sns.histplot, kde=True, color='k', edgecolor='k')
     # pairgrid.add_legend()
 
+    # Increase font size only for edge axis labels
+    for i, ax in enumerate(pairgrid.axes[-1, :]):  # Bottom row (x-axis labels)
+        ax.set_xlabel(ax.get_xlabel(), fontsize=20)
+
+    for i, ax in enumerate(pairgrid.axes[:, 0]):  # Left column (y-axis labels)
+        ax.set_ylabel(ax.get_ylabel(), fontsize=20)
+
     # Update the labels
     for ax in pairgrid.axes.flatten():
         if ax is not None:  # Check if the axis exists
@@ -4322,7 +4334,7 @@ def correlation_selPLOT(pd_dataframe_ranges, curr_sel, output_dir='', pca_N_comp
             if i < j:
                 ax = pairgrid.axes[i, j]  # Adjust index to fit the upper triangle
                 corr_value = corr.loc[row, col]
-                ax.text(0.5, 0.5, f'{corr_value:.2f}', horizontalalignment='center', verticalalignment='center', fontsize=12, color='black', transform=ax.transAxes)
+                ax.text(0.5, 0.5, f'{corr_value:.2f}', horizontalalignment='center', verticalalignment='center', fontsize=25, color='black', transform=ax.transAxes)
                 ax.set_facecolor(cmap(norm(corr_value)))
                 # cmap = sns.color_palette('coolwarm', as_cmap=True)
                 # ax.set_facecolor(cmap(corr_value))

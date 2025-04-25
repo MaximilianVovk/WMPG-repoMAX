@@ -18,6 +18,8 @@ import copy
 import matplotlib.pyplot as plt
 import dynesty
 from dynesty import plotting as dyplot
+from dynesty.utils import quantile as _quantile
+from scipy.ndimage import gaussian_filter as norm_kde
 import time
 from matplotlib.ticker import ScalarFormatter
 import scipy
@@ -31,6 +33,8 @@ import shutil
 import matplotlib.ticker as ticker
 import multiprocessing
 import math
+import matplotlib.cm as cm
+from matplotlib.colors import Normalize
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
 from wmpl.Utils.Math import lineFunc, mergeClosePoints, meanAngle
@@ -519,7 +523,11 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     fig, axes = dyplot.runplot(dynesty_run_results,
                                 label_kwargs={"fontsize": 15},  # Reduce axis label size
                                 )
-    plt.savefig(output_folder +os.sep+ file_name +'_dynesty_runplot.png', dpi=300)
+    # save the figure
+    plt.savefig(output_folder +os.sep+ file_name +'_dynesty_runplot.png', 
+                bbox_inches='tight',
+                pad_inches=0.1,       # a little padding around the edge
+                dpi=300)
     plt.close(fig)
 
     variables = list(flags_dict.keys())
@@ -534,7 +542,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     weights /= np.sum(weights)
 
     samples_equal = dynesty.utils.resample_equal(dynesty_run_results.samples, weights)
-    all_samples = dynesty.utils.resample_equal(dynesty_run_results.samples, weights)
+    # all_samples = dynesty.utils.resample_equal(dynesty_run_results.samples, weights)
 
     # Mapping of original variable names to LaTeX-style labels
     variable_map = {
@@ -603,7 +611,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     for i, variable in enumerate(variables):
         if 'log' in flags_dict[variable]:  
             samples_equal[:, i] = 10**(samples_equal[:, i])
-            all_samples[:, i] = 10**(all_samples[:, i])
+            # all_samples[:, i] = 10**(all_samples[:, i])
             best_guess[i] = 10**(best_guess[i])
             best_guess_table[i] = 10**(best_guess_table[i])
             labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
@@ -717,26 +725,146 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     ### TABLE OF POSTERIOR SUMMARY STATISTICS ###
 
-    # Posterior mean (per dimension)
-    posterior_mean = np.mean(samples_equal, axis=0)      # shape (ndim,)
-    all_samples_mean = np.mean(all_samples, axis=0)      # shape (ndim,)
+    def summarize_res_table(results,
+                            variables,
+                            labels_plot,
+                            flags_dict_total,
+                            smooth=0.02):
+        """
+        Summarize dynesty results, using the sample of max weight as the mode.
+        """
+        samples = results.samples               # shape (nsamps, ndim)
+        weights = results.importance_weights()  # shape (nsamps,)
 
-    # Posterior median (per dimension)
-    posterior_median = np.median(samples_equal, axis=0)  # shape (ndim,)
-    all_samples_median = np.median(all_samples, axis=0)  # shape (ndim,)
+        # normalize weights
+        w = weights.copy()
+        w /= np.sum(w)
 
-    # 95% credible intervals (2.5th and 97.5th percentiles)
-    lower_95 = np.percentile(samples_equal, 2.5, axis=0)   # shape (ndim,)
-    upper_95 = np.percentile(samples_equal, 97.5, axis=0)  # shape (ndim,)
+        # find the single sample index with highest weight
+        mode_idx = np.nanargmax(w)   # index of peak-weight sample
+        mode_raw = samples[mode_idx] # array shape (ndim,)
 
-    # Function to approximate mode using histogram binning
-    def approximate_mode_1d(samples):
-        hist, bin_edges = np.histogram(samples, bins='auto', density=True)
-        idx_max = np.argmax(hist)
-        return 0.5 * (bin_edges[idx_max] + bin_edges[idx_max + 1])
+        rows = []
+        rows_sml = []
+        for i, (var, lab) in enumerate(zip(variables, labels_plot)):
+            x = samples[:, i].astype(float)
+            # mask out NaNs
+            mask = ~np.isnan(x)
+            x_valid = x[mask]
+            w_valid = w[mask]
+            if x_valid.size == 0:
+                rows.append((var, lab, *([np.nan]*5)))
+                rows_sml.append((var, lab, *([np.nan]*5)))
+                continue
+            # renormalize
+            w_valid /= np.sum(w_valid)
 
-    approx_modes = [approximate_mode_1d(samples_equal[:, d]) for d in range(ndim)]
-    approx_modes_all = [approximate_mode_1d(all_samples[:, d]) for d in range(ndim)]
+            # weighted quantiles
+            low95, med, high95 = _quantile(x_valid,
+                                        [0.025, 0.5, 0.975],
+                                        weights=w_valid)
+            # weighted mean
+            mean_raw = np.sum(x_valid * w_valid)
+            # simple mode from max-weight sample
+            mode_value = mode_raw[i]
+
+            # mode via corner logic
+            lo, hi = np.min(x), np.max(x)
+            if isinstance(smooth, int):
+                hist, edges = np.histogram(x, bins=smooth, weights=w, range=(lo,hi))
+            else:
+                nbins = int(round(10. / smooth))
+                hist, edges = np.histogram(x, bins=nbins, weights=w, range=(lo,hi))
+                hist = norm_kde(hist, 10.0)
+            centers = 0.5 * (edges[1:] + edges[:-1])
+            mode_Ndim = centers[np.argmax(hist)]
+
+            # now apply your log & unit transforms *after* computing stats
+            def transform(v):
+                if 'log' in flags_dict_total.get(var, ''):
+                    v = 10**v
+                if var in ['v_init',
+                        'erosion_height_start',
+                        'erosion_height_change']:
+                    v = v / 1e3
+                if var in ['erosion_coeff',
+                        'sigma',
+                        'erosion_coeff_change',
+                        'erosion_sigma_change']:
+                    v = v * 1e6
+                return v
+            
+            def log_transf(v):
+                if 'log' in flags_dict_total.get(var, ''):
+                    v = 10**v
+                return v
+
+            rows.append((
+                var,
+                lab,
+                transform(low95),
+                transform(mode_value),
+                transform(mode_Ndim),
+                transform(mean_raw),
+                transform(med),
+                transform(high95),
+            ))
+
+            rows_sml.append((
+                var,
+                lab,
+                log_transf(low95),
+                log_transf(mode_value),
+                log_transf(mode_Ndim),
+                log_transf(mean_raw),
+                log_transf(med),
+                log_transf(high95),
+            ))
+        # sort by variable name
+
+
+        return pd.DataFrame( rows,columns=["Variable","Label","Low95","Mode","Mode_{Ndim}","Mean","Median","High95"]), pd.DataFrame( rows_sml,columns=["Variable","Label","Low95","Mode","Mode_{Ndim}","Mean","Median","High95"])
+
+    
+    summary_df, summary_df_sml = summarize_res_table(
+    dynesty_run_results,
+    variables,
+    labels,
+    flags_dict
+    )
+
+    posterior_mean = summary_df['Mean'].values
+    posterior_median = summary_df['Median'].values  
+    approx_modes = summary_df['Mode'].values
+    approx_modes_Ndim = summary_df['Mode_{Ndim}'].values
+    lower_95 = summary_df['Low95'].values
+    upper_95 = summary_df['High95'].values
+
+    all_samples_mean = summary_df_sml['Mean'].values
+    all_samples_median = summary_df_sml['Median'].values
+    approx_modes_all = summary_df_sml['Mode'].values
+    approx_modes_Ndim_all = summary_df_sml['Mode_{Ndim}'].values
+
+    # # Posterior mean (per dimension)
+    # posterior_mean = np.mean(samples_equal, axis=0)      # shape (ndim,)
+    # all_samples_mean = np.mean(all_samples, axis=0)      # shape (ndim,)
+
+    # # Posterior median (per dimension)
+    # posterior_median = np.median(samples_equal, axis=0)  # shape (ndim,)
+    # all_samples_median = np.median(all_samples, axis=0)  # shape (ndim,)
+
+    # # 95% credible intervals (2.5th and 97.5th percentiles)
+    # lower_95 = np.percentile(samples_equal, 2.5, axis=0)   # shape (ndim,)
+    # upper_95 = np.percentile(samples_equal, 97.5, axis=0)  # shape (ndim,)
+
+    # # Function to approximate mode using histogram binning
+    # def approximate_mode_1d(samples):
+    #     hist, bin_edges = np.histogram(samples, bins='auto', density=True)
+    #     idx_max = np.argmax(hist)
+    #     return 0.5 * (bin_edges[idx_max] + bin_edges[idx_max + 1])
+
+    # approx_modes = [approximate_mode_1d(samples_equal[:, d]) for d in range(ndim)]
+    # approx_modes_all = [approximate_mode_1d(all_samples[:, d]) for d in range(ndim)]
 
     ### MODE PLOT and json ###
 
@@ -852,7 +980,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \hline
     Parameter & 2.5CI & True Value & Best Guess & Mode & Mean & Median & 97.5CI & Abs.Error & Rel.Error\% & Cover \\
     \hline
-        """
+
+"""
         for i, label in enumerate(labels):
             coverage_val = "\ding{51}" if coverage_mask[i] else "\ding{55}"  # Use checkmark/x for coverage
             latex_str += (f"    {label} & {lower_95[i]:.4g} & {truths[i]:.4g} & {best_guess_table[i]:.4g} & {approx_modes[i]:.4g} "
@@ -870,7 +999,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \hline
     Parameter & 2.5CI & Best Guess & Mode & Mean & Median & 97.5CI\\
     \hline
-        """
+
+"""
         # & Mode
         # {approx_modes[i]:.4g} &
         for i, label in enumerate(labels):
@@ -939,33 +1069,37 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         truth_plot = np.array([truth_values_plot[variable] for variable in variables])
 
         fig, axes = dyplot.traceplot(dynesty_run_results, truths=truth_plot, labels=labels_plot,
-                                    label_kwargs={"fontsize": 10},  # Reduce axis label size
-                                    title_kwargs={"fontsize": 10},  # Reduce title font size
+                                    label_kwargs={"fontsize": 15},  # Reduce axis label size
+                                    title_kwargs={"fontsize": 15},  # Reduce title font size
                                     title_fmt='.2e',  # Scientific notation for titles
                                     truth_color='black', show_titles=True,
                                     trace_cmap='viridis', connect=True,
                                     connect_highlight=range(5))
-        # make a super title
-        fig.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
+        # # make a super title
+        # fig.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
 
     else:
 
         fig, axes = dyplot.traceplot(dynesty_run_results, labels=labels_plot,
-                                    label_kwargs={"fontsize": 10},  # Reduce axis label size
-                                    title_kwargs={"fontsize": 10},  # Reduce title font size
+                                    label_kwargs={"fontsize": 15},  # Reduce axis label size
+                                    title_kwargs={"fontsize": 15},  # Reduce title font size
                                     title_fmt='.2e',  # Scientific notation for titles
                                     show_titles=True,
                                     trace_cmap='viridis', connect=True,
                                     connect_highlight=range(5))
-        # make a super title
-        fig.suptitle(f"{file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
-
+        # # make a super title
+        # fig.suptitle(f"{file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
 
     # Adjust spacing and tick label size
     fig.subplots_adjust(hspace=0.5)  # Increase spacing between plots
 
+    # make so that the the upper part of plot that is not used cropped out
+
     # save the figure
-    plt.savefig(output_folder+os.sep+file_name+'_trace_plot.png', dpi=300)
+    plt.savefig(output_folder+os.sep+file_name+'_trace_plot.png', 
+            bbox_inches='tight',
+            pad_inches=0.1,       # a little padding around the edge
+            dpi=300)
 
     # show the trace plot
     # plt.show()
@@ -974,6 +1108,21 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     ### Plot the corner plot ###
 
     print('saving corner plot...')
+
+    # Define weighted correlation
+    def weighted_corr(x, y, w):
+        """Weighted Pearson correlation of x and y with weights w."""
+        w = np.asarray(w)
+        x = np.asarray(x)
+        y = np.asarray(y)
+        w_sum = w.sum()
+        x_mean = (w * x).sum() / w_sum
+        y_mean = (w * y).sum() / w_sum
+        cov_xy = (w * (x - x_mean) * (y - y_mean)).sum() / w_sum
+        var_x  = (w * (x - x_mean)**2).sum() / w_sum
+        var_y  = (w * (y - y_mean)**2).sum() / w_sum
+        return cov_xy / np.sqrt(var_x * var_y)
+
 
     # Trace Plots
     fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
@@ -991,12 +1140,12 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             quantiles=None, 
             labels=labels_plot,  # Update axis labels
             label_kwargs={"fontsize": 10},  # Reduce axis label size
-            title_kwargs={"fontsize": 10},  # Reduce title font size
+            title_kwargs={"fontsize": 12},  # Reduce title font size
             title_fmt='.2e',  # Scientific notation for titles
             fig=(fig, axes[:, :ndim])
         )
         # add a super title
-        fg.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
+        # fg.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
 
     else:
 
@@ -1009,12 +1158,12 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             quantiles=None, 
             labels=labels_plot,  # Update axis labels
             label_kwargs={"fontsize": 10},  # Reduce axis label size
-            title_kwargs={"fontsize": 10},  # Reduce title font size
+            title_kwargs={"fontsize": 12},  # Reduce title font size
             title_fmt='.2e',  # Scientific notation for titles
             fig=(fig, axes[:, :ndim])
         )
         # add a super title
-        fg.suptitle(f"{file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
+        # fg.suptitle(f"{file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
 
     # # Reduce tick size
     # for ax_row in ax:
@@ -1061,11 +1210,84 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
                 ax[i, j].set_xticklabels([])  
                 # or ax[i, j].tick_params(labelbottom=False)
 
+
+    # Overlay weighted correlations in the upper triangle
+    norm = Normalize(vmin=-1, vmax=1)
+    cmap = cm.get_cmap('coolwarm')
+    samples = dynesty_run_results['samples'].T  # shape (ndim, nsamps)
+    weights = dynesty_run_results.importance_weights()
+
+    cmap = plt.colormaps['coolwarm']
+    norm = Normalize(vmin=-1, vmax=1)
+
+    for i in range(ndim):
+        for j in range(ndim):
+            if j <= i or ax[i, j] is None:
+                continue
+
+            panel = ax[i, j]
+            x = samples[j]
+            y = samples[i]
+            weigh_corr = weighted_corr(x, y, weights)
+
+            color = cmap(norm(weigh_corr))
+            # paint the background patch
+            panel.patch.set_facecolor(color)
+            panel.patch.set_alpha(1.0)
+
+            # fallback rectangle if needed
+            panel.add_patch(
+                plt.Rectangle(
+                    (0,0), 1, 1,
+                    transform=panel.transAxes,
+                    facecolor=color,
+                    zorder=0
+                )
+            )
+
+            panel.text(
+                0.5, 0.5,
+                f"{weigh_corr:.2f}",
+                transform=panel.transAxes,
+                ha='center', va='center',
+                fontsize=25, color='black'
+            )
+            panel.set_xticks([]); panel.set_yticks([])
+            for spine in panel.spines.values():
+                spine.set_visible(False)
+
+    # Build the NxN matrix of weigh_corr_ij
+    corr_mat = np.zeros((ndim, ndim))
+    for i in range(ndim):
+        for j in range(ndim):
+            corr_mat[i, j] = weighted_corr(samples[i], samples[j], weights)
+
+    # Wrap it in a DataFrame (so you get row/column labels)
+    df_corr = pd.DataFrame(
+        corr_mat,
+        index=labels_plot,
+        columns=labels_plot
+    )
+
+    # Save to CSV (or TSV, whichever you prefer)
+    outpath = os.path.join(
+        output_folder,
+        f"{file_name}_weighted_correlation_matrix.csv"
+    )
+    df_corr.to_csv(outpath, float_format="%.4f")
+    print(f"Saved weighted correlation matrix to:\n  {outpath}")
+
+
+    # fg.subplots_adjust(
+    #     left=0.05, right=0.95,    # whatever margins you like
+    #     bottom=0.05, top=0.8,    # top < 1.0 to open space for the suptitle
+    #     wspace=0.1, hspace=0.3)  # Increase spacing between plots
+
     # Adjust spacing and tick label size
-    fg.subplots_adjust(wspace=0.1, hspace=0.3)  # Increase spacing between plots
+    fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
 
     # save the figure
-    plt.savefig(output_folder+os.sep+file_name+'_corner_plot.png', dpi=300)
+    plt.savefig(output_folder+os.sep+file_name+'_correlation_plot.png', dpi=300)
 
     # close the figure
     plt.close(fig)

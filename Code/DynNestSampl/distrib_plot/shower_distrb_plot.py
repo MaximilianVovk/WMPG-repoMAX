@@ -20,14 +20,18 @@ from scipy.stats import gaussian_kde
 from dynesty import utils as dyfunc
 from matplotlib.ticker import FormatStrFormatter
 import itertools
+from dynesty.utils import quantile as _quantile
+from scipy.ndimage import gaussian_filter as norm_kde
+import matplotlib.cm as cm
+from matplotlib.colors import Normalize
 
-input_dirfile = r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\ORI"
+input_dirfile = r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP\CAP_2frag"
 
 # take th shower name from the input_dirfile aking the last "\" and the folder name after it
 shower_name = input_dirfile.split("\\")[-1]
 
 # the output directory for the latex table is the same as
-output_dir_show = r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\distrib_plot" #input_dirfile
+output_dir_show = r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP" #input_dirfile
 
 
 # Use the class to find .dynesty, load prior, and decide output folders
@@ -110,133 +114,6 @@ for variable in variables:
 labels_plot = [variable_map_plot[variable] for variable in variables]
 
 
-def approximate_mode_1d(samples):
-    """Approximate mode using histogram binning."""
-    samples = samples[~np.isnan(samples)]
-    if samples.size == 0:
-        return np.nan
-    hist, bin_edges = np.histogram(samples, bins='auto', density=True)
-    idx_max = np.argmax(hist)
-    return 0.5 * (bin_edges[idx_max] + bin_edges[idx_max + 1])
-
-def summarize_all_meteors(finder, variables, labels_plot, flags_dict_total):
-    all_samples = []
-
-    for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(
-        zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
-
-        dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
-        dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-        results = dsampler.results
-
-        try:
-            logwt = results['logwt']
-            samples = results['samples']
-        except KeyError:
-            continue
-
-        logwt_shifted = logwt - np.max(logwt)
-        weights = np.exp(logwt_shifted)
-        weights /= np.sum(weights)
-
-        try:
-            samples_equal = dyfunc.resample_equal(samples, weights)
-        except ValueError:
-            samples_equal = np.full((1, len(variables)), np.nan)
-
-        sample_matrix = np.full((samples_equal.shape[0], len(variables)), np.nan)
-        var_index = {v: i for i, v in enumerate(flags_dict.keys())}
-        for j, var in enumerate(variables):
-            if var in var_index:
-                sample_matrix[:, j] = samples_equal[:, var_index[var]]
-
-        for j, var in enumerate(variables):
-            if np.all(np.isnan(sample_matrix[:, j])):
-                continue
-            if 'log' in flags_dict_total.get(var, ''):
-                sample_matrix[:, j] = 10 ** sample_matrix[:, j]
-            if var in ['v_init', 'erosion_height_start', 'erosion_height_change']:
-                sample_matrix[:, j] = sample_matrix[:, j] / 1000.0
-            if var in ['erosion_coeff', 'sigma', 'erosion_coeff_change', 'erosion_sigma_change']:
-                sample_matrix[:, j] = sample_matrix[:, j] * 1e6
-
-        all_samples.append(sample_matrix)
-
-    if len(all_samples) == 0:
-        return pd.DataFrame(columns=["Variable", "Label", "Median", "Mean", "Mode", "Low95", "High95"])
-
-    combined = np.vstack(all_samples)
-
-    summary = []
-    for i, var in enumerate(variables):
-        col = combined[:, i]
-        if np.all(np.isnan(col)):
-            summary.append((var, labels_plot[i], np.nan, np.nan, np.nan, np.nan, np.nan))
-        else:
-            summary.append((
-                var,
-                labels_plot[i],
-                np.nanmedian(col),
-                np.nanmean(col),
-                approximate_mode_1d(col),
-                np.nanpercentile(col, 2.5),
-                np.nanpercentile(col, 97.5)
-            ))
-
-    return pd.DataFrame(summary, columns=["Variable", "Label", "Median", "Mean", "Mode", "Low95", "High95"])
-
-summary_df = summarize_all_meteors(finder, variables, labels_plot, flags_dict_total)
-print(summary_df.to_string(index=False))
-
-def summary_to_latex(summary_df, shower_name="ORI"):
-    latex_lines = []
-
-    header = r"""\begin{table}[htbp]
-    \centering
-    \renewcommand{\arraystretch}{1.2}
-    \setlength{\tabcolsep}{4pt}
-    \resizebox{\textwidth}{!}{
-    \begin{tabular}{|l|c|c|c|c|c|}
-    \hline
-    \textbf{Parameter} & \textbf{2.5CI} & \textbf{Mode} & \textbf{Mean} & \textbf{Median} & \textbf{97.5CI} \\
-    \hline"""
-    latex_lines.append(header)
-
-    # Format each row
-    for _, row in summary_df.iterrows():
-        param = row["Label"]
-        low = f"{row['Low95']:.4g}" if not np.isnan(row['Low95']) else "---"
-        mode = f"{row['Mode']:.4g}" if not np.isnan(row['Mode']) else "---"
-        mean = f"{row['Mean']:.4g}" if not np.isnan(row['Mean']) else "---"
-        median = f"{row['Median']:.4g}" if not np.isnan(row['Median']) else "---"
-        high = f"{row['High95']:.4g}" if not np.isnan(row['High95']) else "---"
-
-        line = f"    {param} & {low} & {mode} & {mean} & {median} & {high} \\\\"
-        latex_lines.append(line)
-        latex_lines.append("    \\hline")
-
-    # Footer
-    footer = r"    \end{tabular}}"
-    footer2 = rf"""    \caption{{Overall posterior summary statistics for {num_meteors} meteors of the {shower_name} shower.}}
-    \label{{tab:overall_summary_{shower_name.lower()}}}
-\end{{table}}"""
-
-    latex_lines.append(footer)
-    latex_lines.append(footer2)
-
-    return "\n".join(latex_lines)
-
-latex_code = summary_to_latex(summary_df, shower_name)
-print(latex_code)
-
-# Optional: Save to file
-with open(os.path.join(output_dir_show, "posterior_summary_table.tex"), "w") as f:
-    f.write(latex_code)
-
-
-
-
-
 
 def align_dynesty_samples(dsampler, all_variables, current_flags):
     """
@@ -305,6 +182,148 @@ class CombinedResults:
 
 combined_results = CombinedResults(combined_samples, combined_weights)
 
+def summarize_from_cornerplot(results,
+                               variables,
+                               labels_plot,
+                               flags_dict_total,
+                               smooth=0.02):
+    """
+    Summarize dynesty results, using the sample of max weight as the mode.
+    """
+    samples = results.samples               # shape (nsamps, ndim)
+    weights = results.importance_weights()  # shape (nsamps,)
+
+    # normalize weights
+    w = weights.copy()
+    w /= np.sum(w)
+
+    # find the single sample index with highest weight
+    mode_idx = np.nanargmax(w)   # index of peak-weight sample
+    mode_raw = samples[mode_idx] # array shape (ndim,)
+
+    rows = []
+    for i, (var, lab) in enumerate(zip(variables, labels_plot)):
+        x = samples[:, i].astype(float)
+        # mask out NaNs
+        mask = ~np.isnan(x)
+        x_valid = x[mask]
+        w_valid = w[mask]
+        if x_valid.size == 0:
+            rows.append((var, lab, *([np.nan]*5)))
+            continue
+        # renormalize
+        w_valid /= np.sum(w_valid)
+
+        # weighted quantiles
+        low95, med, high95 = _quantile(x_valid,
+                                       [0.025, 0.5, 0.975],
+                                       weights=w_valid)
+        # weighted mean
+        mean_raw = np.sum(x_valid * w_valid)
+        # simple mode from max-weight sample
+        mode_value = mode_raw[i]
+
+        # mode via corner logic
+        lo, hi = np.min(x), np.max(x)
+        if isinstance(smooth, int):
+            hist, edges = np.histogram(x, bins=smooth, weights=w, range=(lo,hi))
+        else:
+            nbins = int(round(10. / smooth))
+            hist, edges = np.histogram(x, bins=nbins, weights=w, range=(lo,hi))
+            hist = norm_kde(hist, 10.0)
+        centers = 0.5 * (edges[1:] + edges[:-1])
+        mode_Ndim = centers[np.argmax(hist)]
+
+        # now apply your log & unit transforms *after* computing stats
+        def transform(v):
+            if 'log' in flags_dict_total.get(var, ''):
+                v = 10**v
+            if var in ['v_init',
+                       'erosion_height_start',
+                       'erosion_height_change']:
+                v = v / 1e3
+            if var in ['erosion_coeff',
+                       'sigma',
+                       'erosion_coeff_change',
+                       'erosion_sigma_change']:
+                v = v * 1e6
+            return v
+
+        rows.append((
+            var,
+            lab,
+            transform(low95),
+            transform(mode_value),
+            transform(mode_Ndim),
+            transform(mean_raw),
+            transform(med),
+            transform(high95),
+        ))
+
+    return pd.DataFrame(
+        rows,
+        columns=["Variable","Label","Low95","Mode","Mode_{Ndim}","Mean","Median","High95"]
+    )
+
+summary_df = summarize_from_cornerplot(
+    combined_results,
+    variables,
+    labels,
+    flags_dict_total
+)
+
+
+print(summary_df.to_string(index=False))
+
+def summary_to_latex(summary_df, shower_name="ORI"):
+    latex_lines = []
+
+    header = r"""\begin{table}[htbp]
+    \centering
+    \renewcommand{\arraystretch}{1.2}
+    \setlength{\tabcolsep}{4pt}
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{|l|c|c|c|c|c|}
+    \hline
+    \textbf{Parameter} & \textbf{2.5CI} & \textbf{Mode} & \textbf{Mean} & \textbf{Median} & \textbf{97.5CI} \\
+    \hline"""
+    latex_lines.append(header)
+
+    # Format each row
+    for _, row in summary_df.iterrows():
+        param = row["Label"]
+        low = f"{row['Low95']:.4g}" if not np.isnan(row['Low95']) else "---"
+        mode = f"{row['Mode']:.4g}" if not np.isnan(row['Mode']) else "---"
+        mean = f"{row['Mean']:.4g}" if not np.isnan(row['Mean']) else "---"
+        median = f"{row['Median']:.4g}" if not np.isnan(row['Median']) else "---"
+        high = f"{row['High95']:.4g}" if not np.isnan(row['High95']) else "---"
+
+        line = f"    {param} & {low} & {mode} & {mean} & {median} & {high} \\\\"
+        latex_lines.append(line)
+        latex_lines.append("    \\hline")
+
+    # if there is _ in the shower_name put a \
+    shower_name_plot = shower_name.replace("_", "\\_")
+    # Footer
+    footer = r"    \end{tabular}}"
+    footer2 = rf"""    \caption{{Overall posterior summary statistics for {num_meteors} meteors of the {shower_name_plot} shower.}}
+    \label{{tab:overall_summary_{shower_name.lower()}}}
+\end{{table}}"""
+
+    latex_lines.append(footer)
+    latex_lines.append(footer2)
+
+    return "\n".join(latex_lines)
+
+latex_code = summary_to_latex(summary_df, shower_name)
+print(latex_code)
+
+print("Saving LaTeX table...")
+# print(os.path.join(output_dir_show, shower_name+"posterior_summary_table.tex"))
+
+# Optional: Save to file
+with open(os.path.join(output_dir_show, shower_name+"posterior_summary_table.tex"), "w") as f:
+    f.write(latex_code)
 
 
 for i, variable in enumerate(variables):
@@ -324,79 +343,109 @@ for i, variable in enumerate(variables):
 
 print('saving corner plot...')
 
-# Trace Plots
+# 1) Define weighted correlation
+def weighted_corr(x, y, w):
+    """Weighted Pearson correlation of x and y with weights w."""
+    w = np.asarray(w)
+    x = np.asarray(x)
+    y = np.asarray(y)
+    w_sum = w.sum()
+    x_mean = (w * x).sum() / w_sum
+    y_mean = (w * y).sum() / w_sum
+    cov_xy = (w * (x - x_mean) * (y - y_mean)).sum() / w_sum
+    var_x  = (w * (x - x_mean)**2).sum() / w_sum
+    var_y  = (w * (y - y_mean)**2).sum() / w_sum
+    return cov_xy / np.sqrt(var_x * var_y)
+
+# … your existing prep code …
 fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
-axes = axes.reshape((ndim, ndim))  # reshape axes
+axes = axes.reshape((ndim, ndim))
 
-span = []
-for var in variables:
-    if var in bounds_total:
-        span.append(tuple(bounds_total[var]))
-    else:
-        span.append(0.999999426697)  # default 5σ auto range if missing
-
-# Increase spacing between subplots
+# call dynesty’s cornerplot
 fg, ax = dyplot.cornerplot(
     combined_results, 
-    color='blue', 
-    show_titles=True, 
-    max_n_ticks=3, 
-    quantiles=None, 
-    labels=labels_plot,  # Update axis labels
-    label_kwargs={"fontsize": 8},  # Reduce axis label size
-    title_kwargs={"fontsize": 8},  # Reduce title font size
-    title_fmt='.2e',  # Scientific notation for titles
+    color='blue',
+    show_titles=True,
+    max_n_ticks=3,
+    quantiles=None,
+    labels=labels_plot,
+    label_kwargs={"fontsize": 10},
+    title_kwargs={"fontsize": 12},
+    title_fmt='.2e',
     fig=(fig, axes[:, :ndim])
 )
-# add a super title
-fg.suptitle(shower_name, fontsize=16, fontweight='bold')  # Adjust y for better spacing
 
-# Apply scientific notation and horizontal tick labels
+# # supertitle, tick formatting, saving …
+# fg.suptitle(shower_name, fontsize=16, fontweight='bold')
+
 for ax_row in ax:
     for ax_ in ax_row:
-        ax_.tick_params(axis='both', labelsize=8, direction='in')
-
-        # Set tick labels to be horizontal
-        for label in ax_.get_xticklabels():
-            label.set_rotation(0)
-        for label in ax_.get_yticklabels():
-            label.set_rotation(45)
-
         if ax_ is None:
-            continue  # if cornerplot left some entries as None
-        
-        # Get the actual major tick locations.
-        x_locs = ax_.xaxis.get_majorticklocs()
-        y_locs = ax_.yaxis.get_majorticklocs()
-
-        # Only update the formatter if we actually have tick locations:
-        if len(x_locs) > 0:
+            continue
+        ax_.tick_params(axis='both', labelsize=8, direction='in')
+        for lbl in ax_.get_xticklabels(): lbl.set_rotation(0)
+        for lbl in ax_.get_yticklabels(): lbl.set_rotation(45)
+        if len(ax_.xaxis.get_majorticklocs())>0:
             ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
-        if len(y_locs) > 0:
+        if len(ax_.yaxis.get_majorticklocs())>0:
             ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
 
 for i in range(ndim):
     for j in range(ndim):
-        # In some corner-plot setups, the upper-right triangle can be None
         if ax[i, j] is None:
             continue
-        
-        # Remove y-axis labels (numbers) on the first column (j==0)
         if j != 0:
-            ax[i, j].set_yticklabels([])  
-            # or ax[i, j].tick_params(labelleft=False) if you prefer
-
-        # Remove x-axis labels (numbers) on the bottom row (i==ndim-1)
+            ax[i, j].set_yticklabels([])
         if i != ndim - 1:
-            ax[i, j].set_xticklabels([])  
-            # or ax[i, j].tick_params(labelbottom=False)
+            ax[i, j].set_xticklabels([])
 
-# Adjust spacing and tick label size
-fg.subplots_adjust(wspace=0.1, hspace=0.3)  # Increase spacing between plots
+# 2) Overlay weighted correlations in the upper triangle
+norm = Normalize(vmin=-1, vmax=1)
+cmap = cm.get_cmap('coolwarm')
+samples = combined_results['samples'].T  # shape (ndim, nsamps)
+weights = combined_results.importance_weights()
 
-# # plot the corner plot
-# plt.show()
+cmap = plt.colormaps['coolwarm']
+norm = Normalize(vmin=-1, vmax=1)
 
-# save the corner plot
-plt.savefig(os.path.join(output_dir_show, "corner_plot.png"), bbox_inches='tight', dpi=300)
+for i in range(ndim):
+    for j in range(ndim):
+        if j <= i or ax[i, j] is None:
+            continue
 
+        panel = ax[i, j]
+        x = samples[j]
+        y = samples[i]
+        ρ = weighted_corr(x, y, weights)
+
+        color = cmap(norm(ρ))
+        # paint the background patch
+        panel.patch.set_facecolor(color)
+        panel.patch.set_alpha(1.0)
+
+        # fallback rectangle if needed
+        panel.add_patch(
+            plt.Rectangle(
+                (0,0), 1, 1,
+                transform=panel.transAxes,
+                facecolor=color,
+                zorder=0
+            )
+        )
+
+        panel.text(
+            0.5, 0.5,
+            f"{ρ:.2f}",
+            transform=panel.transAxes,
+            ha='center', va='center',
+            fontsize=25, color='black'
+        )
+        panel.set_xticks([]); panel.set_yticks([])
+        for spine in panel.spines.values():
+            spine.set_visible(False)
+
+# final adjustments & save
+# fg.subplots_adjust(wspace=0.1, hspace=0.3)
+fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
+plt.savefig(os.path.join(output_dir_show, f"{shower_name}_corner_plot.png"),
+            bbox_inches='tight', dpi=300)

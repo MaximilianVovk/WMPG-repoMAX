@@ -1,0 +1,19 @@
+Meteor: CAP_mean_with_noise
+  File name:     ['C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\Shower_testcase\\EMCCD\\CAP_mean\\CAP_mean_with_noise.json']
+  Report file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\CAP_mean\
+  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\CAP_mean\CAP_mean_with_noise.dynesty
+  Prior file:    C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\CAP_noise_EMCCD.prior
+  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\CAP_mean
+  Bounds:
+    v_init: [500, 25126.75] flags=['norm']
+    m_init: [1e-06, 0.0002] flags=[]
+    rho: [1.0, 3.6020599913279625] flags=['log']
+    sigma: [1e-09, 5.0000000000000004e-08] flags=[]
+    erosion_height_start: [94666.99895652715, 102433.14187406012] flags=[]
+    erosion_coeff: [-12.0, -6.0] flags=['log']
+    erosion_mass_index: [1, 3] flags=[]
+    erosion_mass_min: [-11.301029995663981, -9.0] flags=['log']
+    erosion_mass_max: [-10.0, -7.0] flags=['log']
+    noise_lag: [10, 24.5] flags=['invgamma']
+    noise_lum: [5, 1.7] flags=['invgamma']
+  Fixed Values:  {'zenith_angle': 0.9438631511707085, 'rho_grain': 3000.0, 'erosion_height_change': 1}

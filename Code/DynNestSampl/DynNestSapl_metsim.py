@@ -3313,6 +3313,11 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
         # check if the guess_var of the erosion_height_start is smaller than the guess_var of the erosion_height_change
         if guess_var[var_names.index('erosion_height_change')] > guess_var[var_names.index('erosion_height_start')]:
             return -np.inf
+        
+    if 'erosion_rho_change' in var_names and 'rho' in var_names:
+        # check if the guess_var of the erosion_height_start is smaller than the guess_var of the erosion_height_change
+        if guess_var[var_names.index('rho')] > guess_var[var_names.index('erosion_rho_change')]:
+            return -np.inf
 
     ### ONLY on LINUX ###
 

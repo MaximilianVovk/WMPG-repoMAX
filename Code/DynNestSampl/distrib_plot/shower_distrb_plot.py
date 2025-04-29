@@ -117,7 +117,7 @@ labels_plot = [variable_map_plot[variable] for variable in variables]
 
 def align_dynesty_samples(dsampler, all_variables, current_flags):
     """
-    Aligns dsampler samples to the full list of all variables by padding missing variables with np.nan.
+    Aligns dsampler samples to the full list of all variables by padding missing variables with 0
     Weights remain unchanged for non-missing dimensions.
     """
     samples = dsampler.results['samples']
@@ -130,6 +130,9 @@ def align_dynesty_samples(dsampler, all_variables, current_flags):
 
     # Prepare padded samples with NaNs for missing variables
     padded_samples = np.full((n_samples, len(all_variables)), np.nan)
+
+    # # create a float array full of zeros (or use np.nan if you prefer)
+    # padded_samples = np.zeros((n_samples, len(all_variables)), dtype=float)
 
     for j, var in enumerate(all_variables):
         if var in flag_index:
@@ -145,7 +148,8 @@ for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder
     dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
     obs_data = finder.observation_instance(base_name)
     obs_data.file_name = pickle_file  # update the file name in the observation data object
-    dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+    # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+    dsampler = load_dynesty_file(dynesty_file)
 
     # Align to the union of all variables (padding missing ones with NaN and 0 weights)
     samples_aligned, weights_aligned = align_dynesty_samples(dsampler, variables, flags_dict)

@@ -1107,7 +1107,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     ### Plot the corner plot ###
 
-    print('saving corner plot...')
+    print('saving correlation plot...')
 
     # Define weighted correlation
     def weighted_corr(x, y, w):
@@ -3411,6 +3411,7 @@ def prior_dynesty(cube,bounds,flags_dict):
 
     return x
 
+
 # load the .dynesy file or the json file if it is not present
 def load_dynesty_file(dynesty_file, pool_info = None):
     """
@@ -3424,6 +3425,7 @@ def load_dynesty_file(dynesty_file, pool_info = None):
         print(f"Error loading dynesty file: {e}")
         # Check if the file is a json file
         json_file = dynesty_file.replace(".dynesty", "_dynesty.json")
+        dynesty_file_2 = dynesty_file.replace(".dynesty", "_json.dynesty")
         if os.path.exists(json_file):
             # Load the json file
             with open(json_file, "r") as f:
@@ -3431,12 +3433,12 @@ def load_dynesty_file(dynesty_file, pool_info = None):
             # Decode the Base64 string
             raw = base64.b64decode(data["dynesty_b64"])
             # Write the raw bytes to a new dynesty file
-            with open(dynesty_file, "wb") as f:
+            with open(dynesty_file_2, "wb") as f:
                 f.write(raw)
-            os.remove(json_file)
             print("Dynesty file restored from json file")
             # Load the dynesty file again
-            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, pool=pool_info)
+            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file_2, pool=pool_info)
+            os.remove(dynesty_file_2)
             return dsampler
         else:
             # raise error 
@@ -3496,9 +3498,8 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
             print('Warning: make sure the number of parameters and the bounds are the same as the previous run!')
 
             ### RESUME:
-            # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file,
-            #                                                 pool = pool_MPI)
-            dsampler = load_dynesty_file(dynesty_file, pool_MPI)
+            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file,
+                                                            pool = pool_MPI)
             dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
                 # dlogz_init=0.001,
                
@@ -3528,9 +3529,8 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
                                 logl_args=(obs_data, flags_dict, fixed_values, 20),
                                 ptform_args=(bounds, flags_dict)) as pool:
                 ### RESUME:
-                # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file,
-                #                                                 pool = pool)
-                dsampler = load_dynesty_file(dynesty_file, pool)
+                dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file,
+                                                                pool = pool)
                 dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file) # dlogz_init=0.001,
 
     print('SUCCESS: dynesty results ready!\n')
@@ -3571,8 +3571,7 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\ORI-EMCCD\20191023_084916",
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
         help="Path to walk and find .pickle file or specific single file .pickle or .json file."
         "If you want multiple specific folder or files just divided them by ',' in between.")
     

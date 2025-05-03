@@ -24,6 +24,8 @@ from dynesty.utils import quantile as _quantile
 from scipy.ndimage import gaussian_filter as norm_kde
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize
+from dynesty import utils as dyfunc
+from matplotlib.ticker import MaxNLocator, NullLocator, ScalarFormatter
 
 
 def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
@@ -157,8 +159,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
         obs_data = finder.observation_instance(base_name)
         obs_data.file_name = pickle_file  # update the file name in the observation data object
-        # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-        dsampler = load_dynesty_file(dynesty_file)
+        dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+        # dsampler = load_dynesty_file(dynesty_file)
 
         # Align to the union of all variables (padding missing ones with NaN and 0 weights)
         samples_aligned, weights_aligned = align_dynesty_samples(dsampler, variables, flags_dict)
@@ -347,21 +349,112 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         f.write(latex_code)
 
 
+    combined_samples_copy_plot = combined_samples.copy()
+    labels_plot_copy_plot = labels.copy()
+    for j, var in enumerate(variables):
+        if np.all(np.isnan(combined_samples_copy_plot[:, j])):
+            continue
+        if 'log' in flags_dict_total.get(var, '') and not var in ['erosion_mass_min', 'erosion_mass_max']:
+            combined_samples_copy_plot[:, j] = 10 ** combined_samples_copy_plot[:, j]
+        if 'log' in flags_dict_total.get(var, '') and var in ['erosion_mass_min', 'erosion_mass_max']:
+            labels_plot_copy_plot[j] =r"$\log_{10}$(" +labels_plot_copy_plot[j]+")"
+        if var in ['v_init', 'erosion_height_start', 'erosion_height_change']:
+            combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] / 1000.0
+        if var in ['erosion_coeff', 'sigma', 'erosion_coeff_change', 'erosion_sigma_change']:
+            combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
+
+
     for i, variable in enumerate(variables):
         if 'log' in flags_dict_total[variable]:  
             labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
 
-    # for j, var in enumerate(variables):
-    #     if np.all(np.isnan(combined_samples[:, j])):
-    #         continue
-    #     # if 'log' in flags_dict_total.get(var, ''):
-    #     #     combined_samples[:, j] = 10 ** combined_samples[:, j]
-    #     #     labels_plot[j] = r"$\log_{10}($" + labels_plot[j] + r"$)$"
-    #     if var in ['v_init', 'erosion_height_start', 'erosion_height_change']:
-    #         combined_samples[:, j] = combined_samples[:, j] / 1000.0
-    #     if var in ['erosion_coeff', 'sigma', 'erosion_coeff_change', 'erosion_sigma_change']:
-    #         combined_samples[:, j] = combined_samples[:, j] * 1e6
 
+    print('saving distribution plot...')
+
+    # Extract from combined_results
+    samples = combined_samples_copy_plot
+    # samples = combined_results.samples
+    weights = combined_results.importance_weights()
+    w = weights / np.sum(weights)
+    ndim = samples.shape[1]
+
+    # Plot grid settings
+    ncols = 5
+    nrows = math.ceil(ndim / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 2.5 * nrows))
+    axes = axes.flatten()
+
+    # Define smoothing value
+    smooth = 0.02  # or pass it as argument
+
+    for i in range(ndim):
+        ax = axes[i]
+        x = samples[:, i].astype(float)
+        mask = ~np.isnan(x)
+        x_valid = x[mask]
+        w_valid = w[mask]
+
+        if x_valid.size == 0:
+            ax.axis('off')
+            continue
+
+        # Compute histogram
+        lo, hi = np.min(x_valid), np.max(x_valid)
+        if isinstance(smooth, int):
+            hist, edges = np.histogram(x_valid, bins=smooth, weights=w_valid, range=(lo, hi))
+        else:
+            nbins = int(round(10. / smooth))
+            hist, edges = np.histogram(x_valid, bins=nbins, weights=w_valid, range=(lo, hi))
+            hist = norm_kde(hist, 10.0)  # dynesty-style smoothing
+
+        centers = 0.5 * (edges[1:] + edges[:-1])
+
+        # Fill under the curve
+        ax.fill_between(centers, hist, color='blue', alpha=0.6)
+
+        # ax.plot(centers, hist, color='blue')
+        ax.set_yticks([])
+        ax.xaxis.set_major_locator(MaxNLocator(4))
+        ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=True))
+
+        # Set label + quantile title
+        row = summary_df.iloc[i]
+        label = row["Label"]
+        median = row["Median"]
+        low = row["Low95"]
+        high = row["High95"]
+        minus = median - low
+        plus = high - median
+
+        if 'log' in flags_dict_total.get(variables[i], '') and variables[i] in ['erosion_mass_min', 'erosion_mass_max']:
+            # put a dashed blue line at the median
+            ax.axvline(np.log10(median), color='blue', linestyle='--', linewidth=1.5)
+            # put a dashed Blue line at the 2.5 and 97.5 percentiles
+            ax.axvline(np.log10(low), color='blue', linestyle='--', linewidth=1.5)
+            ax.axvline(np.log10(high), color='blue', linestyle='--', linewidth=1.5)
+            
+        else:
+            # put a dashed blue line at the median
+            ax.axvline(median, color='blue', linestyle='--', linewidth=1.5)
+            # put a dashed Blue line at the 2.5 and 97.5 percentiles
+            ax.axvline(low, color='blue', linestyle='--', linewidth=1.5)
+            ax.axvline(high, color='blue', linestyle='--', linewidth=1.5)
+
+        fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+        title = rf"{label} = {fmt(median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+        ax.set_title(title, fontsize=15)
+        ax.set_xlabel(labels_plot_copy_plot[i], fontsize=12)
+
+    # Remove unused axes
+    for j in range(ndim, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    # plt.show()
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_distrib_plot.png"),
+                bbox_inches='tight', dpi=300)
+    plt.close(fig)
+    
     print('saving corner plot...')
 
     # Define weighted correlation
@@ -468,6 +561,9 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_correlation_plot.png"),
                 bbox_inches='tight', dpi=300)
+    plt.close(fig)
+
+    print('saving correlation matrix...')
 
     # Build the NxN matrix of weigh_corr_ij
     corr_mat = np.zeros((ndim, ndim))
@@ -481,6 +577,13 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         index=labels_plot,
         columns=labels_plot
     )
+
+    # Save to CSV (or TSV, whichever you prefer)
+    outpath = os.path.join(
+        output_dir_show, f"{shower_name}_weighted_correlation_matrix.csv"
+    )
+    df_corr.to_csv(outpath, float_format="%.4f")
+    print(f"Saved weighted correlation matrix to:\n  {outpath}")
 
     # Create a mask for the strict upper triangle (i<j), diagonal excluded
     mask = np.triu(np.ones(df_corr.shape, dtype=bool), k=1)
@@ -510,8 +613,8 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
-    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI",
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\david\CAP-EMCCD",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

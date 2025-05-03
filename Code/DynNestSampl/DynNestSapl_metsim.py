@@ -34,6 +34,7 @@ import matplotlib.ticker as ticker
 import multiprocessing
 import math
 import matplotlib.cm as cm
+from matplotlib.ticker import MaxNLocator
 from matplotlib.colors import Normalize
 from wmpl.MetSim.GUI import loadConstants, SimulationResults
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
@@ -1045,7 +1046,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         f.write("ncall i.e. number of likelihood evaluations\n")
         f.write("eff(%) i.e. (niter/ncall)*100 eff. of the logL call \n")
         f.write("logz i.e. final estimated evidence\n")
-        f.write("H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need or a lot of live points\n")
+        f.write("H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need for a lot of live points\n")
         f.write("\nBest fit:\n")
         for i in range(len(best_guess)):
             f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
@@ -1059,6 +1060,116 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Print LaTeX code for quick copy-pasting
     print(latex_str)
+
+    ### Plot distribution of samples ###
+
+    combined_samples_copy_plot = copy.deepcopy(dynesty_run_results.samples)
+    labels_plot_copy_plot = labels.copy()
+    if hasattr(obs_data, 'const'):
+        truth_values_plot_distr = truths.copy()
+    for j, var in enumerate(variables):
+        if 'log' in flags_dict.get(var, '') and not var in ['erosion_mass_min', 'erosion_mass_max']:
+            combined_samples_copy_plot[:, j] = 10 ** combined_samples_copy_plot[:, j]
+        if 'log' in flags_dict.get(var, '') and var in ['erosion_mass_min', 'erosion_mass_max']:
+            labels_plot_copy_plot[j] =r"$\log_{10}$(" +labels_plot_copy_plot[j]+")"
+        if var in ['v_init', 'erosion_height_start', 'erosion_height_change']:
+            combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] / 1000.0
+        if var in ['erosion_coeff', 'sigma', 'erosion_coeff_change', 'erosion_sigma_change']:
+            combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
+
+    print('saving distribution plot...')
+
+    # Extract from combined_results
+    samples = combined_samples_copy_plot
+    # samples = combined_results.samples
+    weights = dynesty_run_results.importance_weights()
+    w = weights / np.sum(weights)
+    ndim = samples.shape[1]
+
+    # Plot grid settings
+    ncols = 5
+    nrows = math.ceil(ndim / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 2.5 * nrows))
+    axes = axes.flatten()
+
+    # Define smoothing value
+    smooth = 0.02  # or pass it as argument
+
+    for i in range(ndim):
+        ax = axes[i]
+        x = samples[:, i].astype(float)
+        mask = ~np.isnan(x)
+        x_valid = x[mask]
+        w_valid = w[mask]
+
+        if x_valid.size == 0:
+            ax.axis('off')
+            continue
+
+        # Compute histogram
+        lo, hi = np.min(x_valid), np.max(x_valid)
+        if isinstance(smooth, int):
+            hist, edges = np.histogram(x_valid, bins=smooth, weights=w_valid, range=(lo, hi))
+        else:
+            nbins = int(round(10. / smooth))
+            hist, edges = np.histogram(x_valid, bins=nbins, weights=w_valid, range=(lo, hi))
+            hist = norm_kde(hist, 10.0)  # dynesty-style smoothing
+
+        centers = 0.5 * (edges[1:] + edges[:-1])
+
+        # Fill under the curve
+        ax.fill_between(centers, hist, color='blue', alpha=0.6)
+
+        # ax.plot(centers, hist, color='blue')
+        ax.set_yticks([])
+        ax.xaxis.set_major_locator(MaxNLocator(4))
+        ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=True))
+
+        # Set label + quantile title
+        row = summary_df.iloc[i]
+        label = row["Label"]
+        median = row["Median"]
+        low = row["Low95"]
+        high = row["High95"]
+        minus = median - low
+        plus = high - median
+
+        if 'log' in flags_dict.get(variables[i], '') and variables[i] in ['erosion_mass_min', 'erosion_mass_max']:
+            # put a dashed blue line at the median
+            ax.axvline(np.log10(median), color='blue', linestyle='--', linewidth=1.5)
+            # put a dashed Blue line at the 2.5 and 97.5 percentiles
+            ax.axvline(np.log10(low), color='blue', linestyle='--', linewidth=1.5)
+            ax.axvline(np.log10(high), color='blue', linestyle='--', linewidth=1.5)
+            if hasattr(obs_data, 'const'):
+                # put a dashed black line at the truth value
+                ax.axvline(np.log10(truth_values_plot_distr[i]), color='black', linewidth=1.5)
+            
+        else:
+            # put a dashed blue line at the median
+            ax.axvline(median, color='blue', linestyle='--', linewidth=1.5)
+            # put a dashed Blue line at the 2.5 and 97.5 percentiles
+            ax.axvline(low, color='blue', linestyle='--', linewidth=1.5)
+            ax.axvline(high, color='blue', linestyle='--', linewidth=1.5)
+            if hasattr(obs_data, 'const'):
+                # put a dashed black line at the truth value
+                ax.axvline(truth_values_plot_distr[i], color='black', linewidth=1.5)
+
+        fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+        title = rf"{label} = {fmt(median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+        ax.set_title(title, fontsize=15)
+        ax.set_xlabel(labels_plot_copy_plot[i], fontsize=12)
+
+    # Remove unused axes
+    for j in range(ndim, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    # plt.show()
+    plt.savefig(output_folder+os.sep+file_name+'_distrib_plot.png', 
+            bbox_inches='tight',
+            pad_inches=0.1,       # a little padding around the edge
+            dpi=300)
+    plt.close(fig)
 
     ### Plot the trace plot ###
 
@@ -2574,8 +2685,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                     print(f"Error encountered in dynestsy run: {e}")
                     # now try and plot the dynesty file results
                     try:
-                        # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-                        dsampler = load_dynesty_file(dynesty_file)
+                        dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
                         plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path)
                     except Exception as e:
                         with open(log_file_path, "a") as log_file:
@@ -2604,8 +2714,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
 
             elif cml_args.only_plot and os.path.isfile(dynesty_file): 
                 print("Only plotting requested. Skipping dynesty run.")
-                # dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-                dsampler = load_dynesty_file(dynesty_file)
+                dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
                 # dsampler = dynesty oad DynamicNestedSampler by restore(dynesty_file)
                 plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path)
 
@@ -3412,39 +3521,6 @@ def prior_dynesty(cube,bounds,flags_dict):
     return x
 
 
-# load the .dynesy file or the json file if it is not present
-def load_dynesty_file(dynesty_file, pool_info = None):
-    """
-    Load the dynesty file and return the sampler and the pool
-    """
-    try:
-        # Load the dynesty file
-        dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file, pool=pool_info)
-        return dsampler
-    except Exception as e:
-        print(f"Error loading dynesty file: {e}")
-        # Check if the file is a json file
-        json_file = dynesty_file.replace(".dynesty", "_dynesty.json")
-        dynesty_file_2 = dynesty_file.replace(".dynesty", "_json.dynesty")
-        if os.path.exists(json_file):
-            # Load the json file
-            with open(json_file, "r") as f:
-                data = json.load(f)
-            # Decode the Base64 string
-            raw = base64.b64decode(data["dynesty_b64"])
-            # Write the raw bytes to a new dynesty file
-            with open(dynesty_file_2, "wb") as f:
-                f.write(raw)
-            print("Dynesty file restored from json file")
-            # Load the dynesty file again
-            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file_2, pool=pool_info)
-            os.remove(dynesty_file_2)
-            return dsampler
-        else:
-            # raise error 
-            raise FileNotFoundError(f"No _dynesty.json file found and .dynesty encodeed with a different numpy, cannot restore: {dynesty_file}")
-
-        
 def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", file_name="",log_file_path="", pool_MPI=None):
     """
     Main function to run dynesty.
@@ -3540,19 +3616,6 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
         print("Copying dynesty file to output folder...")
         shutil.copy(dynesty_file, output_folder)
         print("dynesty file copied to:", output_folder)
-    
-    # Read the raw pickle bytes
-    with open(dynesty_file, "rb") as f:
-        raw = f.read()
-
-    # Encode as Base64 so it’s pure text
-    b64 = base64.b64encode(raw).decode("ascii")
-
-    # create the json file name by just replacing the .dynesty with _dynesty.json
-    json_file = dynesty_file.replace(".dynesty", "_dynesty.json")
-    # Write that string into JSON
-    with open(json_file, "w") as f:
-        json.dump({"dynesty_b64": b64}, f, indent=2)
     
     # dsampler use to plot dynesty DynamicNestedSampler
     plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, output_folder, file_name,log_file_path)

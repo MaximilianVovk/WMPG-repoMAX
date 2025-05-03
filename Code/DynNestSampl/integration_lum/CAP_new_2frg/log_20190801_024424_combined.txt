@@ -1,0 +1,57 @@
+Meteor: 20190801_024424_combined
+  File name:     ['/home/mvovk/Results/2ndPaper/CAP-CAMO+EMCCD_base/20190801_024424_combined/20190801_024424_trajectory_EMCCD.pickle', '/home/mvovk/Results/2ndPaper/CAP-CAMO+EMCCD_base/20190801_024424_combined/20190801_024424_trajectory_CAMO.pickle']
+  Report file:  /home/mvovk/Results/2ndPaper/CAP-CAMO+EMCCD_base/20190801_024424_combined/20190801_024424_report.txt
+  Dynesty file:  /home/mvovk/Results/2ndPaper/CAP-CAMO+EMCCD_base/20190801_024424_combined/20190801_024424_combined.dynesty
+  Prior file:    /home/mvovk/WMPG-repoMAX/Code/DynNestSampl/stony_meteoroid_2frag.prior
+  Output folder: /home/mvovk/Results/2ndPaper/CAP-2frag-0417/20190801_024424_combined
+  Bounds:
+    v_init: [500, 23863.162145307953] flags=['norm']
+    m_init: [1e-06, 0.0002] flags=[]
+    rho: [2.0, 3.6020599913279625] flags=['log']
+    sigma: [1e-09, 5.0000000000000004e-08] flags=[]
+    erosion_height_start: [94833.95254951615, 101467.7726033673] flags=[]
+    erosion_coeff: [-12.0, -6.0] flags=['log']
+    erosion_mass_index: [1, 3] flags=[]
+    erosion_mass_min: [-11.301029995663981, -9.0] flags=['log']
+    erosion_mass_max: [-10.0, -7.0] flags=['log']
+    erosion_height_change: [86163.82870585815, 98250.86257644172] flags=[]
+    erosion_rho_change: [2.0, 3.6020599913279625] flags=['log']
+    erosion_sigma_change: [1e-09, 5.0000000000000004e-08] flags=[]
+    erosion_coeff_change: [-12.0, -6.0] flags=['log']
+    noise_lag: [10, 8.925783756254999] flags=['invgamma']
+    noise_lum: [5, 1.0284806989000748] flags=['invgamma']
+  Fixed Values:  {'zenith_angle': 0.9960236131509115, 'rho_grain': 3000}
+
+Summary
+=======
+niter: 29524
+ncall: 2757635
+eff(%):  1.015
+logz: -682.678 +/-  0.214
+H info.gain: 37.574
+niter i.e number of metsim simulated events
+ncall i.e. number of likelihood evaluations
+eff(%) i.e. (niter/ncall)*100 eff. of the logL call 
+logz i.e. final estimated evidence
+H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need or a lot of live points
+
+Best fit:
+v_init:	24228.276430046797
+m_init:	6.005085296786182e-06
+rho:	2538.765355942205
+sigma:	1.687675256973596e-08
+erosion_height_start:	97873.99486082117
+erosion_coeff:	2.122909128551106e-07
+erosion_mass_index:	2.955675558538995
+erosion_mass_min:	1.15889316842827e-10
+erosion_mass_max:	1.7414532645265168e-10
+erosion_height_change:	92107.57067816418
+erosion_rho_change:	378.08763248446905
+erosion_sigma_change:	4.9842905436250944e-08
+erosion_coeff_change:	3.0549948484544415e-09
+noise_lag:	9.304166284627765
+noise_lum:	3.9090415095025044
+
+Best fit logL: -638.1052224866289
+
+Time to run dynesty: 17:15:22.102729

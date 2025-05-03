@@ -23,7 +23,7 @@ import scipy.optimize as opt
 import matplotlib.gridspec as gridspec
 from scipy import stats
 
-input_dirfile = r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\integration_lum\CAP"
+input_dirfile = r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\integration_lum\CAP_new_2frg"
 
 # Use the class to find .dynesty, load prior, and decide output folders
 finder = find_dynestyfile_and_priors(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=False,pick_position=0)

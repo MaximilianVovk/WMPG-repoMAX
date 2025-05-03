@@ -13,7 +13,7 @@
 v_init,500,nan,norm   		 	    # v_init [m/s] (gausian distribution)
 zenith_angle,nan,fix 	            # zenith_angle [rad] (fix by default)
 m_init,nan,nan             			# m_init [kg]
-rho,10,4000,log                  	# rho [kg/m^3] (np.log10 applied)
+rho,100,4000,log                  	# rho [kg/m^3] (np.log10 applied)
 sigma,0.001/1e6,0.05/1e6          	# sigma [kg/J]
 erosion_height_start,nan,nan        # erosion_height_start [m]
 erosion_coeff,0.0,1e-6,log          # erosion_coeff [kg/J] (np.log10 applied)

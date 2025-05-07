@@ -3033,6 +3033,18 @@ class find_dynestyfile_and_priors:
         data = []
         for fullpath in all_pickle_files:
             folder, fname = os.path.split(fullpath)
+
+            ## more optional filtering of files
+            # if '_sim.pickle' in fname:
+            #     print(f"Skipping simulation file: {fullpath}")
+            #     continue
+            # if 'Monte Carlo' in fullpath:
+            #     print(f"Skipping MonteCarlo file: {fullpath}")
+            #     continue
+            # if '_skyfit2' in fullpath:
+            #     print(f"Skipping skyfit2 file: {fullpath}")
+            #     continue
+
             try:
                 traj = loadPickle(folder, fname)  # your existing load function
             except Exception as e:
@@ -3169,6 +3181,11 @@ class find_dynestyfile_and_priors:
             print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
 
         observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior,self.pick_position)
+
+       # check if any camera was found if not return
+        if not hasattr(observation_instance,'stations_lag'):
+            print("No camera found in the observation file:", input_file)
+            return
 
         # check if new_json_file_save is present in observation_instance
         if hasattr(observation_instance, 'new_json_file_save'):

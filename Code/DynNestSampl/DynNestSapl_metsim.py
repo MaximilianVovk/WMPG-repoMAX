@@ -1087,7 +1087,10 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     ndim = samples.shape[1]
 
     # Plot grid settings
-    ncols = 5
+    if ndim > 12:
+        ncols = 5
+    else:
+        ncols = 4
     nrows = math.ceil(ndim / ncols)
     fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 2.5 * nrows))
     axes = axes.flatten()
@@ -1239,6 +1242,14 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
     axes = axes.reshape((ndim, ndim))  # reshape axes
 
+    # Plot grid settings
+    if ndim > 12:
+        label_fontsize = 10
+        title_fontsize = 12
+    else:
+        label_fontsize = 13
+        title_fontsize = 18
+
     if hasattr(obs_data, 'const'):
         # Increase spacing between subplots
         fg, ax = dyplot.cornerplot(
@@ -1250,8 +1261,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             max_n_ticks=3, 
             quantiles=None, 
             labels=labels_plot,  # Update axis labels
-            label_kwargs={"fontsize": 10},  # Reduce axis label size
-            title_kwargs={"fontsize": 12},  # Reduce title font size
+            label_kwargs={"fontsize": label_fontsize},  # Reduce axis label size
+            title_kwargs={"fontsize": title_fontsize},  # Reduce title font size
             title_fmt='.2e',  # Scientific notation for titles
             fig=(fig, axes[:, :ndim])
         )
@@ -1268,8 +1279,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             max_n_ticks=3, 
             quantiles=None, 
             labels=labels_plot,  # Update axis labels
-            label_kwargs={"fontsize": 10},  # Reduce axis label size
-            title_kwargs={"fontsize": 12},  # Reduce title font size
+            label_kwargs={"fontsize": label_fontsize},  # Reduce axis label size
+            title_kwargs={"fontsize": title_fontsize},  # Reduce title font size
             title_fmt='.2e',  # Scientific notation for titles
             fig=(fig, axes[:, :ndim])
         )
@@ -2644,13 +2655,13 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             
             ### set up obs_data const values to run same simultaions in run_simulation #################
 
-            # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
-            if obs_data.v_init < 30000:
-                obs_data.dt = 0.01
-                # const_nominal.erosion_bins_per_10mass = 5
-            else:
-                obs_data.dt = 0.005
-                # const_nominal.erosion_bins_per_10mass = 10
+            # # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
+            # if obs_data.v_init < 30000:
+            #     obs_data.dt = 0.01
+            #     # const_nominal.erosion_bins_per_10mass = 5
+            # else:
+            #     obs_data.dt = 0.005
+            #     # const_nominal.erosion_bins_per_10mass = 10
 
             obs_data.disruption_on = False
 

@@ -2662,6 +2662,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             # else:
             #     obs_data.dt = 0.005
             #     # const_nominal.erosion_bins_per_10mass = 10
+            obs_data.dt = 0.005
 
             obs_data.disruption_on = False
 

@@ -1,15 +1,15 @@
 Meteor: CAP_mean_with_noise
-  File name:     ['C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\Shower_testcase\\CAMO\\CAP_mean\\CAP_mean_with_noise.json']
-  Report file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\CAMO\CAP_mean\
-  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\CAMO\CAP_mean\CAP_mean_with_noise.dynesty
-  Prior file:    C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\CAMO\CAP_noise_CAMO.prior
-  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\CAMO\CAP_mean
+  File name:     ['C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\Shower_testcase\\CAMO\\CAP_mean_01\\CAP_mean_with_noise.json']
+  Report file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\CAMO\CAP_mean_01\
+  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\CAMO\CAP_mean_01\CAP_mean_with_noise.dynesty
+  Prior file:    C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\CAMO\CAP_mean_01\CAP_noise_CAMO.prior
+  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\CAMO\CAP_mean_01
   Bounds:
     v_init: [500, 25126.75] flags=['norm']
     m_init: [1e-06, 0.0002] flags=[]
-    rho: [1.0, 3.6020599913279625] flags=['log']
+    rho: [2.0, 3.6020599913279625] flags=['log']
     sigma: [1e-09, 5.0000000000000004e-08] flags=[]
-    erosion_height_start: [94376.33683178754, 102580.52550886286] flags=[]
+    erosion_height_start: [94531.77199898174, 101851.79432658761] flags=[]
     erosion_coeff: [-12.0, -6.0] flags=['log']
     erosion_mass_index: [1, 3] flags=[]
     erosion_mass_min: [-11.301029995663981, -9.0] flags=['log']

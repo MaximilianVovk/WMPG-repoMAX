@@ -2336,6 +2336,15 @@ class observation_data:
 
             const.lum_eff_type = 5
 
+            if const.v_init < 30000:
+                print('v_init < 30000 use 0.01 dt')
+                const.dt = 0.01
+                # const_nominal.erosion_bins_per_10mass = 5
+            else:
+                print('v_init > 30000 use 0.005 dt')
+                const.dt = 0.005
+                # const_nominal.erosion_bins_per_10mass = 10
+
             # Run the simulation
             frag_main, results_list, wake_results = runSimulation(const, compute_wake=False)
             simulation_MetSim_object = SimulationResults(const, frag_main, results_list, wake_results)
@@ -2444,7 +2453,7 @@ class observation_data:
                     self.noise_lag = 5
                 self.noise_vel = self.noise_lag*np.sqrt(2)/(1.0/self.fps_lag)
                 # multiply by a number between 0.6 and 0.4 for the time to track for CAMO
-                time_to_track = (time_visible[-1]-time_visible[0])*np.random.uniform(0.4,0.6)
+                time_to_track = (time_visible[-1]-time_visible[0])*np.random.uniform(0.3,0.6)
                 time_sampled_lag, stations_array_lag = self.mimic_fps_camera(time_visible,time_to_track,self.fps_lag,self.stations[2],self.stations[3])
                 time_sampled_lum, stations_array_lum = self.mimic_fps_camera(time_visible,0,fps_lum,self.stations[0],self.stations[1])
             else:
@@ -2655,14 +2664,13 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             
             ### set up obs_data const values to run same simultaions in run_simulation #################
 
-            # # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
-            # if obs_data.v_init < 30000:
-            #     obs_data.dt = 0.01
-            #     # const_nominal.erosion_bins_per_10mass = 5
-            # else:
-            #     obs_data.dt = 0.005
-            #     # const_nominal.erosion_bins_per_10mass = 10
-            obs_data.dt = 0.005
+            # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
+            if obs_data.v_init < 30000:
+                obs_data.dt = 0.01
+                # const_nominal.erosion_bins_per_10mass = 5
+            else:
+                obs_data.dt = 0.005
+                # const_nominal.erosion_bins_per_10mass = 10
 
             obs_data.disruption_on = False
 

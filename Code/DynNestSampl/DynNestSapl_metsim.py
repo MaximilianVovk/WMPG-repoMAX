@@ -360,9 +360,9 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         diff_lag = obs_data.lag - no_noise_lag 
         ax7.plot(obs_data.time_lag, diff_lag, '.', markersize=3, color='black', label='No Noise')
         
-        fig.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
-    else:
-        fig.suptitle(f"{file_name}", fontsize=16, fontweight='bold')
+    #     fig.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
+    # else:
+    #     fig.suptitle(f"{file_name}", fontsize=16, fontweight='bold')
 
     # Check if sim_data was provided
     if sim_data is not None:
@@ -499,7 +499,13 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
     # Save the plot
     print('file saved: '+output_folder +os.sep+ file_name+'_LumLag_plot.png')
-    fig.savefig(output_folder +os.sep+ file_name +'_LumLag_plot.png', dpi=300)
+    # fig.savefig(output_folder +os.sep+ file_name +'_LumLag_plot.png', dpi=300)
+
+    # save the figure
+    fig.savefig(output_folder +os.sep+ file_name +'_LumLag_plot.png', 
+            bbox_inches='tight',
+            pad_inches=0.1,       # a little padding around the edge
+            dpi=300)
 
     # Display the plot
     plt.close(fig)

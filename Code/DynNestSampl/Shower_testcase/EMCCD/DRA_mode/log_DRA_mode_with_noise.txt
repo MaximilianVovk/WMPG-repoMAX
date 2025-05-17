@@ -1,15 +1,15 @@
 Meteor: DRA_mode_with_noise
-  File name:     ['C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\Shower_testcase\\EMCCD\\DRA_mode\\DRA_mode_with_noise.json']
-  Report file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode\
-  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode\DRA_mode_with_noise.dynesty
-  Prior file:    C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_noise_EMCCD.prior
-  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode
+  File name:     ['C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\Shower_testcase\\EMCCD\\DRA_mode_01\\DRA_mode_with_noise.json']
+  Report file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode_01\
+  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode_01\DRA_mode_with_noise.dynesty
+  Prior file:    C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode_01\DRA_noise_EMCCD.prior
+  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Shower_testcase\EMCCD\DRA_mode_01
   Bounds:
     v_init: [500, 23640.416666666664] flags=['norm']
     m_init: [1e-07, 2e-05] flags=[]
-    rho: [1.0, 3.6020599913279625] flags=['log']
+    rho: [2.0, 3.6020599913279625] flags=['log']
     sigma: [1e-09, 5.0000000000000004e-08] flags=[]
-    erosion_height_start: [98350.90789037597, 103126.21216970147] flags=[]
+    erosion_height_start: [98625.25214418379, 103220.71200632051] flags=[]
     erosion_coeff: [-12.0, -6.0] flags=['log']
     erosion_mass_index: [1, 3] flags=[]
     erosion_mass_min: [-11.301029995663981, -9.0] flags=['log']

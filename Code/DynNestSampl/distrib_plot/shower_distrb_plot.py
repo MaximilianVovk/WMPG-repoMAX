@@ -157,6 +157,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
+        print(base_name)
         obs_data = finder.observation_instance(base_name)
         obs_data.file_name = pickle_file  # update the file name in the observation data object
         dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
@@ -614,7 +615,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\david\CAP-EMCCD",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\DRA-EMCCD",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

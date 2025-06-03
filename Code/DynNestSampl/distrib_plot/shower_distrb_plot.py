@@ -152,90 +152,112 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
         return padded_samples, weights
 
+
     def extract_radiant_and_la_sun(report_path):
         """
-        Returns a 7‐tuple:
-        (c1_mean, c1_lo, c1_hi,
-        c2_mean, c2_lo, c2_hi,
-        la_sun)
-        where (c1, c2) = (Lg, Bg) from the
-        ecliptic geocentric block, CI if present
-        (else lo=hi=0), and la_sun always pulled.
+        Returns:
+        lg_mean, lg_err_lo,
+        bg_mean, bg_err,
+        la_sun_mean
+
+        lg_err_lo/bg_err are the '+/-' values if present, else 0.0.
         """
+
         # storage
-        c1 = c2 = la_sun = None
-        c1_lo = c1_hi = c2_lo = c2_hi = None
+        lg = bg = la_sun = None
+        lg_err_lo  = lg_err_hi = bg_err_lo  = bg_err_hi = None
         in_ecl = False
 
         # regexes for Lg/Bg with CI
-        re_c1_ci = re.compile(
-            r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]'
-        )
-        re_c2_ci = re.compile(
-            r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]'
-        )
-        # regexes for Lg/Bg (no CI)
-        re_c1    = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)')
-        re_c2    = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)')
-        # La Sun
-        re_lasun = re.compile(r'^\s*La Sun\s*=\s*([+-]?\d+\.\d+)')
+        re_lg_ci = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
+        re_bg_ci = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
+        # look for "Lg = 246.70202 +/- 0.46473"
+        re_lg_pm  = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
+        re_bg_pm  = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
+        # fallback plain values
+        re_lg_val = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)')
+        re_bg_val = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)')
+        # solar longitude
+        re_lasun  = re.compile(r'^\s*La Sun\s*=\s*([+-]?\d+\.\d+)')
 
         with open(report_path, 'r', encoding='utf-8') as f:
             for line in f:
-                ls = line.strip()
+                s = line.strip()
 
-                if ls.startswith('Radiant (ecliptic geocentric, J2000)'):
+                # enter the block
+                if s.startswith('Radiant (ecliptic geocentric'):
                     in_ecl = True
                     continue
 
                 if in_ecl:
-                    # blank line → end of block
-                    if not ls:
+                    # blank line → exit
+                    if not s:
                         in_ecl = False
                     else:
-                        # try CI first
-                        m = re_c1_ci.match(line)
+                        # try 95CI first
+                        m = re_lg_ci.match(line)
                         if m:
-                            c1, c1_lo, c1_hi = map(float, m.groups())
+                            lg, lg_err_lo, lg_err_hi = map(float, m.groups())
                         else:
-                            m = re_c1.match(line)
-                            if m and c1 is None:
-                                c1 = float(m.group(1))
-
-                        m = re_c2_ci.match(line)
+                            # try ± after
+                            m = re_lg_pm.match(line)
+                            if m:
+                                lg, lg_err_lo = float(m.group(1)), float(m.group(2))
+                            else:
+                                # then plain
+                                m = re_lg_val.match(line)
+                                if m and lg is None:
+                                    lg = float(m.group(1))
+                        # try 95CI first
+                        m = re_bg_ci.match(line)
                         if m:
-                            c2, c2_lo, c2_hi = map(float, m.groups())
+                            bg, bg_err_lo, bg_err_hi = map(float, m.groups())
                         else:
-                            m = re_c2.match(line)
-                            if m and c2 is None:
-                                c2 = float(m.group(1))
+                            m = re_bg_pm.match(line)
+                            if m:
+                                bg, bg_err_lo = float(m.group(1)), float(m.group(2))
+                            else:
+                                m = re_bg_val.match(line)
+                                if m and bg is None:
+                                    bg = float(m.group(1))
 
-
+                # always grab La Sun
                 if la_sun is None:
                     m = re_lasun.match(line)
                     if m:
                         la_sun = float(m.group(1))
 
-                # 4) once we have all 7 values (or CI defaults), we can stop
-                if la_sun is not None and c1 is not None and c2 is not None:
+                # stop if we have all three
+                if lg is not None and bg is not None and la_sun is not None:
                     break
 
-        # final checks
+        if lg is None or bg is None:
+            raise RuntimeError(f"Couldn t find Lg/Bg in {report_path!r}")
         if la_sun is None:
-            raise RuntimeError(f"'La Sun' not found in {report_path!r}")
-        if c1 is None or c2 is None:
-            raise RuntimeError(f"Lg/Bg not found in {report_path!r}")
+            raise RuntimeError(f"Couldn t find La Sun in {report_path!r}")
+        if lg_err_lo is None:
+            lg_err_lo = lg
+            lg_err_hi = lg
+        if bg_err_lo is None:
+            bg_err_lo = bg
+            bg_err_hi = bg
+        if lg_err_hi is None:
+            lg_err_hi = lg + abs(lg_err_lo)
+            lg_err_lo = lg - abs(lg_err_lo)
+        if bg_err_hi is None:
+            bg_err_hi = bg + abs(bg_err_lo)
+            bg_err_lo = bg - abs(bg_err_lo)
+        
+        print(f"Radiant: Lg = {lg}° 95CI [{lg_err_lo:.3f}°, {lg_err_hi:.3f}°], Bg = {bg}° 95CI [{bg_err_lo:.3f}°, {bg_err_hi:.3f}°]")
+        lg_lo = (lg - lg_err_lo)/1.96
+        lg_hi = (lg_err_hi - lg)/1.96
+        bg_lo = (bg_err_hi - bg)/1.96
+        bg_hi = (bg - bg_err_lo)/1.96
+        print(f"Error range: Lg = {lg}° ± {lg_lo:.3f}° / {lg_hi:.3f}°, Bg = {bg}° ± {bg_lo:.3f}° / {bg_hi:.3f}°")
 
-        # fill missing CI with zeros
-        if c1_lo is None or c1_hi is None:
-            c1_lo = c1_hi = c1
-        if c2_lo is None or c2_hi is None:
-            c2_lo = c2_hi = c2
+        return lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun
 
-        return (c1, c1_lo, c1_hi,
-                c2, c2_lo, c2_hi,
-                la_sun)
-    
+
     def summarize_from_cornerplot(results, variables, labels_plot, flags_dict_total, smooth=0.02):
         """
         Summarize dynesty results, using the sample of max weight as the mode.
@@ -363,7 +385,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             raise FileNotFoundError("No report.txt or report_sim.txt found")
 
         report_path = os.path.join(output_dir, report_file)
-        # lg, bg, la_sun = extract_radiant_and_la_sun(report_path)
         lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun = extract_radiant_and_la_sun(report_path)
         print(f"Ecliptic geocentric (J2000): Lg = {lg}°, Bg = {bg}°")
         print(f"Solar longitude:       La Sun = {la_sun}°")
@@ -381,7 +402,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         # delete from base_name _combined if it exists
         if '_combined' in base_name:
             base_name = base_name.replace('_combined', '')
-        file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, summary_df_meteor['Median'].values[variables.index('rho')], lg_lo, lg_hi, bg_lo, bg_hi, lg)
+        file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, summary_df_meteor['Median'].values[variables.index('rho')], lg_lo, lg_hi, bg_lo, bg_hi)
 
         all_samples.append(samples_aligned)
         all_weights.append(weights_aligned)
@@ -396,7 +417,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     lg_hi = np.array([v[4] for v in file_radiance_rho_dict.values()])
     bg_lo = np.array([v[5] for v in file_radiance_rho_dict.values()])
     bg_hi = np.array([v[6] for v in file_radiance_rho_dict.values()])
-    lg = np.array([v[7] for v in file_radiance_rho_dict.values()])
 
     # print(lg_lo, lg_hi, bg_lo, bg_hi)
 
@@ -493,32 +513,39 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         alpha=0.6
     )
 
+    # get the x axis limits
+    xlim = plt.xlim()
+    # get the y axis limits
+    ylim = plt.ylim()
+
     if "CAP" in shower_name:
         print("Plotting CAP shower data...")
+        plt.xlim(xlim[0], 182)
+        plt.ylim(8, 11.5)
     elif "PER" in shower_name:
         print("Plotting PER shower data...")
+        # plt.xlim(xlim[0], 65)
+        # plt.ylim(77, 81)
     elif "ORI" in shower_name: 
         print("Plotting ORI shower data...")
-    # elif "DRA" in shower_name:  
-    #     print("Plotting DRA shower data...")
-    #     # put an x lim and a y lim
-    #     plt.xlim(45, 65)
-    #     plt.ylim(77, 81)
+        # put an x lim and a y lim
+        plt.xlim(xlim[0], 251)
+        plt.ylim(-9, -6)
+    elif "DRA" in shower_name:  
+        print("Plotting DRA shower data...")
+        # put an x lim and a y lim
+        plt.xlim(xlim[0], 65)
+        plt.ylim(77, 80.5)
 
     # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
     for i in range(len(lg_min_la_sun)):
-        x = lg[i]
-        y = bg[i]
-        xerr_lo = x - lg_lo[i]
-        xerr_hi = lg_hi[i] - x
-        yerr_lo = y - bg_lo[i]
-        yerr_hi = bg_hi[i] - y
-
-
+        # draw error bars for each point
         plt.errorbar(
             lg_min_la_sun[i], bg[i],
-            xerr=[[abs(xerr_lo)], [abs(xerr_hi)]],
-            yerr=[[abs(yerr_lo)], [abs(yerr_hi)]],
+            xerr=[[abs(lg_hi[i])], [abs(lg_lo[i])]],
+            yerr=[[abs(bg_hi[i])], [abs(bg_lo[i])]],
+            elinewidth=0.75,
+            capthick=0.75,
             fmt='none',
             ecolor='black',
             capsize=3,
@@ -537,33 +564,37 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
+
     # annotate each point with its base_name in tiny text
-    # for base_name, (x, y, z) in file_radiance_rho_dict.items():
-    #     plt.annotate(
-    #         base_name,
-    #         xy=(x, y),
-    #         xytext=(0, 5),             # 5 points vertical offset
-    #         textcoords='offset points',
-    #         ha='center',
-    #         va='bottom',
-    #         fontsize=6,
-    #         alpha=0.8
-    #     )
+    for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
+        plt.annotate(
+            base_name,
+            xy=(x, y),
+            xytext=(30, 5),             # 5 points vertical offset
+            textcoords='offset points',
+            ha='center',
+            va='bottom',
+            fontsize=6,
+            alpha=0.8
+        )
+
 
     # increase the label size
-    cbar = plt.colorbar(scatter, label='Median Rho (kg/m$^3$)')
+    cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
     # 2. now set the label’s font size and the tick labels’ size
-    cbar.set_label('Median Rho (kg/m$^3$)', fontsize=15)
+    cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
     cbar.ax.tick_params(labelsize=15)
     # now chack if stream_lg_min_la_sun and stream_bg are not empty
+
+    # invert the x axis
+    plt.gca().invert_xaxis()
 
     plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
     plt.ylabel(r'$\beta_{g}$ (J2000)', fontsize=15)
     # plt.title('Radiant Distribution of Meteors')
     plt.grid(True)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_radiant_distribution.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
     plt.close()
-
 
     # Combine all the samples and weights into a single array
     combined_samples = np.vstack(all_samples)
@@ -927,7 +958,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\DRA-EMCCD_corr",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

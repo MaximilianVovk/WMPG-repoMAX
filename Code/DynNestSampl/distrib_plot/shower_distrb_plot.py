@@ -258,6 +258,69 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         return lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun
 
 
+    def extract_tj_from_report(report_path):
+        Tj = Tj_low = Tj_high = None
+
+        # 1) “CI present” (captures best‐fit, ci_low, ci_high)
+        re_tj_ci = re.compile(
+            r'^\s*Tj\s*=\s*'                           # “Tj = ”
+            r'([+-]?\d+\.\d+)'                         # 1) best‐fit value
+            r'(?:\s*\+/-\s*[0-9.]+)?'                  #    optional “± err” (we don’t need to capture it here)
+            r'\s*,\s*95%\s*CI\s*\[\s*'
+            r'([+-]?\d+\.\d+)\s*,\s*'                  # 2) ci_low
+            r'([+-]?\d+\.\d+)\s*\]'                    # 3) ci_high
+        )
+
+        # 2) “± err” only (no CI)
+        re_tj_pm = re.compile(
+            r'^\s*Tj\s*=\s*'                           # “Tj = ”
+            r'([+-]?\d+\.\d+)\s*'                      # 1) best‐fit value
+            r'\+/-\s*([0-9.]+)'                        # 2) err
+            r'\s*$'
+        )
+
+        # 3) Plain value only
+        re_tj_val = re.compile(
+            r'^\s*Tj\s*=\s*'                           # “Tj = ”
+            r'([+-]?\d+\.\d+)'                         # 1) best‐fit value
+            r'\s*$'
+        )
+
+        with open(report_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                # Try “CI present” first
+                m = re_tj_ci.match(line)
+                if m:
+                    Tj, Tj_low, Tj_high = map(float, m.groups())
+                    break
+
+                # Next, try “± err” only
+                m = re_tj_pm.match(line)
+                if m:
+                    val = float(m.group(1))
+                    err = float(m.group(2))
+                    Tj = val
+                    Tj_low = val - err
+                    Tj_high = val + err
+                    break
+
+                # Finally, try bare “Tj = <val>”
+                m = re_tj_val.match(line)
+                if m:
+                    val = float(m.group(1))
+                    Tj = val
+                    Tj_low = val
+                    Tj_high = val
+                    break
+
+        if Tj is None:
+            raise RuntimeError(f"Couldn’t find any Tj line in {report_path!r}")
+        print(f"Tj = {Tj:.6f} 95% CI = [{Tj_low:.6f}, {Tj_high:.6f}]")
+        Tj_low = (Tj - Tj_low)#/1.96
+        Tj_high = (Tj_high - Tj)#/1.96
+
+        return Tj, Tj_low, Tj_high
+
     def summarize_from_cornerplot(results, variables, labels_plot, flags_dict_total, smooth=0.02):
         """
         Summarize dynesty results, using the sample of max weight as the mode.
@@ -359,6 +422,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     # base_name, lg_min_la_sun, bg, rho
     file_radiance_rho_dict = {}
+    file_rho_jd_dict = {}
 
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
@@ -385,6 +449,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             raise FileNotFoundError("No report.txt or report_sim.txt found")
 
         report_path = os.path.join(output_dir, report_file)
+        print(f"Using report file: {report_path}")
         lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun = extract_radiant_and_la_sun(report_path)
         print(f"Ecliptic geocentric (J2000): Lg = {lg}°, Bg = {bg}°")
         print(f"Solar longitude:       La Sun = {la_sun}°")
@@ -404,6 +469,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             base_name = base_name.replace('_combined', '')
         file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, summary_df_meteor['Median'].values[variables.index('rho')], lg_lo, lg_hi, bg_lo, bg_hi)
 
+        tj, tj_lo, tj_hi = extract_tj_from_report(report_path)
+        rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
+        rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
+        file_rho_jd_dict[base_name] = (summary_df_meteor['Median'].values[variables.index('rho')], rho_lo,rho_hi, tj, tj_lo, tj_hi)
+
         all_samples.append(samples_aligned)
         all_weights.append(weights_aligned)
 
@@ -418,13 +488,23 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     bg_lo = np.array([v[5] for v in file_radiance_rho_dict.values()])
     bg_hi = np.array([v[6] for v in file_radiance_rho_dict.values()])
 
+    rho_lo = np.array([v[1] for v in file_rho_jd_dict.values()])
+    rho_hi = np.array([v[2] for v in file_rho_jd_dict.values()])
+    tj = np.array([v[3] for v in file_rho_jd_dict.values()])
+    tj_lo = np.array([v[4] for v in file_rho_jd_dict.values()])
+    tj_hi = np.array([v[5] for v in file_rho_jd_dict.values()])
+
     # print(lg_lo, lg_hi, bg_lo, bg_hi)
 
 
 
 
 
+    plt.figure(figsize=(8, 6))
 
+    # after you’ve built your rho array:
+    norm = Normalize(vmin=rho.min(), vmax=rho.max())
+    # cmap = cm.viridis
 
     stream_lg_min_la_sun = []
     stream_bg = []
@@ -483,59 +563,56 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             stream_bg = stream_lor[:, 1]
             print(f"Found {len(stream_lg_min_la_sun)} stream data points for shower IAU number: {shower_iau_no}")
 
-    # after you’ve built your rho array:
-    norm = Normalize(vmin=rho.min(), vmax=rho.max())
-    # cmap = cm.viridis
+            ##### plot the data #####
 
-    plt.figure(figsize=(8, 6))
-    # your stream data arrays
-    x = stream_lg_min_la_sun
-    y = stream_bg
+            # your stream data arrays
+            x = stream_lg_min_la_sun
+            y = stream_bg
 
-    # build the KDE
-    xy  = np.vstack([x, y])
-    kde = gaussian_kde(xy)
+            # build the KDE
+            xy  = np.vstack([x, y])
+            kde = gaussian_kde(xy)
 
-    # sample on a grid
-    xmin, xmax = x.min(), x.max()
-    ymin, ymax = y.min(), y.max()
-    X, Y = np.mgrid[xmin:xmax:200j, ymin:ymax:200j]
-    positions = np.vstack([X.ravel(), Y.ravel()])
-    Z = np.reshape(kde(positions).T, X.shape)
+            # sample on a grid
+            xmin, xmax = x.min(), x.max()
+            ymin, ymax = y.min(), y.max()
+            X, Y = np.mgrid[xmin:xmax:200j, ymin:ymax:200j]
+            positions = np.vstack([X.ravel(), Y.ravel()])
+            Z = np.reshape(kde(positions).T, X.shape)
 
-    # heatmap via imshow
-    plt.imshow(
-        Z.T,
-        extent=(xmin, xmax, ymin, ymax),
-        origin='lower',
-        aspect='auto',
-        cmap='inferno',
-        alpha=0.6
-    )
+            # heatmap via imshow
+            plt.imshow(
+                Z.T,
+                extent=(xmin, xmax, ymin, ymax),
+                origin='lower',
+                aspect='auto',
+                cmap='inferno',
+                alpha=0.6
+            )
 
-    # get the x axis limits
-    xlim = plt.xlim()
-    # get the y axis limits
-    ylim = plt.ylim()
+            # get the x axis limits
+            xlim = plt.xlim()
+            # get the y axis limits
+            ylim = plt.ylim()
 
-    if "CAP" in shower_name:
-        print("Plotting CAP shower data...")
-        plt.xlim(xlim[0], 182)
-        plt.ylim(8, 11.5)
-    elif "PER" in shower_name:
-        print("Plotting PER shower data...")
-        # plt.xlim(xlim[0], 65)
-        # plt.ylim(77, 81)
-    elif "ORI" in shower_name: 
-        print("Plotting ORI shower data...")
-        # put an x lim and a y lim
-        plt.xlim(xlim[0], 251)
-        plt.ylim(-9, -6)
-    elif "DRA" in shower_name:  
-        print("Plotting DRA shower data...")
-        # put an x lim and a y lim
-        plt.xlim(xlim[0], 65)
-        plt.ylim(77, 80.5)
+            if "CAP" in shower_name:
+                print("Plotting CAP shower data...")
+                plt.xlim(xlim[0], 182)
+                plt.ylim(8, 11.5)
+            elif "PER" in shower_name:
+                print("Plotting PER shower data...")
+                # plt.xlim(xlim[0], 65)
+                # plt.ylim(77, 81)
+            elif "ORI" in shower_name: 
+                print("Plotting ORI shower data...")
+                # put an x lim and a y lim
+                plt.xlim(xlim[0], 251)
+                plt.ylim(-9, -6)
+            elif "DRA" in shower_name:  
+                print("Plotting DRA shower data...")
+                # put an x lim and a y lim
+                plt.xlim(xlim[0], 65)
+                plt.ylim(77, 80.5)
 
     # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
     for i in range(len(lg_min_la_sun)):
@@ -595,6 +672,57 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     plt.grid(True)
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
     plt.close()
+
+    ### JD vs rho plot ###
+    print("saving rho vs JD plot...")
+    # plot rho_lo and rho_hi as error bars and rho as points for tj and the error bars for tj_lo and tj_hi
+    plt.figure(figsize=(8, 6))
+
+    for i in range(len(tj)):
+        # draw error bars for each point
+        plt.errorbar(
+            rho[i], tj[i],
+            xerr=[[abs(rho_lo[i])],[abs(rho_hi[i])]],
+            yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
+            elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
+
+    # then draw points on top, at zorder=2 # jet
+    scatter = plt.scatter(
+        rho, tj,
+        # c=tj,
+        # cmap='viridis',
+        # norm=Normalize(vmin=tj.min(), vmax=tj.max()),
+        s=30,
+        zorder=2
+    )
+    # increase the size of the tick labels
+    plt.gca().tick_params(labelsize=15)
+    # annotate each point with its base_name in tiny text
+    for base_name, (rho_val, rho_lo_val, rho_hi_val, tj_val, tj_lo_val, tj_hi_val) in file_rho_jd_dict.items():
+        plt.annotate(
+            base_name,
+            xy=(rho_val, tj_val),
+            xytext=(30, 5),             # 5 points vertical offset
+            textcoords='offset points',
+            ha='center',
+            va='bottom',
+            fontsize=6,
+            alpha=0.8
+        )
+    # increase the label size
+    plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=15)
+    plt.ylabel(r'T$_{j}$ (K)', fontsize=15)
+    # plt.title('rho vs Tj')
+    plt.grid(True)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_Tj_CI.png"), bbox_inches='tight', dpi=300)
+
+    #### Combine all samples and weights from different dynesty runs ####
 
     # Combine all the samples and weights into a single array
     combined_samples = np.vstack(all_samples)
@@ -953,12 +1081,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 if __name__ == "__main__":
 
     import argparse
-
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance",
+         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics\results_6-5-2025",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

@@ -260,6 +260,12 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     def extract_tj_from_report(report_path):
         Tj = Tj_low = Tj_high = None
+        inclin_val = None
+        
+        re_i_val = re.compile(
+            r'^\s*i\s*=\s*'                           
+            r'([+-]?\d+\.\d+)'                         
+        )
 
         # 1) “CI present” (captures best‐fit, ci_low, ci_high)
         re_tj_ci = re.compile(
@@ -292,34 +298,44 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                 m = re_tj_ci.match(line)
                 if m:
                     Tj, Tj_low, Tj_high = map(float, m.groups())
+                else:
+                    # Next, try “± err” only
+                    m = re_tj_pm.match(line)
+                    if m:
+                        val = float(m.group(1))
+                        err = float(m.group(2))
+                        Tj = val
+                        Tj_low = val - err
+                        Tj_high = val + err
+                    else:
+                        # Finally, try bare “Tj = <val>”
+                        m = re_tj_val.match(line)
+                        if m:
+                            val = float(m.group(1))
+                            Tj = val
+                            Tj_low = val
+                            Tj_high = val
+
+                if inclin_val is None:
+                    m = re_i_val.match(line)
+                    if m:
+                        inclin_val = float(m.group(1))
+
+                if Tj is not None and inclin_val is not None:
                     break
 
-                # Next, try “± err” only
-                m = re_tj_pm.match(line)
-                if m:
-                    val = float(m.group(1))
-                    err = float(m.group(2))
-                    Tj = val
-                    Tj_low = val - err
-                    Tj_high = val + err
-                    break
-
-                # Finally, try bare “Tj = <val>”
-                m = re_tj_val.match(line)
-                if m:
-                    val = float(m.group(1))
-                    Tj = val
-                    Tj_low = val
-                    Tj_high = val
-                    break
 
         if Tj is None:
             raise RuntimeError(f"Couldn’t find any Tj line in {report_path!r}")
+        if inclin_val is None:
+            raise RuntimeError(f"Couldn’t find inclination (i) in {report_path!r}")
+
         print(f"Tj = {Tj:.6f} 95% CI = [{Tj_low:.6f}, {Tj_high:.6f}]")
         Tj_low = (Tj - Tj_low)#/1.96
         Tj_high = (Tj_high - Tj)#/1.96
+        print(f"i = {inclin_val:.6f} deg")
 
-        return Tj, Tj_low, Tj_high
+        return Tj, Tj_low, Tj_high, inclin_val
 
     def summarize_from_cornerplot(results, variables, labels_plot, flags_dict_total, smooth=0.02):
         """
@@ -423,6 +439,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # base_name, lg_min_la_sun, bg, rho
     file_radiance_rho_dict = {}
     file_rho_jd_dict = {}
+    find_worst_lag = {}
+    find_worst_lum = {}
 
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
@@ -469,15 +487,34 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             base_name = base_name.replace('_combined', '')
         file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, summary_df_meteor['Median'].values[variables.index('rho')], lg_lo, lg_hi, bg_lo, bg_hi)
 
-        tj, tj_lo, tj_hi = extract_tj_from_report(report_path)
+        tj, tj_lo, tj_hi, inclin_val = extract_tj_from_report(report_path)
         rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
         rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
-        file_rho_jd_dict[base_name] = (summary_df_meteor['Median'].values[variables.index('rho')], rho_lo,rho_hi, tj, tj_lo, tj_hi)
+        file_rho_jd_dict[base_name] = (summary_df_meteor['Median'].values[variables.index('rho')], rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val)
+
+        find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
+        find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
 
         all_samples.append(samples_aligned)
         all_weights.append(weights_aligned)
 
-    print("saving radiance plot...")
+    # # print the summary the worst lag and lum and their base names
+    # print("Worst lag:")
+    # worst_lag_base_name = max(find_worst_lag, key=find_worst_lag.get)
+    # print(f"{worst_lag_base_name}: {find_worst_lag[worst_lag_base_name]} m")
+    # print("Worst lum:")
+    # worst_lum_base_name = max(find_worst_lum, key=find_worst_lum.get)
+    # print(f"{worst_lum_base_name}: {find_worst_lum[worst_lum_base_name]} W")
+    # and the worst 5
+    print("Worst 5 lag:")
+    worst_lag_items = sorted(find_worst_lag.items(), key=lambda x: x[1], reverse=True)[:5]
+    for base_name, lag in worst_lag_items:
+        print(f"{base_name}: {lag} m")
+    print("Worst 5 lum:")
+    worst_lum_items = sorted(find_worst_lum.items(), key=lambda x: x[1], reverse=True)[:5]
+    for base_name, lum in worst_lum_items:
+        print(f"{base_name}: {lum} W")
+
 
     # Extract data for plotting
     lg_min_la_sun = np.array([v[0] for v in file_radiance_rho_dict.values()])
@@ -493,6 +530,9 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     tj = np.array([v[3] for v in file_rho_jd_dict.values()])
     tj_lo = np.array([v[4] for v in file_rho_jd_dict.values()])
     tj_hi = np.array([v[5] for v in file_rho_jd_dict.values()])
+    inclin_val = np.array([v[6] for v in file_rho_jd_dict.values()])
+
+    print("saving radiance plot...")
 
     # print(lg_lo, lg_hi, bg_lo, bg_hi)
 
@@ -692,32 +732,57 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             zorder=1
         )
 
-    # then draw points on top, at zorder=2 # jet
+    # then draw points on top, at zorder=2 with black color
     scatter = plt.scatter(
         rho, tj,
-        # c=tj,
-        # cmap='viridis',
-        # norm=Normalize(vmin=tj.min(), vmax=tj.max()),
+        c=inclin_val,
+        cmap='viridis',
+        norm=Normalize(vmin=inclin_val.min(), vmax=inclin_val.max()),
         s=30,
         zorder=2
     )
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
     # annotate each point with its base_name in tiny text
-    for base_name, (rho_val, rho_lo_val, rho_hi_val, tj_val, tj_lo_val, tj_hi_val) in file_rho_jd_dict.items():
-        plt.annotate(
-            base_name,
-            xy=(rho_val, tj_val),
-            xytext=(30, 5),             # 5 points vertical offset
-            textcoords='offset points',
-            ha='center',
-            va='bottom',
-            fontsize=6,
-            alpha=0.8
-        )
+    # for base_name, (rho_val, rho_lo_val, rho_hi_val, tj_val, tj_lo_val, tj_hi_val) in file_rho_jd_dict.items():
+    #     plt.annotate(
+    #         base_name,
+    #         xy=(rho_val, tj_val),
+    #         xytext=(30, 5),             # 5 points vertical offset
+    #         textcoords='offset points',
+    #         ha='center',
+    #         va='bottom',
+    #         fontsize=6,
+    #         alpha=0.8
+    #     )
+
+    # increase the label size
+    cbar = plt.colorbar(scatter, label='Orbital inclination (deg)')
+
+    # take the x axis limits
+    xlim = plt.xlim()
+    # take the y axis limits
+    ylim = plt.ylim()
+
+    if shower_iau_no == -1:
+        # put a green horizontal line at Tj = 3.0
+        plt.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5) # label='Tj = 3.0', 
+        # write AST on the left side of the line
+        plt.text(3800, 3.1, 'AST', color='black', fontsize=15, va='bottom')
+        # put a red horizontal line at Tj = 2.0
+        plt.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5) # label='Tj = 2.0', 
+        # write APT on the left side of the line
+        plt.text(3800, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
+        # # write below at 1.5 'HTC'
+        # if the lowest ylim is below 1.5, then put a horizontal line at Tj = 1.5
+        if ylim[0] < 1.5:
+            plt.text(3800, 1.5, 'HTC', color='black', fontsize=15, va='bottom')
+
+    # # incrrease the x limits
+    # plt.xlim(0, 6000)
     # increase the label size
     plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=15)
-    plt.ylabel(r'T$_{j}$ (K)', fontsize=15)
+    plt.ylabel(r'Tisserand parameter (T$_{j}$)', fontsize=15)
     # plt.title('rho vs Tj')
     plt.grid(True)
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_Tj_CI.png"), bbox_inches='tight', dpi=300)
@@ -1085,7 +1150,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics\results_6-5-2025",
+         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

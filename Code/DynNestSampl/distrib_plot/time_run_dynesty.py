@@ -3,45 +3,55 @@ import re
 import datetime
 import statistics
 
-# Directory containing the log files
-directory = r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI-1frag-0417"
+directory = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics"
 
-# Function to extract time from "Time to run dynesty" in the log files
-def extract_time_from_log(file_path):
-    time_pattern = r"Time to run dynesty: (\d{2}:\d{2}:\d{2}.\d+)"
+# Function to extract and parse "Time to run dynesty" from a log file
+def extract_timedelta_from_log(file_path):
     with open(file_path, 'r') as file:
         content = file.read()
-        match = re.search(time_pattern, content)
+
+        # Try matching full format: "X days, HH:MM:SS.ffffff"
+        match = re.search(r"Time to run dynesty: (\d+) days, (\d{1,2}:\d{2}:\d{2}\.\d+)", content)
         if match:
-            time_str = match.group(1)
-            return datetime.datetime.strptime(time_str, "%H:%M:%S.%f")
+            days = int(match.group(1))
+            time_part = match.group(2)
+            t = datetime.datetime.strptime(time_part, "%H:%M:%S.%f")
+            return datetime.timedelta(days=days, hours=t.hour, minutes=t.minute, seconds=t.second, microseconds=t.microsecond)
+
+        # Try matching short format: "HH:MM:SS.ffffff"
+        match = re.search(r"Time to run dynesty: (\d{1,2}:\d{2}:\d{2}\.\d+)", content)
+        if match:
+            time_part = match.group(1)
+            t = datetime.datetime.strptime(time_part, "%H:%M:%S.%f")
+            return datetime.timedelta(hours=t.hour, minutes=t.minute, seconds=t.second, microseconds=t.microsecond)
+
     return None
 
-# List to hold file names and times
+# Gather log files and their parsed runtimes
 log_files = []
-
-# Walk through all subdirectories in the given directory
 for root, dirs, files in os.walk(directory):
     for file_name in files:
         if file_name.startswith("log_") and file_name.endswith(".txt"):
             file_path = os.path.join(root, file_name)
-            run_time = extract_time_from_log(file_path)
+            run_time = extract_timedelta_from_log(file_path)
             if run_time:
                 log_files.append((file_name, run_time))
 
-# Convert times to timedelta for proper calculations
-times_in_timedelta = [run_time - datetime.datetime.min for _, run_time in log_files]
-
-# Sort the files based on run time (from highest to lowest)
+# Sort by runtime (longest first)
 log_files.sort(key=lambda x: x[1], reverse=True)
 
-# Calculate the average and mode of the times
-average_time = sum(times_in_timedelta, datetime.timedelta()) / len(times_in_timedelta)
-mode_time = statistics.mode(times_in_timedelta)
+# Extract just the durations
+durations = [rt for _, rt in log_files]
 
-# Display results
+# Calculate average and mode
+average_time = sum(durations, datetime.timedelta()) / len(durations)
+# mode_time = statistics.mode(durations)
+median_time = statistics.median(durations)
+
+# Print results
 print("Average Time: ", average_time)
-print("Mode Time: ", mode_time)
+# print("Mode Time: ", mode_time)
+print("Median Time: ", median_time)
 print("\nFiles sorted by Time to run dynesty:")
-for file, time in log_files:
-    print(f"{file}: {time}")
+for file, duration in log_files:
+    print(f"{file}: {duration}")

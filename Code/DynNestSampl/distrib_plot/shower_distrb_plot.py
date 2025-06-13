@@ -482,15 +482,119 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         flags_dict_total
         )
 
+
+        dynesty_run_results = dsampler.results
+        ndim = len(variables)
+        sim_num = np.argmax(dynesty_run_results.logl)
+
+        # copy the best guess values
+        guess = dynesty_run_results.samples[sim_num]
+        flag_total_rho = False
+        # load the variable names
+        variables_sing = list(flags_dict.keys())
+        for i, variable in enumerate(variables_sing):
+            if 'log' in flags_dict[variable]:
+                guess[i] = 10**guess[i]
+            if variable == 'noise_lag':
+                obs_data.noise_lag = guess[i]
+                obs_data.noise_vel = guess[i] * np.sqrt(2)/(1.0/32)
+            if variable == 'noise_lum':
+                obs_data.noise_lum = guess[i]
+            if variable == 'erosion_rho_change':
+                flag_total_rho = True
+
+        if flag_total_rho:
+            
+            # set up the observation data object
+            obs_data = finder.observation_instance(base_name)
+            obs_data.file_name = pickle_file # update teh file name in the observation data object
+
+            # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
+            if obs_data.v_init < 30000:
+                obs_data.dt = 0.01
+                # const_nominal.erosion_bins_per_10mass = 5
+            else:
+                obs_data.dt = 0.005
+                # const_nominal.erosion_bins_per_10mass = 10
+
+            obs_data.disruption_on = False
+
+            obs_data.lum_eff_type = 5
+
+            obs_data.h_kill = np.min([obs_data.height_lum[-1],obs_data.height_lag[-1]])-1000
+            # check if the h_kill is smaller than 0
+            if obs_data.h_kill < 0:
+                obs_data.h_kill = 1
+            # check if np.min(obs_data.velocity[-1]) is smaller than v_init-10000
+            if np.min(obs_data.velocities) < obs_data.v_init-10000:
+                obs_data.v_kill = obs_data.v_init-10000
+            else:
+                obs_data.v_kill = np.min(obs_data.velocities)-5000
+            # check if the v_kill is smaller than 0
+            if obs_data.v_kill < 0:
+                obs_data.v_kill = 1
+
+            # load the dynesty file
+            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+            dynesty_run_results = dsampler.results
+
+            guess = dynesty_run_results.samples[sim_num]
+            samples = dynesty_run_results.samples
+            # for variable in variables: for 
+            for i, variable in enumerate(variables_sing):
+                if 'log' in flags_dict[variable]:  
+                    guess[i] = 10**(guess[i])
+                    samples[:, i] = 10**(samples[:, i])
+                if 'noise_lag' == variable:
+                    obs_data.noise_lag = guess[i]
+                    obs_data.noise_vel = guess[i]*np.sqrt(2)/(1.0/32)
+                if 'noise_lum' == variable:
+                    obs_data.noise_lum = guess[i]
+            # find erosion change height
+            if 'erosion_height_change' in variables_sing:
+                erosion_height_change = guess[variables.index('erosion_height_change')]
+            if 'm_init' in variables_sing:
+                m_init = guess[variables.index('m_init')]
+
+
+            best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
+
+            heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+            mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+
+            mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+
+            weights = dynesty_run_results.importance_weights()
+            w = weights / np.sum(weights)
+
+            x = samples[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+            mask = ~np.isnan(x)
+            x_valid = x[mask]
+            w_valid = w[mask]
+
+            # renormalize
+            w_valid /= np.sum(w_valid)
+
+            # weighted quantiles
+            rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+            print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
+            rho_lo = (rho - rho_lo) #/1.96
+            rho_hi = (rho_hi - rho) #/1.96
+
+        else:
+            rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
+            rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
+            rho = summary_df_meteor['Median'].values[variables.index('rho')]
+            
         # delete from base_name _combined if it exists
         if '_combined' in base_name:
             base_name = base_name.replace('_combined', '')
-        file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, summary_df_meteor['Median'].values[variables.index('rho')], lg_lo, lg_hi, bg_lo, bg_hi)
+
+        file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, rho, lg_lo, lg_hi, bg_lo, bg_hi)
 
         tj, tj_lo, tj_hi, inclin_val = extract_tj_from_report(report_path)
-        rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
-        rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
-        file_rho_jd_dict[base_name] = (summary_df_meteor['Median'].values[variables.index('rho')], rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val)
+
+        file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val)
 
         find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
         find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
@@ -744,7 +848,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
     # annotate each point with its base_name in tiny text
-    # for base_name, (rho_val, rho_lo_val, rho_hi_val, tj_val, tj_lo_val, tj_hi_val) in file_rho_jd_dict.items():
+    # for base_name, (rho_val, rho_lo_val, rho_hi_val, tj_val, tj_lo_val, tj_hi_val, inclin_val) in file_rho_jd_dict.items():
     #     plt.annotate(
     #         base_name,
     #         xy=(rho_val, tj_val),
@@ -766,17 +870,17 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     if shower_iau_no == -1:
         # put a green horizontal line at Tj = 3.0
-        plt.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5) # label='Tj = 3.0', 
+        plt.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1) # label='Tj = 3.0', 
         # write AST on the left side of the line
-        plt.text(3800, 3.1, 'AST', color='black', fontsize=15, va='bottom')
+        plt.text(7500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
         # put a red horizontal line at Tj = 2.0
-        plt.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5) # label='Tj = 2.0', 
+        plt.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1) # label='Tj = 2.0', 
         # write APT on the left side of the line
-        plt.text(3800, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
+        plt.text(7500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
         # # write below at 1.5 'HTC'
         # if the lowest ylim is below 1.5, then put a horizontal line at Tj = 1.5
         if ylim[0] < 1.5:
-            plt.text(3800, 1.5, 'HTC', color='black', fontsize=15, va='bottom')
+            plt.text(7500, 1.5, 'HTC', color='black', fontsize=15, va='bottom')
 
     # # incrrease the x limits
     # plt.xlim(0, 6000)

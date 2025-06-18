@@ -28,6 +28,61 @@ from dynesty import utils as dyfunc
 from matplotlib.ticker import MaxNLocator, NullLocator, ScalarFormatter
 from scipy.stats import gaussian_kde
 from wmpl.Formats.WmplTrajectorySummary import loadTrajectorySummaryFast
+from multiprocessing import Pool
+from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
+
+
+# avoid showing warnings
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+
+def run_single_eeu(sim_num_and_data):
+    sim_num, tot_sim, sample, obs_data, variables, fixed_values, flags_dict = sim_num_and_data
+
+    # print(f"Running simulation {sim_num}/{tot_sim}")
+    
+    # Copy and transform the sample as in your loop
+    guess = sample.copy()
+    flag_total_rho = False
+
+    for i, variable in enumerate(variables):
+        if 'log' in flags_dict[variable]:
+            guess[i] = 10**guess[i]
+        if variable == 'noise_lag':
+            obs_data.noise_lag = guess[i]
+            obs_data.noise_vel = guess[i] * np.sqrt(2)/(1.0/32)
+        if variable == 'noise_lum':
+            obs_data.noise_lum = guess[i]
+        if variable == 'erosion_rho_change':
+            flag_total_rho = True
+
+    # Build const_nominal (same as in your current loop)
+    const_nominal = Constants()
+    const_nominal.dens_co = obs_data.dens_co
+    const_nominal.dt = obs_data.dt
+    const_nominal.P_0m = obs_data.P_0m
+    const_nominal.h_kill = obs_data.h_kill
+    const_nominal.v_kill = obs_data.v_kill
+    const_nominal.disruption_on = obs_data.disruption_on
+    const_nominal.lum_eff_type = obs_data.lum_eff_type
+
+    # Assign guessed and fixed parameters
+    for i, var in enumerate(variables):
+        const_nominal.__dict__[var] = guess[i]
+    for k, v in fixed_values.items():
+        const_nominal.__dict__[k] = v
+
+    # Extract physical quantities
+    try:
+        eeucs, eeum = energyReceivedBeforeErosion(const_nominal)
+
+        return (sim_num, eeucs, eeum)
+
+    except Exception as e:
+        print(f"Simulation {sim_num} failed: {e}")
+        return (sim_num, np.nan, np.nan)
+    
 
 def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     """
@@ -438,6 +493,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     # base_name, lg_min_la_sun, bg, rho
     file_radiance_rho_dict = {}
+    file_eeu_dict = {}
     file_rho_jd_dict = {}
     find_worst_lag = {}
     find_worst_lum = {}
@@ -484,6 +540,9 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
 
         dynesty_run_results = dsampler.results
+        weights = dynesty_run_results.importance_weights()
+        w = weights / np.sum(weights)
+        samples = dynesty_run_results.samples
         ndim = len(variables)
         sim_num = np.argmax(dynesty_run_results.logl)
 
@@ -495,6 +554,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         for i, variable in enumerate(variables_sing):
             if 'log' in flags_dict[variable]:
                 guess[i] = 10**guess[i]
+                samples[:, i] = 10**samples[:, i]
             if variable == 'noise_lag':
                 obs_data.noise_lag = guess[i]
                 obs_data.noise_vel = guess[i] * np.sqrt(2)/(1.0/32)
@@ -503,58 +563,53 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             if variable == 'erosion_rho_change':
                 flag_total_rho = True
 
+        beg_height = obs_data.height_lum[0]
+        end_height = obs_data.height_lum[-1]
+
+        # vel_init = obs_data.v_init
+        lenght_par = obs_data.length[-1]/1000 # convert to km
+        max_lum_height = obs_data.height_lum[np.argmax(obs_data.luminosity)]
+        F_par = beg_height - max_lum_height / (beg_height - end_height)
+        kc_par = beg_height/1000 + (2.86 - 2*np.log(summary_df_meteor['Median'].values[variables_sing.index('v_init')]/1000))/0.0612
+
+
+        # set up the observation data object
+        obs_data = finder.observation_instance(base_name)
+        obs_data.file_name = pickle_file # update teh file name in the observation data object
+
+        # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
+        if obs_data.v_init < 30000:
+            obs_data.dt = 0.01
+            # const_nominal.erosion_bins_per_10mass = 5
+        else:
+            obs_data.dt = 0.005
+            # const_nominal.erosion_bins_per_10mass = 10
+
+        obs_data.disruption_on = False
+
+        obs_data.lum_eff_type = 5
+
+        obs_data.h_kill = np.min([obs_data.height_lum[-1],obs_data.height_lag[-1]])-1000
+        # check if the h_kill is smaller than 0
+        if obs_data.h_kill < 0:
+            obs_data.h_kill = 1
+        # check if np.min(obs_data.velocity[-1]) is smaller than v_init-10000
+        if np.min(obs_data.velocities) < obs_data.v_init-10000:
+            obs_data.v_kill = obs_data.v_init-10000
+        else:
+            obs_data.v_kill = np.min(obs_data.velocities)-5000
+        # check if the v_kill is smaller than 0
+        if obs_data.v_kill < 0:
+            obs_data.v_kill = 1
+
+
         if flag_total_rho:
             
-            # set up the observation data object
-            obs_data = finder.observation_instance(base_name)
-            obs_data.file_name = pickle_file # update teh file name in the observation data object
-
-            # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
-            if obs_data.v_init < 30000:
-                obs_data.dt = 0.01
-                # const_nominal.erosion_bins_per_10mass = 5
-            else:
-                obs_data.dt = 0.005
-                # const_nominal.erosion_bins_per_10mass = 10
-
-            obs_data.disruption_on = False
-
-            obs_data.lum_eff_type = 5
-
-            obs_data.h_kill = np.min([obs_data.height_lum[-1],obs_data.height_lag[-1]])-1000
-            # check if the h_kill is smaller than 0
-            if obs_data.h_kill < 0:
-                obs_data.h_kill = 1
-            # check if np.min(obs_data.velocity[-1]) is smaller than v_init-10000
-            if np.min(obs_data.velocities) < obs_data.v_init-10000:
-                obs_data.v_kill = obs_data.v_init-10000
-            else:
-                obs_data.v_kill = np.min(obs_data.velocities)-5000
-            # check if the v_kill is smaller than 0
-            if obs_data.v_kill < 0:
-                obs_data.v_kill = 1
-
-            # load the dynesty file
-            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-            dynesty_run_results = dsampler.results
-
-            guess = dynesty_run_results.samples[sim_num]
-            samples = dynesty_run_results.samples
-            # for variable in variables: for 
-            for i, variable in enumerate(variables_sing):
-                if 'log' in flags_dict[variable]:  
-                    guess[i] = 10**(guess[i])
-                    samples[:, i] = 10**(samples[:, i])
-                if 'noise_lag' == variable:
-                    obs_data.noise_lag = guess[i]
-                    obs_data.noise_vel = guess[i]*np.sqrt(2)/(1.0/32)
-                if 'noise_lum' == variable:
-                    obs_data.noise_lum = guess[i]
             # find erosion change height
             if 'erosion_height_change' in variables_sing:
-                erosion_height_change = guess[variables.index('erosion_height_change')]
+                erosion_height_change = guess[variables_sing.index('erosion_height_change')]
             if 'm_init' in variables_sing:
-                m_init = guess[variables.index('m_init')]
+                m_init = guess[variables_sing.index('m_init')]
 
 
             best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
@@ -564,10 +619,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
             mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
 
-            weights = dynesty_run_results.importance_weights()
-            w = weights / np.sum(weights)
-
-            x = samples[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+            x = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
             mask = ~np.isnan(x)
             x_valid = x[mask]
             w_valid = w[mask]
@@ -577,7 +629,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
             # weighted quantiles
             rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
-            print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
             rho_lo = (rho - rho_lo) #/1.96
             rho_hi = (rho_hi - rho) #/1.96
 
@@ -585,7 +636,63 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
             rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
             rho = summary_df_meteor['Median'].values[variables.index('rho')]
-            
+        
+        print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
+        
+        # ### EROSION ENERGY CALCULATION ###
+
+        # print("Calculating erosion energy per unit cross section and mass...")
+        # # Package inputs
+        # inputs = [
+        #     (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
+        #     for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
+        # ]
+        # #     for i in range(len(dynesty_run_results.samples)) # 
+        # num_cores = multiprocessing.cpu_count()
+        # print(f"Using {base_name}.")
+        # # Run in parallel
+        # with Pool(processes=num_cores) as pool:  # adjust to number of cores
+        #     results = pool.map(run_single_eeu, inputs)
+
+        # N = len(dynesty_run_results.samples)
+
+        # erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
+        # erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
+
+        # for res in results:
+        #     i, eeucs, eeum = res
+        #     erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1000000 # convert to MJ/m^2
+        #     erosion_energy_per_unit_mass_arr[i] = eeum / 1000000 # convert to MJ/kg
+        
+        # weights = dynesty_run_results.importance_weights()
+        # w = weights / np.sum(weights)
+    
+        # for i, x in enumerate([erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr]):
+        #     # mask out NaNs
+        #     mask = ~np.isnan(x)
+        #     if not np.any(mask):
+        #         print("Warning: All values are NaN, skipping quantile calculation.")
+        #         continue
+        #     mask = ~np.isnan(x)
+        #     x_valid = x[mask]
+        #     w_valid = w[mask]
+        #     # renormalize
+        #     w_valid /= np.sum(w_valid)
+        #     if i == 0:
+        #         # weighted quantiles
+        #         eeucs_lo, eeucs, eeucs_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+        #         print(f"erosion energy per unit cross section: {eeucs} J/m^2, 95% CI = [{eeucs_lo:.6f}, {eeucs_hi:.6f}]")
+        #         eeucs_lo = (eeucs - eeucs_lo)
+        #         eeucs_hi = (eeucs_hi - eeucs)
+        #     elif i == 1:
+        #         # weighted quantiles
+        #         eeum_lo, eeum, eeum_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+        #         print(f"erosion energy per unit mass: {eeum} J/kg, 95% CI = [{eeum_lo:.6f}, {eeum_hi:.6f}]")
+        #         eeum_lo = (eeum - eeum_lo)
+        #         eeum_hi = (eeum_hi - eeum)
+
+        ### SAVE DATA ###
+
         # delete from base_name _combined if it exists
         if '_combined' in base_name:
             base_name = base_name.replace('_combined', '')
@@ -595,6 +702,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         tj, tj_lo, tj_hi, inclin_val = extract_tj_from_report(report_path)
 
         file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val)
+        # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
 
         find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
         find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
@@ -602,14 +710,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         all_samples.append(samples_aligned)
         all_weights.append(weights_aligned)
 
-    # # print the summary the worst lag and lum and their base names
-    # print("Worst lag:")
-    # worst_lag_base_name = max(find_worst_lag, key=find_worst_lag.get)
-    # print(f"{worst_lag_base_name}: {find_worst_lag[worst_lag_base_name]} m")
-    # print("Worst lum:")
-    # worst_lum_base_name = max(find_worst_lum, key=find_worst_lum.get)
-    # print(f"{worst_lum_base_name}: {find_worst_lum[worst_lum_base_name]} W")
-    # and the worst 5
+
     print("Worst 5 lag:")
     worst_lag_items = sorted(find_worst_lag.items(), key=lambda x: x[1], reverse=True)[:5]
     for base_name, lag in worst_lag_items:
@@ -636,20 +737,37 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     tj_hi = np.array([v[5] for v in file_rho_jd_dict.values()])
     inclin_val = np.array([v[6] for v in file_rho_jd_dict.values()])
 
+    # eeucs = np.array([v[0] for v in file_eeu_dict.values()])
+    # eeucs_lo = np.array([v[1] for v in file_eeu_dict.values()])
+    # eeucs_hi = np.array([v[2] for v in file_eeu_dict.values()])
+    # eeum = np.array([v[3] for v in file_eeu_dict.values()])
+    # eeum_lo = np.array([v[4] for v in file_eeu_dict.values()])
+    # eeum_hi = np.array([v[5] for v in file_eeu_dict.values()])
+    # F_par = np.array([v[6] for v in file_eeu_dict.values()])
+    # kc_par = np.array([v[7] for v in file_eeu_dict.values()])
+    # lenght_par = np.array([v[8] for v in file_eeu_dict.values()])
+
+
+    # print("Iron case F len eeucs ...")
+
+    # # plot the lenght_par against eeucs and color with F_par
+    # plt.figure(figsize=(10, 6))
+    # # after you’ve built your rho array:
+    # norm = Normalize(vmin=0, vmax=1)
+    # scatter = plt.scatter(lenght_par, eeucs, c=F_par, cmap='coolwarm_r', s=30,
+    #                         norm=norm, zorder=2)
+    # plt.colorbar(scatter, label='F')
+    # plt.xlabel('Length (km)', fontsize=15)
+    # plt.ylabel('Erosion Energy per Unit Cross Section (MJ/m²)', fontsize=15)
+    # # plt.title('Erosion Energy per Unit Cross Section vs Length')
+    # plt.grid(True)
+    # plt.tight_layout()
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
+
     print("saving radiance plot...")
 
     # print(lg_lo, lg_hi, bg_lo, bg_hi)
-
-
-
-
-
     plt.figure(figsize=(8, 6))
-
-    # after you’ve built your rho array:
-    norm = Normalize(vmin=rho.min(), vmax=rho.max())
-    # cmap = cm.viridis
-
     stream_lg_min_la_sun = []
     stream_bg = []
 
@@ -709,6 +827,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
             ##### plot the data #####
 
+            # after you’ve built your rho array:
+            norm = Normalize(vmin=rho.min(), vmax=rho.max())
+            # cmap = cm.viridis
+
             # your stream data arrays
             x = stream_lg_min_la_sun
             y = stream_bg
@@ -758,46 +880,109 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                 plt.xlim(xlim[0], 65)
                 plt.ylim(77, 80.5)
 
-    # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
-    for i in range(len(lg_min_la_sun)):
-        # draw error bars for each point
-        plt.errorbar(
-            lg_min_la_sun[i], bg[i],
-            xerr=[[abs(lg_hi[i])], [abs(lg_lo[i])]],
-            yerr=[[abs(bg_hi[i])], [abs(bg_lo[i])]],
-            elinewidth=0.75,
-            capthick=0.75,
-            fmt='none',
-            ecolor='black',
-            capsize=3,
-            zorder=1
-        )
+            # then draw points on top, at zorder=2 # jet
+            scatter = plt.scatter(
+                lg_min_la_sun, bg,
+                c=rho,
+                cmap='viridis',
+                norm=norm,
+                s=30,
+                zorder=2
+            )
 
-    # then draw points on top, at zorder=2 # jet
-    scatter = plt.scatter(
-        lg_min_la_sun, bg,
-        c=rho,
-        cmap='viridis',
-        norm=norm,
-        s=30,
-        zorder=2
-    )
+            # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
+            for i in range(len(lg_min_la_sun)):
+                # draw error bars for each point
+                plt.errorbar(
+                    lg_min_la_sun[i], bg[i],
+                    xerr=[[abs(lg_hi[i])], [abs(lg_lo[i])]],
+                    yerr=[[abs(bg_hi[i])], [abs(bg_lo[i])]],
+                    elinewidth=0.75,
+                    capthick=0.75,
+                    fmt='none',
+                    ecolor='black',
+                    capsize=3,
+                    zorder=1
+                )
+            
+            # annotate each point with its base_name in tiny text
+            for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
+                plt.annotate(
+                    base_name,
+                    xy=(x, y),
+                    xytext=(30, 5),             # 5 points vertical offset
+                    textcoords='offset points',
+                    ha='center',
+                    va='bottom',
+                    fontsize=6,
+                    alpha=0.8
+                )
 
-    # increase the size of the tick labels
-    plt.gca().tick_params(labelsize=15)
+            # increase the size of the tick labels
+            plt.gca().tick_params(labelsize=15)
 
-    # annotate each point with its base_name in tiny text
-    for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
-        plt.annotate(
-            base_name,
-            xy=(x, y),
-            xytext=(30, 5),             # 5 points vertical offset
-            textcoords='offset points',
-            ha='center',
-            va='bottom',
-            fontsize=6,
-            alpha=0.8
-        )
+            # invert the x axis
+            plt.gca().invert_xaxis()
+
+        else:
+            plt.subplot(111, projection="aitoff")
+
+            # after you’ve built your rho array:
+            norm = Normalize(vmin=rho.min(), vmax=rho.max())
+            # cmap = cm.viridis
+
+            # the values above 180 from lg_min_la_sun subtract 360
+            lg_min_la_sun = np.where(lg_min_la_sun > 180, lg_min_la_sun - 360, lg_min_la_sun)
+
+            # then draw points on top, at zorder=2 # jet
+            scatter = plt.scatter(
+                np.deg2rad(lg_min_la_sun), np.deg2rad(bg),
+                c=rho,
+                cmap='viridis',
+                norm=norm,
+                s=3,
+                zorder=2
+            )
+
+            # Set the ticks and labels
+            plt.xticks(ticks=np.radians([-150, -120, -90, -60, -30, 0, \
+                                    30, 60, 90, 120, 150]),
+                labels=['16h', '14h', '12h','10h', '8h', '6h', \
+                        '4h' , '2h' , '0h' ,'22h', '20h'])
+
+
+            # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
+            for i in range(len(lg_min_la_sun)):
+                # draw error bars for each point
+                plt.errorbar(
+                    np.deg2rad(lg_min_la_sun[i]), np.deg2rad(bg[i]),
+                    xerr=[[np.deg2rad(abs(lg_hi[i]))], [np.deg2rad(abs(lg_lo[i]))]],
+                    yerr=[[np.deg2rad(abs(bg_hi[i]))], [np.deg2rad(abs(bg_lo[i]))]],
+                    elinewidth=0.75,
+                    capthick=0.0,
+                    fmt='none',
+                    ecolor='black',
+                    capsize=3,
+                    zorder=1
+                )
+            
+            # # annotate each point with its base_name in tiny text
+            # for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
+            #     plt.annotate(
+            #         base_name,
+            #         xy=(np.deg2rad(x), np.deg2rad(y)),
+            #         xytext=(30, 5),             # 5 points vertical offset
+            #         textcoords='offset points',
+            #         ha='center',
+            #         va='bottom',
+            #         fontsize=6,
+            #         alpha=0.8
+            #     )
+
+
+
+
+
 
 
     # increase the label size
@@ -805,10 +990,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # 2. now set the label’s font size and the tick labels’ size
     cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
     cbar.ax.tick_params(labelsize=15)
-    # now chack if stream_lg_min_la_sun and stream_bg are not empty
-
-    # invert the x axis
-    plt.gca().invert_xaxis()
 
     plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
     plt.ylabel(r'$\beta_{g}$ (J2000)', fontsize=15)

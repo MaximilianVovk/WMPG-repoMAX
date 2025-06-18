@@ -433,6 +433,13 @@ def process_site(meteors: list, mir_site: MirSite, location: EarthLocation, out_
             temperature_c=15.0
         )
 
+        # Topocentric coordinates from ra_deg, dec_deg to alt, az with no atmospheric refraction
+        radec_temp = SkyCoord(ra=ra_deg*u.deg, dec=dec_deg*u.deg, frame='fk5', obstime=obs_time)
+        altaz_topo = radec_temp.transform_to(AltAz(obstime=obs_time, location=location, pressure=0))
+        # Convert back to alt, az
+        alt = altaz_topo.alt.deg
+        az = altaz_topo.az.deg
+
         # Integrated brightness, magnitude
         px_val  = 10 ** (-0.4 * m.lsp)
         mag_val = m.lsp + mir_site.offset
@@ -510,7 +517,7 @@ if __name__ == "__main__":
     # Init the command line arguments parser
     arg_parser = argparse.ArgumentParser(description="Translate from .met to .ecsv format.")
 
-    arg_parser.add_argument('--input_dir_file', help="Path and file name of the .met file.", default=r"N:\mvovk\2ndPaper\reduction_CAMO+EMCCD\manualFix-EMCCD+CAMO\CAP\20200726_060419_skyfit2_DONE\20200726_060419_mir\state_1744242752_MAX.met")
+    arg_parser.add_argument('input_dir_file', help="Path and file name of the .met file.", default=r"N:\mvovk\Justin_EMCCD\CAP\EMCCD_informed_CAMO_picks\20200725_074335_skyfit2_IAU_DONE\20200725_074335_mir\state_1744244221.met")
     # arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str, help="Path were are store both simulated and observed shower .csv file.")
 
     arg_parser.add_argument('--photom', help='Comma-separated list of site=offset pairs, by default "1=16.5,2=16.5"', default="1=16.5,2=16.5")
@@ -530,3 +537,6 @@ if __name__ == "__main__":
 
     out_dir = os.path.dirname(cml_args.input_dir_file)
     convert_met_to_ecsv(cml_args.input_dir_file, out_dir, photom_dict)
+
+
+

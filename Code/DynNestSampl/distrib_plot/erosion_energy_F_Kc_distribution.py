@@ -39,7 +39,7 @@ from types import SimpleNamespace
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-def run_single_sim(sim_num_and_data):
+def run_single_eeu(sim_num_and_data):
     sim_num, tot_sim, sample, obs_data, variables, fixed_values, flags_dict = sim_num_and_data
 
     print(f"Running simulation {sim_num}/{tot_sim}")
@@ -51,13 +51,6 @@ def run_single_sim(sim_num_and_data):
     for i, variable in enumerate(variables):
         if 'log' in flags_dict[variable]:
             guess[i] = 10**guess[i]
-        if variable == 'noise_lag':
-            obs_data.noise_lag = guess[i]
-            obs_data.noise_vel = guess[i] * np.sqrt(2)/(1.0/32)
-        if variable == 'noise_lum':
-            obs_data.noise_lum = guess[i]
-        if variable == 'erosion_rho_change':
-            flag_total_rho = True
 
     # Build const_nominal (same as in your current loop)
     const_nominal = Constants()
@@ -75,53 +68,15 @@ def run_single_sim(sim_num_and_data):
     for k, v in fixed_values.items():
         const_nominal.__dict__[k] = v
 
-    # Try to simulate
-    try:
-        frag_main, results_list, wake_results = runSimulation(const_nominal, compute_wake=False)
-        sim_obj = SimulationResults(const_nominal, frag_main, results_list, wake_results)
-    except ZeroDivisionError:
-        sim_obj = SimulationResults(const_nominal, *runSimulation(Constants(), compute_wake=False))
-
     # Extract physical quantities
     try:
         eeucs, eeum = energyReceivedBeforeErosion(const_nominal)
 
-        heights = np.array(sim_obj.leading_frag_height_arr, dtype=np.float64)
-        vel = np.array(sim_obj.leading_frag_vel_arr, dtype=np.float64)
-        lum = np.array(sim_obj.luminosity_arr, dtype=np.float64)
-        length = np.array(sim_obj.leading_frag_length_arr, dtype=np.float64)
-
-        # Remove NaNs
-        valid_heights = heights[:-1]
-        valid_vel = vel[:-1]
-        valid_lum = lum[:-1]
-        valid_length = length[:-1]
-
-        beg_height = obs_data.height_lum[0]
-        end_height = obs_data.height_lum[-1]
-
-        kc_par = beg_height/1000 + (2.86 - 2*np.log(valid_vel[np.argmin(np.abs(valid_heights - beg_height))]/1000))/0.0612
-        max_lum_height = valid_heights[np.argmax(valid_lum)]
-        F_par = beg_height - max_lum_height / (beg_height - end_height)
-        if F_par < 0:
-            F_par = 0
-        if F_par > 1:
-            F_par = 1
-        trail_length = abs(valid_length[np.argmin(np.abs(valid_heights - beg_height))] - valid_length[np.argmin(np.abs(valid_heights - end_height))])
-
-        rho_total = const_nominal.rho
-        if flag_total_rho:
-            mass_before = sim_obj.mass_total_active_arr[np.argmin(np.abs(valid_heights - const_nominal.erosion_height_change))]
-            rho_total = (
-                const_nominal.rho * ((const_nominal.m_init - mass_before) / const_nominal.m_init) +
-                const_nominal.erosion_rho_change * (mass_before / const_nominal.m_init)
-            )
-
-        return (sim_num, eeucs, eeum, rho_total, kc_par, F_par, trail_length)
+        return (sim_num, eeucs, eeum)
 
     except Exception as e:
         print(f"Simulation {sim_num} failed: {e}")
-        return (sim_num, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
+        return (sim_num, np.nan, np.nan)
 
 
 def extract_other_prop(input_dirfile, output_dir_show):
@@ -129,9 +84,10 @@ def extract_other_prop(input_dirfile, output_dir_show):
     Function to plot the distribution of the parameters from the dynesty files and save them as a table in LaTeX format.
     """
     # Use the class to find .dynesty, load prior, and decide output folders
-    finder = find_dynestyfile_and_priors(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=False,pick_position=0)
+    finder = find_dynestyfile_and_priors(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=True,pick_position=0)
 
     num_meteors = len(finder.base_names)  # Number of meteors
+    file_eeu_dict = {}
     print(f"Found {num_meteors} meteors in {input_dirfile}.")
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names,finder.input_folder_file,finder.priors,finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
@@ -214,25 +170,106 @@ def extract_other_prop(input_dirfile, output_dir_show):
 
         # Run in parallel
         with Pool(processes=num_cores) as pool:  # adjust to number of cores
-            results = pool.map(run_single_sim, inputs)
+            results = pool.map(run_single_eeu, inputs)
 
         N = len(dynesty_run_results.samples)
 
         erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
         erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
-        rho_total_arr = np.full(N, np.nan)
-        kc_par_arr = np.full(N, np.nan)
-        F_par_arr = np.full(N, np.nan)
-        trail_length_arr = np.full(N, np.nan)
+        # rho_total_arr = np.full(N, np.nan)
+        # kc_par_arr = np.full(N, np.nan)
+        # F_par_arr = np.full(N, np.nan)
+        # trail_length_arr = np.full(N, np.nan)
 
         for res in results:
-            i, eeucs, eeum, rho, kc, F, tl = res
-            erosion_energy_per_unit_cross_section_arr[i] = eeucs
-            erosion_energy_per_unit_mass_arr[i] = eeum
-            rho_total_arr[i] = rho
-            kc_par_arr[i] = kc
-            F_par_arr[i] = F
-            trail_length_arr[i] = tl
+            i, eeucs, eeum = res
+            erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
+            erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
+            # rho_total_arr[i] = rho
+            # kc_par_arr[i] = kc
+            # F_par_arr[i] = F
+            # trail_length_arr[i] = tl
+
+        sim_num = np.argmax(dynesty_run_results.logl)
+        # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
+        best_guess = dynesty_run_results.samples[sim_num]
+        samples = dynesty_run_results.samples
+        # for variable in variables: for 
+        for i, variable in enumerate(variables):
+            if 'log' in flags_dict[variable]:  
+                best_guess[i] = 10**(best_guess[i])
+                samples[:, i] = 10**(samples[:, i])  # also transform all samples
+                
+        best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
+
+        # find erosion change height
+        if 'erosion_height_change' in variables:
+            erosion_height_change = best_guess[variables.index('erosion_height_change')]
+        if 'm_init' in variables:
+            m_init = best_guess[variables.index('m_init')]
+
+        heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+        mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+
+        mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+
+        if 'erosion_rho_change' in variables:
+            rho_total_arr = samples[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+        else:
+            rho_total_arr = samples[:, variables.index('rho')].astype(float)
+
+        rho_total_arr = np.array(rho_total_arr, dtype=np.float64)
+
+        for i, x in enumerate([erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr, rho_total_arr, samples[:, variables.index('v_init')].astype(float)]):
+            # mask out NaNs
+            mask = ~np.isnan(x)
+            if not np.any(mask):
+                print("Warning: All values are NaN, skipping quantile calculation.")
+                continue
+            mask = ~np.isnan(x)
+            x_valid = x[mask]
+            w_valid = w[mask]
+            # renormalize
+            w_valid /= np.sum(w_valid)
+            if i == 0:
+                # weighted quantiles
+                eeucs_lo, eeucs, eeucs_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+                print(f"erosion energy per unit cross section: {eeucs} MJ/m^2, 95% CI = [{eeucs_lo:.6f}, {eeucs_hi:.6f}]")
+                eeucs_lo = (eeucs - eeucs_lo)
+                eeucs_hi = (eeucs_hi - eeucs)
+            elif i == 1:
+                # weighted quantiles
+                eeum_lo, eeum, eeum_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+                print(f"erosion energy per unit mass: {eeum} MJ/kg, 95% CI = [{eeum_lo:.6f}, {eeum_hi:.6f}]")
+                eeum_lo = (eeum - eeum_lo)
+                eeum_hi = (eeum_hi - eeum)
+            elif i == 2:
+                # weighted quantiles
+                rho_total_lo, rho_total, rho_total_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+                print(f"rho total: {rho_total} kg/m^3, 95% CI = [{rho_total_lo:.6f}, {rho_total_hi:.6f}]")
+                rho_total_lo = (rho_total - rho_total_lo)
+                rho_total_hi = (rho_total_hi - rho_total)
+            elif i == 3:
+                # weighted quantiles
+                v_init_lo, v_init, v_init_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+                print(f"v init: {v_init} m/s, 95% CI = [{v_init_lo:.6f}, {v_init_hi:.6f}]")
+                v_init_lo = (v_init - v_init_lo)
+                v_init_hi = (v_init_hi - v_init)
+
+        beg_height = obs_data.height_lum[0]
+        end_height = obs_data.height_lum[-1]
+
+        # vel_init = obs_data.v_init
+        lenght_par = obs_data.length[-1]/1000 # convert to km
+        max_lum_height = obs_data.height_lum[np.argmax(obs_data.luminosity)]
+        F_par = (beg_height - max_lum_height) / (beg_height - end_height)
+        kc_par = beg_height/1000 + (2.86 - 2*np.log(v_init/1000))/0.0612
+        print(f"beg_height: {beg_height} m")
+        print(f"end_height: {end_height} m")
+        print(f"max_lum_height: {max_lum_height} m")
+        print(f"F_par: {F_par}")
+        print(f"lenght_par: {lenght_par} km")
+        print(f"kc_par: {kc_par}")
 
         # Create a namespace object for dot-style access
         results = SimpleNamespace(**dsampler.results.__dict__)  # load all default results
@@ -243,13 +280,17 @@ def extract_other_prop(input_dirfile, output_dir_show):
         results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
         results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
         results.rho_total = rho_total_arr
-        results.kc_par = kc_par_arr
-        results.F_par = F_par_arr
-        results.trail_length = trail_length_arr
 
         # Save
         with open(folder_name + os.sep + base_name+"_dynesty_results_only.dynestyres", "wb") as f:
             pickle.dump(results, f)
+
+        # delete from base_name _combined if it exists
+        if '_combined' in base_name:
+            base_name = base_name.replace('_combined', '')
+
+        # save the results for the file
+        file_eeu_dict[base_name] = (eeucs, eeum, F_par, kc_par, lenght_par, rho_total)
 
         # with open(folder_name + os.sep + base_name+"_dynesty_results_only.dynestyres", "rb") as f:
         #     results = pickle.load(f)
@@ -257,6 +298,85 @@ def extract_other_prop(input_dirfile, output_dir_show):
         # print("Results saved successfully.")
         # print(results.rho_total)
 
+    eeucs = np.array([v[0] for v in file_eeu_dict.values()])
+    eeum = np.array([v[1] for v in file_eeu_dict.values()])
+    F_par = np.array([v[2] for v in file_eeu_dict.values()])
+    kc_par = np.array([v[3] for v in file_eeu_dict.values()])
+    lenght_par = np.array([v[4] for v in file_eeu_dict.values()])
+    rho_total = np.array([v[5] for v in file_eeu_dict.values()])
+    
+    # plot the distribution of rho_total
+
+    print("\nIron case F len erosion_energy_per_unit_cross_section ...")
+
+    # plot the lenght_par against eeucs and color with F_par
+    plt.figure(figsize=(10, 6))
+    # after you’ve built your rho array:
+    norm = Normalize(vmin=0, vmax=1)
+    scatter = plt.scatter(lenght_par, eeucs, c=F_par, cmap='coolwarm_r', s=30,
+                            norm=norm, zorder=2)
+    plt.colorbar(scatter, label='F')
+    plt.xlabel('Length (km)', fontsize=15)
+    plt.ylabel('Erosion Energy per Unit Cross Section (MJ/m²)', fontsize=15)
+    # increase the size of the tick labels
+    plt.gca().tick_params(labelsize=15)
+
+    # annotate each point with its base_name in tiny text
+    for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1) in file_eeu_dict.items():
+        # print(f"Annotating {base_name} at length {lenght_par} km with eeucs {eeucs} MJ/m²")
+        plt.annotate(
+            base_name,
+            xy=(lenght_par_1,eeucs_1),
+            xytext=(30, 5),             # 5 points vertical offset
+            textcoords='offset points',
+            ha='center',
+            va='bottom',
+            fontsize=6,
+            alpha=0.8
+        )
+    # invert the y axis to have the highest energy at the top
+    plt.gca().invert_yaxis()
+    # plt.title('Erosion Energy per Unit Cross Section vs Length')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir_show, f"erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
+    # close the plot
+    plt.close()
+
+    # plot the lenght_par against eeucs and color with rho_total
+    print("Iron case rho_total len erosion_energy_per_unit_cross_section ...")
+    plt.figure(figsize=(10, 6))
+    # after you’ve built your rho array:
+    norm = Normalize(vmin=np.min(rho_total), vmax=np.max(rho_total))
+    scatter = plt.scatter(lenght_par, eeucs, c=rho_total, cmap='viridis', s=30,
+                            norm=norm, zorder=2)
+    plt.colorbar(scatter, label='Rho (kg/m³)')
+    plt.xlabel('Length (km)', fontsize=15)
+    plt.ylabel('Erosion Energy per Unit Cross Section (MJ/m²)', fontsize=15)
+    # increase the size of the tick labels
+    plt.gca().tick_params(labelsize=15)
+    # annotate each point with its base_name in tiny text
+    # annotate each point with its base_name in tiny text
+    for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1) in file_eeu_dict.items():
+        # print(f"Annotating {base_name} at length {lenght_par} km with eeucs {eeucs} MJ/m²")
+        plt.annotate(
+            base_name,
+            xy=(lenght_par_1,eeucs_1),
+            xytext=(30, 5),             # 5 points vertical offset
+            textcoords='offset points',
+            ha='center',
+            va='bottom',
+            fontsize=6,
+            alpha=0.8
+        )
+    # invert the y axis to have the highest energy at the top
+    plt.gca().invert_yaxis()
+    # plt.title('Erosion Energy per Unit Cross Section vs Length')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir_show, f"erosion_energy_vs_length_rho_total.png"), bbox_inches='tight', dpi=300)
+    # close the plot
+    plt.close()
 
 
 if __name__ == "__main__":

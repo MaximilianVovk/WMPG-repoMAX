@@ -321,19 +321,19 @@ def extract_other_prop(input_dirfile, output_dir_show):
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
 
-    # annotate each point with its base_name in tiny text
-    for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1) in file_eeu_dict.items():
-        # print(f"Annotating {base_name} at length {lenght_par} km with eeucs {eeucs} MJ/m²")
-        plt.annotate(
-            base_name,
-            xy=(lenght_par_1,eeucs_1),
-            xytext=(30, 5),             # 5 points vertical offset
-            textcoords='offset points',
-            ha='center',
-            va='bottom',
-            fontsize=6,
-            alpha=0.8
-        )
+    # # annotate each point with its base_name in tiny text
+    # for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1) in file_eeu_dict.items():
+    #     # print(f"Annotating {base_name} at length {lenght_par} km with eeucs {eeucs} MJ/m²")
+    #     plt.annotate(
+    #         base_name,
+    #         xy=(lenght_par_1,eeucs_1),
+    #         xytext=(30, 5),             # 5 points vertical offset
+    #         textcoords='offset points',
+    #         ha='center',
+    #         va='bottom',
+    #         fontsize=6,
+    #         alpha=0.8
+    #     )
     # invert the y axis to have the highest energy at the top
     plt.gca().invert_yaxis()
     # plt.title('Erosion Energy per Unit Cross Section vs Length')
@@ -355,20 +355,20 @@ def extract_other_prop(input_dirfile, output_dir_show):
     plt.ylabel('Erosion Energy per Unit Cross Section (MJ/m²)', fontsize=15)
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
-    # annotate each point with its base_name in tiny text
-    # annotate each point with its base_name in tiny text
-    for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1) in file_eeu_dict.items():
-        # print(f"Annotating {base_name} at length {lenght_par} km with eeucs {eeucs} MJ/m²")
-        plt.annotate(
-            base_name,
-            xy=(lenght_par_1,eeucs_1),
-            xytext=(30, 5),             # 5 points vertical offset
-            textcoords='offset points',
-            ha='center',
-            va='bottom',
-            fontsize=6,
-            alpha=0.8
-        )
+
+    # # annotate each point with its base_name in tiny text
+    # for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1) in file_eeu_dict.items():
+    #     # print(f"Annotating {base_name} at length {lenght_par} km with eeucs {eeucs} MJ/m²")
+    #     plt.annotate(
+    #         base_name,
+    #         xy=(lenght_par_1,eeucs_1),
+    #         xytext=(30, 5),             # 5 points vertical offset
+    #         textcoords='offset points',
+    #         ha='center',
+    #         va='bottom',
+    #         fontsize=6,
+    #         alpha=0.8
+    #     )
     # invert the y axis to have the highest energy at the top
     plt.gca().invert_yaxis()
     # plt.title('Erosion Energy per Unit Cross Section vs Length')

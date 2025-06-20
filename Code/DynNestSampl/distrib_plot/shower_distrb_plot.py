@@ -221,7 +221,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         # storage
         lg = bg = la_sun = None
         lg_err_lo  = lg_err_hi = bg_err_lo  = bg_err_hi = None
+        lg_helio = bg_helio = None
+        lg_err_lo_helio = lg_err_hi_helio = bg_err_lo_helio = bg_err_hi_helio = None
         in_ecl = False
+        in_ecl_helio = False
 
         # regexes for Lg/Bg with CI
         re_lg_ci = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
@@ -234,6 +237,16 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         re_bg_val = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)')
         # solar longitude
         re_lasun  = re.compile(r'^\s*La Sun\s*=\s*([+-]?\d+\.\d+)')
+
+        # regexes for Lh/Bh with CI
+        re_lg_ci_h = re.compile(r'^\s*Lh\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
+        re_bg_ci_h = re.compile(r'^\s*Bh\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
+        # look for "Lh = 246.70202 +/- 0.46473"
+        re_lg_pm_h  = re.compile(r'^\s*Lh\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
+        re_bg_pm_h  = re.compile(r'^\s*Bh\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
+        # fallback plain values
+        re_lg_val_h = re.compile(r'^\s*Lh\s*=\s*([+-]?\d+\.\d+)')
+        re_bg_val_h = re.compile(r'^\s*Bh\s*=\s*([+-]?\d+\.\d+)')
 
         with open(report_path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -276,6 +289,43 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                                 if m and bg is None:
                                     bg = float(m.group(1))
 
+                if s.startswith('Radiant (ecliptic heliocentric'):
+                    in_ecl_helio = True
+                    continue
+
+                if in_ecl_helio:
+                    # blank line → exit
+                    if not s:
+                        in_ecl_helio = False
+                    else:
+                        # try 95CI first
+                        m = re_lg_ci_h.match(line)
+                        if m:
+                            lg_helio, lg_err_lo_helio, lg_err_hi_helio = map(float, m.groups())
+                        else:
+                            # try ± after
+                            m = re_lg_pm_h.match(line)
+                            if m:
+                                lg_helio, lg_err_lo_helio = float(m.group(1)), float(m.group(2))
+                            else:
+                                # then plain
+                                m = re_lg_val_h.match(line)
+                                if m and lg_helio is None:
+                                    lg_helio = float(m.group(1))
+                        # try 95CI first
+                        m = re_bg_ci_h.match(line)
+                        if m:
+                            bg_helio, bg_err_lo_helio, bg_err_hi_helio = map(float, m.groups())
+                        else:
+                            m = re_bg_pm_h.match(line)
+                            if m:
+                                bg_helio, bg_err_lo_helio = float(m.group(1)), float(m.group(2))
+                            else:
+                                m = re_bg_val_h.match(line)
+                                if m and bg_helio is None:
+                                    bg_helio = float(m.group(1))
+
+
                 # always grab La Sun
                 if la_sun is None:
                     m = re_lasun.match(line)
@@ -283,7 +333,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                         la_sun = float(m.group(1))
 
                 # stop if we have all three
-                if lg is not None and bg is not None and la_sun is not None:
+                if lg is not None and bg is not None and la_sun is not None and lg_helio is not None and bg_helio is not None:
                     break
 
         if lg is None or bg is None:
@@ -302,15 +352,33 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         if bg_err_hi is None:
             bg_err_hi = bg + abs(bg_err_lo)
             bg_err_lo = bg - abs(bg_err_lo)
-        
-        print(f"Radiant: Lg = {lg}° 95CI [{lg_err_lo:.3f}°, {lg_err_hi:.3f}°], Bg = {bg}° 95CI [{bg_err_lo:.3f}°, {bg_err_hi:.3f}°]")
+        if lg_err_lo_helio is None:
+            lg_err_lo_helio = lg_helio
+            lg_err_hi_helio = lg_helio
+        if bg_err_lo_helio is None:
+            bg_err_lo_helio = bg_helio
+            bg_err_hi_helio = bg_helio
+        if lg_err_hi_helio is None:
+            lg_err_hi_helio = lg_helio + abs(lg_err_lo_helio)
+            lg_err_lo_helio = lg_helio - abs(lg_err_lo_helio)
+        if bg_err_hi_helio is None:
+            bg_err_hi_helio = bg_helio + abs(bg_err_lo_helio)
+            bg_err_lo_helio = bg_helio - abs(bg_err_lo_helio)
+
+        print(f"Radiant (ecliptic heliocentric): Lg = {lg_helio}° 95CI [{lg_err_lo_helio:.3f}°, {lg_err_hi_helio:.3f}°], Bg = {bg_helio}° 95CI [{bg_err_lo_helio:.3f}°, {bg_err_hi_helio:.3f}°]")
+        # print the results
+        print(f"Radiant (ecliptic geocentric): Lg = {lg}° 95CI [{lg_err_lo:.3f}°, {lg_err_hi:.3f}°], Bg = {bg}° 95CI [{bg_err_lo:.3f}°, {bg_err_hi:.3f}°]")
         lg_lo = (lg - lg_err_lo)/1.96
         lg_hi = (lg_err_hi - lg)/1.96
         bg_lo = (bg_err_hi - bg)/1.96
         bg_hi = (bg - bg_err_lo)/1.96
+        lg_helio_lo = (lg_helio - lg_err_lo_helio)/1.96
+        lg_helio_hi = (lg_err_hi_helio - lg_helio)/1.96
+        bg_helio_lo = (bg_err_hi_helio - bg_helio)/1.96
+        bg_helio_hi = (bg_helio - bg_err_lo_helio)/1.96
         print(f"Error range: Lg = {lg}° ± {lg_lo:.3f}° / {lg_hi:.3f}°, Bg = {bg}° ± {bg_lo:.3f}° / {bg_hi:.3f}°")
 
-        return lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun
+        return lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun, lg_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi
 
 
     def extract_tj_from_report(report_path):
@@ -493,6 +561,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     # base_name, lg_min_la_sun, bg, rho
     file_radiance_rho_dict = {}
+    file_radiance_rho_dict_helio = {}
     file_eeu_dict = {}
     file_rho_jd_dict = {}
     find_worst_lag = {}
@@ -524,10 +593,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
         report_path = os.path.join(output_dir, report_file)
         print(f"Using report file: {report_path}")
-        lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun = extract_radiant_and_la_sun(report_path)
+        lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun, lg_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi = extract_radiant_and_la_sun(report_path)
         print(f"Ecliptic geocentric (J2000): Lg = {lg}°, Bg = {bg}°")
         print(f"Solar longitude:       La Sun = {la_sun}°")
         lg_min_la_sun = (lg - la_sun)%360
+        lg_min_la_sun_helio = (lg_helio - la_sun)%360
 
         combined_results_meteor = CombinedResults(samples_aligned, weights_aligned)
 
@@ -698,6 +768,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             base_name = base_name.replace('_combined', '')
 
         file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, rho, lg_lo, lg_hi, bg_lo, bg_hi)
+        file_radiance_rho_dict_helio[base_name] = (lg_min_la_sun_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi)
 
         tj, tj_lo, tj_hi, inclin_val = extract_tj_from_report(report_path)
 
@@ -736,6 +807,13 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     tj_lo = np.array([v[4] for v in file_rho_jd_dict.values()])
     tj_hi = np.array([v[5] for v in file_rho_jd_dict.values()])
     inclin_val = np.array([v[6] for v in file_rho_jd_dict.values()])
+
+    lg_min_la_sun_helio = np.array([v[0] for v in file_radiance_rho_dict_helio.values()])
+    lg_helio_lo = np.array([v[1] for v in file_radiance_rho_dict_helio.values()])
+    lg_helio_hi = np.array([v[2] for v in file_radiance_rho_dict_helio.values()])
+    bg_helio = np.array([v[3] for v in file_radiance_rho_dict_helio.values()])
+    bg_helio_lo = np.array([v[4] for v in file_radiance_rho_dict_helio.values()])
+    bg_helio_hi = np.array([v[5] for v in file_radiance_rho_dict_helio.values()])
 
     # eeucs = np.array([v[0] for v in file_eeu_dict.values()])
     # eeucs_lo = np.array([v[1] for v in file_eeu_dict.values()])
@@ -940,7 +1018,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                 c=rho,
                 cmap='viridis',
                 norm=norm,
-                s=3,
+                s=10,
                 zorder=2
             )
 
@@ -980,11 +1058,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             #     )
 
 
-
-
-
-
-
     # increase the label size
     cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
     # 2. now set the label’s font size and the tick labels’ size
@@ -997,6 +1070,76 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     plt.grid(True)
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
     plt.close()
+
+    if shower_iau_no == -1:
+        print("Plotting helio coordinates for the radiant distribution...")
+        plt.figure(figsize=(8, 6))
+        plt.subplot(111, projection="aitoff")
+
+        # after you’ve built your rho array:
+        norm = Normalize(vmin=rho.min(), vmax=rho.max())
+        # cmap = cm.viridis
+
+        # the values above 180 from lg_min_la_sun subtract 360
+        lg_min_la_sun_helio = np.where(lg_min_la_sun_helio > 180, lg_min_la_sun_helio - 360, lg_min_la_sun_helio)
+
+        # then draw points on top, at zorder=2 # jet
+        scatter = plt.scatter(
+            np.deg2rad(lg_min_la_sun_helio), np.deg2rad(bg_helio),
+            c=rho,
+            cmap='viridis',
+            norm=norm,
+            s=10,
+            zorder=2
+        )
+
+        # Set the ticks and labels
+        plt.xticks(ticks=np.radians([-150, -120, -90, -60, -30, 0, \
+                                30, 60, 90, 120, 150]),
+            labels=['16h', '14h', '12h','10h', '8h', '6h', \
+                    '4h' , '2h' , '0h' ,'22h', '20h'])
+
+
+        # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
+        for i in range(len(lg_min_la_sun_helio)):
+            # draw error bars for each point
+            plt.errorbar(
+                np.deg2rad(lg_min_la_sun_helio[i]), np.deg2rad(bg_helio[i]),
+                xerr=[[np.deg2rad(abs(lg_helio_hi[i]))], [np.deg2rad(abs(lg_helio_lo[i]))]],
+                yerr=[[np.deg2rad(abs(bg_helio_hi[i]))], [np.deg2rad(abs(bg_helio_lo[i]))]],
+                elinewidth=0.75,
+                capthick=0.0,
+                fmt='none',
+                ecolor='black',
+                capsize=3,
+                zorder=1
+            )
+            
+        # # annotate each point with its base_name in tiny text
+        # for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict_helio.items():
+        #     plt.annotate(
+        #         base_name,
+        #         xy=(np.deg2rad(x), np.deg2rad(y)),
+        #         xytext=(30, 5),             # 5 points vertical offset
+        #         textcoords='offset points',
+        #         ha='center',
+        #         va='bottom',
+        #         fontsize=6,
+        #         alpha=0.8
+        #     )
+
+        # increase the label size
+        cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
+        # 2. now set the label’s font size and the tick labels’ size
+        cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
+        cbar.ax.tick_params(labelsize=15)
+
+        plt.xlabel(r'$\lambda_{h} - \lambda_{\odot}$ (J2000)', fontsize=15)
+        plt.ylabel(r'$\beta_{h}$ (J2000)', fontsize=15)
+        # plt.title('Radiant Distribution of Meteors')
+        plt.grid(True)
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_helio_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
+        plt.close()
 
     ### JD vs rho plot ###
     print("saving rho vs JD plot...")

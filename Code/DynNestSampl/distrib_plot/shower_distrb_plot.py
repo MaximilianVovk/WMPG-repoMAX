@@ -886,16 +886,155 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         else:
             shower_iau_no = -1
         
+            stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202410.txt","traj_summary_monthly_202410.csv")
+            # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
+            stream_data.to_csv(r"C:\Users\maxiv\Downloads\traj_summary_monthly_202410.csv", index=False)
+
+
+        print(f"Filtering stream data for shower IAU number: {shower_iau_no}")
+        # filter the stream_data for the shower_iau_no
+        stream_data = stream_data[stream_data['IAU (No)'] == shower_iau_no]
+        print(f"Found {len(stream_data)} stream data points for shower IAU number: {shower_iau_no}")
+        # # and take the one that have activity " annual "
+        # stream_data = stream_data[stream_data['activity'].str.contains("annual", case=False, na=False)]
+        # print(f"Found {len(stream_data)} stream data points for shower IAU number: {shower_iau_no} with activity 'annual'")
+        # extract all LoR	S_LoR	LaR
+        stream_lor = stream_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)']].values
+        # translate to double precision float
+        stream_lor = stream_lor.astype(np.float64)
+        # and now compute lg_min_la_sun = (lg - la_sun)%360
+        stream_lg_min_la_sun = (stream_lor[:, 0] - stream_lor[:, 2]) % 360
+        stream_bg = stream_lor[:, 1]
+        print(f"Found {len(stream_lg_min_la_sun)} stream data points for shower IAU number: {shower_iau_no}")
+
+        ##### plot the data #####
+
+        # after you’ve built your rho array:
+        norm = Normalize(vmin=rho.min(), vmax=rho.max())
+        # cmap = cm.viridis
+
+        # your stream data arrays
+        x = stream_lg_min_la_sun
+        y = stream_bg
+        if shower_iau_no == -1: # revolve around the direction of motion of the Earth
+            x = np.where(x > 180, x - 360, x)
+
+        # build the KDE
+        xy  = np.vstack([x, y])
+        kde = gaussian_kde(xy)
+
+        # sample on a grid
+        xmin, xmax = x.min(), x.max()
+        ymin, ymax = y.min(), y.max()
+        X, Y = np.mgrid[xmin:xmax:200j, ymin:ymax:200j]
+        positions = np.vstack([X.ravel(), Y.ravel()])
+        Z = np.reshape(kde(positions).T, X.shape)
+
+        # heatmap via imshow
+        plt.imshow(
+            Z.T,
+            extent=(xmin, xmax, ymin, ymax),
+            origin='lower',
+            aspect='auto',
+            cmap='inferno',
+            alpha=0.6
+        )
+
+        # get the x axis limits
+        xlim = plt.xlim()
+        # get the y axis limits
+        ylim = plt.ylim()
+
+        if "CAP" in shower_name:
+            print("Plotting CAP shower data...")
+            plt.xlim(xlim[0], 182)
+            plt.ylim(8, 11.5)
+        elif "PER" in shower_name:
+            print("Plotting PER shower data...")
+            # plt.xlim(xlim[0], 65)
+            # plt.ylim(77, 81)
+        elif "ORI" in shower_name: 
+            print("Plotting ORI shower data...")
+            # put an x lim and a y lim
+            plt.xlim(xlim[0], 251)
+            plt.ylim(-9, -6)
+        elif "DRA" in shower_name:  
+            print("Plotting DRA shower data...")
+            # put an x lim and a y lim
+            plt.xlim(xlim[0], 65)
+            plt.ylim(77, 80.5)
+
+        if shower_iau_no == -1:
+            lg_min_la_sun = np.where(lg_min_la_sun > 180, lg_min_la_sun - 360, lg_min_la_sun)
+
+        # then draw points on top, at zorder=2 # jet
+        scatter = plt.scatter(
+            lg_min_la_sun, bg,
+            c=rho,
+            cmap='viridis',
+            norm=norm,
+            s=30,
+            zorder=2
+        )
+
+        # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
+        for i in range(len(lg_min_la_sun)):
+            # draw error bars for each point
+            plt.errorbar(
+                lg_min_la_sun[i], bg[i],
+                xerr=[[abs(lg_hi[i])], [abs(lg_lo[i])]],
+                yerr=[[abs(bg_hi[i])], [abs(bg_lo[i])]],
+                elinewidth=0.75,
+                capthick=0.75,
+                fmt='none',
+                ecolor='black',
+                capsize=3,
+                zorder=1
+            )
+        
+        # # annotate each point with its base_name in tiny text
+        # for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
+        #     plt.annotate(
+        #         base_name,
+        #         xy=(x, y),
+        #         xytext=(30, 5),             # 5 points vertical offset
+        #         textcoords='offset points',
+        #         ha='center',
+        #         va='bottom',
+        #         fontsize=6,
+        #         alpha=0.8
+        #     )
+
+        # increase the size of the tick labels
+        plt.gca().tick_params(labelsize=15)
+
         if shower_iau_no != -1:
-            print(f"Filtering stream data for shower IAU number: {shower_iau_no}")
-            # filter the stream_data for the shower_iau_no
-            stream_data = stream_data[stream_data['IAU (No)'] == shower_iau_no]
+            # invert the x axis
+            plt.gca().invert_xaxis()
+
+        # increase the label size
+        cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
+        # 2. now set the label’s font size and the tick labels’ size
+        cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
+        cbar.ax.tick_params(labelsize=15)
+
+        plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
+        plt.ylabel(r'$\beta_{g}$ (J2000)', fontsize=15)
+        # plt.title('Radiant Distribution of Meteors')
+        plt.grid(True)
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_geo_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
+        plt.close()
+
+        if shower_iau_no == -1: 
+            print("Plotting stream data for helio coordinates...")
+            plt.figure(figsize=(8, 6))
+
             print(f"Found {len(stream_data)} stream data points for shower IAU number: {shower_iau_no}")
             # # and take the one that have activity " annual "
             # stream_data = stream_data[stream_data['activity'].str.contains("annual", case=False, na=False)]
             # print(f"Found {len(stream_data)} stream data points for shower IAU number: {shower_iau_no} with activity 'annual'")
             # extract all LoR	S_LoR	LaR
-            stream_lor = stream_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)']].values
+            stream_lor = stream_data[['LAMhel (deg)', 'BEThel (deg)', 'Sol lon (deg)']].values
             # translate to double precision float
             stream_lor = stream_lor.astype(np.float64)
             # and now compute lg_min_la_sun = (lg - la_sun)%360
@@ -904,14 +1043,17 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             print(f"Found {len(stream_lg_min_la_sun)} stream data points for shower IAU number: {shower_iau_no}")
 
             ##### plot the data #####
-
             # after you’ve built your rho array:
             norm = Normalize(vmin=rho.min(), vmax=rho.max())
             # cmap = cm.viridis
 
             # your stream data arrays
             x = stream_lg_min_la_sun
+            # the values above 180 from lg_min_la_sun subtract 360
+            x = np.where(x > 180, x - 360, x)
             y = stream_bg
+            # x = np.deg2rad(x)
+            # y = np.deg2rad(y)
 
             # build the KDE
             xy  = np.vstack([x, y])
@@ -934,75 +1076,68 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                 alpha=0.6
             )
 
-            # get the x axis limits
-            xlim = plt.xlim()
-            # get the y axis limits
-            ylim = plt.ylim()
-
-            if "CAP" in shower_name:
-                print("Plotting CAP shower data...")
-                plt.xlim(xlim[0], 182)
-                plt.ylim(8, 11.5)
-            elif "PER" in shower_name:
-                print("Plotting PER shower data...")
-                # plt.xlim(xlim[0], 65)
-                # plt.ylim(77, 81)
-            elif "ORI" in shower_name: 
-                print("Plotting ORI shower data...")
-                # put an x lim and a y lim
-                plt.xlim(xlim[0], 251)
-                plt.ylim(-9, -6)
-            elif "DRA" in shower_name:  
-                print("Plotting DRA shower data...")
-                # put an x lim and a y lim
-                plt.xlim(xlim[0], 65)
-                plt.ylim(77, 80.5)
-
+            lg_min_la_sun_helio = np.where(lg_min_la_sun_helio > 180, lg_min_la_sun_helio - 360, lg_min_la_sun_helio)
             # then draw points on top, at zorder=2 # jet
             scatter = plt.scatter(
-                lg_min_la_sun, bg,
+                # np.deg2rad(lg_min_la_sun_helio), np.deg2rad(bg_helio),
+                (lg_min_la_sun_helio), (bg_helio),
                 c=rho,
                 cmap='viridis',
                 norm=norm,
-                s=30,
+                s=10,
                 zorder=2
             )
 
             # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
-            for i in range(len(lg_min_la_sun)):
+            for i in range(len(lg_min_la_sun_helio)):
                 # draw error bars for each point
                 plt.errorbar(
-                    lg_min_la_sun[i], bg[i],
-                    xerr=[[abs(lg_hi[i])], [abs(lg_lo[i])]],
-                    yerr=[[abs(bg_hi[i])], [abs(bg_lo[i])]],
+                    # np.deg2rad(lg_min_la_sun_helio[i]), np.deg2rad(bg_helio[i]),
+                    # xerr=[[np.deg2rad(abs(lg_helio_hi[i]))], [np.deg2rad(abs(lg_helio_lo[i]))]],
+                    # yerr=[[np.deg2rad(abs(bg_helio_hi[i]))], [np.deg2rad(abs(bg_helio_lo[i]))]],
+                    (lg_min_la_sun_helio[i]), (bg_helio[i]),
+                    xerr=[[(abs(lg_helio_hi[i]))], [(abs(lg_helio_lo[i]))]],
+                    yerr=[[(abs(bg_helio_hi[i]))], [(abs(bg_helio_lo[i]))]],
                     elinewidth=0.75,
-                    capthick=0.75,
+                    capthick=0.0,
                     fmt='none',
                     ecolor='black',
                     capsize=3,
                     zorder=1
                 )
-            
-            # annotate each point with its base_name in tiny text
-            for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
-                plt.annotate(
-                    base_name,
-                    xy=(x, y),
-                    xytext=(30, 5),             # 5 points vertical offset
-                    textcoords='offset points',
-                    ha='center',
-                    va='bottom',
-                    fontsize=6,
-                    alpha=0.8
-                )
+                
+            # # annotate each point with its base_name in tiny text
+            # for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict_helio.items():
+            #     plt.annotate(
+            #         base_name,
+            #         xy=(np.deg2rad(x), np.deg2rad(y)),
+            #         xy=((x), (y)),
+            #         xytext=(30, 5),             # 5 points vertical offset
+            #         textcoords='offset points',
+            #         ha='center',
+            #         va='bottom',
+            #         fontsize=6,
+            #         alpha=0.8
+            #     )
 
-            # increase the size of the tick labels
-            plt.gca().tick_params(labelsize=15)
+            # increase the label size
+            cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
+            # 2. now set the label’s font size and the tick labels’ size
+            cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
+            cbar.ax.tick_params(labelsize=15)
 
-            # invert the x axis
-            plt.gca().invert_xaxis()
+            plt.xlabel(r'$\lambda_{h} - \lambda_{\odot}$ (J2000)', fontsize=15)
+            plt.ylabel(r'$\beta_{h}$ (J2000)', fontsize=15)
+            # plt.title('Radiant Distribution of Meteors')
+            plt.grid(True)
+            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_helio_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
+            plt.close()
 
-        else:
+
+        if shower_iau_no == -1:
+            print("Plotting Geo coordinates on all Earth...")
+            ### GEO COORDINATES PLOT ###
+            plt.figure(figsize=(8, 6))
             plt.subplot(111, projection="aitoff")
 
             # after you’ve built your rho array:
@@ -1057,89 +1192,90 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             #         alpha=0.8
             #     )
 
+            # increase the label size
+            cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
+            # 2. now set the label’s font size and the tick labels’ size
+            cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
+            cbar.ax.tick_params(labelsize=15)
 
-    # increase the label size
-    cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
-    # 2. now set the label’s font size and the tick labels’ size
-    cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
-    cbar.ax.tick_params(labelsize=15)
-
-    plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
-    plt.ylabel(r'$\beta_{g}$ (J2000)', fontsize=15)
-    # plt.title('Radiant Distribution of Meteors')
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
-    plt.close()
-
-    if shower_iau_no == -1:
-        print("Plotting helio coordinates for the radiant distribution...")
-        plt.figure(figsize=(8, 6))
-        plt.subplot(111, projection="aitoff")
-
-        # after you’ve built your rho array:
-        norm = Normalize(vmin=rho.min(), vmax=rho.max())
-        # cmap = cm.viridis
-
-        # the values above 180 from lg_min_la_sun subtract 360
-        lg_min_la_sun_helio = np.where(lg_min_la_sun_helio > 180, lg_min_la_sun_helio - 360, lg_min_la_sun_helio)
-
-        # then draw points on top, at zorder=2 # jet
-        scatter = plt.scatter(
-            np.deg2rad(lg_min_la_sun_helio), np.deg2rad(bg_helio),
-            c=rho,
-            cmap='viridis',
-            norm=norm,
-            s=10,
-            zorder=2
-        )
-
-        # Set the ticks and labels
-        plt.xticks(ticks=np.radians([-150, -120, -90, -60, -30, 0, \
-                                30, 60, 90, 120, 150]),
-            labels=['16h', '14h', '12h','10h', '8h', '6h', \
-                    '4h' , '2h' , '0h' ,'22h', '20h'])
+            plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
+            plt.ylabel(r'$\beta_{g}$ (J2000)', fontsize=15)
+            # plt.title('Radiant Distribution of Meteors')
+            plt.grid(True)
+            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_geo_global_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
+            plt.close()
 
 
-        # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
-        for i in range(len(lg_min_la_sun_helio)):
-            # draw error bars for each point
-            plt.errorbar(
-                np.deg2rad(lg_min_la_sun_helio[i]), np.deg2rad(bg_helio[i]),
-                xerr=[[np.deg2rad(abs(lg_helio_hi[i]))], [np.deg2rad(abs(lg_helio_lo[i]))]],
-                yerr=[[np.deg2rad(abs(bg_helio_hi[i]))], [np.deg2rad(abs(bg_helio_lo[i]))]],
-                elinewidth=0.75,
-                capthick=0.0,
-                fmt='none',
-                ecolor='black',
-                capsize=3,
-                zorder=1
+            ### HELIO COORDINATES PLOT ###
+
+            print("Plotting helio coordinates all Earth...")
+            plt.figure(figsize=(8, 6))
+            plt.subplot(111, projection="aitoff")
+
+            # after you’ve built your rho array:
+            norm = Normalize(vmin=rho.min(), vmax=rho.max())
+            # cmap = cm.viridis
+
+            # the values above 180 from lg_min_la_sun subtract 360
+            lg_min_la_sun_helio = np.where(lg_min_la_sun_helio > 180, lg_min_la_sun_helio - 360, lg_min_la_sun_helio)
+
+            # then draw points on top, at zorder=2 # jet
+            scatter = plt.scatter(
+                np.deg2rad(lg_min_la_sun_helio), np.deg2rad(bg_helio),
+                c=rho,
+                cmap='viridis',
+                norm=norm,
+                s=10,
+                zorder=2
             )
-            
-        # # annotate each point with its base_name in tiny text
-        # for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict_helio.items():
-        #     plt.annotate(
-        #         base_name,
-        #         xy=(np.deg2rad(x), np.deg2rad(y)),
-        #         xytext=(30, 5),             # 5 points vertical offset
-        #         textcoords='offset points',
-        #         ha='center',
-        #         va='bottom',
-        #         fontsize=6,
-        #         alpha=0.8
-        #     )
 
-        # increase the label size
-        cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
-        # 2. now set the label’s font size and the tick labels’ size
-        cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
-        cbar.ax.tick_params(labelsize=15)
+            # Set the ticks and labels
+            plt.xticks(ticks=np.radians([-150, -120, -90, -60, -30, 0, \
+                                    30, 60, 90, 120, 150]),
+                labels=['16h', '14h', '12h','10h', '8h', '6h', \
+                        '4h' , '2h' , '0h' ,'22h', '20h'])
 
-        plt.xlabel(r'$\lambda_{h} - \lambda_{\odot}$ (J2000)', fontsize=15)
-        plt.ylabel(r'$\beta_{h}$ (J2000)', fontsize=15)
-        # plt.title('Radiant Distribution of Meteors')
-        plt.grid(True)
-        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_helio_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
-        plt.close()
+
+            # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
+            for i in range(len(lg_min_la_sun_helio)):
+                # draw error bars for each point
+                plt.errorbar(
+                    np.deg2rad(lg_min_la_sun_helio[i]), np.deg2rad(bg_helio[i]),
+                    xerr=[[np.deg2rad(abs(lg_helio_hi[i]))], [np.deg2rad(abs(lg_helio_lo[i]))]],
+                    yerr=[[np.deg2rad(abs(bg_helio_hi[i]))], [np.deg2rad(abs(bg_helio_lo[i]))]],
+                    elinewidth=0.75,
+                    capthick=0.0,
+                    fmt='none',
+                    ecolor='black',
+                    capsize=3,
+                    zorder=1
+                )
+                
+            # # annotate each point with its base_name in tiny text
+            # for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict_helio.items():
+            #     plt.annotate(
+            #         base_name,
+            #         xy=(np.deg2rad(x), np.deg2rad(y)),
+            #         xytext=(30, 5),             # 5 points vertical offset
+            #         textcoords='offset points',
+            #         ha='center',
+            #         va='bottom',
+            #         fontsize=6,
+            #         alpha=0.8
+            #     )
+
+            # increase the label size
+            cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
+            # 2. now set the label’s font size and the tick labels’ size
+            cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
+            cbar.ax.tick_params(labelsize=15)
+
+            plt.xlabel(r'$\lambda_{h} - \lambda_{\odot}$ (J2000)', fontsize=15)
+            plt.ylabel(r'$\beta_{h}$ (J2000)', fontsize=15)
+            # plt.title('Radiant Distribution of Meteors')
+            plt.grid(True)
+            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_helio_global_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
+            plt.close()
 
     ### JD vs rho plot ###
     print("saving rho vs JD plot...")

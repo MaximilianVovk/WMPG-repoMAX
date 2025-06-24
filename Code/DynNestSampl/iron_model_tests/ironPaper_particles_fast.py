@@ -2,6 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import gamma as gamma_func
 from concurrent.futures import ThreadPoolExecutor
+import os
+
+output_path = r'C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\iron_model_tests'
 
 def compute_gamma_distribution_with_leftover(
     erosion_bins_per_10mass=10,
@@ -51,10 +54,51 @@ def compute_gamma_distribution_with_leftover(
 
     return mass_bins, int_counts
 
-# Parallel execution for multiple mass indices
-mass_indices = [1.5, 1.6, 1.8, 2.0]
-results = {}
+def compute_pwerlaw_distribution_with_leftover(
+    erosion_bins_per_10mass=10,
+    mass_min=1e-11,
+    mass_max=1e-8,
+    mass_index=1.6,
+    eroded_mass=2.945956677208338e-08,
+):
 
+    # Compute the mass bin coefficient
+    mass_bin_coeff = 10**(-1.0/erosion_bins_per_10mass)
+
+    # Compute the number of mass bins
+    k = int(1 + np.log10(mass_min/mass_max)/np.log10(mass_bin_coeff))
+
+    # Compute the number of the largest grains
+    if mass_index == 2:
+        n0 = eroded_mass/(mass_max*k)
+    else:
+        n0 = abs((eroded_mass/mass_max)*(1 - mass_bin_coeff**(2 - mass_index))/(1 - mass_bin_coeff**((2 - mass_index)*k)))
+
+
+    # Go though every mass bin
+    m_grains = []
+    int_counts = []
+    leftover_mass = 0
+    for i in range(0, k):
+
+        # Compute the mass of all grains in the bin (per grain)
+        m_grain = mass_max*mass_bin_coeff**i
+
+        # Compute the number of grains in the bin
+        n_grains_bin = n0*(mass_max/m_grain)**(mass_index - 1) + leftover_mass/m_grain
+        n_grains_bin_round = int(np.floor(n_grains_bin))
+
+        # Compute the leftover mass
+        leftover_mass = (n_grains_bin - n_grains_bin_round)*m_grain
+        int_counts.append(n_grains_bin_round)
+        m_grains.append(m_grain)
+    return m_grains, int_counts
+
+# Parallel execution for multiple mass indices
+# mass_indices = [1, 1.25, 1.5, 1.75]
+mass_indices = [2, 2.25, 2.5, 2.75, 3]
+results = {}
+results_pow = {}
 with ThreadPoolExecutor() as executor:
     futures = {
         idx: executor.submit(compute_gamma_distribution_with_leftover, mass_index=idx)
@@ -65,19 +109,39 @@ with ThreadPoolExecutor() as executor:
         mass_bins, int_counts = future.result()
         results[idx] = (mass_bins, int_counts)
 
+    futures_powerlaw = {
+        idx: executor.submit(compute_pwerlaw_distribution_with_leftover, mass_index=idx)
+        for idx in mass_indices
+    }
+
+    for idx, future in futures_powerlaw.items():
+        mass_bins_pow, int_counts_pow = future.result()
+        results_pow[idx] = (mass_bins_pow, int_counts_pow)
+
 # Plotting
 fig, ax = plt.subplots(figsize=(8, 6))
 
 for idx in mass_indices:
     mass_bins, int_counts = results[idx]
-    ax.plot(mass_bins, int_counts, marker='o', linestyle='-', label=f's = {idx}')
+    ax.plot(mass_bins, int_counts, marker='o', linestyle='-', label=f'Gamma s = {idx}')
+# reset the color cycle for the next plot
+ax.set_prop_cycle(None)
+for idx in mass_indices:
+    mass_bins_pow, int_counts_pow = results_pow[idx]
+    ax.plot(mass_bins_pow, int_counts_pow, marker='x', linestyle='--', label=f'Power-law s = {idx}')
+
+# make the y axis up to the biggest number of grain of gamma distribution mass_bins
+max_y = max(max(int_counts) for _, int_counts in results.values())
+ax.set_ylim(0, max_y * 1.1)
 
 ax.set_xscale('log')
 ax.set_xlabel('Mass (kg)')
 ax.set_ylabel('Number of grains')
-ax.set_title('Gamma Distribution Fragment Counts with Leftover Mass Handling')
+# ax.set_title('Gamma Distribution Fragment Counts with Leftover Mass Handling')
 ax.grid(True, which='both', linestyle='--', linewidth=0.5)
-ax.legend()
+# make the legend 2 columns
+# ax.legend(title='Distribution Type', loc='upper right', ncol=2)
+ax.legend(ncol=2)
+# save the figure
 plt.tight_layout()
-
-plt.show()
+plt.savefig(output_path + os.sep + 'gamma_distribution_fragment_counts_s'+str(np.min(mass_indices))+'-'+str(np.max(mass_indices))+'.png', dpi=300)

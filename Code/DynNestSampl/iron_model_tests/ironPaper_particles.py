@@ -51,10 +51,11 @@ for i in range(0, k):
     if n_grains_bin_round > 0:
         # plot the number of grains in each bin and the mass of the grains
         frag_children.append((m_grain, n_grains_bin_round))
-        # print(f"Mass bin {i}: m_grain = {m_grain:.2e} kg, n_grains_bin = {n_grains_bin:.2f}, n_grains_bin_round = {n_grains_bin_round}")
+        print(f"Mass bin {i}: m_grain = {m_grain:.2e} kg, n_grains_bin = {n_grains_bin:.2f}, n_grains_bin_round = {n_grains_bin_round}")
 
 # stop the timer
 end_time = time.time()
+print("Power-law distribution:")
 print(f"Time taken: {end_time - start_time:.4e} seconds")
 
 # Final stats
@@ -108,16 +109,18 @@ n_m_scaled = n_m_raw * scaling
 leftover_mass = 0
 frag_children_dr = []
 for i in range(k):
-    expected_count = n_m_scaled[i] * bin_widths[i] + leftover_mass / mass_bins[i]
+    m_grain = mass_bins[i]
+    expected_count = n_m_scaled[i] * bin_widths[i] + leftover_mass / m_grain
     n_grains_bin_round = int(math.floor(expected_count)) # int(expected_count)
-    leftover_mass = (expected_count - n_grains_bin_round) * mass_bins[i]
+    leftover_mass = (expected_count - n_grains_bin_round) * m_grain
     # Store results for fast gamma distribution
     if n_grains_bin_round > 0:
-        frag_children_dr.append((mass_bins[i], n_grains_bin_round))
-        # print(f"Mass bin {i}: m_grain = {mass_bins[i]:.2e} kg, n_grains_bin = {expected_count:.2f}, n_grains_bin_round = {int_counts[i]}")
+        frag_children_dr.append((m_grain, n_grains_bin_round))
+        print(f"Mass bin {i}: m_grain = {m_grain:.2e} kg, n_grains_bin = {expected_count:.2f}, n_grains_bin_round = {n_grains_bin_round}")
 
 # stop the timer
 end_time = time.time()
+print("Gamma-like distribution:")
 print(f"Time taken: {end_time - start_time:.4e} seconds")
 
 # Final stats

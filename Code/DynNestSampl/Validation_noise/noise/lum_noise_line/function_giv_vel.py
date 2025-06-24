@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 # Given function to fit inverse power relation
 def fit_inverse_power():
@@ -44,10 +45,12 @@ for i, (v, c) in enumerate(zip(velocities_to_plot, offsets)):
     y_values = x_values + c
     axes[0].plot(x_values, y_values, label=f"v = {v} km/s", color=colors[i])
 
-axes[0].set_xlabel("SNR")
-axes[0].set_ylabel("Apparent Meteor Magnitude")
-axes[0].legend()
+axes[0].set_xlabel("SNR",  fontsize=15)
+axes[0].set_ylabel("Apparent Meteor Magnitude",  fontsize=15)
+axes[0].legend(fontsize=15)
 # axes[0].set_title("Apparent Magnitude vs. SNR")
+# increase the tick label size
+axes[0].tick_params(axis='both', which='major', labelsize=12)
 
 # Get current x-axis tick locations
 log_x_ticks = axes[0].get_xticks()
@@ -59,7 +62,7 @@ snr_ticks = 10**(log_x_ticks / (-2.5))
 axes[0].set_xticklabels([f'{snr:.2f}' for snr in snr_ticks])
 
 # Change the x-axis label to "SNR"
-axes[0].set_xlabel("SNR")  # Fix incorrect xlabel placement
+axes[0].set_xlabel("SNR",  fontsize=15)  # Fix incorrect xlabel placement
 # grid lines
 axes[0].grid(True)
 
@@ -79,14 +82,18 @@ axes[1].errorbar(known_velocities, known_offsets, yerr=known_errors, fmt='o', co
 for i, v in enumerate(velocities_to_plot):
     axes[1].text(v, offsets[i], f"{v} km/s", color=colors[i], fontsize=10, verticalalignment='bottom')
 
-axes[1].set_xlabel("Velocity (km/s)")
-axes[1].set_ylabel("Offset c(v)")
+axes[1].set_xlabel("Velocity (km/s)",  fontsize=15)
+axes[1].set_ylabel("Offset c(v)",  fontsize=15)
 # axes[1].set_title("Offset Function")
-axes[1].legend()
+axes[1].legend(fontsize=15)
+# increase the tick label size
+axes[1].tick_params(axis='both', which='major', labelsize=12)
 # grid lines
 axes[1].grid(True)
 
 plt.tight_layout()
 # save with dpi=300 for higher resolution
-plt.savefig("inverse_power_fit.png", dpi=300)
+output_path = r"C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\Validation_noise\noise\lum_noise_line"  # Define your output path here
+plt.savefig(output_path + os.sep + "inverse_power_fit.png", dpi=300)
+# plt.savefig("inverse_power_fit.png", dpi=300)
 

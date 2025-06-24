@@ -14,6 +14,7 @@ rho = 7000  # kg/m^3 (example density for rock/iron)
 gamma_5_3 = 0.90274529295093375313996375552960671484470367431640625 # gamma(5/3)
 m_dr = mass_min + (mass_max - mass_min) * mass_index
 
+print(f"total eroded mass: {eroded_mass} kg")
 for mass_index in [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3]:
     # folder where code is running
     array_time_power = []
@@ -101,8 +102,8 @@ for mass_index in [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3]:
         # print(f"Mean mass (kg): {m_mean:.4e}")
         # print(f"Mean diameter (µm): { D_mean * 1e6:.4f}\n")
 
-        D = (6 * mass_bins / (math.pi * rho)) ** (1 / 3)
-        n_D = (3 * D**2 / s) * np.exp(-D**3 / s)
+        Diameter = (6 * mass_bins / (math.pi * rho)) ** (1 / 3)
+        n_D = (3 * Diameter **2 / s) * np.exp(-Diameter **3 / s)
         dD_dm = (1/3) * (6 / (math.pi * rho))**(1/3) * mass_bins**(-2/3)
         n_m_raw = n_D * np.abs(dD_dm)
 
@@ -129,8 +130,27 @@ for mass_index in [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3]:
         ##########################################################################################################################
 
     # Print the times results
-    print(f"mass index: {mass_index} for {len(array_time_power)} total number of iterations")
-    print(f"   Average time for power law distribution: {np.mean(array_time_power):.6e} seconds")
-    print(f"   Average time for gamma distribution: {np.mean(array_time_gamma):.6e} seconds")
-    print(f"   Total time for power law distribution: {np.sum(array_time_power):.6e} seconds")
-    print(f"   Total time for gamma distribution: {np.sum(array_time_gamma):.6e} seconds")
+    print(f"mass index: {mass_index}")
+    # print(f"mass index: {mass_index} for {len(array_time_power)} total number of iterations")
+    # print(f"   Average time for power law distribution: {np.mean(array_time_power):.6e} seconds")
+    # print(f"   Average time for gamma distribution: {np.mean(array_time_gamma):.6e} seconds")
+    # print(f"   Total time for power law distribution: {np.sum(array_time_power):.6e} seconds")
+    # print(f"   Total time for gamma distribution: {np.sum(array_time_gamma):.6e} seconds")
+    # Final stats
+    total_fragments = sum(n for _, n in frag_children)
+    total_mass = sum(m * n for m, n in frag_children)
+    print(f"Power-law distribution:")
+    print(f"   Total fragments: {total_fragments}")
+    print(f"   Total mass (kg): {total_mass}")
+    print(f"   Difference in mass (kg): {abs(total_mass - eroded_mass):.4e}")
+    print(f"   Relative error: {abs(eroded_mass - total_mass)/eroded_mass:.4%}")
+    total_fragments = sum(n for _, n in frag_children_dr)
+    total_mass = sum(m * n for m, n in frag_children_dr)
+    print(f"Gamma-like distribution:")
+    print(f"   Total fragments: {total_fragments}")
+    print(f"   Total mass (kg): {total_mass}")
+    print(f"   Difference in mass (kg): {abs(total_mass - eroded_mass):.4e}")
+    print(f"   Relative error: {abs(eroded_mass - total_mass)/eroded_mass:.4%}\n")
+    print(f"Mean mass (kg): {m_mean:.4e}")
+    print(f"Mean diameter (µm): { D_mean * 1e6:.4f}\n")
+

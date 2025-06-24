@@ -12,7 +12,7 @@
 
 v_init,500,nan,norm   		 	    # v_init [m/s] (gausian distribution)
 zenith_angle,nan,fix 	            # zenith_angle [rad] (fix by default)
-rho_grain,7800,fix					# rho_grain [kg/m^3] (fix by default)
+rho_grain,7000,fix					# rho_grain [kg/m^3] (fix by default)
 m_init,nan,nan             			# m_init [kg]
 rho,4000,8000,log                  	# rho [kg/m^3] (np.log10 applied)
 sigma,0.001/1e6,0.1/1e6          	# sigma [kg/J]

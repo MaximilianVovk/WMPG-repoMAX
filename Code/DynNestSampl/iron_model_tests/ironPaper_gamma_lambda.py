@@ -17,7 +17,7 @@ if parent_dir not in sys.path:
 from DynNestSapl_metsim import *
 
 # --- Settings ---
-D_dr_microns = 50           # Mean diameter in micrometers
+D_dr_microns = 150           # Mean diameter in micrometers
 rho = 7800                   # Density in kg/m^3
 total_droplets = 10000       # Total droplet count to normalize both distributions
 mass_index = 1               # Power-law mass index (slope)
@@ -154,6 +154,7 @@ for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder
     heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
     mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)
     mass_loss_rate = (-1)*np.diff(mass_best) / dt # positive mass loss rate in kg/s
+    print('mean mass loss : ',np.mean((-1)*np.diff(mass_best)))
     vel_best = np.array(best_guess_obj_plot.leading_frag_vel_arr, dtype=np.float64)[:-1]
     dens_co = best_guess_obj_plot.const.dens_co
     mass_best = mass_best[:-1]  # remove last element to match heights and velocities
@@ -167,99 +168,101 @@ for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder
     # compute radius from mass
     radius_best = (3 * mass_best / (4 * pi * rho))**(1/3)
 
-    # # Example usage:
-    # mass_loss_rate = 0.000001  # kg/s
-    # radius = 0.001  # meters (1 mm)
-    # velocity = 20000  # m/s (20 km/s)
-    # altitude_m = 75*1000  # example
-    # Gamma, Lambda = compute_gamma_lambda(mass_loss_rate, radius, velocity, altitude_m)
-    # print(f"Gamma (Γ): {Gamma:.4f}")
-    # print(f"Lambda (Λ): {Lambda:.4f}")
-    Gamma_array = []
-    Lambda_array = []
-    # find the index where mass_loss_rate is not zero
-    non_zero_indices = np.where(mass_loss_rate > 0)[0]
-    # find the Gamma and Lambda for each timestep in non_zero_indices
-    for i in non_zero_indices:
-        Gamma, Lambda = compute_gamma_lambda(mass_loss_rate[i], radius_best[i], vel_best[i], heights[i],dens_co)
-        Gamma_array.append(Gamma)
-        Lambda_array.append(Lambda)
+    # ######### bad plot gamma lambda #########
 
-    params_index = 0
-    for i in [0, 1]:
+    # # # Example usage:
+    # # mass_loss_rate = 0.000001  # kg/s
+    # # radius = 0.001  # meters (1 mm)
+    # # velocity = 20000  # m/s (20 km/s)
+    # # altitude_m = 75*1000  # example
+    # # Gamma, Lambda = compute_gamma_lambda(mass_loss_rate, radius, velocity, altitude_m)
+    # # print(f"Gamma (Γ): {Gamma:.4f}")
+    # # print(f"Lambda (Λ): {Lambda:.4f}")
+    # Gamma_array = []
+    # Lambda_array = []
+    # # find the index where mass_loss_rate is not zero
+    # non_zero_indices = np.where(mass_loss_rate > 0)[0]
+    # # find the Gamma and Lambda for each timestep in non_zero_indices
+    # for i in non_zero_indices:
+    #     Gamma, Lambda = compute_gamma_lambda(mass_loss_rate[i], radius_best[i], vel_best[i], heights[i],dens_co)
+    #     Gamma_array.append(Gamma)
+    #     Lambda_array.append(Lambda)
 
-        # now plot
-        if flag_total_rho and i == 1:
-            # only plot from the erosion_height_change onwards
-            erosion_height_change_index = np.argmin(np.abs(heights - erosion_height_change))
-            # change the non_zero_indices to only include the ones after the erosion_height_change
-            lenght_nonzero= len(non_zero_indices)
-            non_zero_indices = non_zero_indices[non_zero_indices >= erosion_height_change_index]
-            lenght_nonzero_change = len(non_zero_indices)
-            params_index = abs(lenght_nonzero-lenght_nonzero_change)
+    # params_index = 0
+    # for i in [0, 1]:
 
-        # plotting Gamma and Lambda in 2 subplots against height
-        plt.figure(figsize=(10, 6)) 
-        plt.subplot(2, 2, 1)
-        plt.plot(Gamma_array[params_index:], heights[non_zero_indices]/1000, '.', label='Gamma (Γ)', color='blue')
-        # add a horizontal line for erosion_height and erosion_height_change
-        plt.axhline(erosion_height/1000, color='gray', linestyle='--', label='Erosion Height')
-        if 'erosion_height_change' in locals():
-            plt.axhline(erosion_height_change/1000, color='gray', linestyle='-.', label='Erosion Height Change')
-        plt.ylabel('Height (km)')
-        plt.xlabel('Gamma (Γ)')
-        plt.grid(True)
-        plt.legend()
-        plt.subplot(2, 2, 2)
-        plt.plot(Lambda_array[params_index:], heights[non_zero_indices]/1000, '.', label='Lambda (Λ)', color='orange')
-        # add a horizontal line for erosion_height and erosion_height_change
-        plt.axhline(erosion_height/1000, color='gray', linestyle='--')
-        if 'erosion_height_change' in locals():
-            plt.axhline(erosion_height_change/1000, color='gray', linestyle='-.')
-        plt.ylabel('Height (km)')
-        plt.xlabel('Lambda (Λ)')
-        plt.xscale('log')
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-        # add the mass loss rate to the plot
-        plt.subplot(2, 2, 3)
-        plt.plot(mass_loss_rate[non_zero_indices], heights[non_zero_indices]/1000, '.', label='Mass Loss Rate (kg/s)', color='green')
-        # add a horizontal line for erosion_height and erosion_height_change
-        plt.axhline(erosion_height/1000, color='gray', linestyle='--')
-        if 'erosion_height_change' in locals():
-            plt.axhline(erosion_height_change/1000, color='gray', linestyle='-.')
-        plt.ylabel('Height (km)')
-        plt.xlabel('Mass Loss Rate (kg/s)')
-        plt.grid(True)
-        plt.legend()
-        plt.subplot(2, 2, 4)
-        plt.plot(np.array(Lambda_array[params_index:])/(2*np.array(Gamma_array[params_index:])*7115134)*1e6, heights[non_zero_indices]/1000, '.', label='Ablation Coeficient (kg/MJ)', color='indigo')
-        # add a horizontal line for erosion_height and erosion_height_change
-        plt.axhline(erosion_height/1000, color='gray', linestyle='--')
-        if 'erosion_height_change' in locals():
-            plt.axhline(erosion_height_change/1000, color='gray', linestyle='-.')
-        # xscale to logarithmic
-        plt.xscale('log')
-        plt.ylabel('Height (km)')
-        plt.xlabel('Ablation Coeficient (kg/MJ)')
-        plt.grid(True)
-        plt.legend()
-        # save the figure
-        if flag_total_rho and i == 1:
-            # save the figure
-            plt.savefig(os.path.join(save_dir, f"{base_name}_Gamma_Lambda_mass_loss_rate_afterheight.png"), 
-                    bbox_inches='tight',
-                    pad_inches=0.1,       # a little padding around the edge
-                    dpi=300)
-        else:
-            # save the figure
-            plt.savefig(os.path.join(save_dir, f"{base_name}_Gamma_Lambda_mass_loss_rate.png"), 
-                    bbox_inches='tight',
-                    pad_inches=0.1,       # a little padding around the edge
-                    dpi=300)
-        # plt.savefig(os.path.join(save_dir, f"{base_name}_Gamma_Lambda_mass_loss_rate.png"), dpi=300)
-        plt.close()
+    #     # now plot
+    #     if flag_total_rho and i == 1:
+    #         # only plot from the erosion_height_change onwards
+    #         erosion_height_change_index = np.argmin(np.abs(heights - erosion_height_change))
+    #         # change the non_zero_indices to only include the ones after the erosion_height_change
+    #         lenght_nonzero= len(non_zero_indices)
+    #         non_zero_indices = non_zero_indices[non_zero_indices >= erosion_height_change_index]
+    #         lenght_nonzero_change = len(non_zero_indices)
+    #         params_index = abs(lenght_nonzero-lenght_nonzero_change)
+
+    #     # plotting Gamma and Lambda in 2 subplots against height
+    #     plt.figure(figsize=(10, 6)) 
+    #     plt.subplot(2, 2, 1)
+    #     plt.plot(Gamma_array[params_index:], heights[non_zero_indices]/1000, '.', label='Gamma (Γ)', color='blue')
+    #     # add a horizontal line for erosion_height and erosion_height_change
+    #     plt.axhline(erosion_height/1000, color='gray', linestyle='--', label='Erosion Height')
+    #     if 'erosion_height_change' in locals():
+    #         plt.axhline(erosion_height_change/1000, color='gray', linestyle='-.', label='Erosion Height Change')
+    #     plt.ylabel('Height (km)')
+    #     plt.xlabel('Gamma (Γ)')
+    #     plt.grid(True)
+    #     plt.legend()
+    #     plt.subplot(2, 2, 2)
+    #     plt.plot(Lambda_array[params_index:], heights[non_zero_indices]/1000, '.', label='Lambda (Λ)', color='orange')
+    #     # add a horizontal line for erosion_height and erosion_height_change
+    #     plt.axhline(erosion_height/1000, color='gray', linestyle='--')
+    #     if 'erosion_height_change' in locals():
+    #         plt.axhline(erosion_height_change/1000, color='gray', linestyle='-.')
+    #     plt.ylabel('Height (km)')
+    #     plt.xlabel('Lambda (Λ)')
+    #     plt.xscale('log')
+    #     plt.grid(True)
+    #     plt.legend()
+    #     plt.tight_layout()
+    #     # add the mass loss rate to the plot
+    #     plt.subplot(2, 2, 3)
+    #     plt.plot(mass_loss_rate[non_zero_indices], heights[non_zero_indices]/1000, '.', label='Mass Loss Rate (kg/s)', color='green')
+    #     # add a horizontal line for erosion_height and erosion_height_change
+    #     plt.axhline(erosion_height/1000, color='gray', linestyle='--')
+    #     if 'erosion_height_change' in locals():
+    #         plt.axhline(erosion_height_change/1000, color='gray', linestyle='-.')
+    #     plt.ylabel('Height (km)')
+    #     plt.xlabel('Mass Loss Rate (kg/s)')
+    #     plt.grid(True)
+    #     plt.legend()
+    #     plt.subplot(2, 2, 4)
+    #     plt.plot(np.array(Lambda_array[params_index:])/(2*np.array(Gamma_array[params_index:])*7115134)*1e6, heights[non_zero_indices]/1000, '.', label='Ablation Coeficient (kg/MJ)', color='indigo')
+    #     # add a horizontal line for erosion_height and erosion_height_change
+    #     plt.axhline(erosion_height/1000, color='gray', linestyle='--')
+    #     if 'erosion_height_change' in locals():
+    #         plt.axhline(erosion_height_change/1000, color='gray', linestyle='-.')
+    #     # xscale to logarithmic
+    #     plt.xscale('log')
+    #     plt.ylabel('Height (km)')
+    #     plt.xlabel('Ablation Coeficient (kg/MJ)')
+    #     plt.grid(True)
+    #     plt.legend()
+    #     # save the figure
+    #     if flag_total_rho and i == 1:
+    #         # save the figure
+    #         plt.savefig(os.path.join(save_dir, f"{base_name}_Gamma_Lambda_mass_loss_rate_afterheight.png"), 
+    #                 bbox_inches='tight',
+    #                 pad_inches=0.1,       # a little padding around the edge
+    #                 dpi=300)
+    #     else:
+    #         # save the figure
+    #         plt.savefig(os.path.join(save_dir, f"{base_name}_Gamma_Lambda_mass_loss_rate.png"), 
+    #                 bbox_inches='tight',
+    #                 pad_inches=0.1,       # a little padding around the edge
+    #                 dpi=300)
+    #     # plt.savefig(os.path.join(save_dir, f"{base_name}_Gamma_Lambda_mass_loss_rate.png"), dpi=300)
+    #     plt.close()
 
 
 
@@ -268,6 +271,7 @@ for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder
 # --- Gamma Distributions ---
 
 gamma_5_3 = gamma(5/3)
+print(f"Gamma(5/3) = {gamma_5_3:.4f}")
 denominator = (D_dr_microns * gamma_5_3) ** 3
 total_droplets = 10000
 
@@ -340,13 +344,14 @@ mass_centers_min = None
 mass_centers_max = None
 for D_dr_microns_list in D_dr_list:
     gamma_5_3 = gamma(5/3)
+    # print(f"Gamma(5/3) : {gamma_5_3:.32f}")
     denominator = (D_dr_microns_list * gamma_5_3) ** 3
 
     def dN_dD(D):
         return (3 * D**2 / denominator) * np.exp(-D**3 / denominator)
 
     # Bin settings
-    bin_edges_um = np.linspace(D_dr_microns_list - D_dr_microns_list/2, D_dr_microns_list + D_dr_microns_list/2, 21)
+    bin_edges_um = np.linspace(10, D_dr_microns+200, 21)
     bin_centers_um = (bin_edges_um[:-1] + bin_edges_um[1:]) / 2
 
     # Integrate over each diameter bin
@@ -518,3 +523,4 @@ plt.legend()
 plt.tight_layout()
 plt.savefig(os.path.join(save_dir, "pow_distributions_overlay.png"), dpi=300)
 plt.close()
+

@@ -88,8 +88,6 @@ def generateFragments(const, frag_parent, eroded_mass, mass_index, mass_min, mas
 
         # Scale the number of grains in the bin to match the eroded mass
         scaling = eroded_mass / np.sum(mass_per_bin_raw)
-
-        # Compute the mass of all grains in the bin (per grain)
         n_m_scaled = n_m_raw * scaling
 
     else:

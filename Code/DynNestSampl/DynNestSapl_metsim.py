@@ -632,6 +632,15 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             best_guess_table[i] = best_guess_table[i] * 1e6
 
     constjson_bestfit = Constants()
+
+    constjson_bestfit.__dict__['P_0m'] = obs_data.P_0m
+    constjson_bestfit.__dict__['lum_eff_type'] = obs_data.lum_eff_type
+    constjson_bestfit.__dict__['disruption_on'] = obs_data.disruption_on
+    constjson_bestfit.__dict__['dens_co'] = obs_data.dens_co
+    constjson_bestfit.__dict__['dt'] = obs_data.dt
+    constjson_bestfit.__dict__['h_kill'] = obs_data.h_kill
+    constjson_bestfit.__dict__['v_kill'] = obs_data.v_kill
+
     # change Constants that have the same variable names and the one fixed
     for variable in variables:
         if variable in constjson_bestfit.__dict__.keys():
@@ -641,14 +650,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     for variable in fixed_values.keys():
         if variable in constjson_bestfit.__dict__.keys():
             constjson_bestfit.__dict__[variable] = fixed_values[variable]
-
-    constjson_bestfit.__dict__['P_0m'] = obs_data.P_0m
-    constjson_bestfit.__dict__['lum_eff_type'] = obs_data.lum_eff_type
-    constjson_bestfit.__dict__['disruption_on'] = obs_data.disruption_on
-    constjson_bestfit.__dict__['dens_co'] = obs_data.dens_co
-    constjson_bestfit.__dict__['dt'] = obs_data.dt
-    constjson_bestfit.__dict__['h_kill'] = obs_data.h_kill
-    constjson_bestfit.__dict__['v_kill'] = obs_data.v_kill
+            print(f"Fixed value for {variable}: {fixed_values[variable]}")
 
     def convert_to_serializable(obj):
         if isinstance(obj, np.ndarray):
@@ -1056,7 +1058,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         f.write("\nBest fit:\n")
         for i in range(len(best_guess)):
             f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
-        f.write('\nBest fit logL: '+str(dynesty_run_results.logl[sim_num])+'\n')
+        f.write('\nBest fit logL: '+str(best_guess_logL)+'\n') # dynesty_run_results.logl[sim_num])+'\n')
         if diff_logL is not None:
             f.write('REAL logL: '+str(real_logL)+'\n')
             f.write('Diff logL (Best fit - REAL): '+str(diff_logL)+'\n')
@@ -1543,7 +1545,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                 return eval(value, {"__builtins__": {"np": np}}, {})
             except Exception:
                 return value  # Return as string if evaluation fails
-        
+            
         # Read .prior file, ignoring comment lines
         with open(file_path, 'r') as file:
             for line in file:
@@ -1555,14 +1557,18 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                 # Handle fixed values
                 if "fix" in parts:
                     val = parts[1].strip() if len(parts) > 1 else "nan"
-                    fixed_values[name] = safe_eval(val) if val.lower() != "nan" else np.nan
-                    if np.isnan(fixed_values[name]) and name in object_meteor.__dict__:
-                        fixed_values[name] = object_meteor.__dict__[name]
-                    if np.isnan(fixed_values[name]) and name == "erosion_height_start":
-                        fixed_values[name] = object_meteor.height_lum[0]
-                    if np.isnan(fixed_values[name]):
-                        fixed_values[name] = np.mean(default_bounds[name])
+                    evaluated_val = safe_eval(val)
+                    fixed_values[name] = np.nan if str(val).lower() == "nan" else evaluated_val
+                    # Only proceed with fallback logic if it's numeric and NaN
+                    if isinstance(fixed_values[name], (int, float)) and np.isnan(fixed_values[name]):
+                        if name in object_meteor.__dict__:
+                            fixed_values[name] = object_meteor.__dict__[name]
+                        elif name == "erosion_height_start":
+                            fixed_values[name] = object_meteor.height_lum[0]
+                        else:
+                            fixed_values[name] = np.mean(default_bounds[name])
                     continue
+
                 min_val = parts[1].strip() if len(parts) > 1 else "nan"
                 max_val = parts[2].strip() if len(parts) > 2 else "nan"
                 flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
@@ -3390,17 +3396,6 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     # # Turn on plotting of LCs of individual fragments 
     # const_nominal.fragmentation_show_individual_lcs = True
 
-    # for loop for the var_cost that also give a number from 0 to the length of the var_cost
-    for i, var in enumerate(var_names):
-        const_nominal.__dict__[var] = parameter_guess[i]
-
-    # first chack if fix_var is not {}
-    if fix_var:
-        var_names_fix = list(fix_var.keys())
-        # for loop for the fix_var that also give a number from 0 to the length of the fix_var
-        for i, var in enumerate(var_names_fix):
-            const_nominal.__dict__[var] = fix_var[var]
-
     # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
     const_nominal.dt = real_event.dt
     # const_nominal.erosion_bins_per_10mass = 5
@@ -3419,6 +3414,17 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     
     # # Initial meteoroid height [m]
     # const_nominal.h_init = 180000
+
+    # for loop for the var_cost that also give a number from 0 to the length of the var_cost
+    for i, var in enumerate(var_names):
+        const_nominal.__dict__[var] = parameter_guess[i]
+
+    # first chack if fix_var is not {}
+    if fix_var:
+        var_names_fix = list(fix_var.keys())
+        # for loop for the fix_var that also give a number from 0 to the length of the fix_var
+        for i, var in enumerate(var_names_fix):
+            const_nominal.__dict__[var] = fix_var[var]
 
     try:
         # Run the simulation

@@ -1688,7 +1688,7 @@ def luminosity_integration(all_simulated_time,time_fps,luminosity_arr,dt,fps,P_0
 
 class observation_data:
     ''' class to load the observation data and create an object '''
-    def __init__(self, obs_file_path,use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, pick_position=0):
+    def __init__(self, obs_file_path,use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, pick_position=0, prior_file_path=""):
         self.noise_lag = lag_noise_prior
         self.noise_lum = lum_noise_prior
         self.file_name = obs_file_path
@@ -1699,7 +1699,7 @@ class observation_data:
 
         # check if the file is a json file
         if obs_file_path.endswith('.pickle'):
-            self.load_pickle_data(use_all_cameras,pick_position)
+            self.load_pickle_data(use_all_cameras,pick_position,prior_file_path)
         elif obs_file_path.endswith('.json'):
             self.load_json_data(use_all_cameras)
         else:
@@ -1707,7 +1707,7 @@ class observation_data:
             raise ValueError("File type not supported, only .json and .pickle files are supported")
 
 
-    def load_pickle_data(self, use_all_cameras=False, pick_position=0):
+    def load_pickle_data(self, use_all_cameras=False, pick_position=0, prior_file_path=""):
         """
         Load the pickle file(s) and create a dictionary keyed by each file name.
         Each files data (e.g., list of station IDs, dens_co, zenith_angle, etc.)
@@ -1977,7 +1977,7 @@ class observation_data:
                     if (mag is not None) and (not np.isnan(mag)) and (not np.isinf(mag)):
                         time_mag_arr.append([t, mag])
 
-            print("NOTE: The mass was computing using a constant luminous efficiency 0.7!")
+            
 
             # Sort array by time
             time_mag_arr = np.array(sorted(time_mag_arr, key=lambda x: x[0]))
@@ -1995,8 +1995,59 @@ class observation_data:
             # # Calculate the radiated energy
             # radiated_energy = calcRadiatedEnergy(np.array(time_arr), np.array(mag_arr), P_0m=self.P_0m)
 
+            if prior_file_path != "":
+                lum_eff_type_val = None
+                lum_eff_type_fixed = False
+                luminous_efficiency = None
+
+                with open(prior_file_path, 'r') as file:
+                    for line in file:
+                        stripped = line.strip().split('#')[0]  # Remove comments
+                        if not stripped or ',' not in stripped:
+                            continue
+
+                        parts = [p.strip() for p in stripped.split(',')]
+
+                        if parts[0] == 'lum_eff_type':
+                            try:
+                                lum_eff_type_val = int(parts[1])
+                                lum_eff_type_fixed = 'fix' in parts[2:]
+                            except (IndexError, ValueError):
+                                continue
+
+                        elif parts[0] == 'lum_eff':
+                            try:
+                                val1 = float(parts[1])
+                                val2 = None
+
+                                # Try parse second value if it exists and isn't 'fix'
+                                if len(parts) > 2:
+                                    second = parts[2].lower()
+                                    if second != 'fix':
+                                        val2 = float(second)
+                                is_fixed = 'fix' in parts[2:]
+
+                                if is_fixed:
+                                    luminous_efficiency = val1
+                                elif val2 is not None:
+                                    luminous_efficiency = np.mean([val1, val2])
+                                else:
+                                    luminous_efficiency = val1  # fallback to first
+                            except (IndexError, ValueError):
+                                continue
+
+                if not (lum_eff_type_val == 0 and lum_eff_type_fixed):
+                    luminous_efficiency = 0.7  # fallback default
+
+            else:
+                luminous_efficiency = 0.7
+
+
+
+            print("NOTE: The mass was computing using a constant luminous efficiency ",luminous_efficiency)
+
             # Compute the photometric mass
-            photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=0.7/100, P_0m=self.P_0m)
+            photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=luminous_efficiency/100, P_0m=self.P_0m)
 
             m_init_list.append(photom_mass)
 
@@ -3202,17 +3253,25 @@ class find_dynestyfile_and_priors:
             if existing_prior_list:
                 prior_path_noise = os.path.join(root, existing_prior_list[0])
                 lag_noise_prior, lum_noise_prior = read_prior_noise(prior_path_noise)
-        # if np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior):
-        #     if np.isnan(lag_noise_prior):
-        #         print("NO NOISE values found in prior file for lag.")
-        #     if np.isnan(lum_noise_prior):
-        #         print("NO NOISE values found in prior file for lum.")
-        # else:
-        #     print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
+
         if not (np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior)):
             print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
 
-        observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior,self.pick_position)
+        # If user gave a valid .prior path, read it once.
+        if os.path.isfile(self.prior_file):
+            prior_path = self.prior_file
+        else:
+            # Look for local .prior
+            existing_prior_list = [f for f in files if f.endswith(".prior")]
+            if existing_prior_list:
+                prior_path = os.path.join(root, existing_prior_list[0])
+                # print the prior path has been found
+                print(f"Take the first Prior file found in the same folder as the observation file: {prior_path}")
+            else:
+                # default
+                prior_path = ""
+
+        observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior,self.pick_position, prior_path)
 
        # check if any camera was found if not return
         if not hasattr(observation_instance,'stations_lag'):
@@ -3286,18 +3345,8 @@ class find_dynestyfile_and_priors:
             prior_path = self.prior_file
             bounds, flags_dict, fixed_values = read_prior_to_bounds(observation_instance,self.prior_file)
         else:
+            bounds, flags_dict, fixed_values = read_prior_to_bounds(observation_instance,prior_path)
 
-            # Look for local .prior
-            existing_prior_list = [f for f in files if f.endswith(".prior")]
-            if existing_prior_list:
-                prior_path = os.path.join(root, existing_prior_list[0])
-                # print the prior path has been found
-                print(f"Take the first Prior file found in the same folder as the observation file: {prior_path}")
-                bounds, flags_dict, fixed_values = read_prior_to_bounds(observation_instance,prior_path)
-            else:
-                # default
-                prior_path = ""
-                bounds, flags_dict, fixed_values = read_prior_to_bounds(observation_instance)
 
         if base_name == "":
             base_name = self._extract_base_name(input_file)

@@ -191,6 +191,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         weights = dsampler.results.importance_weights()
         n_samples = samples.shape[0]
 
+        for i, variable in enumerate(current_flags):
+            if 'log' in current_flags[variable]:
+                samples[:, i] = 10**samples[:, i]
+
         # Create mapping of existing variables in current run
         flag_keys = list(current_flags.keys())
         flag_index = {v: i for i, v in enumerate(flag_keys)}
@@ -460,7 +464,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
         return Tj, Tj_low, Tj_high, inclin_val
 
-    def summarize_from_cornerplot(results, variables, labels_plot, flags_dict_total, smooth=0.02):
+    def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
         """
         Summarize dynesty results, using the sample of max weight as the mode.
         """
@@ -510,8 +514,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
             # now apply your log & unit transforms *after* computing stats
             def transform(v):
-                if 'log' in flags_dict_total.get(var, ''):
-                    v = 10**v
                 if var in ['v_init',
                         'erosion_height_start',
                         'erosion_height_change']:
@@ -604,8 +606,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         summary_df_meteor = summarize_from_cornerplot(
         combined_results_meteor,
         variables,
-        labels,
-        flags_dict_total
+        labels
         )
 
 
@@ -617,7 +618,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         sim_num = np.argmax(dynesty_run_results.logl)
 
         # copy the best guess values
-        guess = dynesty_run_results.samples[sim_num]
+        guess = dynesty_run_results.samples[sim_num].copy()
         flag_total_rho = False
         # load the variable names
         variables_sing = list(flags_dict.keys())
@@ -1226,8 +1227,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         if ylim[0] < 1.5:
             plt.text(7500, 1.5, 'HTC', color='black', fontsize=15, va='bottom')
 
-    # # incrrease the x limits
-    # plt.xlim(0, 6000)
+    # incrrease the x limits
+    plt.xlim(-100, 8300)
     # increase the label size
     plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=15)
     plt.ylabel(r'Tisserand parameter (T$_{j}$)', fontsize=15)
@@ -1270,8 +1271,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     summary_df = summarize_from_cornerplot(
         combined_results,
         variables,
-        labels,
-        flags_dict_total
+        labels
     )
 
 
@@ -1331,21 +1331,13 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     for j, var in enumerate(variables):
         if np.all(np.isnan(combined_samples_copy_plot[:, j])):
             continue
-        if 'log' in flags_dict_total.get(var, '') and not var in ['erosion_mass_min', 'erosion_mass_max']:
-            combined_samples_copy_plot[:, j] = 10 ** combined_samples_copy_plot[:, j]
-        if not 'log' in flags_dict_total.get(var, '') and var in ['m_init']:
-            combined_samples_copy_plot[:, j] = np.log10(combined_samples_copy_plot[:, j])
         if var in ['m_init','erosion_mass_min', 'erosion_mass_max']:
+            combined_samples_copy_plot[:, j] = np.log10(combined_samples_copy_plot[:, j])
             labels_plot_copy_plot[j] =r"$\log_{10}$(" +labels_plot_copy_plot[j]+")"
         if var in ['v_init', 'erosion_height_start', 'erosion_height_change']:
             combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] / 1000.0
         if var in ['erosion_coeff', 'sigma', 'erosion_coeff_change', 'erosion_sigma_change']:
             combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
-
-
-    for i, variable in enumerate(variables):
-        if 'log' in flags_dict_total[variable]:  
-            labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
 
 
     print('saving distribution plot...')
@@ -1366,7 +1358,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # Define smoothing value
     smooth = 0.02  # or pass it as argument
 
-    for i in range(ndim):
+    for i, variable in enumerate(variables):
         ax = axes[i]
         x = samples[:, i].astype(float)
         mask = ~np.isnan(x)
@@ -1441,6 +1433,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # # takes forever, so run it last
 
     # print('saving corner plot...')
+
+    # for i, variable in enumerate(variables):
+    #     if 'log' in flags_dict_total[variable]:  
+    #         labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
 
     # # Define weighted correlation
     # def weighted_corr(x, y, w):

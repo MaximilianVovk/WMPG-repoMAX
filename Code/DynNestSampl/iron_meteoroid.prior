@@ -17,7 +17,7 @@ lum_eff_type,0,fix 	                 # lum eff efficiency type does not change (
 lum_eff,0.2,fix					     # lum eff efficiency value [-] (fix by default)
 erosion_grain_distribution,gamma,fix # set fragment size distribution using Gamma function (Nukiyama–Tanasawa law)
 m_init,nan,nan             			 # m_init [kg]
-rho,4000,8000,log                  	 # rho [kg/m^3] (np.log10 applied)
+rho,4000,8000                  	     # rho [kg/m^3] (np.log10 applied)
 sigma,0.001/1e6,0.1/1e6          	 # sigma [kg/J]
 erosion_height_start,nan,nan         # erosion_height_start [m]
 erosion_coeff,0.0,2e-6,log           # erosion_coeff [kg/J] (np.log10 applied)

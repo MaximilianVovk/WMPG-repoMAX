@@ -343,6 +343,12 @@ def extract_other_prop(input_dirfile, output_dir_show):
                 v_init_hi = (v_init_hi - v_init)
             elif i == 4:
                 # weighted quantiles
+                eeucs_end_lo, eeucs_end, eeucs_end_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+                print(f"erosion energy per unit cross section end: {eeucs_end} MJ/m², 95% CI = [{eeucs_end_lo:.6f}, {eeucs_end_hi:.6f}]")
+                eeucs_end_lo = (eeucs_end - eeucs_end_lo)
+                eeucs_end_hi = (eeucs_end_hi - eeucs_end)
+            elif i == 5:
+                # weighted quantiles
                 eeum_end_lo, eeum_end, eeum_end_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
                 print(f"erosion energy per unit mass end: {eeum_end} MJ/kg, 95% CI = [{eeum_end_lo:.6f}, {eeum_end_hi:.6f}]")
                 eeum_end_lo = (eeum_end - eeum_end_lo)
@@ -388,7 +394,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
             base_name = base_name.replace('_combined', '')
 
         # save the results for the file
-        file_eeu_dict[base_name] = (eeucs, eeum, F_par, kc_par, lenght_par, rho_total, zenith_angle, eeum_end)
+        file_eeu_dict[base_name] = (eeucs, eeum, F_par, kc_par, lenght_par, rho_total, zenith_angle, eeucs_end, eeum_end)
 
         # with open(folder_name + os.sep + base_name+"_dynesty_results_only.dynestyres", "rb") as f:
         #     results = pickle.load(f)
@@ -403,7 +409,8 @@ def extract_other_prop(input_dirfile, output_dir_show):
     lenght_par = np.array([v[4] for v in file_eeu_dict.values()])
     rho_total = np.array([v[5] for v in file_eeu_dict.values()])
     zenith_angle = np.array([v[6] for v in file_eeu_dict.values()])
-    eeum_end = np.array([v[7] for v in file_eeu_dict.values()])
+    eeucs_end = np.array([v[7] for v in file_eeu_dict.values()])
+    eeum_end = np.array([v[8] for v in file_eeu_dict.values()])
     
     ###########################################################################################################
 
@@ -486,7 +493,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
 
     # plot the distribution of rho_total
 
-    print("Until end and energy up to erosion plot...")
+    print("Until end and energy up to erosion  unit mass plot...")
 
     # plot the lenght_par against eeucs and color with F_par
     plt.figure(figsize=(10, 6))
@@ -499,25 +506,32 @@ def extract_other_prop(input_dirfile, output_dir_show):
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
 
-    # # annotate each point with its base_name in tiny text
-    # for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1) in file_eeu_dict.items():
-    #     # print(f"Annotating {base_name} at length {lenght_par} km with eeucs {eeucs} MJ/m²")
-    #     plt.annotate(
-    #         base_name,
-    #         xy=(lenght_par_1,eeucs_1),
-    #         xytext=(30, 5),             # 5 points vertical offset
-    #         textcoords='offset points',
-    #         ha='center',
-    #         va='bottom',
-    #         fontsize=6,
-    #         alpha=0.8
-    #     )
-    # invert the y axis to have the highest energy at the top
-    # plt.gca().invert_yaxis()
-    # plt.title('Erosion Energy per Unit Cross Section vs Length')
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir_show, f"Tot_energy_vs_erosion_energy_x_unitMass.png"), bbox_inches='tight', dpi=300)
+    # close the plot
+    plt.close()
+
+    ###########################################################################################################
+
+    # plot the distribution of rho_total
+
+    print("Until end and energy up to erosion unit area plot...")
+
+    # plot the lenght_par against eeucs and color with F_par
+    plt.figure(figsize=(10, 6))
+    # after you’ve built your rho array:
+    scatter = plt.scatter(eeucs, eeucs_end, c=rho_total, cmap='viridis', s=30,
+                            norm=norm, zorder=2)
+    plt.colorbar(scatter, label='Rho (kg/m³)')
+    plt.xlabel('Erosion Energy per Unit Cross Section before erosion (MJ/m²)', fontsize=15)
+    plt.ylabel('Total Erosion Energy per Unit Cross Section (MJ/m²)', fontsize=15)
+    # increase the size of the tick labels
+    plt.gca().tick_params(labelsize=15)
+
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir_show, f"Tot_energy_vs_erosion_energy_x_unitCrossSec.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
     
@@ -530,7 +544,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics",
+         default=r"/srv/public/mvovk/3rdPaper/Slow_sporadics",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

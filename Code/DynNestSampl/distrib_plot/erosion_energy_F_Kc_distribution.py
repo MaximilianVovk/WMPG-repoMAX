@@ -158,153 +158,197 @@ def extract_other_prop(input_dirfile, output_dir_show):
 
         # load the dynesty file
         dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-        dynesty_run_results = dsampler.results
 
         # load the variable names
         variables = list(flags_dict.keys())
-
-        weights = dynesty_run_results.importance_weights()
-        w = weights / np.sum(weights)
-
-        # for attr in dir(dynesty_run_results):
-        #     if not attr.startswith("_") and not callable(getattr(dynesty_run_results, attr)):
-        #         print(attr, ":", type(getattr(dynesty_run_results, attr)))
-
-        ### PLOT THE DISTRIBUTION OF THE PARAMETERS and how it gets better ###
-
-        # for sim_num in between 0 and the number of samples in dynesty_run_results.samples but just pick 10 among wich is the best and the worst samples
-        # for sim_num in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int):
-        #     guess = dynesty_run_results.samples[sim_num]
-        #     # for variable in variables: for 
-        #     for i, variable in enumerate(variables):
-        #         if 'log' in flags_dict[variable]:  
-        #             guess[i] = 10**(guess[i])
-        #         if 'noise_lag' == variable:
-        #             obs_data.noise_lag = guess[i]
-        #             obs_data.noise_vel = guess[i]*np.sqrt(2)/(1.0/32)
-        #         if 'noise_lum' == variable:
-        #             obs_data.noise_lum = guess[i]
-
-        #     best_guess_obj_plot = run_simulation(guess, obs_data, variables, fixed_values)
-
-        #     # Plot the data with residuals and the best fit
-        #     plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_dir_show, base_name + "_fit_"+str(sim_num)+"_-LnZ_"+str(abs(np.round(dynesty_run_results.logvol[sim_num],2))), color_sim='black', label_sim="sim "+str(sim_num))
-
-        ### add MORE PARAMETERS ###
-
-        # Package inputs
-        inputs = [
-            (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables, fixed_values, flags_dict)
-            for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
-        ]
-        #     for i in range(len(dynesty_run_results.samples)) # 
-        num_cores = multiprocessing.cpu_count()
-
-        # Run in parallel
-        with Pool(processes=num_cores) as pool:  # adjust to number of cores
-            results = pool.map(run_single_eeu, inputs)
-
-        N = len(dynesty_run_results.samples)
-
-        erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
-        erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
-        erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
-        erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
-        # rho_total_arr = np.full(N, np.nan)
-        # kc_par_arr = np.full(N, np.nan)
-        # F_par_arr = np.full(N, np.nan)
-        # trail_length_arr = np.full(N, np.nan)
-
-        for res in results:
-            i, eeucs, eeum, eeucs_end, eeum_end = res
-            erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
-            erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
-            # also get the end values
-            erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
-            erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
-            # rho_total_arr[i] = rho
-            # kc_par_arr[i] = kc
-            # F_par_arr[i] = F
-            # trail_length_arr[i] = tl
-
-        sim_num = np.argmax(dynesty_run_results.logl)
-        # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
-        # create a copy of the best guess
-        best_guess = dynesty_run_results.samples[sim_num].copy()
-        samples = dynesty_run_results.samples
-        # for variable in variables: for 
-        for i, variable in enumerate(variables):
-            if 'log' in flags_dict[variable]:
-                # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")  
-                best_guess[i] = 10**(best_guess[i])
-                # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")
-                samples[:, i] = 10**(samples[:, i])  # also transform all samples
-        best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
-
-        # find erosion change height
-        if 'erosion_height_change' in variables:
-            erosion_height_change = best_guess[variables.index('erosion_height_change')]
-        if 'm_init' in variables:
-            m_init = best_guess[variables.index('m_init')]
-
-        heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
-        mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
-
-        mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-
-
-        # # precise erosion tal energy calculation ########################
-        # velocities = np.array(best_guess_obj_plot.leading_frag_vel_arr, dtype=np.float64)[:-1]
-        # erosion_height_start = best_guess_obj_plot.const.erosion_height_start
-        # # get for each mass_best that is different from te previuse one get the height at which the mass loss happens
-        # # diff_mask = np.concatenate(([True], np.diff(mass_best) != 0))
-        # diff_mask = np.concatenate(([True], ~np.isclose(np.diff(mass_best), 0)))
-        # unique_heights_massvar = heights[diff_mask]
-        # mass_best_massvar = mass_best[diff_mask]
-        # velocities_massvar = velocities[diff_mask]
-        # # now delete any unique_heights_massvar and mass_best_massvar that are bigger than erosion_height_change
-        # unique_heights_massvar = unique_heights_massvar[unique_heights_massvar <= erosion_height_start]
-        # mass_best_massvar = mass_best_massvar[:len(unique_heights_massvar)]
-        # velocities_massvar = velocities_massvar[:len(unique_heights_massvar)]
-        # # print the unique_heights_massvar and next to it the mass_best_massvar
-        # # add at the begnning the m_init to mass_best_massvar and h_init_best to unique_heights_massvar
-        # unique_heights_massvar_init = np.concatenate(([best_guess_obj_plot.const.h_init], unique_heights_massvar))
-        # mass_best_massvar = np.concatenate(([m_init], mass_best_massvar))
-        # velocities_massvar_init = np.concatenate(([best_guess_obj_plot.const.v_init], velocities_massvar))
-        # # deete the last element of unique_heights_massvar_init and mass_best_massvar
-        # unique_heights_massvar_init = unique_heights_massvar_init[:-1]
-        # mass_best_massvar = mass_best_massvar[:-1]
-        # velocities_massvar_init = velocities_massvar_init[:-1]
-
-        # # Package inputs
-        # inputs = [
-        #     (i, best_guess_obj_plot, unique_heights_massvar_init[i], unique_heights_massvar[i], mass_best_massvar[i], velocities_massvar_init[i])
-        #     for i in range(len(mass_best_massvar)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
-        # ]
-        # #     for i in range(len(dynesty_run_results.samples)) # 
-        # num_cores = multiprocessing.cpu_count()
-
-        # # Run in parallel
-        # with Pool(processes=num_cores) as pool:  # adjust to number of cores
-        #     results = pool.map(run_total_energy_received, inputs)
-
-        # N = len(mass_best_massvar)
-
-        # Tot_energy_arr = np.full(N, np.nan)
-        # for res in results:
-        #     i, tot_en = res
-        #     Tot_energy_arr[i] = tot_en / 1e3  # convert to kJ
-        # # now sum Tot_energy
-        # Tot_energy = np.sum(Tot_energy_arr)
         
-        # # precise erosion tal energy calculation ########################
+        # look if in folder_name it exist a file that ends in .dynestyres exist in 
+        if any(f.endswith(".dynestyres") for f in os.listdir(folder_name)):
+            print(f"\nFound existing results in {folder_name}.dynestyres, loading them.")
 
-        if 'erosion_rho_change' in variables:
-            rho_total_arr = samples[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+            # look for the file that ends in .dynestyres
+            dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
+            with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
+                dynesty_run_results = pickle.load(f)
+
+            erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
+            erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
+            erosion_energy_per_unit_cross_section_arr_end = dynesty_run_results.erosion_energy_per_unit_cross_section_end
+            erosion_energy_per_unit_mass_arr_end = dynesty_run_results.erosion_energy_per_unit_mass_arr_end
+            rho_total_arr = dynesty_run_results.rho_total
+
+            samples = dynesty_run_results.samples
+
+            weights = dynesty_run_results.weights
+            w = weights / np.sum(weights)
+
         else:
-            rho_total_arr = samples[:, variables.index('rho')].astype(float)
+            print(f"\nNo existing results found in {folder_name}.dynestyres, running dynesty.")
+            dynesty_run_results = dsampler.results
 
-        rho_total_arr = np.array(rho_total_arr, dtype=np.float64)
+            weights = dynesty_run_results.importance_weights()
+            w = weights / np.sum(weights)
+
+            # for attr in dir(dynesty_run_results):
+            #     if not attr.startswith("_") and not callable(getattr(dynesty_run_results, attr)):
+            #         print(attr, ":", type(getattr(dynesty_run_results, attr)))
+
+            ### PLOT THE DISTRIBUTION OF THE PARAMETERS and how it gets better ###
+
+            # for sim_num in between 0 and the number of samples in dynesty_run_results.samples but just pick 10 among wich is the best and the worst samples
+            # for sim_num in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int):
+            #     guess = dynesty_run_results.samples[sim_num]
+            #     # for variable in variables: for 
+            #     for i, variable in enumerate(variables):
+            #         if 'log' in flags_dict[variable]:  
+            #             guess[i] = 10**(guess[i])
+            #         if 'noise_lag' == variable:
+            #             obs_data.noise_lag = guess[i]
+            #             obs_data.noise_vel = guess[i]*np.sqrt(2)/(1.0/32)
+            #         if 'noise_lum' == variable:
+            #             obs_data.noise_lum = guess[i]
+
+            #     best_guess_obj_plot = run_simulation(guess, obs_data, variables, fixed_values)
+
+            #     # Plot the data with residuals and the best fit
+            #     plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_dir_show, base_name + "_fit_"+str(sim_num)+"_-LnZ_"+str(abs(np.round(dynesty_run_results.logvol[sim_num],2))), color_sim='black', label_sim="sim "+str(sim_num))
+
+            ### add MORE PARAMETERS ###
+
+            # Package inputs
+            inputs = [
+                (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables, fixed_values, flags_dict)
+                for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
+            ]
+            #     for i in range(len(dynesty_run_results.samples)) # 
+            num_cores = multiprocessing.cpu_count()
+
+            # Run in parallel
+            with Pool(processes=num_cores) as pool:  # adjust to number of cores
+                results = pool.map(run_single_eeu, inputs)
+
+            N = len(dynesty_run_results.samples)
+
+            erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
+            erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
+            erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
+            erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
+            # rho_total_arr = np.full(N, np.nan)
+            # kc_par_arr = np.full(N, np.nan)
+            # F_par_arr = np.full(N, np.nan)
+            # trail_length_arr = np.full(N, np.nan)
+
+            for res in results:
+                i, eeucs, eeum, eeucs_end, eeum_end = res
+                erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
+                erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
+                # also get the end values
+                erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
+                erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
+                # rho_total_arr[i] = rho
+                # kc_par_arr[i] = kc
+                # F_par_arr[i] = F
+                # trail_length_arr[i] = tl
+
+            sim_num = np.argmax(dynesty_run_results.logl)
+            # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
+            # create a copy of the best guess
+            best_guess = dynesty_run_results.samples[sim_num].copy()
+            samples = dynesty_run_results.samples
+            # for variable in variables: for 
+            for i, variable in enumerate(variables):
+                if 'log' in flags_dict[variable]:
+                    # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")  
+                    best_guess[i] = 10**(best_guess[i])
+                    # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")
+                    samples[:, i] = 10**(samples[:, i])  # also transform all samples
+            best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
+
+            # find erosion change height
+            if 'erosion_height_change' in variables:
+                erosion_height_change = best_guess[variables.index('erosion_height_change')]
+            if 'm_init' in variables:
+                m_init = best_guess[variables.index('m_init')]
+
+            heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+            mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+
+            mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+
+
+            # # precise erosion tal energy calculation ########################
+            # velocities = np.array(best_guess_obj_plot.leading_frag_vel_arr, dtype=np.float64)[:-1]
+            # erosion_height_start = best_guess_obj_plot.const.erosion_height_start
+            # # get for each mass_best that is different from te previuse one get the height at which the mass loss happens
+            # # diff_mask = np.concatenate(([True], np.diff(mass_best) != 0))
+            # diff_mask = np.concatenate(([True], ~np.isclose(np.diff(mass_best), 0)))
+            # unique_heights_massvar = heights[diff_mask]
+            # mass_best_massvar = mass_best[diff_mask]
+            # velocities_massvar = velocities[diff_mask]
+            # # now delete any unique_heights_massvar and mass_best_massvar that are bigger than erosion_height_change
+            # unique_heights_massvar = unique_heights_massvar[unique_heights_massvar <= erosion_height_start]
+            # mass_best_massvar = mass_best_massvar[:len(unique_heights_massvar)]
+            # velocities_massvar = velocities_massvar[:len(unique_heights_massvar)]
+            # # print the unique_heights_massvar and next to it the mass_best_massvar
+            # # add at the begnning the m_init to mass_best_massvar and h_init_best to unique_heights_massvar
+            # unique_heights_massvar_init = np.concatenate(([best_guess_obj_plot.const.h_init], unique_heights_massvar))
+            # mass_best_massvar = np.concatenate(([m_init], mass_best_massvar))
+            # velocities_massvar_init = np.concatenate(([best_guess_obj_plot.const.v_init], velocities_massvar))
+            # # deete the last element of unique_heights_massvar_init and mass_best_massvar
+            # unique_heights_massvar_init = unique_heights_massvar_init[:-1]
+            # mass_best_massvar = mass_best_massvar[:-1]
+            # velocities_massvar_init = velocities_massvar_init[:-1]
+
+            # # Package inputs
+            # inputs = [
+            #     (i, best_guess_obj_plot, unique_heights_massvar_init[i], unique_heights_massvar[i], mass_best_massvar[i], velocities_massvar_init[i])
+            #     for i in range(len(mass_best_massvar)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
+            # ]
+            # #     for i in range(len(dynesty_run_results.samples)) # 
+            # num_cores = multiprocessing.cpu_count()
+
+            # # Run in parallel
+            # with Pool(processes=num_cores) as pool:  # adjust to number of cores
+            #     results = pool.map(run_total_energy_received, inputs)
+
+            # N = len(mass_best_massvar)
+
+            # Tot_energy_arr = np.full(N, np.nan)
+            # for res in results:
+            #     i, tot_en = res
+            #     Tot_energy_arr[i] = tot_en / 1e3  # convert to kJ
+            # # now sum Tot_energy
+            # Tot_energy = np.sum(Tot_energy_arr)
+            
+            # # precise erosion tal energy calculation ########################
+
+            if 'erosion_rho_change' in variables:
+                rho_total_arr = samples[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+            else:
+                rho_total_arr = samples[:, variables.index('rho')].astype(float)
+
+            rho_total_arr = np.array(rho_total_arr, dtype=np.float64)
+
+            # Create a namespace object for dot-style access
+            results = SimpleNamespace(**dsampler.results.__dict__)  # load all default results
+
+            # Add your custom attributes
+            results.weights = dynesty_run_results.importance_weights()
+            results.norm_weights = w
+            results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
+            results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
+            results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
+            results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
+            results.rho_total = rho_total_arr
+
+            # delete from base_name _combined if it exists
+            if '_combined' in base_name:
+                base_name = base_name.replace('_combined', '')
+
+            # Save
+            with open(folder_name + os.sep + base_name+"_results.dynestyres", "wb") as f:
+                pickle.dump(results, f)
+                print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.dynestyres'}.")
 
         for i, x in enumerate([erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr, rho_total_arr, samples[:, variables.index('v_init')].astype(float), erosion_energy_per_unit_cross_section_arr_end, erosion_energy_per_unit_mass_arr_end, samples[:, variables.index('m_init')].astype(float)]):
             # mask out NaNs
@@ -378,26 +422,6 @@ def extract_other_prop(input_dirfile, output_dir_show):
         print(f"kc_par: {kc_par}")
         print(f"rho_total: {rho_total} kg/m^3")
         print(f"zenith_angle: {zenith_angle}°")
-
-        # Create a namespace object for dot-style access
-        results = SimpleNamespace(**dsampler.results.__dict__)  # load all default results
-
-        # Add your custom attributes
-        results.weights = dynesty_run_results.importance_weights()
-        results.norm_weights = w
-        results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
-        results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
-        results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
-        results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
-        results.rho_total = rho_total_arr
-
-        # Save
-        with open(folder_name + os.sep + base_name+"_dynesty_results_only.dynestyres", "wb") as f:
-            pickle.dump(results, f)
-
-        # delete from base_name _combined if it exists
-        if '_combined' in base_name:
-            base_name = base_name.replace('_combined', '')
 
         # save the results for the file
         file_eeu_dict[base_name] = (eeucs, eeum, F_par, kc_par, lenght_par, rho_total, zenith_angle, eeucs_end, eeum_end, m_init)
@@ -502,12 +526,12 @@ def extract_other_prop(input_dirfile, output_dir_show):
 
     print("Until end and energy up to erosion  unit mass plot...")
 
-    # do the negative log of the m_initt 
-    m_init = abs(np.log10(m_init))
+    # # do the negative log of the m_initt 
+    # m_init = abs(np.log10(m_init))
     # plot the lenght_par against eeucs and color with F_par
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 10))
     # after you’ve built your rho array:
-    scatter = plt.scatter(eeum, eeum_end, c=rho_total, cmap='viridis', s=m_init,
+    scatter = plt.scatter(eeum, eeum_end, c=rho_total, cmap='viridis', s=30,
                             norm=norm, zorder=2)
     plt.colorbar(scatter, label='Rho (kg/m³)')
     plt.xlabel('Erosion Energy per Unit Mass before erosion (MJ/kg)', fontsize=15)
@@ -528,9 +552,9 @@ def extract_other_prop(input_dirfile, output_dir_show):
     print("Until end and energy up to erosion unit area plot...")
 
     # plot the lenght_par against eeucs and color with F_par
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 10))
     # after you’ve built your rho array:
-    scatter = plt.scatter(eeucs, eeucs_end, c=rho_total, cmap='viridis', s=m_init,
+    scatter = plt.scatter(eeucs, eeucs_end, c=rho_total, cmap='viridis', s=30,
                             norm=norm, zorder=2)
     plt.colorbar(scatter, label='Rho (kg/m³)')
     plt.xlabel('Erosion Energy per Unit Cross Section before erosion (MJ/m²)', fontsize=15)
@@ -553,7 +577,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics\irons",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics_with_EMCCD",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

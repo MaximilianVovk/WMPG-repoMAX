@@ -9,6 +9,8 @@ Date: 2025-04-16
 import sys
 import os
 
+import numpy as np
+
 # Add the parent directory to the sys.path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if parent_dir not in sys.path:
@@ -564,10 +566,14 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # base_name, lg_min_la_sun, bg, rho
     file_radiance_rho_dict = {}
     file_radiance_rho_dict_helio = {}
+    file_obs_data_dict = {}
     file_eeu_dict = {}
     file_rho_jd_dict = {}
     find_worst_lag = {}
     find_worst_lum = {}
+    # corrected rho
+    rho_corrected = []
+
 
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
@@ -640,8 +646,15 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         # vel_init = obs_data.v_init
         lenght_par = obs_data.length[-1]/1000 # convert to km
         max_lum_height = obs_data.height_lum[np.argmax(obs_data.luminosity)]
-        F_par = beg_height - max_lum_height / (beg_height - end_height)
-        kc_par = beg_height/1000 + (2.86 - 2*np.log(summary_df_meteor['Median'].values[variables_sing.index('v_init')]/1000))/0.0612
+        F_par = (beg_height - max_lum_height) / (beg_height - end_height)
+        kc_par = beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables_sing.index('v_init')]))/0.0612
+        time_tot = obs_data.time_lum[-1] - obs_data.time_lum[0]
+        avg_vel = np.mean(obs_data.velocities)
+        init_mag = obs_data.absolute_magnitudes[0]
+        end_mag = obs_data.absolute_magnitudes[-1]
+        max_mag = obs_data.absolute_magnitudes[np.argmax(obs_data.luminosity)]
+        zenith_angle = np.rad2deg(obs_data.zenith_angle)
+
 
 
         # set up the observation data object
@@ -702,12 +715,20 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
             rho_lo = (rho - rho_lo) #/1.96
             rho_hi = (rho_hi - rho) #/1.96
+            rho_total = x_valid
+            rho_total 
 
         else:
             rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
             rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
             rho = summary_df_meteor['Median'].values[variables.index('rho')]
-        
+
+            x = samples[:, variables_sing.index('rho')].astype(float)
+            mask = ~np.isnan(x)
+            x_valid = x[mask]
+
+        rho_corrected.append(x_valid)
+
         print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
         
         # ### EROSION ENERGY CALCULATION ###
@@ -775,6 +796,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
         file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val)
         # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
+        file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle)
 
         find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
         find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
@@ -816,6 +838,24 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     bg_helio_lo = np.array([v[4] for v in file_radiance_rho_dict_helio.values()])
     bg_helio_hi = np.array([v[5] for v in file_radiance_rho_dict_helio.values()])
 
+    kc_par = np.array([v[0] for v in file_obs_data_dict.values()])
+    F_par = np.array([v[1] for v in file_obs_data_dict.values()])
+    lenght_par = np.array([v[2] for v in file_obs_data_dict.values()])
+    beg_height = np.array([v[3] for v in file_obs_data_dict.values()])
+    end_height = np.array([v[4] for v in file_obs_data_dict.values()])
+    max_lum_height = np.array([v[5] for v in file_obs_data_dict.values()])
+    avg_vel = np.array([v[6] for v in file_obs_data_dict.values()])
+    init_mag = np.array([v[7] for v in file_obs_data_dict.values()])
+    end_mag = np.array([v[8] for v in file_obs_data_dict.values()])
+    max_mag = np.array([v[9] for v in file_obs_data_dict.values()])
+    time_tot = np.array([v[10] for v in file_obs_data_dict.values()])
+    zenith_angle = np.array([v[11] for v in file_obs_data_dict.values()])
+
+    leng_coszen = lenght_par * np.cos(zenith_angle * np.pi / 180)
+
+    # found the global rho corrected values find the median and the 5th and 95th percentile
+    rho_corrected = np.concatenate(rho_corrected)
+
     # eeucs = np.array([v[0] for v in file_eeu_dict.values()])
     # eeucs_lo = np.array([v[1] for v in file_eeu_dict.values()])
     # eeucs_hi = np.array([v[2] for v in file_eeu_dict.values()])
@@ -843,6 +883,54 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # plt.tight_layout()
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
 
+
+    ### CORELATION OBSERVABLE PLOT ###
+    print('Creating Correlation plot for the observable and the rho...')
+
+    # Define your observable names and corresponding data arrays
+    observable_names = [
+        "$v_{avg}$ [km/s]", "$T$ [s]", "$L$ [km]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
+        "$k_c$", "$F$", "$L$/$cos(z_c)$ [km]", "$h_{peak}$ [km]", "$M_{peak}$"
+    ]
+
+    observable_arrays = [
+        avg_vel, time_tot, lenght_par, beg_height, end_height,
+        kc_par, F_par, leng_coszen, max_lum_height, max_mag
+    ]
+
+    # Create figure with 2 rows and 5 columns
+    fig, axes = plt.subplots(2, 5, figsize=(15, 5))
+    axes = axes.flatten()  # flatten to easily index 0-9
+
+    for i, (name, obs) in enumerate(zip(observable_names, observable_arrays)):
+        ax = axes[i]
+        
+        # Plot scatter of observable vs. rho_corrected
+        ax.scatter(obs, rho, alpha=0.7, s=40, edgecolor='k', linewidth=0.3, color='blue')
+
+        # Compute and annotate correlation coefficient
+        corr = np.corrcoef(obs, rho)[0, 1]
+        ax.set_title(f'corr: {corr:.2f}', fontsize=15)
+        # put a line of best fit
+        z = np.polyfit(obs, rho, 1)
+        p = np.poly1d(z)
+        ax.plot(obs, p(obs), color='red', linewidth=1, label=f'corr: {corr:.2f}')
+
+        ax.set_xlabel(f'{name}', fontsize=12)
+        ax.set_ylabel(r'$\rho$ (kg/m$^3$)' if i in [0, 5] else '', fontsize=12)
+        # # if $M_{peak}$ in the name invert the x axis
+        # if 'M_{peak}' in name:
+        #     ax.set_xlim(ax.get_xlim()[::-1])
+        ax.grid(True)
+
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_observables_grid.png"), dpi=300, bbox_inches='tight')
+    plt.close()
+
+
+
+    ### RADIANCE PLOT ###
     print("saving radiance plot...")
 
     # print(lg_lo, lg_hi, bg_lo, bg_hi)
@@ -1162,80 +1250,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                 plt.savefig(os.path.join(output_dir_show, f"{shower_name}_{plot_type}_radiant_distribution.png"), dpi=300)
                 plt.close()
 
-    ### JD vs rho plot ###
-    print("saving rho vs JD plot...")
-    # plot rho_lo and rho_hi as error bars and rho as points for tj and the error bars for tj_lo and tj_hi
-    plt.figure(figsize=(8, 6))
-
-    for i in range(len(tj)):
-        # draw error bars for each point
-        plt.errorbar(
-            rho[i], tj[i],
-            xerr=[[abs(rho_lo[i])],[abs(rho_hi[i])]],
-            yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
-            elinewidth=0.75,
-            capthick=0.75,
-            fmt='none',
-            ecolor='black',
-            capsize=3,
-            zorder=1
-        )
-
-    # then draw points on top, at zorder=2 with black color
-    scatter = plt.scatter(
-        rho, tj,
-        c=inclin_val,
-        cmap='viridis',
-        norm=Normalize(vmin=inclin_val.min(), vmax=inclin_val.max()),
-        s=30,
-        zorder=2
-    )
-    # increase the size of the tick labels
-    plt.gca().tick_params(labelsize=15)
-    # annotate each point with its base_name in tiny text
-    # for base_name, (rho_val, rho_lo_val, rho_hi_val, tj_val, tj_lo_val, tj_hi_val, inclin_val) in file_rho_jd_dict.items():
-    #     plt.annotate(
-    #         base_name,
-    #         xy=(rho_val, tj_val),
-    #         xytext=(30, 5),             # 5 points vertical offset
-    #         textcoords='offset points',
-    #         ha='center',
-    #         va='bottom',
-    #         fontsize=6,
-    #         alpha=0.8
-    #     )
-
-    # increase the label size
-    cbar = plt.colorbar(scatter, label='Orbital inclination (deg)')
-
-    # take the x axis limits
-    xlim = plt.xlim()
-    # take the y axis limits
-    ylim = plt.ylim()
-
-    if shower_iau_no == -1:
-        # put a green horizontal line at Tj = 3.0
-        plt.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1) # label='Tj = 3.0', 
-        # write AST on the left side of the line
-        plt.text(7500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
-        # put a red horizontal line at Tj = 2.0
-        plt.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1) # label='Tj = 2.0', 
-        # write APT on the left side of the line
-        plt.text(7500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
-        # # write below at 1.5 'HTC'
-        # if the lowest ylim is below 1.5, then put a horizontal line at Tj = 1.5
-        if ylim[0] < 1.5:
-            plt.text(7500, 1.5, 'HTC', color='black', fontsize=15, va='bottom')
-
-    # incrrease the x limits
-    plt.xlim(-100, 8300)
-    # increase the label size
-    plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=15)
-    plt.ylabel(r'Tisserand parameter (T$_{j}$)', fontsize=15)
-    # plt.title('rho vs Tj')
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_Tj_CI.png"), bbox_inches='tight', dpi=300)
-
     #### Combine all samples and weights from different dynesty runs ####
 
     # Combine all the samples and weights into a single array
@@ -1340,16 +1354,239 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
 
 
-    print('saving distribution plot...')
+    ### JD vs rho plot ###
 
+    print("Distribution plots:")
     # Extract from combined_results
     samples = combined_samples_copy_plot
     # samples = combined_results.samples
     weights = combined_results.importance_weights()
     w = weights / np.sum(weights)
-    ndim = samples.shape[1]
+
+    rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=w)
+
+    print("Creating combined plot T_j rho and k_c...")
+
+
+    # Create figure
+    fig = plt.figure(figsize=(8, 10))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
+
+    # Set main axes (with shared x-axis)
+    ax_dist = fig.add_subplot(gs[0])
+    ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
+
+    # --- TOP PANEL: Rho Distribution ---
+    smooth = 0.02
+    lo, hi = np.min(rho_corrected), np.max(rho_corrected)
+    nbins = int(round(10. / smooth))
+    hist, edges = np.histogram(rho_corrected, bins=nbins, weights=w, range=(lo, hi))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+    ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
+
+    # Percentile lines
+    ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = rho_corrected_hi - rho_corrected_median
+    minus = rho_corrected_median - rho_corrected_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"$\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    ax_dist.set_xlim(-100, 8300)
+    ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.spines['bottom'].set_visible(False)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+
+    # --- BOTTOM PANEL: Rho vs Tj ---
+    for i in range(len(tj)):
+        ax_scatter.errorbar(
+            rho[i], tj[i],
+            xerr=[[abs(rho_lo[i])], [abs(rho_hi[i])]],
+            yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
+            elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
+
+    scatter = ax_scatter.scatter(
+        rho, tj,
+        c=kc_par,
+        cmap='viridis',
+        norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
+        s=30,
+        zorder=2
+    )
+
+    # Add manually aligned colorbar
+    # Get position of ax_scatter to align colorbar
+    pos = ax_scatter.get_position()
+    cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
+    cbar = plt.colorbar(scatter, cax=cbar_ax)
+    cbar.set_label('$k_c$ parameter', fontsize=20)
+    # the ticks size of the colorbar
+    cbar.ax.tick_params(labelsize=20)
+
+    # Tj markers
+    if shower_iau_no == -1:
+        ax_scatter.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1)
+        ax_scatter.text(7500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
+        ax_scatter.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1)
+        ax_scatter.text(7500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
+        if ax_scatter.get_ylim()[0] < 1.5:
+            ax_scatter.text(7500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+
+    # Axis labels
+    ax_scatter.set_xlim(-100, 8300)
+    ax_scatter.set_xlabel(r'$\rho$ (kg/m$^3$)', fontsize=20)
+    ax_scatter.set_ylabel(r'Tisserand parameter (T$_{j}$)', fontsize=20)
+    ax_scatter.tick_params(labelsize=20)
+    # display the values on the x and y axes at 0 2000 4000 6000 8000
+    ax_scatter.set_xticks(np.arange(0, 9000, 2000))
+    ax_scatter.grid(True)
+
+    # Save
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.close()
+
+    # print("saving rho distribution...")
+    
+    # # plot rho distribution with the weighted histogram
+    # plt.figure(figsize=(8, 6))
+
+    # rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=w)
+
+    # ax = plt.gca()
+    # # put the rho distribution smothed with the weighted
+    # smooth = 0.02
+    # # Compute histogram
+    # lo, hi = np.min(rho_corrected), np.max(rho_corrected)
+    # nbins = int(round(10. / smooth))
+    # hist, edges = np.histogram(rho_corrected, bins=nbins, weights=w, range=(lo, hi))
+    # hist = norm_kde(hist, 10.0)  # dynesty-style smoothing
+    # # Compute bin centers
+    # bin_centers = 0.5 * (edges[:-1] + edges[1:])
+    # ax.fill_between(bin_centers, hist, color='blue', alpha=0.6)
+    # plt.xlim(-100, 8300)
+    
+    # # plot the line of the median and the percentiles
+    # plt.axvline(rho_corrected_median, color='blue', linestyle='--', linewidth=1.5)
+    # plt.axvline(rho_corrected_lo, color='blue', linestyle='--', linewidth=1.5)
+    # plt.axvline(rho_corrected_hi, color='blue', linestyle='--', linewidth=1.5)
+
+    # plus = rho_corrected_hi - rho_corrected_median
+    # minus = rho_corrected_median - rho_corrected_lo
+    # fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    # title = rf"$\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    # ax.set_title(title, fontsize=16)
+
+    # # save the rho distribution plot
+    # plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=15)
+    # # plt.ylabel('Density', fontsize=15)
+    # # plt.grid(True)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution.png"), bbox_inches='tight', dpi=300)
+
+
+
+    # ### JD vs rho plot ###
+    # print("saving rho vs JD plot...")
+    # # plot rho_lo and rho_hi as error bars and rho as points for tj and the error bars for tj_lo and tj_hi
+    # plt.figure(figsize=(8, 6))
+
+    # for i in range(len(tj)):
+    #     # draw error bars for each point
+    #     plt.errorbar(
+    #         rho[i], tj[i],
+    #         xerr=[[abs(rho_lo[i])],[abs(rho_hi[i])]],
+    #         yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
+    #         elinewidth=0.75,
+    #         capthick=0.75,
+    #         fmt='none',
+    #         ecolor='black',
+    #         capsize=3,
+    #         zorder=1
+    #     )
+
+    # # then draw points on top, at zorder=2 with black color
+    # # scatter = plt.scatter(
+    # #     rho, tj,
+    # #     c=inclin_val,
+    # #     cmap='viridis',
+    # #     norm=Normalize(vmin=inclin_val.min(), vmax=inclin_val.max()),
+    # #     s=30,
+    # #     zorder=2
+    # # )
+
+    # scatter = plt.scatter(
+    #     rho, tj,
+    #     c=kc_par,
+    #     cmap='viridis',
+    #     norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
+    #     s=30,
+    #     zorder=2
+    # )
+
+    # # increase the size of the tick labels
+    # plt.gca().tick_params(labelsize=15)
+    # # annotate each point with its base_name in tiny text
+    # # for base_name, (rho_val, rho_lo_val, rho_hi_val, tj_val, tj_lo_val, tj_hi_val, inclin_val) in file_rho_jd_dict.items():
+    # #     plt.annotate(
+    # #         base_name,
+    # #         xy=(rho_val, tj_val),
+    # #         xytext=(30, 5),             # 5 points vertical offset
+    # #         textcoords='offset points',
+    # #         ha='center',
+    # #         va='bottom',
+    # #         fontsize=6,
+    # #         alpha=0.8
+    # #     )
+
+    # # increase the label size
+    # # cbar = plt.colorbar(scatter, label='Orbital inclination (deg)')
+    # cbar = plt.colorbar(scatter, label='$k_c$ parameter')
+
+    # # take the x axis limits
+    # xlim = plt.xlim()
+    # # take the y axis limits
+    # ylim = plt.ylim()
+
+    # if shower_iau_no == -1:
+    #     # put a green horizontal line at Tj = 3.0
+    #     plt.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1) # label='Tj = 3.0', 
+    #     # write AST on the left side of the line
+    #     plt.text(7500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
+    #     # put a red horizontal line at Tj = 2.0
+    #     plt.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1) # label='Tj = 2.0', 
+    #     # write APT on the left side of the line
+    #     plt.text(7500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
+    #     # # write below at 1.5 'HTC'
+    #     # if the lowest ylim is below 1.5, then put a horizontal line at Tj = 1.5
+    #     if ylim[0] < 1.5:
+    #         plt.text(7500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+
+    # # incrrease the x limits
+    # plt.xlim(-100, 8300)
+    # # increase the label size
+    # plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=15)
+    # plt.ylabel(r'Tisserand parameter (T$_{j}$)', fontsize=15)
+    # # plt.title('rho vs Tj')
+    # plt.grid(True)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_Tj_CI.png"), bbox_inches='tight', dpi=300)
+    
 
     # Plot grid settings
+    ndim = samples.shape[1]
     ncols = 5
     nrows = math.ceil(ndim / ncols)
     fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 2.5 * nrows))
@@ -1594,7 +1831,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics",
+         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics_with_EMCCD",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

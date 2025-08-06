@@ -27,7 +27,7 @@ import warnings
 import datetime
 import re
 import matplotlib.gridspec as gridspec
-from scipy.optimize import minimize
+from scipy.optimize import minimize,curve_fit
 from scipy.stats import norm, invgamma
 import shutil
 import matplotlib.ticker as ticker
@@ -36,7 +36,7 @@ import math
 import matplotlib.cm as cm
 from matplotlib.ticker import MaxNLocator
 from matplotlib.colors import Normalize
-from wmpl.MetSim.GUI import loadConstants, SimulationResults
+from wmpl.MetSim.GUI import loadConstants, SimulationResults, FragmentationEntry, saveConstants
 from wmpl.MetSim.MetSimErosion import runSimulation, Constants, zenithAngleAtSimulationBegin
 from wmpl.Utils.Math import lineFunc, mergeClosePoints, meanAngle
 from wmpl.MetSim.ML.GenerateSimulations import generateErosionSim,saveProcessedList,MetParam
@@ -597,13 +597,11 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             print(f"Warning: {variable} not found in variable_map")
             # Add the variable to the map with a default label
             variable_map[variable] = variable
-    labels = [variable_map[variable] for variable in variables]
-
-    for variable in variables:
         if variable not in variable_map_plot:
-            print(f"Warning: {variable} not found in variable_map")
+            print(f"Warning: {variable} not found in variable_map_plot")
             # Add the variable to the map with a default label
             variable_map_plot[variable] = variable
+    labels = [variable_map[variable] for variable in variables]
     labels_plot = [variable_map_plot[variable] for variable in variables]
 
     ndim = len(variables)
@@ -724,13 +722,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     # Plot the data with residuals and the best fit
     plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
 
-    # Prepare dictionary and convert all values to serializable format
-    constjson_bestfit_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
-
-    # Save as JSON
-    output_path = os.path.join(output_folder +os.sep+ 'fit_plots', file_name + '_sim_fit_dynesty_BestGuess.json')
-    with open(output_path, 'w') as f:
-        json.dump(constjson_bestfit_dict, f, indent=4)
+    _ = build_const(best_guess, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_BestGuess.json')
 
     ### TABLE OF POSTERIOR SUMMARY STATISTICS ###
 
@@ -879,55 +871,29 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     approx_mode_obj_plot = run_simulation(approx_modes_all, obs_data, variables, fixed_values)
 
-    for variable in variables:
-        if variable in constjson_bestfit.__dict__.keys():
-            constjson_bestfit.__dict__[variable] = approx_modes_all[variables.index(variable)]
-
-    # Prepare dictionary and convert all values to serializable format
-    constjson_mode_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
-
-    # Save as JSON
-    with open(os.path.join(output_folder +os.sep+ 'fit_plots', file_name + '_sim_fit_dynesty_mode.json'), 'w') as f:
-        json.dump(constjson_mode_dict, f, indent=4)
-
-    ### MEAN PLOT and json ###
-
     # Plot the data with residuals and the best fit
     plot_data_with_residuals_and_real(obs_data, approx_mode_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mode','red', 'Mode')
 
+    _ = build_const(approx_modes_all, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_mode.json')
+
+    ### MEAN PLOT and json ###
+
     mean_obj_plot = run_simulation(all_samples_mean, obs_data, variables, fixed_values)
-
-    for variable in variables:
-        if variable in constjson_bestfit.__dict__.keys():
-            constjson_bestfit.__dict__[variable] = all_samples_mean[variables.index(variable)]
-
-    # Prepare dictionary and convert all values to serializable format
-    constjson_mean_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
-
-    # Save as JSON
-    with open(os.path.join(output_folder +os.sep+ 'fit_plots', file_name + '_sim_fit_dynesty_mean.json'), 'w') as f:
-        json.dump(constjson_mean_dict, f, indent=4)
-
-    ### MEDIAN PLOT and json ###
 
     # Plot the data with residuals and the best fit
     plot_data_with_residuals_and_real(obs_data, mean_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mean','blue', 'Mean')
+
+    _ = build_const(all_samples_mean, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_mean.json')
+
+    ### MEDIAN PLOT and json ###
 
     median_obj_plot = run_simulation(all_samples_median, obs_data, variables, fixed_values)
 
     # Plot the data with residuals and the best fit
     plot_data_with_residuals_and_real(obs_data, median_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_median','cornflowerblue', 'Median')
 
-    for variable in variables:
-        if variable in constjson_bestfit.__dict__.keys():
-            constjson_bestfit.__dict__[variable] = all_samples_median[variables.index(variable)]
+    _ = build_const(all_samples_median, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_median.json')
 
-    # Prepare dictionary and convert all values to serializable format
-    constjson_median_dict = {key: convert_to_serializable(value) for key, value in constjson_bestfit.__dict__.items()}
-
-    # Save as JSON
-    with open(os.path.join(output_folder +os.sep+ 'fit_plots', file_name + '_sim_fit_dynesty_median.json'), 'w') as f:
-        json.dump(constjson_median_dict, f, indent=4)
 
     truth_values_plot = {}
     # if 'dynesty_run_results has const
@@ -1425,6 +1391,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 ###############################################################################
 # Function: read prior to generate bounds
 ###############################################################################
+
 def read_prior_to_bounds(object_meteor,file_path=""):
     ''' Read the prior file and generate the bounds for the dynesty sampler '''
     # Default bounds
@@ -1577,71 +1544,10 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                 min_val = safe_eval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
                 max_val = safe_eval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
 
-                #### vel, mass, zenith ####
-                # check if name=='v_init' or zenith_angle or m_init or erosion_height_start values are np.nan and replace them with the object_meteor values
-                if np.isnan(min_val) and name in object_meteor.__dict__ and ("norm" in flags or "invgamma" in flags):
-                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
-                        min_val = default_bounds.get(name, (np.nan, np.nan))[0]
-                    else:
-                        min_val = object_meteor.__dict__[name]/10/2
-                if np.isnan(min_val) and name in object_meteor.__dict__:
-                    # if norm in default_flags[name] then divide by 10
-                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
-                        min_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
-                    else:
-                        # min_val = object_meteor.__dict__[name] - 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
-                        min_val = 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))) - 1)#object_meteor.__dict__[name]/10/2
-
-                if np.isnan(max_val) and name in object_meteor.__dict__ and ("norm" in flags or "invgamma" in flags):
-                    max_val = object_meteor.__dict__[name]
-                if np.isnan(max_val) and name in object_meteor.__dict__:
-                    # if norm in default_flags[name] then divide by 10
-                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
-                        max_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
-                    else:
-                        # max_val = object_meteor.__dict__[name] + 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
-                        max_val = 2 * 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))) + 1)#object_meteor.__dict__[name]/10/2
-                                
-                #### rest of variables ####
-                if np.isnan(min_val) and ("norm" in flags or "invgamma" in flags):
-                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
-                        min_val = default_bounds.get(name, (np.nan, np.nan))[0]
-                    else:
-                        min_val = (default_bounds.get(name, (np.nan, np.nan))[1]-default_bounds.get(name, (np.nan, np.nan))[0])/10/2
-                elif np.isnan(min_val):
-                    min_val = default_bounds.get(name, (np.nan, np.nan))[0]
-                
-                if np.isnan(max_val) and ("norm" in flags or "invgamma" in flags):
-                    if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
-                        max_val = default_bounds.get(name, (np.nan, np.nan))[1]
-                    else:
-                        max_val = np.mean([default_bounds.get(name,(np.nan, np.nan))[1],default_bounds.get(name,(np.nan, np.nan))[0]])
-                elif np.isnan(max_val):
-                    max_val = default_bounds.get(name, (np.nan, np.nan))[1]
-                
-                # check if min_val > max_val, then swap them cannot have negative values
-                if min_val > max_val and "invgamma" not in flags:
-                    print(f"Min/sigma > MAX/mean : Swapping {min_val} and {max_val} for {name}")
-                    min_val, max_val = max_val, min_val
+                min_val, max_val, flags = bounds_min_max_flags(name, object_meteor, min_val, max_val, flags, default_bounds, default_flags)
 
                 # Store flags
                 flags_dict[name] = flags
-                            
-                # Apply log10 transformation if needed
-                if "log" in flags:
-                    # check if any values is 0 and if it is, replace it with the default value
-                    if min_val == 0:
-                        min_val = 1/1e12
-                    # Apply log10 transformation
-                    min_val, max_val = np.log10(min_val), np.log10(max_val)
-
-                # check if any of the values are np.nan raise an error
-                if np.isnan(min_val) or np.isnan(max_val):
-                    raise ValueError(f"The value for {name} is np.nan and it is not in the dictionary")
-                # check if inf in the values and raise an error
-                if np.isinf(min_val) or np.isinf(max_val):
-                    raise ValueError(f"The value for {name} is inf and it is not in the dictionary")
-
                 bounds.append((min_val, max_val))
     
     # take the key of the fixed_values and append flags_dict
@@ -1663,6 +1569,321 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         raise ValueError("The number of bounds and fixed values should 10 or above")
 
     return bounds, flags_dict, fixed_values
+
+
+def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values, file_path):
+    """
+    Append extra priors from a .extraprior file to existing bounds, flags, and fixed values.
+    Adds numbering to identical fragment types (e.g., M0, M1).
+    Ensures all required fragmentation parameters are present per block context.
+    """
+    if not file_path.endswith(".extraprior"):
+        print("WARNING: Provided file is not an .extraprior file, return bounds, flags and fixed parameters")
+        return bounds, flags_dict, fixed_values
+
+    flare_start_init, flare_start_end = find_strongest_flare(object_meteor.height_lum, object_meteor.absolute_magnitudes)
+
+    default_bounds = {
+        "height": (flare_start_init, flare_start_end),
+        "sigma": (0.001 / 1e6, 0.05 / 1e6),
+        "erosion_coeff": (1 / 1e12, 2 / 1e6),
+        "grain_mass_min": (5e-12, 1e-9),
+        "grain_mass_max": (1e-10, 1e-7),
+        "mass_index": (1, 3),
+        "gamma": (0.4, 2),
+        "mass_percent": (10, 100),
+        "number": (1, 3)
+    }
+
+    default_flags = {
+        "height": [],
+        "sigma": [],
+        "erosion_coeff": [],
+        "grain_mass_min": [],
+        "grain_mass_max": [],
+        "mass_index": [],
+        "gamma": [],
+        "mass_percent": [],
+        "number": []
+        }
+
+    # Initialize lists and dictionaries
+    extraprior_bounds = []
+    extraprior_flags = {}
+    extraprior_fixed = {}
+
+    current_type = None
+    current_index = -1
+    current_defined_vars = []
+
+    def safe_eval(value):
+        try:    
+            return eval(value, {"__builtins__": {"np": np}}, {})
+        except Exception:
+            return value  # Return as string if evaluation fails
+        
+    def finalize_fragment_block():
+        nonlocal current_type, current_index, current_defined_vars, extraprior_fixed
+        if current_type is None:
+            return  # Nothing to finalize
+        suffix = f"{current_type}{current_index}"
+        # Determine required vars per fragment type
+        if current_type == "M":
+            required_vars = ["height"]
+        elif current_type == "A":
+            required_vars = ["height"]
+        elif current_type == "F":
+            required_vars = ["height", "number", "mass_percent"]
+        elif current_type == "EF":
+            required_vars = ["height", "number", "mass_percent", "erosion_coeff", "grain_mass_min", "grain_mass_max"]
+        elif current_type == "D":
+            required_vars = ["height", "mass_percent", "grain_mass_min", "grain_mass_max"]
+        else:
+            required_vars = []
+
+        for var in required_vars:
+            var_name = f"{var}_{suffix}"
+            if var_name not in extraprior_fixed and var_name not in extraprior_flags:
+                # Add missing var as FIXED using defaults
+                if "number" in var or "mass_percent" in var:
+                    default_val = default_bounds[var][0]  # Use lower bound for number and mass_percent
+                # elif "height" in var_name:
+                #     default_val = object_meteor.height_lum[0]
+                elif var in default_bounds:
+                    default_val = np.mean(default_bounds[var])
+                else:
+                    default_val = 1  # Default for number
+                extraprior_fixed[var_name] = default_val
+                # Debug print:
+                print(f"Added missing required param as FIX: {var_name} = {default_val}")
+
+        current_defined_vars.clear()
+
+    # Read the file
+    with open(file_path, 'r') as file:
+        for line in file:
+            line = line.strip()
+            if line.startswith('#') or not line:
+                continue
+            if line.startswith('- '):
+                # Finalize the previous fragment block before starting a new one
+                finalize_fragment_block()
+                current_type = line[2:].strip()
+                current_index = current_index + 1
+                continue
+
+            parts = line.split('#')[0].strip().split(',')  # Remove inline comments
+            name = parts[0].strip()
+            var_name = f"{name}_{current_type}{current_index}"
+            # Handle fixed values
+            if "fix" in parts:
+                val = parts[1].strip() if len(parts) > 1 else "nan"
+                evaluated_val = safe_eval(val)
+                extraprior_fixed[var_name] = np.nan if str(evaluated_val).lower() == "nan" else evaluated_val
+                # Only proceed with fallback logic if it's numeric and NaN
+                if isinstance(extraprior_fixed[var_name], (int, float)) and np.isnan(extraprior_fixed[var_name]):
+                    if "number" in var_name:
+                        extraprior_fixed[var_name] = 1
+                    elif "mass_percent" in var_name:
+                        extraprior_fixed[var_name] = 10
+                    # elif "height" in var_name:
+                    #     default_val = object_meteor.height_lum[0]
+                    else:
+                        extraprior_fixed[var_name] = np.mean(default_bounds[name])
+                continue
+
+            min_val = parts[1].strip() if len(parts) > 1 else "nan"
+            max_val = parts[2].strip() if len(parts) > 2 else "nan"
+            flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
+            
+            # Handle NaN values and default replacement
+            min_val = safe_eval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
+            max_val = safe_eval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
+
+            min_val, max_val, flags = bounds_min_max_flags(name, object_meteor, min_val, max_val, flags, default_bounds, default_flags)
+            
+            extraprior_flags[var_name] = flags
+            extraprior_bounds.append((min_val, max_val))
+
+    # Finalize last fragment block after EOF
+    finalize_fragment_block()
+
+    # Merge into main dicts
+    bounds.extend(extraprior_bounds)
+    flags_dict.update(extraprior_flags)
+    fixed_values.update(extraprior_fixed)
+
+    return bounds, flags_dict, fixed_values
+
+
+def bounds_min_max_flags(name, object_meteor, min_val, max_val, flags, default_bounds, default_flags):
+
+    #### vel, mass, zenith ####
+    # check if name=='v_init' or zenith_angle or m_init or erosion_height_start values are np.nan and replace them with the object_meteor values
+    if np.isnan(min_val) and name in object_meteor.__dict__ and ("norm" in flags or "invgamma" in flags):
+        if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
+            min_val = default_bounds.get(name, (np.nan, np.nan))[0]
+        else:
+            min_val = object_meteor.__dict__[name]/10/2
+    if np.isnan(min_val) and name in object_meteor.__dict__:
+        # if norm in default_flags[name] then divide by 10
+        if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
+            min_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
+        else:
+            # min_val = object_meteor.__dict__[name] - 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
+            min_val = 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))) - 1)#object_meteor.__dict__[name]/10/2
+
+    if np.isnan(max_val) and name in object_meteor.__dict__ and ("norm" in flags or "invgamma" in flags):
+        max_val = object_meteor.__dict__[name]
+    if np.isnan(max_val) and name in object_meteor.__dict__:
+        # if norm in default_flags[name] then divide by 10
+        if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
+            max_val = object_meteor.__dict__[name] + default_bounds.get(name, (np.nan, np.nan))[0]
+        else:
+            # max_val = object_meteor.__dict__[name] + 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))))#object_meteor.__dict__[name]/10/2
+            max_val = 2 * 10**int(np.floor(np.log10(abs(object_meteor.__dict__[name]))) + 1)#object_meteor.__dict__[name]/10/2
+                    
+    #### rest of variables ####
+    if np.isnan(min_val) and ("norm" in flags or "invgamma" in flags):
+        if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
+            min_val = default_bounds.get(name, (np.nan, np.nan))[0]
+        else:
+            min_val = (default_bounds.get(name, (np.nan, np.nan))[1]-default_bounds.get(name, (np.nan, np.nan))[0])/10/2
+    elif np.isnan(min_val):
+        min_val = default_bounds.get(name, (np.nan, np.nan))[0]
+    
+    if np.isnan(max_val) and ("norm" in flags or "invgamma" in flags):
+        if "norm" in default_flags[name] or "invgamma" in default_flags[name]:
+            max_val = default_bounds.get(name, (np.nan, np.nan))[1]
+        else:
+            max_val = np.mean([default_bounds.get(name,(np.nan, np.nan))[1],default_bounds.get(name,(np.nan, np.nan))[0]])
+    elif np.isnan(max_val):
+        max_val = default_bounds.get(name, (np.nan, np.nan))[1]
+    
+    # check if min_val > max_val, then swap them cannot have negative values
+    if min_val > max_val and "invgamma" not in flags:
+        print(f"Min/sigma > MAX/mean : Swapping {min_val} and {max_val} for {name}")
+        min_val, max_val = max_val, min_val
+                
+    # Apply log10 transformation if needed
+    if "log" in flags:
+        # check if any values is 0 and if it is, replace it with the default value
+        if min_val == 0:
+            min_val = 1/1e12
+        # Apply log10 transformation
+        min_val, max_val = np.log10(min_val), np.log10(max_val)
+
+    # check if any of the values are np.nan raise an error
+    if np.isnan(min_val) or np.isnan(max_val):
+        raise ValueError(f"The value for {name} is np.nan and it is not in the dictionary")
+    # check if inf in the values and raise an error
+    if np.isinf(min_val) or np.isinf(max_val):
+        raise ValueError(f"The value for {name} is inf and it is not in the dictionary")
+    
+    return min_val, max_val, flags
+
+
+def find_strongest_flare(height, magnitude, preflare_points=-1, sigma_threshold=3):
+    """
+    Detect all flares (onset to end) and select the strongest one based on envelope length.
+    
+    Parameters:
+        height (array-like): Heights (descending order)
+        magnitude (array-like): Absolute magnitude (brightness)
+        preflare_points (int): Number of points to fit baseline parabola
+        sigma_threshold (float): Sigma threshold for flare detection
+
+    Returns:
+        flare_start_range: (min_height, max_height) for the strongest flare onset
+        strongest_flare_onset: Onset height of the strongest flare
+        strongest_flare_end: End height of the strongest flare
+        strongest_flare_peak: Peak height of the strongest flare
+    """
+
+    def parabola(x, a, b, c):
+        return a * x**2 + b * x + c
+    
+    height_real = height
+
+    height = np.array(height)
+    magnitude = np.array(magnitude)
+
+    # Normalize height for numerical stability
+    height_norm = height / 1e5
+
+    if preflare_points <= 1:
+        # preflare_points = int(len(height)/3)
+        preflare_points = int(np.argmin(magnitude)/2)
+        if preflare_points <= 1:
+            print("No flares detected.")
+            return height_real[0]-100, height_real[-1]+100
+
+    lower_bounds = [0, -np.inf, -np.inf]
+    upper_bounds = [np.inf, np.inf, np.inf]
+
+    # Fit parabola with bounds
+    popt, _ = curve_fit(
+        parabola,
+        height_norm[:preflare_points],
+        magnitude[:preflare_points],
+        bounds=(lower_bounds, upper_bounds)
+    )
+    # Compute parabola fit
+    parabola_fit = parabola(height_norm, *popt)
+
+    # Compute residuals (observed - parabola)
+    residuals = magnitude - parabola_fit
+
+    # Baseline residual stats
+    baseline_mean = np.mean(residuals[:preflare_points])
+    baseline_std = np.std(residuals[:preflare_points])
+
+    # Loop to find all flare onset and end pairs
+    flares = []
+    in_flare = False
+    onset_idx = None
+
+    for idx in range(preflare_points, len(residuals)):
+        if not in_flare:
+            # Flare onset detection
+            if residuals[idx] < baseline_mean - sigma_threshold * baseline_std:
+                onset_idx = idx
+                in_flare = True
+        else:
+            # Flare end detection (merge-back to parabola)
+            if residuals[idx] >= baseline_mean - sigma_threshold * baseline_std:
+                end_idx = idx
+                flares.append((onset_idx, end_idx))
+                in_flare = False
+
+    # Handle case where flare never merged back
+    if in_flare and onset_idx is not None:
+        flares.append((onset_idx, len(residuals)-1))
+
+    if not flares:
+        print("No flares detected.")
+        return height_real[0]-100, height_real[-1]+100
+
+    # Select flare with largest envelope length
+    flare_lengths = [abs(height[start] - height[end]) for start, end in flares]
+    strongest_idx = np.argmax(flare_lengths)
+    strongest_onset_idx, strongest_end_idx = flares[strongest_idx]
+
+    strongest_flare_onset = height[strongest_onset_idx]
+    strongest_flare_end = height[strongest_end_idx]
+
+    # now find the peak of the flare in betwenen strongest_flare_onset and strongest_flare_end
+    flare_peak_idx = np.argmin(magnitude[strongest_onset_idx:strongest_end_idx]) + strongest_onset_idx
+    strongest_flare_peak = height[flare_peak_idx]
+
+    # Compute search range around onset
+    # envelope_length = flare_lengths[strongest_idx]
+    # search_range = envelope_fraction * envelope_length
+    search_range = abs(strongest_flare_peak-strongest_flare_onset)/2
+    # flare_start_range = (strongest_flare_onset - search_range, strongest_flare_onset + search_range)
+    print(f"Strongest flare detected: Onset={strongest_flare_onset}, End={strongest_flare_end}, Peak={strongest_flare_peak}")
+    return strongest_flare_onset - search_range, strongest_flare_onset + search_range
+
 
 
 ###############################################################################
@@ -2654,7 +2875,7 @@ class observation_data:
 # find dynestyfile and priors
 ###############################################################################
 
-def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, only_plot=True, cores=None, pool_MPI=None, pick_position=0):
+def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, only_plot=True, cores=None, pool_MPI=None, pick_position=0, extraprior_file=''):
     """
     Create the output folder if it doesn't exist.
     """
@@ -2670,6 +2891,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
     cml_args.resume = resume
     cml_args.only_plot = only_plot
     cml_args.cores = cores
+    cml_args.extraprior_file = extraprior_file
 
     # If no core count given, use all
     if cml_args.cores is None:
@@ -2699,7 +2921,8 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             resume=cml_args.resume,
             output_dir=cml_args.output_dir,
             use_all_cameras=cml_args.use_all_cameras,
-            pick_position=pick_position
+            pick_position=pick_position,
+            extraprior_file=cml_args.extraprior_file
         )
 
         # check if finder is empty
@@ -3014,13 +3237,14 @@ class find_dynestyfile_and_priors:
     This class streamlines the processing of diverse meteor datasets by automatically grouping observations, assigning priors, and managing file I/O in a reproducible way, enabling large-scale nested sampling analysis on multi-camera meteor networks.
     """
 
-    def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False,pick_position=0):
+    def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False,pick_position=0, extraprior_file=""):
         self.input_dir_or_file = input_dir_or_file
         self.prior_file = prior_file
         self.resume = resume
         self.output_dir = output_dir
         self.use_all_cameras = use_all_cameras
         self.pick_position = pick_position
+        self.extraprior_file = extraprior_file  # to be filled if found
 
         # Prepare placeholders
         self.base_names = []        # [base_name, ...] (no extension)
@@ -3347,6 +3571,17 @@ class find_dynestyfile_and_priors:
         else:
             bounds, flags_dict, fixed_values = read_prior_to_bounds(observation_instance,prior_path)
 
+        # if given open the extra prior file and append the bounds, flags_dict, fixed_values
+        if os.path.isfile(self.extraprior_file):
+            bounds, flags_dict, fixed_values = append_extraprior_to_bounds(observation_instance,bounds, flags_dict, fixed_values, file_path=self.extraprior_file)
+        else:
+            # Look for local .extraprior
+            existing_extraprior_list = [f for f in files if f.endswith(".extraprior")]
+            if existing_extraprior_list:
+                extraprior_path = os.path.join(root, existing_extraprior_list[0])
+                # print the prior path has been found
+                print(f"Take the first extraprior file found in the same folder as the observation file: {extraprior_path}")
+                bounds, flags_dict, fixed_values = append_extraprior_to_bounds(observation_instance,bounds, flags_dict, fixed_values, file_path=extraprior_path)
 
         if base_name == "":
             base_name = self._extract_base_name(input_file)
@@ -3422,14 +3657,10 @@ class find_dynestyfile_and_priors:
 
 
 ###############################################################################
-# Function: dynesty
+# Function: run simulations
 ###############################################################################
 
-
-def run_simulation(parameter_guess, real_event, var_names, fix_var):
-    '''
-    path_and_file = must be a json file generated file from the generate_simulationsm function or from Metsim file
-    '''
+def build_const(parameter_guess, real_event, var_names, fix_var, dir_path="", file_name=""):
 
     # Load the nominal simulation parameters
     const_nominal = Constants()
@@ -3464,6 +3695,19 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
     # # Initial meteoroid height [m]
     # const_nominal.h_init = 180000
 
+    fragmentation_regex = r'_([A-Z]{1,2})\d+'
+    # Separate fragmentation variables from var_names
+    var_names_frag = [var for var in var_names if re.search(fragmentation_regex, var)]
+    var_names = [var for var in var_names if var not in var_names_frag]
+    # Create a dictionary for var_names_frag and take the associated parameter_guess[i]
+    var_frag_dic_guess = {var: parameter_guess[i] for i, var in enumerate(var_names_frag)}
+    # delete the parameter_guess from the parameter_guess list
+    parameter_guess = [guess for var, guess in zip(var_names + var_names_frag, parameter_guess) if var in var_names]
+
+    # Separate fragmentation fixed values from fix_var dictionary
+    fix_var_frag_dic = {var: fix_var[var] for var in fix_var if re.search(fragmentation_regex, var)}
+    fix_var = {var: fix_var[var] for var in fix_var if var not in fix_var_frag_dic}
+
     # for loop for the var_cost that also give a number from 0 to the length of the var_cost
     for i, var in enumerate(var_names):
         const_nominal.__dict__[var] = parameter_guess[i]
@@ -3474,6 +3718,28 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
         # for loop for the fix_var that also give a number from 0 to the length of the fix_var
         for i, var in enumerate(var_names_fix):
             const_nominal.__dict__[var] = fix_var[var]
+
+    # fuse var_frag_dic and fix_var_frag_dic
+    if var_frag_dic_guess or fix_var_frag_dic:
+        var_frag_dic = {}
+        var_frag_dic.update(var_frag_dic_guess)
+        var_frag_dic.update(fix_var_frag_dic)
+        # use the function thaht add them in the const_nominal
+        const_nominal = add_fragmentation_to_cost(const_nominal,var_frag_dic)
+
+    if dir_path!="" and file_name!="":
+        _, _, _ = runSimulation(const_nominal, compute_wake=False) # completes the some fields in const_nominal that will be saved
+        saveConstants(const_nominal, dir_path, file_name)
+
+    return const_nominal
+
+def run_simulation(parameter_guess, real_event, var_names, fix_var):
+    '''
+    path_and_file = must be a json file generated file from the generate_simulationsm function or from Metsim file
+    '''
+
+    # build the const to run the 
+    const_nominal = build_const(parameter_guess, real_event, var_names, fix_var)
 
     try:
         # Run the simulation
@@ -3489,6 +3755,143 @@ def run_simulation(parameter_guess, real_event, var_names, fix_var):
 
     return simulation_MetSim_object
 
+def add_fragmentation_to_cost(const_nominal, var_frag_dic):
+    """
+    Add fragmentation variables from var_frag_dic into const_nominal.
+    Organizes variables by fragmentation type and index, creates FragmentationEntry objects.
+    """
+
+    frag_entries = {}
+
+    # Group variables by fragment key (e.g., 'M0', 'EF1')
+    for var_name, value in var_frag_dic.items():
+        match = re.search(r'_([A-Z]{1,2})(\d+)$', var_name)
+        if match:
+            frag_type = match.group(1)  # 'M', 'A', 'EF', 'D', 'F'
+            frag_index = int(match.group(2))
+            frag_key = f"{frag_type}{frag_index}"
+
+            if frag_key not in frag_entries:
+                frag_entries[frag_key] = {"frag_type": frag_type}
+
+            # Remove the suffix to get parameter name (e.g., height_M0 → height)
+            match = re.match(r'^(.*)_([A-Z]{1,2}\d+)$', var_name)
+            base_name = match.group(1)  # 'grain_mass_min'
+            # frag_suffix = match.group(2)  # 'M0'
+            # base_name = var_name[:var_name.rfind('_')] # wrong if there is _ in the base name
+            frag_entries[frag_key][base_name] = value
+
+    frag_entry_list = []
+
+    for frag_key, frag_params in frag_entries.items():
+        frag_type = frag_params["frag_type"]
+
+        # Common parameters (initialize with None)
+        height = frag_params.get("height", None)
+        number = frag_params.get("number", None)
+        mass_percent = frag_params.get("mass_percent", None)
+        sigma = frag_params.get("sigma", None)
+        gamma = frag_params.get("gamma", None)
+        erosion_coeff = frag_params.get("erosion_coeff", None)
+        grain_mass_min = frag_params.get("grain_mass_min", None)
+        grain_mass_max = frag_params.get("grain_mass_max", None)
+        mass_index = frag_params.get("mass_index", 2.0)  # Default to 2.0 if not given
+
+        # check if number is not None
+        if number is not None:
+            # round it to the nearest integer
+            number = int(round(number))
+
+        # Now depending on frag_type, we validate required variables
+        if frag_type == "M":
+            # REQUIRED: height
+            if height is None:
+                raise ValueError(f"Missing height for Main Fragment {frag_key}")
+            frag_entry = FragmentationEntry(frag_type="M",
+                                            height=height,
+                                            number=None,
+                                            mass_percent=None,
+                                            sigma=sigma,
+                                            gamma=None,
+                                            erosion_coeff=erosion_coeff,
+                                            grain_mass_min=grain_mass_min,
+                                            grain_mass_max=grain_mass_max,
+                                            mass_index=mass_index)
+            frag_entry_list.append(frag_entry)
+
+        elif frag_type == "A":
+            if height is None:
+                raise ValueError(f"Missing height for All Fragments change {frag_key}")
+            frag_entry = FragmentationEntry(frag_type="A",
+                                            height=height,
+                                            number=None,
+                                            mass_percent=None,
+                                            sigma=sigma,
+                                            gamma=gamma,
+                                            erosion_coeff=None,
+                                            grain_mass_min=None,
+                                            grain_mass_max=None,
+                                            mass_index=None)
+            frag_entry_list.append(frag_entry)
+
+        elif frag_type == "F":
+            if height is None or number is None or mass_percent is None:
+                raise ValueError(f"Missing required parameters for Single Fragment {frag_key}")
+            frag_entry = FragmentationEntry(frag_type="F",
+                                            height=height,
+                                            number=number,
+                                            mass_percent=mass_percent,
+                                            sigma=sigma,
+                                            gamma=None,
+                                            erosion_coeff=None,
+                                            grain_mass_min=None,
+                                            grain_mass_max=None,
+                                            mass_index=None)
+            frag_entry_list.append(frag_entry)
+
+        elif frag_type == "EF":
+            if height is None or number is None or mass_percent is None or erosion_coeff is None or grain_mass_min is None or grain_mass_max is None:
+                raise ValueError(f"Missing required parameters for Eroding Fragment {frag_key}")
+            frag_entry = FragmentationEntry(frag_type="EF",
+                                            height=height,
+                                            number=number,
+                                            mass_percent=mass_percent,
+                                            sigma=sigma,
+                                            gamma=None,
+                                            erosion_coeff=erosion_coeff,
+                                            grain_mass_min=grain_mass_min,
+                                            grain_mass_max=grain_mass_max,
+                                            mass_index=mass_index)
+            frag_entry_list.append(frag_entry)
+
+        elif frag_type == "D":
+            if height is None or mass_percent is None or grain_mass_min is None or grain_mass_max is None:
+                raise ValueError(f"Missing required parameters for Dust Release {frag_key}")
+            frag_entry = FragmentationEntry(frag_type="D",
+                                            height=height,
+                                            number=None,
+                                            mass_percent=mass_percent,
+                                            sigma=None,
+                                            gamma=None,
+                                            erosion_coeff=None,
+                                            grain_mass_min=grain_mass_min,
+                                            grain_mass_max=grain_mass_max,
+                                            mass_index=mass_index)
+            frag_entry_list.append(frag_entry)
+
+        else:
+            raise ValueError(f"Unknown fragmentation type: {frag_type}")
+
+    # Finalize into const_nominal
+    const_nominal.fragmentation_on = True
+    const_nominal.fragmentation_entries = frag_entry_list
+
+    return const_nominal
+
+
+###############################################################################
+# Function: dynesty
+###############################################################################
 
 def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout=20):
     """
@@ -3743,8 +4146,13 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,
         default=r"",
-        help="Path to a .prior file. If blank, we look in the .dynesty folder for other .pior files. " \
-        "If no data givn and none found not present resort to default built-in bounds.")
+        help="Path to a .prior file. If blank, we look in the .dynesty folder for other .prior files. " \
+        "If no data given and none found not present resort to default built-in bounds.")
+
+    arg_parser.add_argument('--extraprior', metavar='EXTRAPRIOR', type=str, 
+        default=r"",
+        help="Path to an .extraprior file these are used to add more FragmentationEntry or diferent types of fragmentations. " \
+        "If blank, no extraprior file will be used so will only use the prior file.")
 
     arg_parser.add_argument('-all','--all_cameras',
         help="If active use all data, if not only CAMO data for lag if present in pickle file. If False, use CAMO data only for deceleration (by default is False). " \
@@ -3767,7 +4175,6 @@ if __name__ == "__main__":
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")
 
-
     # Optional: suppress warnings
     # warnings.filterwarnings('ignore')
 
@@ -3778,6 +4185,6 @@ if __name__ == "__main__":
     if cml_args.pick_pos < 0 or cml_args.pick_pos > 1:
         raise ValueError("pick_position must be between 0 and 1, 0 leading edge, 0.5 centroid full meteor, 1 trailing edge.")
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pick_position=cml_args.pick_pos)
+    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

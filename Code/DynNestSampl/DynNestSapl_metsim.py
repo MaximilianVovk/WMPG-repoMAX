@@ -3083,18 +3083,30 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
             shutil.copy(report_txt, out_folder)
             print("report file copied to output folder:", report_txt_in_output_path)
 
-    # add the prior pr
-    if prior_path != "":
-        # check if there is a prior file with the same name in the output_folder
-        prior_file_output = os.path.join(out_folder,os.path.basename(prior_path))
-        if not os.path.exists(prior_file_output):
-            shutil.copy(prior_path, out_folder)
-            print("prior file copied to output folder:", prior_file_output)
-        # # folder where is stored the pickle_file
-        # prior_file_input = os.path.join(os.path.dirname(pickle_file),os.path.basename(prior_path))
-        # if not os.path.exists(prior_file_input):
-        #     shutil.copy(prior_path, os.path.dirname(pickle_file))
-        #     print("prior file copied to input folder:", prior_file_input)
+    # chek if prior path is an array or a string
+    if isinstance(prior_path, list):
+        for prior_or_extra in prior_path:
+            # add the prior pr
+            if prior_or_extra != "":
+                # check if there is a prior file with the same name in the output_folder
+                prior_file_output = os.path.join(out_folder,os.path.basename(prior_or_extra))
+                if not os.path.exists(prior_file_output):
+                    shutil.copy(prior_or_extra, out_folder)
+                    print("prior or extraprior file copied to output folder:", prior_file_output)
+               
+    else:
+        # add the prior pr
+        if prior_path != "":
+            # check if there is a prior file with the same name in the output_folder
+            prior_file_output = os.path.join(out_folder,os.path.basename(prior_path))
+            if not os.path.exists(prior_file_output):
+                shutil.copy(prior_path, out_folder)
+                print("prior file copied to output folder:", prior_file_output)
+            # # folder where is stored the pickle_file
+            # prior_file_input = os.path.join(os.path.dirname(pickle_file),os.path.basename(prior_path))
+            # if not os.path.exists(prior_file_input):
+            #     shutil.copy(prior_path, os.path.dirname(pickle_file))
+            #     print("prior file copied to input folder:", prior_file_input)
 
     # Dictionary to track count of each base name
     base_name_counter = {}
@@ -3574,6 +3586,8 @@ class find_dynestyfile_and_priors:
         # if given open the extra prior file and append the bounds, flags_dict, fixed_values
         if os.path.isfile(self.extraprior_file):
             bounds, flags_dict, fixed_values = append_extraprior_to_bounds(observation_instance,bounds, flags_dict, fixed_values, file_path=self.extraprior_file)
+            # if extraprior_file is find then add the path to the prior_path as an array of strings but since is a single file, it will need to be exteded
+            prior_path = [prior_path, self.extraprior_file]
         else:
             # Look for local .extraprior
             existing_extraprior_list = [f for f in files if f.endswith(".extraprior")]
@@ -3582,6 +3596,7 @@ class find_dynestyfile_and_priors:
                 # print the prior path has been found
                 print(f"Take the first extraprior file found in the same folder as the observation file: {extraprior_path}")
                 bounds, flags_dict, fixed_values = append_extraprior_to_bounds(observation_instance,bounds, flags_dict, fixed_values, file_path=extraprior_path)
+                prior_path = [prior_path, extraprior_path]
 
         if base_name == "":
             base_name = self._extract_base_name(input_file)

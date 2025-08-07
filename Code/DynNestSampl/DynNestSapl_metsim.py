@@ -3710,22 +3710,31 @@ def build_const(parameter_guess, real_event, var_names, fix_var, dir_path="", fi
     # # Initial meteoroid height [m]
     # const_nominal.h_init = 180000
 
+    # create a dictionary for var_names_frag and take the associated parameter_guess[i]
+    var_dic_guess = {var_names: parameter_guess[i] for i, var_names in enumerate(var_names)}
+    # print("var_dic_guess:", var_dic_guess)
+    # regex for fragmentation variables
     fragmentation_regex = r'_([A-Z]{1,2})\d+'
-    # Separate fragmentation variables from var_names
-    var_names_frag = [var for var in var_names if re.search(fragmentation_regex, var)]
-    var_names = [var for var in var_names if var not in var_names_frag]
-    # Create a dictionary for var_names_frag and take the associated parameter_guess[i]
-    var_frag_dic_guess = {var: parameter_guess[i] for i, var in enumerate(var_names_frag)}
-    # delete the parameter_guess from the parameter_guess list
-    parameter_guess = [guess for var, guess in zip(var_names + var_names_frag, parameter_guess) if var in var_names]
+    # from var_dic_guess take the variables that match the fragmentation_regex and create a new dictionary
+    var_frag_dic = {var: var_dic_guess[var] for var in var_dic_guess if re.search(fragmentation_regex, var)}
+    # print("var_frag_dic:", var_frag_dic)
+    var_dic = {var: var_dic_guess[var] for var in var_dic_guess if var not in var_frag_dic}
+    # print("var_dic:", var_dic)
 
     # Separate fragmentation fixed values from fix_var dictionary
     fix_var_frag_dic = {var: fix_var[var] for var in fix_var if re.search(fragmentation_regex, var)}
+    # print("fix_var_frag_dic:", fix_var_frag_dic)
     fix_var = {var: fix_var[var] for var in fix_var if var not in fix_var_frag_dic}
+    # print("fix_var:", fix_var)
 
-    # for loop for the var_cost that also give a number from 0 to the length of the var_cost
-    for i, var in enumerate(var_names):
-        const_nominal.__dict__[var] = parameter_guess[i]
+    # # for loop for the var_cost that also give a number from 0 to the length of the var_cost
+    # for i, var in enumerate(var_names):
+    #     const_nominal.__dict__[var] = parameter_guess[i]
+
+    var_guess_dic = list(var_dic.keys())
+    # for loop for the fix_var that also give a number from 0 to the length of the fix_var
+    for i, var in enumerate(var_guess_dic):
+        const_nominal.__dict__[var] = var_dic[var]
 
     # first chack if fix_var is not {}
     if fix_var:
@@ -3735,9 +3744,9 @@ def build_const(parameter_guess, real_event, var_names, fix_var, dir_path="", fi
             const_nominal.__dict__[var] = fix_var[var]
 
     # fuse var_frag_dic and fix_var_frag_dic
-    if var_frag_dic_guess or fix_var_frag_dic:
+    if var_frag_dic or fix_var_frag_dic:
         var_frag_dic = {}
-        var_frag_dic.update(var_frag_dic_guess)
+        var_frag_dic.update(var_frag_dic)
         var_frag_dic.update(fix_var_frag_dic)
         # use the function thaht add them in the const_nominal
         const_nominal = add_fragmentation_to_cost(const_nominal,var_frag_dic)

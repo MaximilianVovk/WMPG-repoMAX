@@ -3765,12 +3765,12 @@ def build_const(parameter_guess, real_event, var_names, fix_var, dir_path="", fi
 
     # fuse var_frag_dic and fix_var_frag_dic
     if var_frag_dic or fix_var_frag_dic:
-        var_frag_dic = {}
-        var_frag_dic.update(var_frag_dic)
-        var_frag_dic.update(fix_var_frag_dic)
+        combined_frag_dic = {}
+        combined_frag_dic.update(var_frag_dic)       # keep sampled variables (e.g., height_EF0)
+        combined_frag_dic.update(fix_var_frag_dic)   # fixed values override if duplicated
         # use the function thaht add them in the const_nominal
-        const_nominal = add_fragmentation_to_cost(const_nominal,var_frag_dic)
-        
+        const_nominal = add_fragmentation_to_cost(const_nominal, combined_frag_dic)
+
     if dir_path!="" and file_name!="":
         _, _, _ = runSimulation(const_nominal, compute_wake=False) # completes the some fields in const_nominal that will be saved
         saveConstants(const_nominal, dir_path, file_name)
@@ -3841,19 +3841,36 @@ def add_fragmentation_to_cost(const_nominal, var_frag_dic):
         grain_mass_max = frag_params.get("grain_mass_max", None)
         mass_index = frag_params.get("mass_index", None)
 
-        # if frag_params.get("mass_index", None) is np.nan give the value of const_nominal.erosion_mass_index
-        if frag_params.get("mass_index", None) is np.nan:
+        val = frag_params.get("mass_index", None)
+        if val is None or (isinstance(val, float) and np.isnan(val)):
             mass_index = const_nominal.erosion_mass_index
-        if frag_params.get("sigma", None) is np.nan:
+        else:
+            mass_index = val
+        val = frag_params.get("sigma", None)
+        if val is None or (isinstance(val, float) and np.isnan(val)):
             sigma = const_nominal.sigma
-        if frag_params.get("gamma", None) is np.nan:
+        else:
+            sigma = val
+        val = frag_params.get("gamma", None)
+        if val is None or (isinstance(val, float) and np.isnan(val)):
             gamma = const_nominal.gamma
-        if frag_params.get("erosion_coeff", None) is np.nan:
+        else:
+            gamma = val
+        val = frag_params.get("erosion_coeff", None)
+        if val is None or (isinstance(val, float) and np.isnan(val)):
             erosion_coeff = const_nominal.erosion_coeff
-        if frag_params.get("grain_mass_min", None) is np.nan:
+        else:
+            erosion_coeff = val
+        val = frag_params.get("grain_mass_min", None)
+        if val is None or (isinstance(val, float) and np.isnan(val)):
             grain_mass_min = const_nominal.erosion_mass_min
-        if frag_params.get("grain_mass_max", None) is np.nan:
+        else:
+            grain_mass_min = val
+        val = frag_params.get("grain_mass_max", None)
+        if val is None or (isinstance(val, float) and np.isnan(val)):
             grain_mass_max = const_nominal.erosion_mass_max
+        else:
+            grain_mass_max = val
 
         # check if number is not None
         if number is not None:
@@ -3908,7 +3925,7 @@ def add_fragmentation_to_cost(const_nominal, var_frag_dic):
             frag_entry_list.append(frag_entry)
 
         elif frag_type == "EF":
-            if height is None or number is None or mass_percent is None or erosion_coeff is None or grain_mass_min is None or grain_mass_max is None:
+            if height is None or number is None or mass_percent is None or erosion_coeff is None or grain_mass_min is None or grain_mass_max is None or mass_index is None:
                 raise ValueError(f"Missing required parameters for Eroding Fragment {frag_key}")
             frag_entry = FragmentationEntry(frag_type="EF",
                                             height=height,
@@ -4194,7 +4211,8 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
-    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
+    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\Flare-project\20240905_092810-bigFlare-Saturn-EF",
         help="Path to walk and find .pickle file or specific single file .pickle or .json file."
         "If you want multiple specific folder or files just divided them by ',' in between.")
     

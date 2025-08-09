@@ -4211,8 +4211,7 @@ if __name__ == "__main__":
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
-    arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\Flare-project\20240905_092810-bigFlare-Saturn-EF",
+    arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
         help="Path to walk and find .pickle file or specific single file .pickle or .json file."
         "If you want multiple specific folder or files just divided them by ',' in between.")
     

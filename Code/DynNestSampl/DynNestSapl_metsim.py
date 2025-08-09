@@ -1590,7 +1590,7 @@ def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values,
         "grain_mass_min": (5e-12, 1e-9),
         "grain_mass_max": (1e-10, 1e-7),
         "mass_index": (1, 3),
-        "gamma": (0.4, 2),
+        "gamma": (0.5, 1),
         "mass_percent": (10, 100),
         "number": (1, 3)
     }
@@ -1606,6 +1606,24 @@ def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values,
         "mass_percent": [],
         "number": []
         }
+
+    # copy to the default_bounds the one from bounds that are already defined
+    for i, bound in enumerate(bounds):
+        # in key make a copy of the bounds
+        key = list(flags_dict.keys())[i]
+        # change the key[i] that have the name erosion_mass_index to mass_index
+        if key == "erosion_mass_index":
+            key = "mass_index"
+        elif key == "erosion_mass_min":
+            key = "grain_mass_min"
+        elif key == "erosion_mass_max":
+            key = "grain_mass_max"
+        # substitute the key in the default_bounds
+        if key in default_bounds:
+            default_bounds[key] = bound
+            print(f"Updated default_bounds[{key}] = {bound}")
+            default_flags[key] = flags_dict.get(key, [])
+            print(f"Updated default_flags[{key}] = {flags_dict.get(key, [])}")
 
     # Initialize lists and dictionaries
     extraprior_bounds = []
@@ -1629,15 +1647,15 @@ def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values,
         suffix = f"{current_type}{current_index}"
         # Determine required vars per fragment type
         if current_type == "M":
-            required_vars = ["height"]
+            required_vars = ["height","erosion_coeff"]
         elif current_type == "A":
-            required_vars = ["height"]
+            required_vars = ["height","sigma", "gamma"]
         elif current_type == "F":
-            required_vars = ["height", "number", "mass_percent"]
+            required_vars = ["height", "number", "mass_percent", "sigma"]
         elif current_type == "EF":
-            required_vars = ["height", "number", "mass_percent", "erosion_coeff", "grain_mass_min", "grain_mass_max"]
+            required_vars = ["height", "number", "mass_percent", "erosion_coeff", "grain_mass_min", "grain_mass_max","mass_index"]
         elif current_type == "D":
-            required_vars = ["height", "mass_percent", "grain_mass_min", "grain_mass_max"]
+            required_vars = ["height", "mass_percent", "grain_mass_min", "grain_mass_max","mass_index"]
         else:
             required_vars = []
 
@@ -1647,10 +1665,12 @@ def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values,
                 # Add missing var as FIXED using defaults
                 if "number" in var or "mass_percent" in var:
                     default_val = default_bounds[var][0]  # Use lower bound for number and mass_percent
-                # elif "height" in var_name:
-                #     default_val = object_meteor.height_lum[0]
+                elif "gamma" in var:
+                    default_val = default_bounds[var][1]  # Use upper bound for gamma
+                elif "height" in var_name:
+                    default_val = object_meteor.height_lum[0]
                 elif var in default_bounds:
-                    default_val = np.mean(default_bounds[var])
+                    default_val = np.nan # default_val = np.mean(default_bounds[var]) # 
                 else:
                     default_val = 1  # Default for number
                 extraprior_fixed[var_name] = default_val
@@ -3750,7 +3770,7 @@ def build_const(parameter_guess, real_event, var_names, fix_var, dir_path="", fi
         var_frag_dic.update(fix_var_frag_dic)
         # use the function thaht add them in the const_nominal
         const_nominal = add_fragmentation_to_cost(const_nominal,var_frag_dic)
-
+        
     if dir_path!="" and file_name!="":
         _, _, _ = runSimulation(const_nominal, compute_wake=False) # completes the some fields in const_nominal that will be saved
         saveConstants(const_nominal, dir_path, file_name)
@@ -3819,7 +3839,21 @@ def add_fragmentation_to_cost(const_nominal, var_frag_dic):
         erosion_coeff = frag_params.get("erosion_coeff", None)
         grain_mass_min = frag_params.get("grain_mass_min", None)
         grain_mass_max = frag_params.get("grain_mass_max", None)
-        mass_index = frag_params.get("mass_index", 2.0)  # Default to 2.0 if not given
+        mass_index = frag_params.get("mass_index", None)
+
+        # if frag_params.get("mass_index", None) is np.nan give the value of const_nominal.erosion_mass_index
+        if frag_params.get("mass_index", None) is np.nan:
+            mass_index = const_nominal.erosion_mass_index
+        if frag_params.get("sigma", None) is np.nan:
+            sigma = const_nominal.sigma
+        if frag_params.get("gamma", None) is np.nan:
+            gamma = const_nominal.gamma
+        if frag_params.get("erosion_coeff", None) is np.nan:
+            erosion_coeff = const_nominal.erosion_coeff
+        if frag_params.get("grain_mass_min", None) is np.nan:
+            grain_mass_min = const_nominal.erosion_mass_min
+        if frag_params.get("grain_mass_max", None) is np.nan:
+            grain_mass_max = const_nominal.erosion_mass_max
 
         # check if number is not None
         if number is not None:

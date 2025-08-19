@@ -2319,12 +2319,12 @@ class observation_data:
         self.zenith_angle = np.mean(zenith_angle_list)
         self.m_init = np.mean(m_init_list)
 
-        ### DEBUGGING purposes ###
-        json_file_path = self.file_name[0]
-        # save the data to a json file base on self.obs_file_path but with .json extension for DEBUGGING purposes
-        if json_file_path.endswith('.pickle'):
-            json_file_path = json_file_path.replace('.pickle', '.json')
-        self.save_to_json(json_file_path)
+        # ### DEBUGGING purposes ###
+        # json_file_path = self.file_name[0]
+        # # save the data to a json file base on self.obs_file_path but with .json extension for DEBUGGING purposes
+        # if json_file_path.endswith('.pickle'):
+        #     json_file_path = json_file_path.replace('.pickle', '.json')
+        # self.save_to_json(json_file_path)
                     
     def extract_lag_data(self, combined_obs_dict, camera_name_lag):
         lag_dict = []

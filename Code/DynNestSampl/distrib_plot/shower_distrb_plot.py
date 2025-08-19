@@ -1587,8 +1587,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     # Plot grid settings
     ndim = samples.shape[1]
-    ncols = 5
-    nrows = math.ceil(ndim / ncols)
+    # ncols = 5
+    # nrows = math.ceil(ndim / ncols)
+    nrows = 5
+    ncols = math.ceil(ndim / nrows)
     fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 2.5 * nrows))
     axes = axes.flatten()
 
@@ -1831,7 +1833,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics_with_EMCCD",
+         default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

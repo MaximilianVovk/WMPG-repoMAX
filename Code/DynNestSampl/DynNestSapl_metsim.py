@@ -1947,6 +1947,23 @@ class observation_data:
             # file type not supported
             raise ValueError("File type not supported, only .json and .pickle files are supported")
 
+    def save_to_json(self, filepath="output.json"):
+        """Save all attributes of self to a JSON file (numpy arrays converted to lists)."""
+        def convert(obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            if isinstance(obj, (np.float32, np.float64)):
+                return float(obj)
+            if isinstance(obj, (np.int32, np.int64)):
+                return int(obj)
+            return obj
+
+        data = {k: convert(v) for k, v in self.__dict__.items()}
+        
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        
+        print(f"Saved object state to {filepath}")
 
     def load_pickle_data(self, use_all_cameras=False, pick_position=0, prior_file_path=""):
         """
@@ -2021,7 +2038,7 @@ class observation_data:
                 obs_data_camera['velocities'][0] = obs.v_init
                 obs_data_dict.append(obs_data_camera)
             
-                obs_dict.extend(obs_data_dict)  # Add this file's data to the big list
+            obs_dict.extend(obs_data_dict)  # Add this file's data to the big list
             
         # ceck if obs_dict is empty
         if len(obs_dict) == 0:
@@ -2201,6 +2218,12 @@ class observation_data:
             # Extract time vs. magnitudes from the trajectory pickle file
             for obs in traj.observations:
 
+                # check if the station_id is in the old format from .Met solution
+                if "1" == obs.station_id:
+                    obs.station_id = obs.station_id.replace("1", "01T")
+                elif "2" == obs.station_id:
+                    obs.station_id = obs.station_id.replace("2", "02T")
+
                 # check if the station_id is not in the lum_stations and continue
                 if obs.station_id not in lum_stations:
                     continue
@@ -2295,6 +2318,13 @@ class observation_data:
         # do the mean of the zenith_angle_list and m_init_list
         self.zenith_angle = np.mean(zenith_angle_list)
         self.m_init = np.mean(m_init_list)
+
+        ### DEBUGGING purposes ###
+        json_file_path = self.file_name[0]
+        # save the data to a json file base on self.obs_file_path but with .json extension for DEBUGGING purposes
+        if json_file_path.endswith('.pickle'):
+            json_file_path = json_file_path.replace('.pickle', '.json')
+        self.save_to_json(json_file_path)
                     
     def extract_lag_data(self, combined_obs_dict, camera_name_lag):
         lag_dict = []

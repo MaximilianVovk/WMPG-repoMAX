@@ -567,6 +567,14 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         'erosion_coeff_change': r"$\eta_{2}$ [kg/MJ]",
         'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
         'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
+        'height': r"$h$ [km]",
+        'mass_percent': r"$m_{percent}$ [\%]",
+        'number': r"$N$",
+        'sigma': r"$\sigma$ [kg/MJ]",
+        'erosion_coeff': r"$\eta$ [kg/MJ]",
+        'grain_mass_min': r"$m_{l}$ [kg]",
+        'grain_mass_max': r"$m_{u}$ [kg]",
+        'mass_index': r"$s$",
         'noise_lag': r"$\varepsilon_{lag}$ [m]",
         'noise_lum': r"$\varepsilon_{lum}$ [W]"
     }
@@ -587,12 +595,36 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         'erosion_coeff_change': r"$\eta_{2}$ [kg/J]",
         'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
         'erosion_sigma_change': r"$\sigma_{2}$ [kg/J]",
+        'height': r"$h$ [m]",
+        'mass_percent': r"$m_{percent}$ [\%]",
+        'number': r"$N$",
+        'sigma': r"$\sigma$ [kg/J]",
+        'erosion_coeff': r"$\eta$ [kg/J]",
+        'grain_mass_min': r"$m_{l}$ [kg]",
+        'grain_mass_max': r"$m_{u}$ [kg]",
+        'mass_index': r"$s$",
         'noise_lag': r"$\varepsilon_{lag}$ [m]",
         'noise_lum': r"$\varepsilon_{lum}$ [W]"
     }
 
     # check if there are variables in the flags_dict that are not in the variable_map
     for variable in variables:
+        
+        fragmentation_regex = r'_([A-Z]{1,2})\d+'
+        # check if variable is a fragmentation variable
+        if re.search(fragmentation_regex, variable):
+            # save in regex_var and take the variable without the fragmentation part
+            fragm_type = re.search(fragmentation_regex, variable).group(0)
+            # print(f"Found fragmentation variable: {fragm_type}")
+            # now take the one that matches the regex
+            variable_with_no_fragm_type = variable.replace(fragm_type, "")
+            # print(f"Found fragmentation type: {variable_with_no_fragm_type}")
+            # delete the _ from fragm_type
+            fragm_type = fragm_type.replace("_", "")
+            # add to the fragmentation map for the variable the name that is identical to regex_var
+            variable_map[variable] = fragm_type+' '+variable_map[variable_with_no_fragm_type]
+            variable_map_plot[variable] = fragm_type+' '+variable_map_plot[variable_with_no_fragm_type]
+
         if variable not in variable_map:
             print(f"Warning: {variable} not found in variable_map")
             # Add the variable to the map with a default label
@@ -621,11 +653,11 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             best_guess_table[i] = 10**(best_guess_table[i])
             labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
         # check variable is 'v_init' or 'erosion_height_start' divide by 1000
-        if variable == 'v_init' or variable == 'erosion_height_start' or variable == 'erosion_height_change':
+        if 'v_init' in variable or 'height' in variable:
             samples_equal[:, i] = samples_equal[:, i] / 1000
             best_guess_table[i] = best_guess_table[i] / 1000
         # check variable is 'erosion_coeff' or 'sigma' divide by 1e6
-        if variable == 'erosion_coeff' or variable == 'sigma' or variable == 'erosion_coeff_change' or variable == 'erosion_sigma_change':
+        if 'sigma' in variable or 'erosion_coeff' in variable:
             samples_equal[:, i] = samples_equal[:, i] * 1e6
             best_guess_table[i] = best_guess_table[i] * 1e6
 
@@ -784,14 +816,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             def transform(v):
                 if 'log' in flags_dict_total.get(var, ''):
                     v = 10**v
-                if var in ['v_init',
-                        'erosion_height_start',
-                        'erosion_height_change']:
+                if 'v_init' in var or 'height' in var:
                     v = v / 1e3
-                if var in ['erosion_coeff',
-                        'sigma',
-                        'erosion_coeff_change',
-                        'erosion_sigma_change']:
+                if 'sigma' in var or 'erosion_coeff' in var:
                     v = v * 1e6
                 return v
             
@@ -928,10 +955,10 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
         for i, variable in enumerate(variables): 
             # check variable is 'v_init' or 'erosion_height_start' divide by 1000
-            if variable == 'v_init' or variable == 'erosion_height_start' or variable == 'erosion_height_change':
+            if 'v_init' in variable or 'height' in variable:
                 truths[i] = truths[i] / 1000
             # check variable is 'erosion_coeff' or 'sigma' divide by 1e6
-            if variable == 'erosion_coeff' or variable == 'sigma' or variable == 'erosion_coeff_change' or variable == 'erosion_sigma_change':
+            if 'sigma' in variable or 'erosion_coeff' in variable:
                 truths[i] = truths[i] * 1e6
 
         # Compare to true theta
@@ -1042,13 +1069,13 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     if hasattr(obs_data, 'const'):
         truth_values_plot_distr = truths.copy()
     for j, var in enumerate(variables):
-        if 'log' in flags_dict.get(var, '') and not var in ['erosion_mass_min', 'erosion_mass_max']:
+        if 'log' in flags_dict.get(var, '') and not ('mass_min' in var or 'mass_max' in var or 'm_init' in var):
             combined_samples_copy_plot[:, j] = 10 ** combined_samples_copy_plot[:, j]
-        if 'log' in flags_dict.get(var, '') and var in ['erosion_mass_min', 'erosion_mass_max']:
+        if 'log' in flags_dict.get(var, '') and ('mass_min' in var or 'mass_max' in var or 'm_init' in var):
             labels_plot_copy_plot[j] =r"$\log_{10}$(" +labels_plot_copy_plot[j]+")"
-        if var in ['v_init', 'erosion_height_start', 'erosion_height_change']:
+        if 'v_init' in var or 'height' in var:
             combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] / 1000.0
-        if var in ['erosion_coeff', 'sigma', 'erosion_coeff_change', 'erosion_sigma_change']:
+        if 'sigma' in var or 'erosion_coeff' in var:
             combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
 
     print('saving distribution plot...')
@@ -1111,7 +1138,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         minus = median - low
         plus = high - median
 
-        if 'log' in flags_dict.get(variables[i], '') and variables[i] in ['erosion_mass_min', 'erosion_mass_max']:
+        if 'log' in flags_dict.get(variables[i], '') and ('mass_min' in variables[i] or 'mass_max' in variables[i] or 'm_init' in variables[i]):
             # put a dashed blue line at the median
             ax.axvline(np.log10(median), color='blue', linestyle='--', linewidth=1.5)
             # put a dashed Blue line at the 2.5 and 97.5 percentiles

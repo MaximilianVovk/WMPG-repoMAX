@@ -1929,7 +1929,7 @@ def luminosity_integration(all_simulated_time,time_fps,luminosity_arr,dt,fps,P_0
 
 class observation_data:
     ''' class to load the observation data and create an object '''
-    def __init__(self, obs_file_path,use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, pick_position=0, prior_file_path=""):
+    def __init__(self, obs_file_path,use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, fps_prior=np.nan, P_0m_prior=np.nan, pick_position=0, prior_file_path=""):
         self.noise_lag = lag_noise_prior
         self.noise_lum = lum_noise_prior
         self.file_name = obs_file_path
@@ -1940,7 +1940,7 @@ class observation_data:
 
         # check if the file is a json file
         if obs_file_path.endswith('.pickle'):
-            self.load_pickle_data(use_all_cameras,pick_position,prior_file_path)
+            self.load_pickle_data(use_all_cameras,pick_position,prior_file_path, fps_prior, P_0m_prior)
         elif obs_file_path.endswith('.json'):
             self.load_json_data(use_all_cameras)
         else:
@@ -1965,7 +1965,7 @@ class observation_data:
         
         print(f"Saved object state to {filepath}")
 
-    def load_pickle_data(self, use_all_cameras=False, pick_position=0, prior_file_path=""):
+    def load_pickle_data(self, use_all_cameras=False, pick_position=0, prior_file_path="", fps_prior=np.nan, P_0m_prior=np.nan):
         """
         Load the pickle file(s) and create a dictionary keyed by each file name.
         Each files data (e.g., list of station IDs, dens_co, zenith_angle, etc.)
@@ -1997,11 +1997,18 @@ class observation_data:
             for obs in traj.observations:
                 # print('Station:', obs.station_id)
 
-                # check if the station_id is in the old format from .Met solution
-                if "1" == obs.station_id:
-                    obs.station_id = obs.station_id.replace("1", "01T")
-                elif "2" == obs.station_id:
-                    obs.station_id = obs.station_id.replace("2", "02T")
+                # check that fps is not nan and P_0m is not nan
+                if np.isnan(P_0m_prior):
+                    print('P_0m is not set, consider it as CAMO-narrowfield if 1 and 2 in camera station (i.e. output from .Met file)')
+                    # check if the station_id is in the old format from .Met solution normally is CAMO narrow-field
+                    if "1" == obs.station_id:
+                        obs.station_id = obs.station_id.replace("1", "01T")
+                    elif "2" == obs.station_id:
+                        obs.station_id = obs.station_id.replace("2", "02T")
+                    else:
+                        P_0m = 840
+                else:
+                    P_0m = P_0m_prior
 
                 # check if among obs.station_id there is one of the following 01T or 02T
                 if "1T" in obs.station_id or "2T" in obs.station_id:
@@ -2010,9 +2017,9 @@ class observation_data:
                     P_0m = 840
                 elif "1G" in obs.station_id or "2G" in obs.station_id or "1F" in obs.station_id or "2F" in obs.station_id:
                     P_0m = 935
-                else:
-                    print(obs.station_id,'Station uknown\nMake sure the station is either EMCCD or CAMO (i.e. contains in the name 1T, 2T, 1K, 2K, 1G, 2G, 1F, 2F)')
-                    continue
+                # else:
+                #     print(obs.station_id,'Station uknown\nMake sure the station is either EMCCD or CAMO (i.e. contains in the name 1T, 2T, 1K, 2K, 1G, 2G, 1F, 2F)')
+                #     continue
 
                 # check if obs.absolute_magnitudes is a 'NoneType' object
                 if obs.absolute_magnitudes is None:
@@ -2055,10 +2062,40 @@ class observation_data:
 
         # take all the unique values of the flag_station
         unique_stations = np.unique(combined_obs_dict['flag_station'])
-        # print('Unique stations:', unique_stations)
+        print('Unique stations:', unique_stations)
+
+        # check if 1T 2T 1G 2G 1F 2F 1K 2K are present in unique_stations
+        if not any(("1T" in station) or 
+                ("2T" in station) or 
+                ("1G" in station) or 
+                ("2G" in station) or 
+                ("1F" in station) or 
+                ("2F" in station) or 
+                ("1K" in station) or 
+                ("2K" in station) 
+                for station in unique_stations):
+            print('Not EMCCD nor CAMO station found! Use all cameras since it is not known which one is best for luminosity or lag')
+            use_all_cameras = True
 
         # check if among the unique_stations there is one of the following 01T or 02T
         if use_all_cameras==False:
+
+            # check if among unique_stations there is one of the following 01G or 02G or 01F or 02F
+            if any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
+                camera_name_lag = [camera for camera in unique_stations if "1G" in camera or "2G" in camera or "1F" in camera or "2F" in camera]
+                lum_data, lum_files = self.extract_lum_data(combined_obs_dict, camera_name_lag)
+                self.P_0m = 935
+                self.fps_lum = 32
+            elif any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
+                camera_name_lag = [camera for camera in unique_stations if "1K" in camera or "2K" in camera or "1T" in camera or "2T" in camera]
+                lum_data, lum_files = self.extract_lum_data(combined_obs_dict, camera_name_lag)
+                self.P_0m = 840
+                self.fps_lum = 80
+            else:
+                # print the unique_stations
+                print(unique_stations,'no known camera found')
+                return
+
             # check if among unique_stations there is one of the following 01T or 02T  
             if any(("1T" in station) or ("2T" in station) for station in unique_stations):
                 # find the name of the camera that has 1T or 2T
@@ -2080,20 +2117,6 @@ class observation_data:
                 print(unique_stations,'no known camera found')
                 return
             
-            if any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
-                camera_name_lag = [camera for camera in unique_stations if "1G" in camera or "2G" in camera or "1F" in camera or "2F" in camera]
-                lum_data, lum_files = self.extract_lum_data(combined_obs_dict, camera_name_lag)
-                self.P_0m = 935
-                self.fps_lum = 32
-            elif any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
-                camera_name_lag = [camera for camera in unique_stations if "1K" in camera or "2K" in camera or "1T" in camera or "2T" in camera]
-                lum_data, lum_files = self.extract_lum_data(combined_obs_dict, camera_name_lag)
-                self.P_0m = 840
-                self.fps_lum = 80
-            else:
-                # print the unique_stations
-                print(unique_stations,'no known camera found')
-                return
         else:
             lag_data = combined_obs_dict
             lum_data = combined_obs_dict
@@ -2106,16 +2129,33 @@ class observation_data:
 
             if any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
                 self.P_0m = 840
-                self.fps_lag = 80
                 self.fps_lum = 80
+                self.fps_lag = 80
             elif any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
                 self.P_0m = 935
                 self.fps_lum = 32
                 self.fps_lag = 32
             else:
-                print(unique_stations,'no known camera found')
-                return
-            
+                # print(unique_stations,'no known camera found')
+                # return
+                if np.isnan(P_0m_prior):
+                    print('P_0m is not set, consider it as P_0m=840')
+                    self.P_0m = 840
+                else:
+                    self.P_0m = P_0m_prior
+                if np.isnan(fps_prior):
+                    print('Compute fps_lag and fps_lum for each camera')
+                    # take for each of the station the average time in betwen the time and time lag with the same flag_station
+                    for station in unique_stations:
+                        indices = np.where(lum_data['flag_station'] == station)[0]
+                        # Assign the average time lag to the station
+                        time_diffs = np.diff(lum_data['time'][indices])
+                        self.fps_lum = np.round(1/np.mean(time_diffs)) # if time_diffs.size > 0 or np.mean(time_diffs) != 0 else 32
+                        self.fps_lag = np.round(1/np.mean(time_diffs)) # if time_diffs.size > 0 or np.mean(time_diffs) != 0 else 32
+                else:
+                    self.fps_lum = fps_prior
+                    self.fps_lag = fps_prior
+
         # for the lum data delete all the keys that have values above 8
         if np.any(lum_data['absolute_magnitudes'] > 8):
             print(obs.station_id,'Found values below 8 absolute magnitudes :', lum_data['absolute_magnitudes'][lum_data['absolute_magnitudes'] > 8])
@@ -2217,12 +2257,14 @@ class observation_data:
             lum_stations = np.unique(self.stations_lum)
             # Extract time vs. magnitudes from the trajectory pickle file
             for obs in traj.observations:
+                # print('Station:', obs.station_id)
 
-                # check if the station_id is in the old format from .Met solution
-                if "1" == obs.station_id:
-                    obs.station_id = obs.station_id.replace("1", "01T")
-                elif "2" == obs.station_id:
-                    obs.station_id = obs.station_id.replace("2", "02T")
+                if np.isnan(P_0m_prior):
+                    # check if the station_id is in the old format from .Met solution
+                    if "1" == obs.station_id:
+                        obs.station_id = obs.station_id.replace("1", "01T")
+                    elif "2" == obs.station_id:
+                        obs.station_id = obs.station_id.replace("2", "02T")
 
                 # check if the station_id is not in the lum_stations and continue
                 if obs.station_id not in lum_stations:
@@ -2319,7 +2361,7 @@ class observation_data:
         self.zenith_angle = np.mean(zenith_angle_list)
         self.m_init = np.mean(m_init_list)
 
-        # ### DEBUGGING purposes ###
+        # ### DEBUG purposes ###
         # json_file_path = self.file_name[0]
         # # save the data to a json file base on self.obs_file_path but with .json extension for DEBUGGING purposes
         # if json_file_path.endswith('.pickle'):
@@ -3194,7 +3236,7 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
     return dynesty_file_in_output_path
 
 
-def read_prior_noise(file_path):
+def read_prior_noise_fps_P_0m(file_path):
     """
     chack if present and read the prior file and return the bounds, flags, and fixed values.
     """
@@ -3202,6 +3244,8 @@ def read_prior_noise(file_path):
     # defealut noise values
     noise_lag_prior = np.nan
     noise_lum_prior = np.nan
+    P_0m = np.nan
+    fps = np.nan
 
     def safe_eval(value):
         try:    
@@ -3219,7 +3263,7 @@ def read_prior_noise(file_path):
             name = parts[0].strip()
 
             # check if name is noise_lag
-            if name != "noise_lag" and name != "noise_lum":
+            if name not in ["noise_lag", "noise_lum", "fps", "P_0m"]:
                 continue
             else:
                 # Handle fixed values
@@ -3231,6 +3275,11 @@ def read_prior_noise(file_path):
                             noise_lag_prior = val_fixed
                         elif name == "noise_lum":
                             noise_lum_prior = val_fixed
+                        elif name == "fps":
+                            fps = val_fixed
+                        elif name == "P_0m":
+                            P_0m = val_fixed
+                    continue  # Skip further processing for fixed values
                                                     
                 min_val = parts[1].strip() if len(parts) > 1 else "nan"
                 max_val = parts[2].strip() if len(parts) > 2 else "nan"
@@ -3249,6 +3298,10 @@ def read_prior_noise(file_path):
                         noise_lag_prior = max_val
                     elif name == "noise_lum":
                         noise_lum_prior = max_val
+                    elif name == "fps":
+                        fps = max_val
+                    elif name == "P_0m":
+                        P_0m = max_val
                 else:
                     if name == "noise_lag":
                         # do the mean of the max and min values
@@ -3256,8 +3309,12 @@ def read_prior_noise(file_path):
                     elif name == "noise_lum":
                         # do the mean of the max and min values
                         noise_lum_prior = np.mean([min_val,max_val])
+                    elif name == "fps":
+                        fps = np.mean([min_val, max_val])
+                    elif name == "P_0m":
+                        P_0m = np.mean([min_val, max_val])
                 
-    return noise_lag_prior, noise_lum_prior
+    return noise_lag_prior, noise_lum_prior, fps, P_0m
 
 
 class find_dynestyfile_and_priors:
@@ -3532,13 +3589,13 @@ class find_dynestyfile_and_priors:
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
             prior_path_noise = self.prior_file
-            lag_noise_prior, lum_noise_prior = read_prior_noise(self.prior_file)
+            lag_noise_prior, lum_noise_prior, fps_prior, P_0m_prior = read_prior_noise_fps_P_0m(self.prior_file)
         else:
             # Look for local .prior
             existing_prior_list = [f for f in files if f.endswith(".prior")]
             if existing_prior_list:
                 prior_path_noise = os.path.join(root, existing_prior_list[0])
-                lag_noise_prior, lum_noise_prior = read_prior_noise(prior_path_noise)
+                lag_noise_prior, lum_noise_prior, fps_prior, P_0m_prior = read_prior_noise_fps_P_0m(prior_path_noise)
 
         if not (np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior)):
             print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
@@ -3557,7 +3614,7 @@ class find_dynestyfile_and_priors:
                 # default
                 prior_path = ""
 
-        observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior,self.pick_position, prior_path)
+        observation_instance = observation_data(input_file, self.use_all_cameras, lag_noise_prior, lum_noise_prior, fps_prior, P_0m_prior, self.pick_position, prior_path)
 
        # check if any camera was found if not return
         if not hasattr(observation_instance,'stations_lag'):

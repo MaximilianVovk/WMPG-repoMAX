@@ -466,6 +466,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
         return Tj, Tj_low, Tj_high, inclin_val
 
+
     def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
         """
         Summarize dynesty results, using the sample of max weight as the mode.
@@ -562,6 +563,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # the on that are not variables are the one that were not used in the dynesty run give a np.nan weight to dsampler for those
     all_samples = []
     all_weights = []
+    all_names = []  
 
     # base_name, lg_min_la_sun, bg, rho
     file_radiance_rho_dict = {}
@@ -577,7 +579,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
-        print(base_name)
+        print('\n', base_name)
         obs_data = finder.observation_instance(base_name)
         obs_data.file_name = pickle_file  # update the file name in the observation data object
         dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
@@ -729,6 +731,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
         rho_corrected.append(x_valid)
 
+        m_init_meteor_median = summary_df_meteor['Median'].values[variables.index('m_init')]
+
         print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
         
         # ### EROSION ENERGY CALCULATION ###
@@ -796,11 +800,12 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
         file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val)
         # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
-        file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle)
+        file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median)
 
         find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
         find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
 
+        all_names.append(base_name)
         all_samples.append(samples_aligned)
         all_weights.append(weights_aligned)
 
@@ -850,6 +855,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     max_mag = np.array([v[9] for v in file_obs_data_dict.values()])
     time_tot = np.array([v[10] for v in file_obs_data_dict.values()])
     zenith_angle = np.array([v[11] for v in file_obs_data_dict.values()])
+    m_init_med = np.array([v[12] for v in file_obs_data_dict.values()])
 
     leng_coszen = lenght_par * np.cos(zenith_angle * np.pi / 180)
 
@@ -887,16 +893,29 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     ### CORELATION OBSERVABLE PLOT ###
     print('Creating Correlation plot for the observable and the rho...')
 
+
+    log10_m_init= np.log10(m_init_med)
+
     # Define your observable names and corresponding data arrays
     observable_names = [
-        "$v_{avg}$ [km/s]", "$T$ [s]", "$L$ [km]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
+        "$v_{avg}$ [km/s]", "$T$ [s]", "$log_{10}(m_0)$", "$h_{beg}$ [km]", "$h_{end}$ [km]",
         "$k_c$", "$F$", "$L$/$cos(z_c)$ [km]", "$h_{peak}$ [km]", "$M_{peak}$"
     ]
 
     observable_arrays = [
-        avg_vel, time_tot, lenght_par, beg_height, end_height,
+        avg_vel, time_tot, log10_m_init, beg_height, end_height,
         kc_par, F_par, leng_coszen, max_lum_height, max_mag
     ]
+
+    # observable_names = [
+    #     "$v_{avg}$ [km/s]", "$T$ [s]", "$L$ [km]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
+    #     "$k_c$", "$F$", "$L$/$cos(z_c)$ [km]", "$h_{peak}$ [km]", "$M_{peak}$"
+    # ]
+
+    # observable_arrays = [
+    #     avg_vel, time_tot, lenght_par, beg_height, end_height,
+    #     kc_par, F_par, leng_coszen, max_lum_height, max_mag
+    # ]
 
     # Create figure with 2 rows and 5 columns
     fig, axes = plt.subplots(2, 5, figsize=(15, 5))
@@ -1255,6 +1274,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # Combine all the samples and weights into a single array
     combined_samples = np.vstack(all_samples)
     combined_weights = np.concatenate(all_weights)
+    # correlate all_names with combined_samples
+    all_names = np.array(all_names)
 
     # use a fixed seed for reproducibility
     rng = np.random.default_rng(seed=42)
@@ -1288,6 +1309,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         labels
     )
 
+    ### CREATE A TABLE of the Combination of all samples ###
 
     print(summary_df.to_string(index=False))
 
@@ -1366,6 +1388,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=w)
 
     print("Creating combined plot T_j rho and k_c...")
+    
+    # print("Creating combined plot T_j rho and mass...")
 
 
     # Create figure
@@ -1395,7 +1419,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     plus = rho_corrected_hi - rho_corrected_median
     minus = rho_corrected_median - rho_corrected_lo
     fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    title = rf"$\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
     ax_dist.set_title(title, fontsize=20)
     ax_dist.set_xlim(-100, 8300)
     ax_dist.tick_params(axis='x', labelbottom=False)
@@ -1422,8 +1446,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     scatter = ax_scatter.scatter(
         rho, tj,
+        # c=log10_m_init,
         c=kc_par,
         cmap='viridis',
+        # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
         norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
         s=30,
         zorder=2
@@ -1434,6 +1460,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     pos = ax_scatter.get_position()
     cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
     cbar = plt.colorbar(scatter, cax=cbar_ax)
+    # cbar.set_label('$log_{10}(m_0)$', fontsize=20)
     cbar.set_label('$k_c$ parameter', fontsize=20)
     # the ticks size of the colorbar
     cbar.ax.tick_params(labelsize=20)
@@ -1458,7 +1485,164 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     # Save
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10m_combined_plot.png"), bbox_inches='tight', dpi=300)
     plt.close()
+
+            
+
+
+    ### plot of JFC HTC AST ###
+
+    print("Creating JFC, HTC, AST plot...")
+
+    # ---------- Build per-sample mapping to Tj via base_name ----------
+    # # Expect ONE of these to exist for per-event names:
+    # event_names_like = None
+    # for _cand in ['event_names', 'base_names', 'base_name_list', 'names_events', 'all_names']:
+    #     if _cand in globals():
+    #         event_names_like = np.asarray(globals()[_cand])
+    #         break
+    # if event_names_like is None:
+    #     raise RuntimeError("Provide per-event names array (e.g., event_names or base_names) aligned with tj.")
+    
+    event_names_like = all_names
+
+    tj = np.asarray(tj, float)  # per-event Tj (same length as event_names_like)
+    if tj.shape[0] != event_names_like.shape[0]:
+        raise RuntimeError("Length mismatch: event_names vs tj.")
+
+    # dict: base_name -> Tj
+    tj_by_name = {str(n): float(v) for n, v in zip(event_names_like, tj)}
+
+    # Ensure per-sample names of length N_samples
+    N_samples = combined_samples.shape[0]
+    all_names = np.asarray(all_names)
+
+    if all_names.shape[0] == N_samples:
+        names_per_sample = all_names.astype(str)
+    elif all_names.shape[0] == len(all_samples):
+        # Expand by repeating each event's name by its sample count
+        names_per_sample = np.concatenate([
+            np.repeat(str(name), arr.shape[0]) for name, arr in zip(all_names, all_samples)
+        ])
+        if names_per_sample.shape[0] != N_samples:
+            raise RuntimeError("Expanded names length does not match combined_samples rows.")
+    else:
+        raise RuntimeError("all_names must be per-sample or per-event (same length as all_samples).")
+
+    # Map each sample's base_name -> Tj (NaN if missing)
+    tj_samples = np.array([tj_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+
+    # ---------- Pull rho_corrected samples & weights ----------
+    rho_samp = np.asarray(rho_corrected, float)
+    if rho_samp.shape[0] != N_samples:
+        # Try to locate rho_corrected column in combined_samples via 'variables'
+        if 'variables' in globals() and ('rho_corrected' in variables):
+            rho_idx = variables.index('rho_corrected')
+            rho_samp = combined_samples[:, rho_idx].astype(float)
+        else:
+            raise RuntimeError("rho_corrected length mismatch and no 'variables' index found.")
+
+    w_all = np.asarray(combined_weights, float)
+    w_all = np.where(np.isfinite(w_all), w_all, 0.0)
+    if np.nansum(w_all) > 0:
+        w_all = w_all / np.nansum(w_all)
+
+    # Global range & plotting params (match your panel)
+    smooth = 0.02
+    lo_all = float(np.nanmin(rho_samp))
+    hi_all = float(np.nanmax(rho_samp))
+    nbins = int(round(10.0 / smooth))
+    xlim = (-100, 8300)
+
+    # ---------- Helper: a panel identical to your top one ----------
+    def _panel_like_top(ax, rho_vals, weights, title_prefix, lo, hi, nbins, xlim):
+        # guard
+        m = np.isfinite(rho_vals)
+        if weights is not None:
+            m = m & np.isfinite(weights)
+        if not np.any(m):
+            ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
+                    ha='center', va='center', fontsize=14, color='black')
+            _style(ax, xlim)
+            return
+
+        r = rho_vals[m]
+        w = None
+        if weights is not None:
+            w = weights[m].astype(float)
+            if np.nansum(w) > 0:
+                w = w / np.nansum(w)
+            else:
+                w = None
+
+        hist, edges = np.histogram(r, bins=nbins, weights=w, range=(lo, hi))
+        hist = norm_kde(hist, 10.0)
+        bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+        # Weighted percentiles (your _quantile)
+        if w is not None:
+            q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
+        else:
+            q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
+
+        # Fill + lines (black)
+        ax.fill_between(bin_centers, hist, color='black', alpha=0.6)
+        for q in (q_lo, q_med, q_hi):
+            ax.axvline(q, color='black', linestyle='--', linewidth=1.5)
+
+        plus  = q_hi - q_med
+        minus = q_med - q_lo
+        fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+        title = (rf"{title_prefix} — $\rho$ [kg/m$^3$] = {fmt(q_med)}"
+                rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+        ax.set_title(title, fontsize=20)
+
+        _style(ax, xlim)
+
+    def _style(ax, xlim):
+        ax.set_xlim(*xlim)
+        ax.tick_params(axis='x', labelbottom=False)
+        ax.tick_params(axis='y', left=False, labelleft=False)
+        ax.set_ylabel("")
+        for sp in ['left','right','top']: # 'bottom',
+            ax.spines[sp].set_visible(False)
+
+    # ---------- Class masks at SAMPLE level ----------
+    finite = np.isfinite(rho_samp) & np.isfinite(tj_samples) & np.isfinite(w_all)
+    ast_m = finite & (tj_samples >= 3.0)
+    jfc_m = finite & (tj_samples >= 2.0) & (tj_samples < 3.0)
+    htc_m = finite & (tj_samples < 2.0)
+
+    # find the number of tj above 3
+    num_tj_above_3 = tj[tj >= 3].shape[0]
+    # find the number of tj in between 2 and 3
+    num_tj_between_2_and_3 = tj[(tj >= 2) & (tj < 3)].shape[0]
+    # find the number of tj below 2
+    num_tj_below_2 = tj[tj < 2].shape[0]
+
+    # ---------- Figure with three stacked panels ----------
+    fig, axes = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
+
+    _panel_like_top(axes[0], rho_samp[ast_m], w_all[ast_m], "Tot N." + str(num_tj_above_3) + " AST", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[1], rho_samp[jfc_m], w_all[jfc_m], "Tot N." + str(num_tj_between_2_and_3) + " JFC", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[2], rho_samp[htc_m], w_all[htc_m], "Tot N." + str(num_tj_below_2) + " HTC", lo_all, hi_all, nbins, xlim) # "N° " + str(num_tj_below_2) + " HTC"
+
+    # Bottom labels/ticks to match your style
+    axes[2].tick_params(axis='x', labelbottom=True)
+    axes[2].set_xlabel(r'$\rho$ (kg/m$^3$)', fontsize=20)
+    axes[2].set_xticks(np.arange(0, 9000, 2000))
+    for ax in axes:
+        ax.tick_params(labelsize=20)
+
+    # Save
+    out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_Tj_threepanels_weighted.png")
+    plt.savefig(out_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print("Saved:", out_path)
+
+
+
 
     # print("saving rho distribution...")
     
@@ -1833,7 +2017,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance",
+         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics_with_EMCCD",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

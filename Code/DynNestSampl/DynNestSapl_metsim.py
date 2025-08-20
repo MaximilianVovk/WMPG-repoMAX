@@ -2154,14 +2154,14 @@ class observation_data:
             if len(lag_files) > 1:
                 print('WARNING: Multiple files detected. Using all cameras for lag, the recorded data might have different starting time.')
 
-            if any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
-                self.P_0m = 840
-                self.fps_lum = 80
-                self.fps_lag = 80
-            elif any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
+            if any(("1G" in station) or ("2G" in station) or ("1F" in station) or ("2F" in station) for station in unique_stations):
                 self.P_0m = 935
                 self.fps_lum = 32
                 self.fps_lag = 32
+            elif any(("1K" in station) or ("2K" in station) or ("1T" in station) or ("2T" in station) for station in unique_stations):
+                self.P_0m = 840
+                self.fps_lum = 80
+                self.fps_lag = 80
             else:
                 # print(unique_stations,'no known camera found')
                 # return

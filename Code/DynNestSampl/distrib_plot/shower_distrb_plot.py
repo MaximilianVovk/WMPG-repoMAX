@@ -898,7 +898,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     # Define your observable names and corresponding data arrays
     observable_names = [
-        "$v_{avg}$ [km/s]", "$T$ [s]", "$log_{10}(m_0)$", "$h_{beg}$ [km]", "$h_{end}$ [km]",
+        "$v_{avg}$ [km/s]", "$T$ [s]", "$log_{10}(m_0$ [kg]$)$", "$h_{beg}$ [km]", "$h_{end}$ [km]",
         "$k_c$", "$F$", "$L$/$cos(z_c)$ [km]", "$h_{peak}$ [km]", "$M_{peak}$"
     ]
 

@@ -2026,7 +2026,7 @@ class observation_data:
 
                 # check that fps is not nan and P_0m is not nan
                 if np.isnan(P_0m_prior):
-                    print('P_0m is not set, consider it as CAMO-narrowfield if 1 and 2 in camera station (i.e. output from .Met file)')
+                    # print('P_0m is not set, consider it as CAMO-narrowfield if 1 and 2 in camera station (i.e. output from .Met file)')
                     # check if the station_id is in the old format from .Met solution normally is CAMO narrow-field
                     if "1" == obs.station_id:
                         obs.station_id = obs.station_id.replace("1", "01T")

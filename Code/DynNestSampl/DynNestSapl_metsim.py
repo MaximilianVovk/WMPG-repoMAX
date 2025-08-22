@@ -2171,7 +2171,6 @@ class observation_data:
                 else:
                     self.P_0m = P_0m_prior
                 if np.isnan(fps_prior):
-                    print('Compute fps_lag and fps_lum for each camera')
                     # take for each of the station the average time in betwen the time and time lag with the same flag_station
                     for station in unique_stations:
                         indices = np.where(lum_data['flag_station'] == station)[0]
@@ -2179,6 +2178,7 @@ class observation_data:
                         time_diffs = np.diff(lum_data['time'][indices])
                         self.fps_lum = np.round(1/np.mean(time_diffs)) # if time_diffs.size > 0 or np.mean(time_diffs) != 0 else 32
                         self.fps_lag = np.round(1/np.mean(time_diffs)) # if time_diffs.size > 0 or np.mean(time_diffs) != 0 else 32
+                    print('Computed fps_lag and fps_lum for each camera', np.round(1/np.mean(time_diffs)))
                 else:
                     self.fps_lum = fps_prior
                     self.fps_lag = fps_prior

@@ -389,10 +389,40 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     def extract_tj_from_report(report_path):
         Tj = Tj_low = Tj_high = None
-        inclin_val = None
+        inclin_val = Q_val = q_val = a_val = e_val = Vinf_val = None
         
         re_i_val = re.compile(
             r'^\s*i\s*=\s*'                           
+            r'([+-]?\d+\.\d+)'                         
+        )
+
+        re_Vinf_val = re.compile(
+            r'^\s*Vinf\s*=\s*'                           
+            r'([+-]?\d+\.\d+)'                         
+        )
+
+        re_a_val = re.compile(
+            r'^\s*a\s*=\s*'                           
+            r'([+-]?\d+\.\d+)'                         
+        )
+
+        re_e_val = re.compile(
+            r'^\s*e\s*=\s*'                           
+            r'([+-]?\d+\.\d+)'                         
+        )
+
+        re_q_val = re.compile(
+            r'^\s*q\s*=\s*'                           
+            r'([+-]?\d+\.\d+)'                         
+        )
+
+        re_Q_val = re.compile(
+            r'^\s*Q\s*=\s*'                           
+            r'([+-]?\d+\.\d+)'                         
+        )
+
+        re_Vinf_val = re.compile(
+            r'^\s*Vinf\s*=\s*'                           
             r'([+-]?\d+\.\d+)'                         
         )
 
@@ -449,8 +479,29 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                     m = re_i_val.match(line)
                     if m:
                         inclin_val = float(m.group(1))
+                if Vinf_val is None:
+                    m = re_Vinf_val.match(line)
+                    if m:
+                        Vinf_val = float(m.group(1))
+                if Q_val is None:
+                    m = re_Q_val.match(line)
+                    if m:
+                        Q_val = float(m.group(1))
+                if q_val is None:
+                    m = re_q_val.match(line)
+                    if m:
+                        q_val = float(m.group(1))
+                if a_val is None:
+                    m = re_a_val.match(line)
+                    if m:
+                        a_val = float(m.group(1))
+                if e_val is None:
+                    m = re_e_val.match(line)
+                    if m:
+                        e_val = float(m.group(1))
+                        
 
-                if Tj is not None and inclin_val is not None:
+                if Tj is not None and inclin_val is not None and Vinf_val is not None and Q_val is not None and q_val is not None and a_val is not None and e_val is not None:
                     break
 
 
@@ -458,13 +509,20 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             raise RuntimeError(f"Couldn’t find any Tj line in {report_path!r}")
         if inclin_val is None:
             raise RuntimeError(f"Couldn’t find inclination (i) in {report_path!r}")
+        if Vinf_val is None:
+            raise RuntimeError(f"Couldn’t find Vinf in {report_path!r}")
 
         print(f"Tj = {Tj:.6f} 95% CI = [{Tj_low:.6f}, {Tj_high:.6f}]")
         Tj_low = (Tj - Tj_low)#/1.96
         Tj_high = (Tj_high - Tj)#/1.96
+        print(f"Vinf = {Vinf_val:.6f} km/s")
+        print(f"a = {a_val:.6f} AU")
+        print(f"e = {e_val:.6f}")
         print(f"i = {inclin_val:.6f} deg")
+        print(f"Q = {Q_val:.6f} AU")
+        print(f"q = {q_val:.6f} AU")
 
-        return Tj, Tj_low, Tj_high, inclin_val
+        return Tj, Tj_low, Tj_high, inclin_val, Vinf_val, Q_val, q_val, a_val, e_val
 
 
     def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
@@ -580,6 +638,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
         print('\n', base_name)
+        print(f"Processed {i+1} out of {len(finder.base_names)}")
         obs_data = finder.observation_instance(base_name)
         obs_data.file_name = pickle_file  # update the file name in the observation data object
         dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
@@ -688,6 +747,12 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         if obs_data.v_kill < 0:
             obs_data.v_kill = 1
 
+        best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
+
+        heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+        mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+        erosion_beg_dyn_press = best_guess_obj_plot.const.erosion_beg_dyn_press
+        print(f"Dynamic pressure at erosion onset: {erosion_beg_dyn_press} Pa")
 
         if flag_total_rho:
             
@@ -697,13 +762,9 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             if 'm_init' in variables_sing:
                 m_init = guess[variables_sing.index('m_init')]
 
-
-            best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
-
-            heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
-            mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
-
-            mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+            old_mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+            mass_before = best_guess_obj_plot.const.mass_at_erosion_change
+            print(f"Mass before erosion change: {mass_before} kg, old mass before: {old_mass_before} kg")
 
             x = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
             mask = ~np.isnan(x)
@@ -732,6 +793,9 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         rho_corrected.append(x_valid)
 
         m_init_meteor_median = summary_df_meteor['Median'].values[variables.index('m_init')]
+
+        # compute the meteoroid_diameter from a spherical shape in mm
+        meteoroid_diameter_mm = (6 * m_init_meteor_median / (np.pi * rho))**(1/3) * 1000
 
         print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
         
@@ -796,11 +860,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, rho, lg_lo, lg_hi, bg_lo, bg_hi)
         file_radiance_rho_dict_helio[base_name] = (lg_min_la_sun_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi)
 
-        tj, tj_lo, tj_hi, inclin_val = extract_tj_from_report(report_path)
+        tj, tj_lo, tj_hi, inclin_val, Vinf_val, Q_val, q_val, a_val, e_val = extract_tj_from_report(report_path)
 
-        file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val)
+        file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Q_val, q_val, a_val, e_val)
         # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
-        file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median)
+        file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press)
 
         find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
         find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
@@ -835,6 +899,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     tj_lo = np.array([v[4] for v in file_rho_jd_dict.values()])
     tj_hi = np.array([v[5] for v in file_rho_jd_dict.values()])
     inclin_val = np.array([v[6] for v in file_rho_jd_dict.values()])
+    Vinf_val = np.array([v[7] for v in file_rho_jd_dict.values()])
+    Q_val = np.array([v[8] for v in file_rho_jd_dict.values()])
+    q_val = np.array([v[9] for v in file_rho_jd_dict.values()])
+    a_val = np.array([v[10] for v in file_rho_jd_dict.values()])
+    e_val = np.array([v[11] for v in file_rho_jd_dict.values()])
 
     lg_min_la_sun_helio = np.array([v[0] for v in file_radiance_rho_dict_helio.values()])
     lg_helio_lo = np.array([v[1] for v in file_radiance_rho_dict_helio.values()])
@@ -856,6 +925,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     time_tot = np.array([v[10] for v in file_obs_data_dict.values()])
     zenith_angle = np.array([v[11] for v in file_obs_data_dict.values()])
     m_init_med = np.array([v[12] for v in file_obs_data_dict.values()])
+    meteoroid_diameter_mm = np.array([v[13] for v in file_obs_data_dict.values()])
+    erosion_beg_dyn_press = np.array([v[14] for v in file_obs_data_dict.values()])
 
     leng_coszen = lenght_par * np.cos(zenith_angle * np.pi / 180)
 
@@ -889,6 +960,138 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # plt.tight_layout()
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
 
+    ### PLOT rho and error of rho agaist Q ###
+
+    fig = plt.figure(figsize=(12, 4), constrained_layout=True)
+    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 0.05])
+
+    # axes
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = fig.add_subplot(gs[0, 1])
+    cax = fig.add_subplot(gs[0, 2])
+
+    # first plot
+    ax1.errorbar(rho, q_val,
+                xerr=[abs(rho_lo), abs(rho_hi)],
+                elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
+    sc = ax1.scatter(rho, q_val, c=tj, cmap='viridis',
+                    norm=Normalize(vmin=tj.min(), vmax=tj.max()), s=30, zorder=2)
+    ax1.axhline(0.2, color='red', linestyle='-.', linewidth=1)
+    # ax1.text(100, 0.18, "Sun-approaching", color='black', fontsize=12, va='bottom')
+    ax1.set_xlabel("Rho [kg/m³]", fontsize=15)
+    ax1.set_ylabel("Perihelion [AU]", fontsize=15)
+    ax1.set_yscale("log")
+
+    # second plot
+    ax2.errorbar(rho, Q_val,
+                xerr=[abs(rho_lo), abs(rho_hi)],
+            elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
+    sc = ax2.scatter(rho, Q_val, c=tj, cmap='viridis',
+                    norm=Normalize(vmin=tj.min(), vmax=tj.max()), s=30, zorder=2)
+    ax2.axhline(4.5, color='red', linestyle='--', linewidth=1)
+    # ax2.text(100, 4.2, "AST", color='black', fontsize=12, va='bottom')
+    ax2.set_xlabel("Rho [kg/m³]", fontsize=15)
+    ax2.set_ylabel("Aphelion [AU]", fontsize=15)
+    ax2.set_yscale("log")
+
+    # shared colorbar
+    cbar = fig.colorbar(sc, cax=cax)
+    cbar.set_label(r"Tisserand parameter (T$_j$)", fontsize=12)
+
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_Q_q.png"),
+                dpi=300)
+    plt.close()
+
+    # # cooler to show I guess...
+
+    # fig = plt.figure(figsize=(12, 6), constrained_layout=True)
+    # gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 0.05])
+
+    # ax_q = fig.add_subplot(gs[0, 0])                  # left: q (x) vs rho (y)
+    # ax_Q = fig.add_subplot(gs[0, 1], sharey=ax_q)     # right: Q (x) vs rho (y)
+    # cax  = fig.add_subplot(gs[0, 2])                  # colorbar axis
+
+    # norm = Normalize(vmin=np.nanmin(tj), vmax=np.nanmax(tj))
+
+    # # ------------------ Perihelion panel (left) ------------------
+    # for i in range(len(q_val)):
+    #     ax_q.errorbar(q_val[i], rho[i],
+    #                 xerr=[[0], [0]], # no q errors shown; adjust if you have them
+    #                 yerr=[[abs(rho_lo[i])], [abs(rho_hi[i])]],
+    #                 fmt='none', ecolor='black', elinewidth=0.75, capthick=0.75, capsize=3, zorder=1)
+
+    # sc_q = ax_q.scatter(q_val, rho, c=tj, cmap='viridis', norm=norm, s=30, zorder=2)
+
+    # ax_q.set_xlabel('Perihelion q [AU]', fontsize=14)
+    # # flip the x axis
+    # ax_q.set_ylabel('Rho [kg/m³]', fontsize=14)
+    # # ax_q.grid(True, alpha=0.4)
+    # # make the x axis log
+    # ax_q.set_xscale('log')
+
+    # # take the x axis limit
+    # q_lim = ax_q.get_xlim()
+
+    # # x runs from left (small q) to right (1 AU), i.e., flipped so 1 is at the right edge
+    # ax_q.set_xlim(q_lim[0], 1.0)
+
+    # # Optional: annotate q=0.2 threshold line (horizontal in previous layout → vertical here doesn’t apply)
+    # # You can add any reference lines specific to q as needed.
+
+
+    # # ------------------ Aphelion panel (right) ------------------
+    # for i in range(len(Q_val)):
+    #     ax_Q.errorbar(Q_val[i], rho[i],
+    #                 xerr=[[0], [0]], # no Q errors shown; adjust if you have them
+    #                 yerr=[[abs(rho_lo[i])], [abs(rho_hi[i])]],
+    #                 fmt='none', ecolor='black', elinewidth=0.75, capthick=0.75, capsize=3, zorder=1)
+
+    # sc_Q = ax_Q.scatter(Q_val, rho, c=tj, cmap='viridis', norm=norm, s=30, zorder=2)
+
+    # ax_Q.set_xlabel('Aphelion Q [AU]', fontsize=14)
+    # # ax_Q.grid(True, alpha=0.4)
+
+    # # make the x axis log
+    # ax_Q.set_xscale('log')
+
+    # # take the x axis limit
+    # Q_lim = ax_Q.get_xlim()
+
+    # # x runs from 1 AU (left) upwards
+    # ax_Q.set_xlim(1.0, Q_lim[1])
+
+    # # # mark Earth's orbit at 1 AU on this panel
+    # # ax_Q.axvline(1.0, color='red', linestyle='--', linewidth=1)
+    # # ax_Q.text(1.0, 1.02, 'Earth (1 AU)', transform=ax_Q.get_xaxis_transform(),
+    # #         ha='left', va='bottom', fontsize=10)
+
+    # # ------------------ Shared y-limits ------------------
+    # ax_q.set_ylim(-100, 8300)
+
+    # # ------------------ One shared colorbar on the right ------------------
+    # # (use either sc_Q or sc_q; both share the same norm/cmap)
+    # cbar = fig.colorbar(sc_Q, cax=cax)
+    # cbar.set_label(r'Tisserand parameter (T$_j$)', fontsize=12)
+
+    # # If you want to hide duplicate y tick labels on the right:
+    # plt.setp(ax_Q.get_yticklabels(), visible=False)
+
+    # # Save
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_q_Q_split1AU.png"),
+    #             dpi=300)
+    # plt.close()
 
     ### CORELATION OBSERVABLE PLOT ###
     print('Creating Correlation plot for the observable and the rho...')
@@ -898,13 +1101,13 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     # Define your observable names and corresponding data arrays
     observable_names = [
-        "$v_{avg}$ [km/s]", "$T$ [s]", "$log_{10}(m_0$ [kg]$)$", "$h_{beg}$ [km]", "$h_{end}$ [km]",
-        "$k_c$", "$F$", "$L$/$cos(z_c)$ [km]", "$h_{peak}$ [km]", "$M_{peak}$"
+        "$v_{avg}$ [km/s]", "$T$ [s]", "log$_{10}$($m_0$) [kg]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
+        "$k_c$", "$F$", "$d$ [mm]", "$T_j$", "$z_c$ [deg]"
     ]
 
     observable_arrays = [
         avg_vel, time_tot, log10_m_init, beg_height, end_height,
-        kc_par, F_par, leng_coszen, max_lum_height, max_mag
+        kc_par, F_par, meteoroid_diameter_mm, tj, zenith_angle
     ]
 
     # observable_names = [
@@ -1006,7 +1209,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         # stream_data = stream_data[stream_data['activity'].str.contains("annual", case=False, na=False)]
         # print(f"Found {len(stream_data)} stream data points for shower IAU number: {shower_iau_no} with activity 'annual'")
         # extract all LoR	S_LoR	LaR
-        stream_lor = stream_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)','LAMhel (deg)', 'BEThel (deg)']].values
+        stream_lor = stream_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)','LAMhel (deg)', 'BEThel (deg)','Vgeo (km/s)','HtBeg (km)', 'TisserandJ']].values
         # translate to double precision float
         stream_lor = stream_lor.astype(np.float64)
         # and now compute lg_min_la_sun = (lg - la_sun)%360
@@ -1014,9 +1217,57 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         stream_bg = stream_lor[:, 1]
         stream_lg_min_la_sun_helio = (stream_lor[:, 3] - stream_lor[:, 2]) % 360
         stream_bg_helio = stream_lor[:, 4]
+        stream_vgeo = stream_lor[:, 5]
+        stream_htbeg = stream_lor[:, 6]
+        stream_tj = stream_lor[:, 7]
         # print(f"Found {len(stream_lg_min_la_sun)} stream data points for shower IAU number: {shower_iau_no}")
 
         if shower_iau_no != -1:
+
+            print(f"Plotting stream data for shower IAU number: {shower_iau_no}")
+
+            spor_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202402.txt","traj_summary_monthly_202402.pickle")
+            # save the csv_file to a file called: "traj_summary_monthly_202402.csv"
+            spor_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202402.csv", index=False)
+            spor_data = spor_data[spor_data['IAU (No)'] == -1]
+
+            spor_lor = spor_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)','LAMhel (deg)', 'BEThel (deg)','Vgeo (km/s)','HtBeg (km)', 'TisserandJ']].values
+            # translate to double precision float
+            spor_lor = spor_lor.astype(np.float64)
+            # and now compute lg_min_la_sun = (lg - la_sun)%360
+            spor_lg_min_la_sun = (spor_lor[:, 0] - spor_lor[:, 2]) % 360
+            spor_bg = spor_lor[:, 1]
+            spor_lg_min_la_sun_helio = (spor_lor[:, 3] - spor_lor[:, 2]) % 360
+            spor_bg_helio = spor_lor[:, 4]
+            spor_vgeo = spor_lor[:, 5]
+            spor_htbeg = spor_lor[:, 6]
+            spor_tj = spor_lor[:, 7]
+
+            ### Velocity vs begin height scaterd with rho ###
+            print('Creating Velocity vs Begin Height scatter plot with stream...')
+            plt.figure(figsize=(10, 6))
+            scatter_GMN_spor = plt.scatter(spor_vgeo, spor_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
+            scatter_GMN_stream = plt.scatter(stream_vgeo, stream_htbeg, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
+            # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
+            ## mass or mm diameter
+            # scatter_d = plt.scatter(Vinf_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
+            # plt.colorbar(scatter_d, label='mass [kg]')
+            scatter = plt.scatter(Vinf_val, beg_height, c=rho, cmap='viridis', s=20, norm=Normalize(vmin=rho.min(), vmax=rho.max()), zorder=3)
+            plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
+
+            plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
+            plt.ylabel('$h_{beg}$ [km]', fontsize=15)
+            plt.grid(True)
+
+            # # x axes from 10 to 22
+            # plt.xlim(11, 22)
+            # # y axes from 70 to 110
+            # plt.ylim(70, 110)
+
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height.png"), bbox_inches='tight', dpi=300)
+            plt.close()
+
             ##### plot the data #####
 
             # after you’ve built your rho array:
@@ -1121,9 +1372,9 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             plt.gca().invert_xaxis()
 
             # increase the label size
-            cbar = plt.colorbar(scatter, label='Median density (kg/m$^3$)')
+            cbar = plt.colorbar(scatter, label='$\\rho$ (kg/m$^3$)')
             # 2. now set the label’s font size and the tick labels’ size
-            cbar.set_label('Median density (kg/m$^3$)', fontsize=15)
+            cbar.set_label('$\\rho$ (kg/m$^3$)', fontsize=15)
             cbar.ax.tick_params(labelsize=15)
 
             plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
@@ -1134,6 +1385,30 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             plt.close()
 
         else: 
+            ### Velocity vs begin height scaterd with rho ###
+            print('Creating Velocity vs Begin Height scatter plot with stream...')
+            plt.figure(figsize=(10, 6))
+            scatter_GMN = plt.scatter(stream_vgeo, stream_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
+            # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
+            # mass or mm diameter
+            scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(erosion_beg_dyn_press), cmap='coolwarm', s=60, norm=Normalize(vmin=np.log10(erosion_beg_dyn_press).min(), vmax=np.log10(erosion_beg_dyn_press).max()), zorder=2)
+            plt.colorbar(scatter_d, label='log$_{10}$ of Dynamic Pressure at erosion [Pa]')
+            scatter = plt.scatter(Vinf_val, beg_height, c=np.log10(rho), cmap='viridis', s=20, norm=Normalize(vmin=np.log10(rho).min(), vmax=np.log10(rho).max()), zorder=3)
+            plt.colorbar(scatter, label='log$_{10}$ $\\rho$ [kg/m³]')
+
+            plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
+            plt.ylabel('$h_{beg}$ [km]', fontsize=15)
+            plt.grid(True)
+
+            # # x axes from 10 to 22
+            # plt.xlim(11, 22)
+            # # y axes from 70 to 110
+            # plt.ylim(70, 110)
+
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height.png"), bbox_inches='tight', dpi=300)
+            plt.close()
+
             for plot_type in ['helio', 'geo']:
                 print(f"Plotting ecliptic {plot_type}centric data with GMN...")
                 if plot_type == 'geo':
@@ -1243,7 +1518,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
                 # --- Add colorbar for scatter points only ---
                 cbar = plt.colorbar(scatter, orientation='horizontal', pad=0.08)
-                cbar.set_label('Median density (kg/m$^3$)', fontsize=13)
+                cbar.set_label('$\\rho$ (kg/m$^3$)', fontsize=13)
                 cbar.ax.tick_params(labelsize=11)
 
                 # --- Custom X-axis: centered at 270° and inverted ---
@@ -1641,13 +1916,103 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     plt.close()
     print("Saved:", out_path)
 
+    ### mass change plots ###
+
+    print("Creating mass change plots for rho...")
+
+    m_init_med = np.asarray(m_init_med, float)  # per-event Tj (same length as event_names_like)
+    if m_init_med.shape[0] != event_names_like.shape[0]:
+        raise RuntimeError("Length mismatch: event_names vs tj.")
+
+    # dict: base_name -> Tj
+    m_init_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, m_init_med)}
+
+    # Map each sample's base_name -> Tj (NaN if missing)
+    m_init_med_samples = np.array([m_init_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+
+    # ---------- Class masks at SAMPLE level ----------
+    finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
+    big = finite & (m_init_med_samples >= 10**(-4))
+    medium_b = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
+    medium_s = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
+    small = finite & (m_init_med_samples < 10**(-5))
+
+    # find the number of mass
+    num_big = m_init_med[m_init_med >= 10**(-4)].shape[0]
+    num_medium_b = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
+    num_medium_s = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
+    num_small = m_init_med[m_init_med < 10**(-5)].shape[0]
+
+    # ---------- Figure with three stacked panels ----------
+    fig, axes = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
+
+    _panel_like_top(axes[0], rho_samp[big], w_all[big], "Tot N." + str(num_big) + " above 10$^{-4}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[1], rho_samp[medium_b], w_all[medium_b], "Tot N." + str(num_medium_b) + " 10$^{-4}$ - 5$\cdot$10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[2], rho_samp[medium_s], w_all[medium_s], "Tot N." + str(num_medium_s) + " 5$\cdot$10$^{-5}$ - 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[3], rho_samp[small], w_all[small], "Tot N." + str(num_small) + " below 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
+
+    # Bottom labels/ticks to match your style
+    axes[3].tick_params(axis='x', labelbottom=True)
+    axes[3].set_xlabel(r'$\rho$ (kg/m$^3$)', fontsize=20)
+    axes[3].set_xticks(np.arange(0, 9000, 2000))
+    for ax in axes:
+        ax.tick_params(labelsize=20)
+
+    # Save
+    out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
+    plt.savefig(out_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print("Saved:", out_path)
 
 
+    ### diameter change plots ###
 
-    # print("saving rho distribution...")
-    
-    # # plot rho distribution with the weighted histogram
-    # plt.figure(figsize=(8, 6))
+    print("Creating diameter change plots for rho...")
+
+    # same for meteoroid_diameter_mm
+    meteoroid_diameter_mm = np.asarray(meteoroid_diameter_mm, float) 
+    if meteoroid_diameter_mm.shape[0] != event_names_like.shape[0]:
+        raise RuntimeError("Length mismatch: event_names vs meteoroid_diameter_mm.")
+
+    # dict: base_name -> meteoroid_diameter_mm
+    meteoroid_diameter_mm_by_name = {str(n): float(v) for n, v in zip(event_names_like, meteoroid_diameter_mm)}
+    # Map each sample's base_name -> meteoroid_diameter_mm (NaN if missing)
+    meteoroid_diameter_mm_samples = np.array([meteoroid_diameter_mm_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+
+    # ---------- Class masks at SAMPLE level ----------
+    finite = np.isfinite(rho_samp) & np.isfinite(meteoroid_diameter_mm_samples) & np.isfinite(w_all)
+    big = finite & (meteoroid_diameter_mm_samples >= 7.5)
+    medium_b = finite & (meteoroid_diameter_mm_samples >= 5) & (meteoroid_diameter_mm_samples < 7.5)
+    medium_s = finite & (meteoroid_diameter_mm_samples >= 2.5) & (meteoroid_diameter_mm_samples < 5)
+    small = finite & (meteoroid_diameter_mm_samples < 2.5)
+
+    # find the number of mass
+    num_big = meteoroid_diameter_mm[meteoroid_diameter_mm >= 7.5].shape[0]
+    num_medium_b = meteoroid_diameter_mm[(meteoroid_diameter_mm >= 5) & (meteoroid_diameter_mm < 7.5)].shape[0]
+    num_medium_s = meteoroid_diameter_mm[(meteoroid_diameter_mm >= 2.5) & (meteoroid_diameter_mm < 5)].shape[0]
+    num_small = meteoroid_diameter_mm[meteoroid_diameter_mm < 2.5].shape[0]
+
+    # ---------- Figure with three stacked panels ----------
+    fig, axes = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
+
+    _panel_like_top(axes[0], rho_samp[big], w_all[big], "Tot N." + str(num_big) + " above 7.5 mm", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[1], rho_samp[medium_b], w_all[medium_b], "Tot N." + str(num_medium_b) + " 5 - 7.5 mm", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[2], rho_samp[medium_s], w_all[medium_s], "Tot N." + str(num_medium_s) + " 2.5 - 5 mm", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[3], rho_samp[small], w_all[small], "Tot N." + str(num_small) + " below 2.5 mm", lo_all, hi_all, nbins, xlim)
+
+    # Bottom labels/ticks to match your style
+    axes[3].tick_params(axis='x', labelbottom=True)
+    axes[3].set_xlabel(r'$\rho$ (kg/m$^3$)', fontsize=20)
+    axes[3].set_xticks(np.arange(0, 9000, 2000))
+    for ax in axes:
+        ax.tick_params(labelsize=20)
+
+    # Save
+    out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_diameter_threepanels_weighted.png")
+    plt.savefig(out_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print("Saved:", out_path)
+
 
     # rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=w)
 
@@ -2017,7 +2382,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics_with_EMCCD",
+         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_EMCCD+CAMO",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

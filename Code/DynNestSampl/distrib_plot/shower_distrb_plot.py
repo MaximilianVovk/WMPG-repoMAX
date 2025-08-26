@@ -21,6 +21,7 @@ from DynNestSapl_metsim import *
 from scipy.stats import gaussian_kde
 from dynesty import utils as dyfunc
 from matplotlib.ticker import FormatStrFormatter
+from matplotlib.gridspec import GridSpec
 import itertools
 from dynesty.utils import quantile as _quantile
 from scipy.ndimage import gaussian_filter as norm_kde
@@ -618,6 +619,21 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             return self.weights
 
 
+    def weighted_var_eros_height_change(var_start, var_heightchange, mass_before, m_init, w):
+        x = var_start*(abs(m_init-mass_before) / m_init) + var_heightchange * (mass_before / m_init)
+        mask = ~np.isnan(x)
+        x_valid = x[mask]
+        w_valid = w[mask]
+
+        # renormalize
+        w_valid /= np.sum(w_valid)
+
+        # weighted quantiles
+        rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+        rho_lo = (rho - rho_lo) #/1.96
+        rho_hi = (rho_hi - rho) #/1.96
+        return x_valid, rho, rho_lo, rho_hi
+
     # the on that are not variables are the one that were not used in the dynesty run give a np.nan weight to dsampler for those
     all_samples = []
     all_weights = []
@@ -627,13 +643,15 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     file_radiance_rho_dict = {}
     file_radiance_rho_dict_helio = {}
     file_obs_data_dict = {}
+    file_phys_data_dict = {}
     file_eeu_dict = {}
     file_rho_jd_dict = {}
     find_worst_lag = {}
     find_worst_lum = {}
     # corrected rho
     rho_corrected = []
-
+    eta_corrected = []
+    sigma_corrected = []
 
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
@@ -766,20 +784,33 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             mass_before = best_guess_obj_plot.const.mass_at_erosion_change
             print(f"Mass before erosion change: {mass_before} kg, old mass before: {old_mass_before} kg")
 
-            x = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
-            mask = ~np.isnan(x)
-            x_valid = x[mask]
-            w_valid = w[mask]
+            x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
 
-            # renormalize
-            w_valid /= np.sum(w_valid)
+            rho_corrected.append(x_valid_rho)
 
-            # weighted quantiles
-            rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
-            rho_lo = (rho - rho_lo) #/1.96
-            rho_hi = (rho_hi - rho) #/1.96
-            rho_total = x_valid
-            rho_total 
+            x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
+
+            eta_corrected.append(x_valid_eta)
+
+            # erosion_sigma_change
+            x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
+
+            sigma_corrected.append(x_valid_sigma)
+
+            # x = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+            # mask = ~np.isnan(x)
+            # x_valid = x[mask]
+            # w_valid = w[mask]
+
+            # # renormalize
+            # w_valid /= np.sum(w_valid)
+
+            # # weighted quantiles
+            # rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+            # rho_lo = (rho - rho_lo) #/1.96
+            # rho_hi = (rho_hi - rho) #/1.96
+            # rho_total = x_valid
+            # rho_total 
 
         else:
             rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
@@ -788,17 +819,56 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
             x = samples[:, variables_sing.index('rho')].astype(float)
             mask = ~np.isnan(x)
-            x_valid = x[mask]
+            x_valid_rho = x[mask] 
 
-        rho_corrected.append(x_valid)
+            rho_corrected.append(x_valid_rho)
 
+            eta_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
+            eta_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+            eta = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+
+            x = samples[:, variables_sing.index('erosion_coeff')].astype(float)
+            mask = ~np.isnan(x)
+            x_valid_eta = x[mask]
+
+            eta_corrected.append(x_valid_eta)
+
+            sigma_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
+            sigma_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
+            sigma = summary_df_meteor['Median'].values[variables.index('sigma')]
+
+            x = samples[:, variables_sing.index('sigma')].astype(float)
+            mask = ~np.isnan(x)
+            x_valid_sigma = x[mask]
+
+            sigma_corrected.append(x_valid_sigma)
+
+        # rho_corrected.append(x_valid)
+        # sigma_corrected.append(np.std(x_valid))
+        # eta_corrected.append
+    
         m_init_meteor_median = summary_df_meteor['Median'].values[variables.index('m_init')]
+        m_init_meteor_lo = summary_df_meteor['Median'].values[variables.index('m_init')] - summary_df_meteor['Low95'].values[variables.index('m_init')]
+        m_init_meteor_hi = summary_df_meteor['High95'].values[variables.index('m_init')] - summary_df_meteor['Median'].values[variables.index('m_init')]
+
+        eta_meteor_begin = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+        sigma_meteor_begin = summary_df_meteor['Median'].values[variables.index('sigma')]
+        v_init_meteor_median = summary_df_meteor['Median'].values[variables.index('v_init')]
 
         # compute the meteoroid_diameter from a spherical shape in mm
-        meteoroid_diameter_mm = (6 * m_init_meteor_median / (np.pi * rho))**(1/3) * 1000
+        all_diameter_mm = (6 * samples[:, variables_sing.index('m_init')].astype(float) / (np.pi * x_valid_rho))**(1/3) * 1000
+        # make the quntile base on w 
+        meteoroid_diameter_mm_lo, meteoroid_diameter_mm, meteoroid_diameter_mm_hi = _quantile(all_diameter_mm, [0.025, 0.5, 0.975], weights=w)
+        meteoroid_diameter_mm_lo = (meteoroid_diameter_mm - meteoroid_diameter_mm_lo) #/1.96
+        meteoroid_diameter_mm_hi = (meteoroid_diameter_mm_hi - meteoroid_diameter_mm) #/1.96
+
+        # meteoroid_diameter_mm_old = (6 * m_init_meteor_median / (np.pi * rho))**(1/3) * 1000
 
         print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
-        
+        print(f"intial mass {m_init_meteor_median} kg and diameter {meteoroid_diameter_mm:.6f} mm")#, old diameter {meteoroid_diameter_mm_old:.6f} mm")
+        # print(f"erosion coeff: {eta} m/s, 95% CI = [{eta_lo}, {eta_hi}]")
+        # print(f"sigma: {sigma} kg/m^3, 95% CI = [{sigma_lo}, {sigma_hi}]")
+
         # ### EROSION ENERGY CALCULATION ###
 
         # print("Calculating erosion energy per unit cross section and mass...")
@@ -864,7 +934,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
         file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Q_val, q_val, a_val, e_val)
         # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
-        file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press)
+        file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median)
+        file_phys_data_dict[base_name] = (eta_meteor_begin, eta, eta_lo, eta_hi, sigma_meteor_begin, sigma, sigma_lo, sigma_hi, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi)
 
         find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
         find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
@@ -927,6 +998,22 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     m_init_med = np.array([v[12] for v in file_obs_data_dict.values()])
     meteoroid_diameter_mm = np.array([v[13] for v in file_obs_data_dict.values()])
     erosion_beg_dyn_press = np.array([v[14] for v in file_obs_data_dict.values()])
+    v_init_meteor_median = np.array([v[15] for v in file_obs_data_dict.values()])
+
+    eta_meteor_begin = np.array([v[0] for v in file_phys_data_dict.values()])
+    eta_corr = np.array([v[1] for v in file_phys_data_dict.values()])
+    eta_corr_hi = np.array([v[2] for v in file_phys_data_dict.values()])
+    eta_corr_lo = np.array([v[3] for v in file_phys_data_dict.values()])
+    sigma_meteor_begin = np.array([v[4] for v in file_phys_data_dict.values()])
+    sigma_corr = np.array([v[5] for v in file_phys_data_dict.values()])
+    sigma_corr_hi = np.array([v[6] for v in file_phys_data_dict.values()])
+    sigma_corr_lo = np.array([v[7] for v in file_phys_data_dict.values()])
+    meteoroid_diameter_mm = np.array([v[8] for v in file_phys_data_dict.values()])
+    meteoroid_diameter_mm_lo = np.array([v[9] for v in file_phys_data_dict.values()])
+    meteoroid_diameter_mm_hi = np.array([v[10] for v in file_phys_data_dict.values()])
+    m_init_meteor_median = np.array([v[11] for v in file_phys_data_dict.values()])
+    m_init_meteor_lo = np.array([v[12] for v in file_phys_data_dict.values()])
+    m_init_meteor_hi = np.array([v[13] for v in file_phys_data_dict.values()])
 
     leng_coszen = lenght_par * np.cos(zenith_angle * np.pi / 180)
 
@@ -960,9 +1047,57 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # plt.tight_layout()
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
 
+    ### PLOT rho and error against dynamic pressure color by speed ###
+
+    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+    scatter = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
+    plt.errorbar(rho, np.log10(erosion_beg_dyn_press),
+                xerr=[abs(rho_lo), abs(rho_hi)],
+                elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
+    plt.colorbar(scatter, label='v$_{0}$ [km/s]')
+    plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
+    plt.ylabel("log$_{10}$ Dynamic Pressure [Pa]", fontsize=15)
+    # plt.yscale("log")
+    # grid on
+    plt.grid(True)
+
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_dynamic_pressure.png"), bbox_inches='tight', dpi=300)
+
+
+    ### PLOT rho and error against eta pressure color by speed ###
+
+    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+    scatter = plt.scatter(np.log10(rho), np.log10(eta_meteor_begin), c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
+    # plt.errorbar(np.log10(rho), np.log10(eta_meteor_begin),
+    #             xerr=[abs(rho_lo), abs(rho_hi)],
+    #             elinewidth=0.75,
+    #         capthick=0.75,
+    #         fmt='none',
+    #         ecolor='black',
+    #         capsize=3,
+    #         zorder=1
+    #     )
+    plt.colorbar(scatter, label='v$_{0}$ [km/s]')
+    plt.xlabel("log$_{10}$ $\\rho$ [kg/m³]", fontsize=15) # log$_{10}$
+    plt.ylabel("log$_{10}$ $\eta$ [kg/MJ]", fontsize=15)
+    # plt.yscale("log")
+    # grid on
+    plt.grid(True)
+
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_eta.png"), bbox_inches='tight', dpi=300)
+
+
     ### PLOT rho and error of rho agaist Q ###
 
-    fig = plt.figure(figsize=(12, 4), constrained_layout=True)
+    fig = plt.figure(figsize=(10, 6), constrained_layout=True)
     gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 0.05])
 
     # axes
@@ -984,7 +1119,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                     norm=Normalize(vmin=tj.min(), vmax=tj.max()), s=30, zorder=2)
     ax1.axhline(0.2, color='red', linestyle='-.', linewidth=1)
     # ax1.text(100, 0.18, "Sun-approaching", color='black', fontsize=12, va='bottom')
-    ax1.set_xlabel("Rho [kg/m³]", fontsize=15)
+    ax1.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
     ax1.set_ylabel("Perihelion [AU]", fontsize=15)
     ax1.set_yscale("log")
 
@@ -1002,7 +1137,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
                     norm=Normalize(vmin=tj.min(), vmax=tj.max()), s=30, zorder=2)
     ax2.axhline(4.5, color='red', linestyle='--', linewidth=1)
     # ax2.text(100, 4.2, "AST", color='black', fontsize=12, va='bottom')
-    ax2.set_xlabel("Rho [kg/m³]", fontsize=15)
+    ax2.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
     ax2.set_ylabel("Aphelion [AU]", fontsize=15)
     ax2.set_yscale("log")
 
@@ -1252,8 +1387,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             ## mass or mm diameter
             # scatter_d = plt.scatter(Vinf_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
             # plt.colorbar(scatter_d, label='mass [kg]')
-            scatter = plt.scatter(Vinf_val, beg_height, c=rho, cmap='viridis', s=20, norm=Normalize(vmin=rho.min(), vmax=rho.max()), zorder=3)
-            plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
+            scatter = plt.scatter(Vinf_val, beg_height, c=np.log10(rho), cmap='viridis', s=20, norm=Normalize(vmin=np.log10(rho.min()), vmax=np.log10(rho.max())), zorder=3)
+            plt.colorbar(scatter, label='log$_{10}$ $\\rho$ [kg/m³]')
 
             plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
             plt.ylabel('$h_{beg}$ [km]', fontsize=15)
@@ -1391,8 +1526,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             scatter_GMN = plt.scatter(stream_vgeo, stream_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
             # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
             # mass or mm diameter
-            scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(erosion_beg_dyn_press), cmap='coolwarm', s=60, norm=Normalize(vmin=np.log10(erosion_beg_dyn_press).min(), vmax=np.log10(erosion_beg_dyn_press).max()), zorder=2)
-            plt.colorbar(scatter_d, label='log$_{10}$ of Dynamic Pressure at erosion [Pa]')
+            # scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(eta_meteor_begin), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(eta_meteor_begin), 0.025), vmax=_quantile(np.log10(eta_meteor_begin), 0.975)), zorder=2)
+            # plt.colorbar(scatter_d, label='log$_{10}$ $\\eta$ [kg/MJ]')
             scatter = plt.scatter(Vinf_val, beg_height, c=np.log10(rho), cmap='viridis', s=20, norm=Normalize(vmin=np.log10(rho).min(), vmax=np.log10(rho).max()), zorder=3)
             plt.colorbar(scatter, label='log$_{10}$ $\\rho$ [kg/m³]')
 
@@ -1406,7 +1541,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             # plt.ylim(70, 110)
 
             plt.tight_layout()
-            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height.png"), bbox_inches='tight', dpi=300)
+            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height_rho-eta.png"), bbox_inches='tight', dpi=300)
             plt.close()
 
             for plot_type in ['helio', 'geo']:
@@ -1964,6 +2099,37 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     plt.close()
     print("Saved:", out_path)
 
+    # plot scatter
+    fig, ax = plt.subplots(figsize=(10, 13), constrained_layout=True)  # larger width, auto spacing
+
+    sc = ax.scatter(rho, log10_m_init, c=meteoroid_diameter_mm, cmap='viridis', s=30, norm=Normalize(vmin=meteoroid_diameter_mm.min(), vmax=meteoroid_diameter_mm.max()), zorder=2)
+
+    plt.errorbar(rho, log10_m_init, 
+            xerr=[abs(rho_lo), abs(rho_hi)],
+            # yerr=[abs(meteoroid_diameter_mm_lo)/1.96, abs(meteoroid_diameter_mm_hi)/1.96],
+            elinewidth=0.75, capthick=0.75,
+            fmt='none', ecolor='black', capsize=3, zorder=1)
+    
+    cbar = fig.colorbar(sc, ax=ax, orientation='vertical', pad=0.08)
+    cbar.set_label("Meteoroid Diameter [mm]", fontsize=20)
+    cbar.ax.tick_params(labelsize=12)
+        
+    # Guide lines
+    for yline in (np.log10(10**(-4)), np.log10(5*10**(-5)), np.log10(10**(-5))):
+        plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='slategray')
+
+    # add the label
+    plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=20)
+    # set x axis lim from (-100, 8300)
+    plt.xlim(-100, 8300)
+    plt.xticks(np.arange(0, 9000, 2000))
+    plt.ylabel('log$_{10}(m_0$ [kg]$)$', fontsize=20)
+    plt.tick_params(labelsize=14)
+    plt.grid(True, alpha=0.2)
+
+    # save the rho vs diameter plot
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_by_mass_scatter.png"), bbox_inches='tight', dpi=300)
+    plt.close()
 
     ### diameter change plots ###
 
@@ -2013,6 +2179,42 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     plt.close()
     print("Saved:", out_path)
 
+    ### Create scatter plot for rho vs diameter ###
+
+    fig, ax = plt.subplots(figsize=(10, 13), constrained_layout=True)  # larger width, auto spacing
+    # gs = GridSpec(nrows=4, ncols=2, width_ratios=[1.3, 1.0], hspace=0.25, wspace=0.5, figure=fig)
+
+    plt.errorbar(rho, meteoroid_diameter_mm, 
+                xerr=[abs(rho_lo), abs(rho_hi)],
+                yerr=[abs(meteoroid_diameter_mm_lo), abs(meteoroid_diameter_mm_hi)],
+                elinewidth=0.75, capthick=0.75,
+                fmt='none', ecolor='black', capsize=3, zorder=1)
+
+    sc = plt.scatter(rho, meteoroid_diameter_mm,
+                    c=log10_m_init, cmap='viridis',
+                    norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
+                    s=30, zorder=2)
+
+    # Guide lines
+    for yline in (2.5, 5.0, 7.5):
+        plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='slategray')
+
+    plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=20)
+    # set x axis lim from (-100, 8300)
+    plt.xlim(-100, 8300)
+    plt.xticks(np.arange(0, 9000, 2000))
+    plt.ylabel('Meteoroid diameter (mm)', fontsize=20)
+    plt.tick_params(labelsize=14)
+    plt.grid(True, alpha=0.2)
+
+    # Colorbar on the right of scatter only
+    cbar = fig.colorbar(sc, ax=ax, orientation='vertical', pad=0.08)
+    cbar.set_label(r'$\log_{10}(m_{0}$ [kg]$)$', fontsize=20)
+    cbar.ax.tick_params(labelsize=12)
+
+    # save the rho vs diameter plot
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_by_diameter_scatter.png"), bbox_inches='tight', dpi=300)
+    plt.close()
 
     # rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=w)
 
@@ -2382,7 +2584,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_EMCCD+CAMO",
+         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Slow_sporadics_with_EMCCD",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

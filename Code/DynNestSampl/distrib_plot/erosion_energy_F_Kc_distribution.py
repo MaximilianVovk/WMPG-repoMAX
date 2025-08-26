@@ -490,9 +490,9 @@ def extract_other_prop(input_dirfile, output_dir_show):
     plt.figure(figsize=(10, 6))
     # after you’ve built your rho array:
     norm = Normalize(vmin=np.min(rho_total), vmax=np.max(rho_total))
-    scatter = plt.scatter(lenght_par, eeucs, c=rho_total, cmap='viridis', s=30,
+    scatter = plt.scatter(lenght_par, eeucs, c=np.log10(rho_total), cmap='viridis', s=30,
                             norm=norm, zorder=2)
-    plt.colorbar(scatter, label='$\\rho$ (kg/m³)')
+    plt.colorbar(scatter, label='log$_{10}$ $\\rho$ (kg/m³)')
     plt.xlabel('Length (km)', fontsize=15)
     plt.ylabel('Erosion Energy per Unit Cross Section (MJ/m²)', fontsize=15)
     # increase the size of the tick labels
@@ -531,9 +531,9 @@ def extract_other_prop(input_dirfile, output_dir_show):
     # plot the lenght_par against eeucs and color with F_par
     plt.figure(figsize=(10, 10))
     # after you’ve built your rho array:
-    scatter = plt.scatter(eeum, eeum_end, c=rho_total, cmap='viridis', s=30,
+    scatter = plt.scatter(eeum, eeum_end, c=np.log10(rho_total), cmap='viridis', s=30,
                             norm=norm, zorder=2)
-    plt.colorbar(scatter, label='$\\rho$ (kg/m³)')
+    plt.colorbar(scatter, label='log$_{10}$ $\\rho$ (kg/m³)')
     plt.xlabel('Erosion Energy per Unit Mass before erosion (MJ/kg)', fontsize=15)
     plt.ylabel('Total Energy for complete ablation per Unit Mass (MJ/kg)', fontsize=15)
     # increase the size of the tick labels

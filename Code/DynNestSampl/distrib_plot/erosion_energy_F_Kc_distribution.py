@@ -489,7 +489,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
     print("Iron case rho_total len erosion_energy_per_unit_cross_section ...")
     plt.figure(figsize=(10, 6))
     # after you’ve built your rho array:
-    norm = Normalize(vmin=np.min(rho_total), vmax=np.max(rho_total))
+    norm = Normalize(vmin=np.min(np.log10(rho_total)), vmax=np.max(np.log10(rho_total)))
     scatter = plt.scatter(lenght_par, eeucs, c=np.log10(rho_total), cmap='viridis', s=30,
                             norm=norm, zorder=2)
     plt.colorbar(scatter, label='log$_{10}$ $\\rho$ (kg/m³)')
@@ -554,9 +554,9 @@ def extract_other_prop(input_dirfile, output_dir_show):
     # plot the lenght_par against eeucs and color with F_par
     plt.figure(figsize=(10, 10))
     # after you’ve built your rho array:
-    scatter = plt.scatter(eeucs, eeucs_end, c=rho_total, cmap='viridis', s=30,
+    scatter = plt.scatter(eeucs, eeucs_end, c=np.log10(rho_total), cmap='viridis', s=30,
                             norm=norm, zorder=2)
-    plt.colorbar(scatter, label='$\\rho$ (kg/m³)')
+    plt.colorbar(scatter, label='log$_{10}$ $\\rho$ (kg/m³)')
     plt.xlabel('Erosion Energy per Unit Cross Section before erosion (MJ/m²)', fontsize=15)
     plt.ylabel('Total Energy for complete ablation per Unit Cross Section (MJ/m²)', fontsize=15)
     # increase the size of the tick labels
@@ -577,7 +577,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Slow_sporadics_with_EMCCD",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_with_EMCCD",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

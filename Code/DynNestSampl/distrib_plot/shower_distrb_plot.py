@@ -18,6 +18,8 @@ if parent_dir not in sys.path:
 
 from DynNestSapl_metsim import *
 
+from itertools import combinations
+from scipy.stats import ks_2samp, mannwhitneyu, anderson_ksamp
 from scipy.stats import gaussian_kde
 from dynesty import utils as dyfunc
 from matplotlib.ticker import FormatStrFormatter
@@ -25,6 +27,7 @@ from matplotlib.gridspec import GridSpec
 import itertools
 from dynesty.utils import quantile as _quantile
 from scipy.ndimage import gaussian_filter as norm_kde
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize
 from dynesty import utils as dyfunc
@@ -38,6 +41,284 @@ from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
 # avoid showing warnings
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+import numpy as np
+
+
+
+# Create Results-like object for cornerplot
+class CombinedResults:
+    def __init__(self, samples, weights):
+        self.samples = samples
+        self.weights = weights
+
+    def __getitem__(self, key):
+        if key == 'samples':
+            return self.samples
+        raise KeyError(f"Key '{key}' not found.")
+
+    def importance_weights(self):
+        return self.weights
+
+
+# --- your best-fit peak-capturing gamma-like model ---
+def iron_percent(v_km_s):
+    """% Iron candidates as a function of velocity (km/s)."""
+    A, k, theta, m, v0 = 170.0, 2.7349189846, 0.3379023060, 0.5966146757, 8.4444529261
+    z = np.maximum(np.asarray(v_km_s) - v0, 0.0)
+    return A * (z**(k-1.0)) * np.exp(- (z/theta)**m)
+
+
+def reweight_iron_by_velocity(results, variables, rho_threshold=4000.0):
+    """
+    Down-weight samples with rho > rho_threshold by the velocity-dependent
+    iron fraction iron_percent(v)/100, where v is v_init in km/s.
+
+    Parameters
+    ----------
+    results : CombinedResults
+        Holds .samples (nsamps, ndim) and .importance_weights()
+    variables : list[str]
+        Names aligned with columns in results.samples
+        (must contain 'v_init' [m/s] and 'rho' [kg/m^3])
+    rho_threshold : float
+        Density above which a sample is treated as iron-like
+
+    Returns
+    -------
+    CombinedResults
+        New object with adjusted weights
+    """
+    print("Reweighting samples for iron candidates based on Mills et al. 2021 iron distribution...")
+    try:
+        i_v = variables.index('v_init')
+        i_rho = variables.index('rho')
+    except ValueError as e:
+        raise ValueError("variables must include 'v_init' and 'rho'") from e
+
+    samples = results.samples
+    w = results.importance_weights().astype(float).copy()
+
+    v_km_s = samples[:, i_v] / 1e3  # v_init given in m/s
+    rho = samples[:, i_rho]
+
+    # scale factor in [0, ~peak%/100]; only applied to iron-like samples
+    scale = iron_percent(v_km_s) / 100.0
+    scale = np.clip(scale, 0.0, 1.0)
+
+    mask_iron = rho > rho_threshold
+    w[mask_iron] *= scale[mask_iron]
+
+    # check how many got reweighted
+    print(f"  {np.sum(mask_iron)} samples with rho > {rho_threshold} kg/m^3 reweighted by iron fraction.")
+
+    # optional: small epsilon avoid all-zero weights if everything got down-weighted
+    if not np.any(w > 0):
+        raise RuntimeError("All weights became zero after reweighting. Check thresholds/fit.")
+
+    # Return a new CombinedResults with adjusted weights
+    return CombinedResults(samples, w)
+
+
+# ---------- Weighted resampling helper ----------
+def _weighted_resample(data, weights, n=None, rng=None):
+    """Resample values ~ weights (with replacement). NaNs handled upstream."""
+    rng = np.random.default_rng(rng)
+    data = np.asarray(data, float)
+    w = np.asarray(weights, float)
+    s = np.nansum(w)
+    if s <= 0 or data.size == 0:
+        return np.array([], dtype=float)
+    w = w / s
+    if n is None:
+        n = max(1, data.size)
+    idx = rng.choice(data.size, size=n, replace=True, p=w)
+    return data[idx]
+
+
+def _effective_sample_size(weights):
+    """ Kish's effective sample size for weights. """
+    w = np.asarray(weights, float)
+    w = w[np.isfinite(w) & (w > 0)]
+    if w.size == 0:
+        return 0.0
+    s1 = np.sum(w)
+    s2 = np.sum(w*w)
+    return (s1*s1) / s2 if s2 > 0 else 0.0
+
+# ---------- Main: run weighted tests for any number of groups ----------
+def weighted_tests_table(
+    values,
+    weights,
+    groups,
+    resample_n=5000,
+    random_seed=42,
+    caption=r"Pairwise tests on $\rho$ distributions (weighted resampling).",
+    label="tab:weighted_tests",
+    floatfmt=3,
+    save_path=None,):
+    """
+    Parameters
+    ----------
+    values : (N,) array-like
+        Data values (e.g. rho_samp).
+    weights : (N,) array-like
+        Weights aligned with values (e.g. w_all).
+    groups : dict[str, array[bool]] OR array-like of labels (len N)
+        Either: mapping {group_name -> boolean mask} or a labels array of group names per sample.
+    resample_n : int
+        Size of each group's resample for the tests (per pair).
+    random_seed : int
+        Seed for reproducibility.
+    caption : str
+        LaTeX caption.
+    label : str
+        LaTeX label.
+    floatfmt : int
+        Decimal places for floating results.
+    save_path : str or None
+        If given, write the LaTeX string to this path.
+
+    Returns
+    -------
+    tex_str : str
+        The LaTeX table string.
+    results : list of dict
+        Raw results per pair.
+    """
+    rng_master = np.random.default_rng(random_seed)
+
+    values = np.asarray(values, float)
+    weights = np.asarray(weights, float)
+
+    # Build group -> (clean values, clean weights)
+    group_data = []
+
+    if isinstance(groups, dict):
+        for gname, mask in groups.items():
+            m = np.asarray(mask, bool)
+            m = m & np.isfinite(values) & np.isfinite(weights)
+            v = values[m]
+            w = weights[m]
+            # normalize weights within group (not strictly required, but nice)
+            s = np.nansum(w)
+            if s > 0:
+                w = w / s
+            group_data.append((gname, v, w))
+    else:
+        # assume array-like labels
+        labels = np.asarray(groups)
+        finite = np.isfinite(values) & np.isfinite(weights) & (labels != None)
+        labels = labels[finite].astype(str)
+        v_all = values[finite]
+        w_all = weights[finite]
+        for gname in np.unique(labels):
+            m = labels == gname
+            v = v_all[m]
+            w = w_all[m]
+            s = np.nansum(w)
+            if s > 0:
+                w = w / s
+            group_data.append((gname, v, w))
+
+    # Filter out empty groups
+    group_data = [(g,v,w) for (g,v,w) in group_data if v.size > 0 and np.nansum(w) > 0]
+
+    # Prepare results
+    rows = []
+    for (gA, vA, wA), (gB, vB, wB) in combinations(group_data, 2):
+        # effective sizes (informative)
+        neffA = _effective_sample_size(wA)
+        neffB = _effective_sample_size(wB)
+
+        # resample
+        # use different seeds per pair to avoid accidental identical draws
+        seedA = rng_master.integers(0, 2**31 - 1)
+        seedB = rng_master.integers(0, 2**31 - 1)
+        rA = _weighted_resample(vA, wA, n=resample_n, rng=seedA)
+        rB = _weighted_resample(vB, wB, n=resample_n, rng=seedB)
+
+        # If either is empty (degenerate), skip
+        if rA.size == 0 or rB.size == 0:
+            rows.append(dict(
+                A=gA, nA=float(neffA), B=gB, nB=float(neffB),
+                ks_D=np.nan, ks_p=np.nan,
+                mwu_U=np.nan, mwu_p=np.nan,
+                ad_stat=np.nan, ad_sig=np.nan
+            ))
+            continue
+
+        # KS
+        ks_D, ks_p = ks_2samp(rA, rB, alternative="two-sided", mode="auto")
+
+        # Mann-Whitney U (two-sided)
+        # Note: MWU assumes continuous distributions; ties are fine but exact method may switch.
+        mwu_U, mwu_p = mannwhitneyu(rA, rB, alternative="two-sided")
+
+        # Anderson-Darling k-sample (2 groups is fine); returns approx significance level
+        ad_stat, ad_crit, ad_sig = anderson_ksamp([rA, rB])
+
+        rows.append(dict(
+            A=gA, nA=float(neffA), B=gB, nB=float(neffB),
+            ks_D=float(ks_D), ks_p=float(ks_p),
+            mwu_U=float(mwu_U), mwu_p=float(mwu_p),
+            ad_stat=float(ad_stat), ad_sig=float(ad_sig)
+        ))
+
+    # Build LaTeX table
+    # Columns: A, n_eff(A), B, n_eff(B), KS D, KS p, MWU U, MWU p, AD stat, AD sig
+    f = floatfmt
+    def _fmt(x, sci=False):
+        if x is None or not np.isfinite(x):
+            return "--"
+        if sci:
+            return f"{x:.{f}e}"
+        return f"{x:.{f}f}"
+    
+    # "Group A & $n_\\mathrm{eff}(A)$ & Group B & $n_\\mathrm{eff}(B)$ & "
+    # f"{r['A']} & {_fmt(r['nA'])} & "
+    # f"{r['B']} & {_fmt(r['nB'])} & "
+
+    header = (
+        "\\begin{table}[h!]\n"
+        "\\centering\n"
+        "\\small\n"
+        "\\begin{adjustbox}{max width=\\textwidth}\n"
+        "\\begin{tabular}{l l r r r r r r}\n"
+        "\\hline\n"
+        "Group A & Group B & "
+        "KS $D$ & KS $p$ & MWU $U$ & MWU $p$ & AD stat & AD sig.\\\\\n"
+        "\\hline\n"
+    )
+
+    lines = []
+    for r in rows:
+        line = (
+            f"{r['A']} & "
+            f"{r['B']} & "
+            f"{_fmt(r['ks_D'])} & {_fmt(r['ks_p'], sci=True)} & "
+            f"{_fmt(r['mwu_U'])} & {_fmt(r['mwu_p'], sci=True)} & "
+            f"{_fmt(r['ad_stat'])} & {_fmt(r['ad_sig'], sci=True)} \\\\"
+        )
+        lines.append(line)
+
+    footer = (
+        "\\hline\n"
+        "\\end{tabular}\n"
+        "\\end{adjustbox}\n"
+        f"\\caption{{{caption}}}\n"
+        f"\\label{{{label}}}\n"
+        "\\end{table}\n"
+    )
+
+    tex_str = header + "\n".join(lines) + "\n" + footer
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        with open(save_path, "w", encoding="utf-8") as fobj:
+            fobj.write(tex_str)
+
+    return tex_str, rows
 
 
 def run_single_eeu(sim_num_and_data):
@@ -87,7 +368,7 @@ def run_single_eeu(sim_num_and_data):
         return (sim_num, np.nan, np.nan)
     
 
-def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
+def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plot_flag=False, plot_correl_flag=False):
     """
     Function to plot the distribution of the parameters from the dynesty files and save them as a table in LaTeX format.
     """
@@ -603,22 +884,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             columns=["Variable","Label","Low95","Mode","Mode_{Ndim}","Mean","Median","High95"]
         )
 
-
-    # Create Results-like object for cornerplot
-    class CombinedResults:
-        def __init__(self, samples, weights):
-            self.samples = samples
-            self.weights = weights
-
-        def __getitem__(self, key):
-            if key == 'samples':
-                return self.samples
-            raise KeyError(f"Key '{key}' not found.")
-
-        def importance_weights(self):
-            return self.weights
-
-
     def weighted_var_eros_height_change(var_start, var_heightchange, mass_before, m_init, w):
         x = var_start*(abs(m_init-mass_before) / m_init) + var_heightchange * (mass_before / m_init)
         mask = ~np.isnan(x)
@@ -892,7 +1157,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         # for res in results:
         #     i, eeucs, eeum = res
         #     erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1000000 # convert to MJ/m^2
-        #     erosion_energy_per_unit_mass_arr[i] = eeum / 1000000 # convert to MJ/kg
+        #     erosion_energy_per_unit_mass_arr[i] = eeum / 1000000 # convert to kg/MJ
         
         # weights = dynesty_run_results.importance_weights()
         # w = weights / np.sum(weights)
@@ -1048,9 +1313,12 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
 
     ### PLOT rho and error against dynamic pressure color by speed ###
-
+    thr = 3.1  # log10 Pa  (≈ 1.58 kPa)
     fig = plt.figure(figsize=(6, 4), constrained_layout=True)
 
+    
+    scatter_d = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+    plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
     scatter = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
     plt.errorbar(rho, np.log10(erosion_beg_dyn_press),
                 xerr=[abs(rho_lo), abs(rho_hi)],
@@ -1061,9 +1329,17 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             capsize=3,
             zorder=1
         )
+    # # plot for each the all_names close to their name
+    # for i, txt in enumerate(all_names):
+    #     # put th text in the plot
+    #     plt.annotate(txt, (rho[i], np.log10(erosion_beg_dyn_press[i])), fontsize=8, color='black')
+    # invert the y axis
+    plt.gca().invert_yaxis()
     plt.colorbar(scatter, label='v$_{0}$ [km/s]')
     plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
     plt.ylabel("log$_{10}$ Dynamic Pressure [Pa]", fontsize=15)
+    # plot the thr line
+    plt.axhline(y=thr, color='gray', linestyle='--', linewidth=1)
     # plt.yscale("log")
     # grid on
     plt.grid(True)
@@ -1093,7 +1369,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     plt.grid(True)
 
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_eta.png"), bbox_inches='tight', dpi=300)
-
 
     ### PLOT rho and error of rho agaist Q ###
 
@@ -1294,390 +1569,417 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     plt.figure(figsize=(8, 6))
     stream_lg_min_la_sun = []
     stream_bg = []
+    shower_iau_no = -1
 
-    # check if "C:\Users\maxiv\WMPG-repoMAX\Code\Utils\streamfulldata2022.csv" exists
-    if not os.path.exists(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results"):
-        print("GMN File traj_summary_monthly not found. Please get the data from the GMN website or use the local files.")
-    else:
-        # empty pandas dataframe
-        stream_data = []
-        # if name has "CAP" in the shower_name, then filter the stream_data for the shower_iau_no
-        print(f"Filtering stream data for shower: {shower_name}")
-        shower_iau_no = -1
-        if "CAP" in shower_name:
-            csv_file_1 = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202407.txt","traj_summary_monthly_202407.pickle")
-            # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
-            csv_file_1.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202407.csv", index=False)
-            csv_file_2 = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202408.txt","traj_summary_monthly_202408.pickle")
-            # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
-            csv_file_2.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202408.csv", index=False)
-            # extend the in csv_file
-            stream_data = pd.concat([csv_file_1, csv_file_2], ignore_index=True)
-            shower_iau_no = 1#"00001"
-        elif "PER" in shower_name:
-            stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202408.txt","traj_summary_monthly_202408.pickle")
-            # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
-            stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202408.csv", index=False)
-            shower_iau_no = 7#"00007"
-        elif "ORI" in shower_name: 
-            stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202410.txt","traj_summary_monthly_202410.pickle")
-            # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
-            stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202410.csv", index=False)
-            shower_iau_no = 8#"00008"
-        elif "DRA" in shower_name:  
-            stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202410.txt","traj_summary_monthly_202410.pickle")
-            # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
-            stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202410.csv", index=False)
-            shower_iau_no = 9#"00009"
+    if radiance_plot_flag == True:
+        # check if "C:\Users\maxiv\WMPG-repoMAX\Code\Utils\streamfulldata2022.csv" exists
+        if not os.path.exists(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results"):
+            print("GMN File traj_summary_monthly not found. Please get the data from the GMN website or use the local files.")
         else:
-            stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202402.txt","traj_summary_monthly_202402.pickle")
-            # save the csv_file to a file called: "traj_summary_monthly_202402.csv"
-            stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202402.csv", index=False)
+            # empty pandas dataframe
+            stream_data = []
+            # if name has "CAP" in the shower_name, then filter the stream_data for the shower_iau_no
+            print(f"Filtering stream data for shower: {shower_name}")
             shower_iau_no = -1
-
-
-        print(f"Filtering stream data for shower IAU number: {shower_iau_no}")
-        # filter the stream_data for the shower_iau_no
-        stream_data = stream_data[stream_data['IAU (No)'] == shower_iau_no]
-        print(f"Found {len(stream_data)} stream data points for shower IAU number: {shower_iau_no}")
-        # # and take the one that have activity " annual "
-        # stream_data = stream_data[stream_data['activity'].str.contains("annual", case=False, na=False)]
-        # print(f"Found {len(stream_data)} stream data points for shower IAU number: {shower_iau_no} with activity 'annual'")
-        # extract all LoR	S_LoR	LaR
-        stream_lor = stream_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)','LAMhel (deg)', 'BEThel (deg)','Vgeo (km/s)','HtBeg (km)', 'TisserandJ']].values
-        # translate to double precision float
-        stream_lor = stream_lor.astype(np.float64)
-        # and now compute lg_min_la_sun = (lg - la_sun)%360
-        stream_lg_min_la_sun = (stream_lor[:, 0] - stream_lor[:, 2]) % 360
-        stream_bg = stream_lor[:, 1]
-        stream_lg_min_la_sun_helio = (stream_lor[:, 3] - stream_lor[:, 2]) % 360
-        stream_bg_helio = stream_lor[:, 4]
-        stream_vgeo = stream_lor[:, 5]
-        stream_htbeg = stream_lor[:, 6]
-        stream_tj = stream_lor[:, 7]
-        # print(f"Found {len(stream_lg_min_la_sun)} stream data points for shower IAU number: {shower_iau_no}")
-
-        if shower_iau_no != -1:
-
-            print(f"Plotting stream data for shower IAU number: {shower_iau_no}")
-
-            spor_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202402.txt","traj_summary_monthly_202402.pickle")
-            # save the csv_file to a file called: "traj_summary_monthly_202402.csv"
-            spor_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202402.csv", index=False)
-            spor_data = spor_data[spor_data['IAU (No)'] == -1]
-
-            spor_lor = spor_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)','LAMhel (deg)', 'BEThel (deg)','Vgeo (km/s)','HtBeg (km)', 'TisserandJ']].values
-            # translate to double precision float
-            spor_lor = spor_lor.astype(np.float64)
-            # and now compute lg_min_la_sun = (lg - la_sun)%360
-            spor_lg_min_la_sun = (spor_lor[:, 0] - spor_lor[:, 2]) % 360
-            spor_bg = spor_lor[:, 1]
-            spor_lg_min_la_sun_helio = (spor_lor[:, 3] - spor_lor[:, 2]) % 360
-            spor_bg_helio = spor_lor[:, 4]
-            spor_vgeo = spor_lor[:, 5]
-            spor_htbeg = spor_lor[:, 6]
-            spor_tj = spor_lor[:, 7]
-
-            ### Velocity vs begin height scaterd with rho ###
-            print('Creating Velocity vs Begin Height scatter plot with stream...')
-            plt.figure(figsize=(10, 6))
-            scatter_GMN_spor = plt.scatter(spor_vgeo, spor_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
-            scatter_GMN_stream = plt.scatter(stream_vgeo, stream_htbeg, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
-            # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
-            ## mass or mm diameter
-            # scatter_d = plt.scatter(Vinf_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
-            # plt.colorbar(scatter_d, label='mass [kg]')
-            scatter = plt.scatter(Vinf_val, beg_height, c=np.log10(rho), cmap='viridis', s=20, norm=Normalize(vmin=np.log10(rho.min()), vmax=np.log10(rho.max())), zorder=3)
-            plt.colorbar(scatter, label='log$_{10}$ $\\rho$ [kg/m³]')
-
-            plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
-            plt.ylabel('$h_{beg}$ [km]', fontsize=15)
-            plt.grid(True)
-
-            # # x axes from 10 to 22
-            # plt.xlim(11, 22)
-            # # y axes from 70 to 110
-            # plt.ylim(70, 110)
-
-            plt.tight_layout()
-            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height.png"), bbox_inches='tight', dpi=300)
-            plt.close()
-
-            ##### plot the data #####
-
-            # after you’ve built your rho array:
-            norm = Normalize(vmin=rho.min(), vmax=rho.max())
-            # cmap = cm.viridis
-
-            # your stream data arrays
-            x = stream_lg_min_la_sun
-            y = stream_bg
-            # if shower_iau_no == -1: # revolve around the direction of motion of the Earth
-            #     x = np.where(x > 180, x - 360, x)
-
-            # build the KDE
-            xy  = np.vstack([x, y])
-            kde = gaussian_kde(xy)
-
-            # sample on a grid
-            xmin, xmax = x.min(), x.max()
-            ymin, ymax = y.min(), y.max()
-            X, Y = np.mgrid[xmin:xmax:200j, ymin:ymax:200j]
-            positions = np.vstack([X.ravel(), Y.ravel()])
-            Z = np.reshape(kde(positions).T, X.shape)
-
-            # heatmap via imshow
-            plt.imshow(
-                Z.T,
-                extent=(xmin, xmax, ymin, ymax),
-                origin='lower',
-                aspect='auto',
-                cmap='inferno',
-                alpha=0.6
-            )
-
-            # get the x axis limits
-            xlim = plt.xlim()
-            # get the y axis limits
-            ylim = plt.ylim()
-
             if "CAP" in shower_name:
-                print("Plotting CAP shower data...")
-                plt.xlim(xlim[0], 182)
-                plt.ylim(8, 11.5)
+                csv_file_1 = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202407.txt","traj_summary_monthly_202407.pickle")
+                # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
+                csv_file_1.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202407.csv", index=False)
+                csv_file_2 = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202408.txt","traj_summary_monthly_202408.pickle")
+                # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
+                csv_file_2.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202408.csv", index=False)
+                # extend the in csv_file
+                stream_data = pd.concat([csv_file_1, csv_file_2], ignore_index=True)
+                shower_iau_no = 1#"00001"
             elif "PER" in shower_name:
-                print("Plotting PER shower data...")
-                # plt.xlim(xlim[0], 65)
-                # plt.ylim(77, 81)
+                stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202408.txt","traj_summary_monthly_202408.pickle")
+                # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
+                stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202408.csv", index=False)
+                shower_iau_no = 7#"00007"
             elif "ORI" in shower_name: 
-                print("Plotting ORI shower data...")
-                # put an x lim and a y lim
-                plt.xlim(xlim[0], 251)
-                plt.ylim(-9, -6)
+                stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202410.txt","traj_summary_monthly_202410.pickle")
+                # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
+                stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202410.csv", index=False)
+                shower_iau_no = 8#"00008"
             elif "DRA" in shower_name:  
-                print("Plotting DRA shower data...")
-                # put an x lim and a y lim
-                plt.xlim(xlim[0], 65)
-                plt.ylim(77, 80.5)
+                stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202410.txt","traj_summary_monthly_202410.pickle")
+                # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
+                stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202410.csv", index=False)
+                shower_iau_no = 9#"00009"
+            else:
+                stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202402.txt","traj_summary_monthly_202402.pickle")
+                # save the csv_file to a file called: "traj_summary_monthly_202402.csv"
+                stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202402.csv", index=False)
+                shower_iau_no = -1
 
-            # if shower_iau_no == -1:
-            #     lg_min_la_sun = np.where(lg_min_la_sun > 180, lg_min_la_sun - 360, lg_min_la_sun)
 
-            # then draw points on top, at zorder=2 # jet
-            scatter = plt.scatter(
-                lg_min_la_sun, bg,
-                c=rho,
-                cmap='viridis',
-                norm=norm,
-                s=30,
-                zorder=2
-            )
+            print(f"Filtering stream data for shower IAU number: {shower_iau_no}")
+            # filter the stream_data for the shower_iau_no
+            stream_data = stream_data[stream_data['IAU (No)'] == shower_iau_no]
+            print(f"Found {len(stream_data)} stream data points for shower IAU number: {shower_iau_no}")
+            # # and take the one that have activity " annual "
+            # stream_data = stream_data[stream_data['activity'].str.contains("annual", case=False, na=False)]
+            # print(f"Found {len(stream_data)} stream data points for shower IAU number: {shower_iau_no} with activity 'annual'")
+            # extract all LoR	S_LoR	LaR
+            stream_lor = stream_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)','LAMhel (deg)', 'BEThel (deg)','Vgeo (km/s)','HtBeg (km)', 'TisserandJ']].values
+            # translate to double precision float
+            stream_lor = stream_lor.astype(np.float64)
+            # and now compute lg_min_la_sun = (lg - la_sun)%360
+            stream_lg_min_la_sun = (stream_lor[:, 0] - stream_lor[:, 2]) % 360
+            stream_bg = stream_lor[:, 1]
+            stream_lg_min_la_sun_helio = (stream_lor[:, 3] - stream_lor[:, 2]) % 360
+            stream_bg_helio = stream_lor[:, 4]
+            stream_vgeo = stream_lor[:, 5]
+            stream_htbeg = stream_lor[:, 6]
+            stream_tj = stream_lor[:, 7]
+            # print(f"Found {len(stream_lg_min_la_sun)} stream data points for shower IAU number: {shower_iau_no}")
 
-            # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
-            for i in range(len(lg_min_la_sun)):
-                # draw error bars for each point
-                plt.errorbar(
-                    lg_min_la_sun[i], bg[i],
-                    xerr=[[abs(lg_hi[i])], [abs(lg_lo[i])]],
-                    yerr=[[abs(bg_hi[i])], [abs(bg_lo[i])]],
-                    elinewidth=0.75,
-                    capthick=0.75,
-                    fmt='none',
-                    ecolor='black',
-                    capsize=3,
-                    zorder=1
-                )
-            
-            # # annotate each point with its base_name in tiny text
-            # for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
-            #     plt.annotate(
-            #         base_name,
-            #         xy=(x, y),
-            #         xytext=(30, 5),             # 5 points vertical offset
-            #         textcoords='offset points',
-            #         ha='center',
-            #         va='bottom',
-            #         fontsize=6,
-            #         alpha=0.8
-            #     )
+            if shower_iau_no != -1:
 
-            # increase the size of the tick labels
-            plt.gca().tick_params(labelsize=15)
+                print(f"Plotting stream data for shower IAU number: {shower_iau_no}")
 
-            plt.gca().invert_xaxis()
+                spor_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202402.txt","traj_summary_monthly_202402.pickle")
+                # save the csv_file to a file called: "traj_summary_monthly_202402.csv"
+                spor_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202402.csv", index=False)
+                spor_data = spor_data[spor_data['IAU (No)'] == -1]
 
-            # increase the label size
-            cbar = plt.colorbar(scatter, label='$\\rho$ (kg/m$^3$)')
-            # 2. now set the label’s font size and the tick labels’ size
-            cbar.set_label('$\\rho$ (kg/m$^3$)', fontsize=15)
-            cbar.ax.tick_params(labelsize=15)
+                spor_lor = spor_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)','LAMhel (deg)', 'BEThel (deg)','Vgeo (km/s)','HtBeg (km)', 'TisserandJ']].values
+                # translate to double precision float
+                spor_lor = spor_lor.astype(np.float64)
+                # and now compute lg_min_la_sun = (lg - la_sun)%360
+                spor_lg_min_la_sun = (spor_lor[:, 0] - spor_lor[:, 2]) % 360
+                spor_bg = spor_lor[:, 1]
+                spor_lg_min_la_sun_helio = (spor_lor[:, 3] - spor_lor[:, 2]) % 360
+                spor_bg_helio = spor_lor[:, 4]
+                spor_vgeo = spor_lor[:, 5]
+                spor_htbeg = spor_lor[:, 6]
+                spor_tj = spor_lor[:, 7]
 
-            plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
-            plt.ylabel(r'$\beta_{g}$ (J2000)', fontsize=15)
-            # plt.title('Radiant Distribution of Meteors')
-            plt.grid(True)
-            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_geo_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
-            plt.close()
+                ### Velocity vs begin height scaterd with rho ###
+                print('Creating Velocity vs Begin Height scatter plot with stream...')
+                plt.figure(figsize=(10, 6))
+                scatter_GMN_spor = plt.scatter(spor_vgeo, spor_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
+                scatter_GMN_stream = plt.scatter(stream_vgeo, stream_htbeg, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
+                # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
+                ## mass or mm diameter
+                # scatter_d = plt.scatter(Vinf_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
+                # plt.colorbar(scatter_d, label='mass [kg]')
+                scatter = plt.scatter(Vinf_val, beg_height, c=np.log10(rho), cmap='viridis', s=20, norm=Normalize(vmin=np.log10(rho.min()), vmax=np.log10(rho.max())), zorder=3)
+                plt.colorbar(scatter, label='log$_{10}$ $\\rho$ [kg/m³]')
 
-        else: 
-            ### Velocity vs begin height scaterd with rho ###
-            print('Creating Velocity vs Begin Height scatter plot with stream...')
-            plt.figure(figsize=(10, 6))
-            scatter_GMN = plt.scatter(stream_vgeo, stream_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
-            # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
-            # mass or mm diameter
-            # scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(eta_meteor_begin), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(eta_meteor_begin), 0.025), vmax=_quantile(np.log10(eta_meteor_begin), 0.975)), zorder=2)
-            # plt.colorbar(scatter_d, label='log$_{10}$ $\\eta$ [kg/MJ]')
-            scatter = plt.scatter(Vinf_val, beg_height, c=np.log10(rho), cmap='viridis', s=20, norm=Normalize(vmin=np.log10(rho).min(), vmax=np.log10(rho).max()), zorder=3)
-            plt.colorbar(scatter, label='log$_{10}$ $\\rho$ [kg/m³]')
+                plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
+                plt.ylabel('$h_{beg}$ [km]', fontsize=15)
+                plt.grid(True)
 
-            plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
-            plt.ylabel('$h_{beg}$ [km]', fontsize=15)
-            plt.grid(True)
+                # # x axes from 10 to 22
+                # plt.xlim(11, 22)
+                # # y axes from 70 to 110
+                # plt.ylim(70, 110)
 
-            # # x axes from 10 to 22
-            # plt.xlim(11, 22)
-            # # y axes from 70 to 110
-            # plt.ylim(70, 110)
+                plt.tight_layout()
+                plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height.png"), bbox_inches='tight', dpi=300)
+                plt.close()
 
-            plt.tight_layout()
-            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height_rho-eta.png"), bbox_inches='tight', dpi=300)
-            plt.close()
+                ##### plot the data #####
 
-            for plot_type in ['helio', 'geo']:
-                print(f"Plotting ecliptic {plot_type}centric data with GMN...")
-                if plot_type == 'geo':
-                    lg_min_la_sun_plot = lg_min_la_sun
-                    bg_plot = bg
-                    lg_lo_plot = lg_lo
-                    lg_hi_plot = lg_hi
-                    bg_lo_plot = bg_lo
-                    bg_hi_plot = bg_hi
-                    stream_lg_min_la_sun_plot = stream_lg_min_la_sun
-                    stream_bg_plot = stream_bg
-                elif plot_type == 'helio':  
-                    lg_min_la_sun_plot = lg_min_la_sun_helio
-                    bg_plot = bg_helio
-                    lg_lo_plot = lg_helio_lo
-                    lg_hi_plot = lg_helio_hi
-                    bg_lo_plot = bg_helio_lo
-                    bg_hi_plot = bg_helio_hi
-                    stream_lg_min_la_sun_plot = stream_lg_min_la_sun_helio
-                    stream_bg_plot = stream_bg_helio
+                # after you’ve built your rho array:
+                norm = Normalize(vmin=rho.min(), vmax=rho.max())
+                # cmap = cm.viridis
 
-                def wrap_around_center_deg(x, center=270):
-                    """Wraps angles around center to [-180, 180] and returns degrees."""
-                    return (x - center + 180) % 360 - 180
-                
-                # --- Wrap stream background points ---
-                x_stream_deg_wrapped = wrap_around_center_deg(stream_lg_min_la_sun_plot)
-                x_stream_rad_wrapped = -np.deg2rad(x_stream_deg_wrapped)  # flip
-                y_stream_rad = np.deg2rad(stream_bg_plot)
+                # your stream data arrays
+                x = stream_lg_min_la_sun
+                y = stream_bg
+                # if shower_iau_no == -1: # revolve around the direction of motion of the Earth
+                #     x = np.where(x > 180, x - 360, x)
 
-                # KDE on stream points (to get color per point)
-                xy_stream = np.vstack([x_stream_rad_wrapped, y_stream_rad])
-                kde_stream = gaussian_kde(xy_stream)
-                stream_density = kde_stream(xy_stream)  # one value per point
+                # build the KDE
+                xy  = np.vstack([x, y])
+                kde = gaussian_kde(xy)
 
-                # --- Setup black Aitoff plot ---
-                fig = plt.figure(figsize=(10, 5))
-                ax = fig.add_subplot(111, projection="aitoff", facecolor="black")  # black background
-                ax.set_facecolor("black")
-                ax.grid(True, color='gray', linestyle='--', linewidth=0.5, alpha=0.3)
+                # sample on a grid
+                xmin, xmax = x.min(), x.max()
+                ymin, ymax = y.min(), y.max()
+                X, Y = np.mgrid[xmin:xmax:200j, ymin:ymax:200j]
+                positions = np.vstack([X.ravel(), Y.ravel()])
+                Z = np.reshape(kde(positions).T, X.shape)
 
-                # --- Scatter stream points with inferno and alpha ---
-                scatter_stream = ax.scatter(
-                    x_stream_rad_wrapped,
-                    y_stream_rad,
-                    c=stream_density,
+                # heatmap via imshow
+                plt.imshow(
+                    Z.T,
+                    extent=(xmin, xmax, ymin, ymax),
+                    origin='lower',
+                    aspect='auto',
                     cmap='inferno',
-                    s=1,
-                    alpha=0.5,
-                    linewidths=0,
-                    zorder=1
+                    alpha=0.6
                 )
-                # --- Plot actual meteor points ---
-                # Wrap & flip heliocentric longitude
-                lg_deg_wrapped = wrap_around_center_deg(lg_min_la_sun_plot)
-                lg_rad_flipped = -np.deg2rad(lg_deg_wrapped)
-                bg_rad = np.deg2rad(bg_plot)
 
-                # Normalize rho for color mapping
-                norm = Normalize(vmin=np.nanmin(rho), vmax=np.nanmax(rho))
-                scatter = ax.scatter(
-                    lg_rad_flipped,
-                    bg_rad,
+                # get the x axis limits
+                xlim = plt.xlim()
+                # get the y axis limits
+                ylim = plt.ylim()
+
+                if "CAP" in shower_name:
+                    print("Plotting CAP shower data...")
+                    plt.xlim(xlim[0], 182)
+                    plt.ylim(8, 11.5)
+                elif "PER" in shower_name:
+                    print("Plotting PER shower data...")
+                    # plt.xlim(xlim[0], 65)
+                    # plt.ylim(77, 81)
+                elif "ORI" in shower_name: 
+                    print("Plotting ORI shower data...")
+                    # put an x lim and a y lim
+                    plt.xlim(xlim[0], 251)
+                    plt.ylim(-9, -6)
+                elif "DRA" in shower_name:  
+                    print("Plotting DRA shower data...")
+                    # put an x lim and a y lim
+                    plt.xlim(xlim[0], 65)
+                    plt.ylim(77, 80.5)
+
+                # if shower_iau_no == -1:
+                #     lg_min_la_sun = np.where(lg_min_la_sun > 180, lg_min_la_sun - 360, lg_min_la_sun)
+
+                # then draw points on top, at zorder=2 # jet
+                scatter = plt.scatter(
+                    lg_min_la_sun, bg,
                     c=rho,
                     cmap='viridis',
                     norm=norm,
-                    s=20,
-                    edgecolors='k',
-                    linewidths=0.3,
+                    s=30,
                     zorder=2
                 )
 
-                # Error bars
-                for i in range(len(lg_min_la_sun_plot)):
-                    x = lg_rad_flipped[i]
-                    y = bg_rad[i]
-                    xerr = [[np.deg2rad(abs(lg_hi_plot[i]))], [np.deg2rad(abs(lg_lo_plot[i]))]]
-                    yerr = [[np.deg2rad(abs(bg_hi_plot[i]))], [np.deg2rad(abs(bg_lo_plot[i]))]]
-                    ax.errorbar(
-                        x, y,
-                        xerr=xerr,
-                        yerr=yerr,
+                # add the error bars for values lg_lo, lg_hi, bg_lo, bg_hi
+                for i in range(len(lg_min_la_sun)):
+                    # draw error bars for each point
+                    plt.errorbar(
+                        lg_min_la_sun[i], bg[i],
+                        xerr=[[abs(lg_hi[i])], [abs(lg_lo[i])]],
+                        yerr=[[abs(bg_hi[i])], [abs(bg_lo[i])]],
                         elinewidth=0.75,
-                        capthick=0.0,
+                        capthick=0.75,
                         fmt='none',
                         ecolor='black',
                         capsize=3,
                         zorder=1
                     )
-
-                # # extract from file_radiance_rho_dict the base_name and the values
-                # # for each point in file_radiance_rho_dict
-                # file_radiance_rho_dict = {k: v for k, v in file_radiance_rho_dict.items() if k in file_radiance_rho_dict_helio}
-                # # annotate each point with its base_name in tiny text for lg_rad_flipped and bg_rad
-                # for ii in range(len(lg_rad_flipped)):
+                
+                # # annotate each point with its base_name in tiny text
+                # for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
                 #     plt.annotate(
-                #         list(file_radiance_rho_dict.keys())[ii],
-                #         xy=(lg_rad_flipped[ii], bg_rad[ii]),
+                #         base_name,
+                #         xy=(x, y),
                 #         xytext=(30, 5),             # 5 points vertical offset
                 #         textcoords='offset points',
-                #         color = 'gray',
                 #         ha='center',
                 #         va='bottom',
                 #         fontsize=6,
                 #         alpha=0.8
                 #     )
 
-                # --- Add colorbar for scatter points only ---
-                cbar = plt.colorbar(scatter, orientation='horizontal', pad=0.08)
-                cbar.set_label('$\\rho$ (kg/m$^3$)', fontsize=13)
-                cbar.ax.tick_params(labelsize=11)
+                # increase the size of the tick labels
+                plt.gca().tick_params(labelsize=15)
 
-                # --- Custom X-axis: centered at 270° and inverted ---
-                xticks_deg = np.arange(-150, 181, 30)  # degrees for Aitoff tick positions
-                xtick_labels = [(str(int((270 - t) % 360)) + "°") for t in xticks_deg]  # subtract instead of add = invert
-                ax.set_xticks(np.deg2rad(xticks_deg))
-                ax.set_xticklabels(xtick_labels, fontsize=12)
+                plt.gca().invert_xaxis()
 
-                # Set all x-axis tick labels to gray
-                for label in ax.get_xticklabels():
-                    label.set_color("gray")
+                # increase the label size
+                cbar = plt.colorbar(scatter, label='$\\rho$ (kg/m$^3$)')
+                # 2. now set the label’s font size and the tick labels’ size
+                cbar.set_label('$\\rho$ (kg/m$^3$)', fontsize=15)
+                cbar.ax.tick_params(labelsize=15)
 
-                # --- Labels ---
-                if plot_type == 'helio':
-                    ax.set_xlabel(r"$\lambda_{h} - \lambda_{\odot}$ (J2000)", fontsize=15)
-                    ax.set_ylabel(r"$\beta_{h}$ (J2000)", fontsize=15)
-                elif plot_type == 'geo':
-                    plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
-                    plt.ylabel(r'$\beta_{g}$ (J2000)', fontsize=15)
-
-                # --- Save plot ---
-                plt.tight_layout()
-                plt.savefig(os.path.join(output_dir_show, f"{shower_name}_{plot_type}_radiant_distribution.png"), dpi=300)
+                plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
+                plt.ylabel(r'$\beta_{g}$ (J2000)', fontsize=15)
+                # plt.title('Radiant Distribution of Meteors')
+                plt.grid(True)
+                plt.savefig(os.path.join(output_dir_show, f"{shower_name}_geo_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
                 plt.close()
+
+            else: 
+                ### Velocity vs begin height scaterd with rho ###
+                print('Creating Velocity vs Begin Height scatter plot with stream...')
+                plt.figure(figsize=(10, 6))
+                scatter_GMN = plt.scatter(stream_vgeo, stream_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
+                # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
+                # mass or mm diameter
+                # scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(eta_meteor_begin), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(eta_meteor_begin), 0.025), vmax=_quantile(np.log10(eta_meteor_begin), 0.975)), zorder=2)
+                # plt.colorbar(scatter_d, label='log$_{10}$ $\\eta$ [kg/MJ]')
+                # scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+                # plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
+                # scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(erosion_beg_dyn_press), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(erosion_beg_dyn_press), 0.025), vmax=_quantile(np.log10(erosion_beg_dyn_press), 0.975)), zorder=2)
+                # plt.colorbar(scatter_d, label='log$_{10}$ Dynamic Pressure [Pa]')
+
+                # --- Dynamic pressure two-class overlay (NO gradient) ---
+                logq = np.log10(erosion_beg_dyn_press)
+                
+
+                mask_hi = logq >= thr
+                mask_lo = ~mask_hi
+
+                # Hollow markers so the rho colors still show underneath
+                plt.scatter(Vinf_val[mask_lo], beg_height[mask_lo],
+                            facecolors='none', edgecolors='tab:blue', s=60, linewidths=1.2,
+                            label=r'$\log_{10} q < 3.2$', zorder=3)
+
+                plt.scatter(Vinf_val[mask_hi], beg_height[mask_hi],
+                            facecolors='none', edgecolors='tab:red', s=60, linewidths=1.2,
+                            label=r'$\log_{10} q \ge 3.2$ (q ≥ 1.58 kPa)', zorder=4)
+                all_names = np.array(all_names)
+                # add the names only to the mask_hi
+                # for i, txt in enumerate(all_names[mask_hi]):
+                #     plt.annotate(txt, (Vinf_val[mask_hi][i], beg_height[mask_hi][i]), fontsize=8, color='black')
+
+                scatter = plt.scatter(Vinf_val, beg_height, c=np.log10(rho), cmap='viridis', s=20, norm=Normalize(vmin=np.log10(rho).min(), vmax=np.log10(rho).max()), zorder=3)
+                plt.colorbar(scatter, label='log$_{10}$ $\\rho$ [kg/m³]')
+
+                plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
+                plt.ylabel('$h_{beg}$ [km]', fontsize=15)
+                plt.grid(True)
+
+                # # x axes from 10 to 22
+                # plt.xlim(11, 22)
+                # # y axes from 70 to 110
+                # plt.ylim(70, 110)
+
+                plt.tight_layout()
+                plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height_rho-eta.png"), bbox_inches='tight', dpi=300)
+                plt.close()
+
+                for plot_type in ['helio', 'geo']:
+                    print(f"Plotting ecliptic {plot_type}centric data with GMN...")
+                    if plot_type == 'geo':
+                        lg_min_la_sun_plot = lg_min_la_sun
+                        bg_plot = bg
+                        lg_lo_plot = lg_lo
+                        lg_hi_plot = lg_hi
+                        bg_lo_plot = bg_lo
+                        bg_hi_plot = bg_hi
+                        stream_lg_min_la_sun_plot = stream_lg_min_la_sun
+                        stream_bg_plot = stream_bg
+                    elif plot_type == 'helio':  
+                        lg_min_la_sun_plot = lg_min_la_sun_helio
+                        bg_plot = bg_helio
+                        lg_lo_plot = lg_helio_lo
+                        lg_hi_plot = lg_helio_hi
+                        bg_lo_plot = bg_helio_lo
+                        bg_hi_plot = bg_helio_hi
+                        stream_lg_min_la_sun_plot = stream_lg_min_la_sun_helio
+                        stream_bg_plot = stream_bg_helio
+
+                    def wrap_around_center_deg(x, center=270):
+                        """Wraps angles around center to [-180, 180] and returns degrees."""
+                        return (x - center + 180) % 360 - 180
+                    
+                    # --- Wrap stream background points ---
+                    x_stream_deg_wrapped = wrap_around_center_deg(stream_lg_min_la_sun_plot)
+                    x_stream_rad_wrapped = -np.deg2rad(x_stream_deg_wrapped)  # flip
+                    y_stream_rad = np.deg2rad(stream_bg_plot)
+
+                    # KDE on stream points (to get color per point)
+                    xy_stream = np.vstack([x_stream_rad_wrapped, y_stream_rad])
+                    kde_stream = gaussian_kde(xy_stream)
+                    stream_density = kde_stream(xy_stream)  # one value per point
+
+                    # --- Setup black Aitoff plot ---
+                    fig = plt.figure(figsize=(10, 5))
+                    ax = fig.add_subplot(111, projection="aitoff", facecolor="black")  # black background
+                    ax.set_facecolor("black")
+                    ax.grid(True, color='gray', linestyle='--', linewidth=0.5, alpha=0.3)
+
+                    # --- Scatter stream points with inferno and alpha ---
+                    scatter_stream = ax.scatter(
+                        x_stream_rad_wrapped,
+                        y_stream_rad,
+                        c=stream_density,
+                        cmap='inferno',
+                        s=1,
+                        alpha=0.5,
+                        linewidths=0,
+                        zorder=1
+                    )
+                    # --- Plot actual meteor points ---
+                    # Wrap & flip heliocentric longitude
+                    lg_deg_wrapped = wrap_around_center_deg(lg_min_la_sun_plot)
+                    lg_rad_flipped = -np.deg2rad(lg_deg_wrapped)
+                    bg_rad = np.deg2rad(bg_plot)
+
+                    # Normalize rho for color mapping
+                    norm = Normalize(vmin=np.nanmin(rho), vmax=np.nanmax(rho))
+                    scatter = ax.scatter(
+                        lg_rad_flipped,
+                        bg_rad,
+                        c=rho,
+                        cmap='viridis',
+                        norm=norm,
+                        s=20,
+                        edgecolors='k',
+                        linewidths=0.3,
+                        zorder=2
+                    )
+
+                    # Error bars
+                    for i in range(len(lg_min_la_sun_plot)):
+                        x = lg_rad_flipped[i]
+                        y = bg_rad[i]
+                        xerr = [[np.deg2rad(abs(lg_hi_plot[i]))], [np.deg2rad(abs(lg_lo_plot[i]))]]
+                        yerr = [[np.deg2rad(abs(bg_hi_plot[i]))], [np.deg2rad(abs(bg_lo_plot[i]))]]
+                        ax.errorbar(
+                            x, y,
+                            xerr=xerr,
+                            yerr=yerr,
+                            elinewidth=0.75,
+                            capthick=0.0,
+                            fmt='none',
+                            ecolor='black',
+                            capsize=3,
+                            zorder=1
+                        )
+
+                    # # extract from file_radiance_rho_dict the base_name and the values
+                    # # for each point in file_radiance_rho_dict
+                    # file_radiance_rho_dict = {k: v for k, v in file_radiance_rho_dict.items() if k in file_radiance_rho_dict_helio}
+                    # # annotate each point with its base_name in tiny text for lg_rad_flipped and bg_rad
+                    # for ii in range(len(lg_rad_flipped)):
+                    #     plt.annotate(
+                    #         list(file_radiance_rho_dict.keys())[ii],
+                    #         xy=(lg_rad_flipped[ii], bg_rad[ii]),
+                    #         xytext=(30, 5),             # 5 points vertical offset
+                    #         textcoords='offset points',
+                    #         color = 'gray',
+                    #         ha='center',
+                    #         va='bottom',
+                    #         fontsize=6,
+                    #         alpha=0.8
+                    #     )
+
+                    # --- Add colorbar for scatter points only ---
+                    cbar = plt.colorbar(scatter, orientation='horizontal', pad=0.08)
+                    cbar.set_label('$\\rho$ (kg/m$^3$)', fontsize=13)
+                    cbar.ax.tick_params(labelsize=11)
+
+                    # --- Custom X-axis: centered at 270° and inverted ---
+                    xticks_deg = np.arange(-150, 181, 30)  # degrees for Aitoff tick positions
+                    xtick_labels = [(str(int((270 - t) % 360)) + "°") for t in xticks_deg]  # subtract instead of add = invert
+                    ax.set_xticks(np.deg2rad(xticks_deg))
+                    ax.set_xticklabels(xtick_labels, fontsize=12)
+
+                    # Set all x-axis tick labels to gray
+                    for label in ax.get_xticklabels():
+                        label.set_color("gray")
+
+                    # --- Labels ---
+                    if plot_type == 'helio':
+                        ax.set_xlabel(r"$\lambda_{h} - \lambda_{\odot}$ (J2000)", fontsize=15)
+                        ax.set_ylabel(r"$\beta_{h}$ (J2000)", fontsize=15)
+                    elif plot_type == 'geo':
+                        plt.xlabel(r'$\lambda_{g} - \lambda_{\odot}$ (J2000)', fontsize=15)
+                        plt.ylabel(r'$\beta_{g}$ (J2000)', fontsize=15)
+
+                    # --- Save plot ---
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_{plot_type}_radiant_distribution.png"), dpi=300)
+                    plt.close()
 
     #### Combine all samples and weights from different dynesty runs ####
 
@@ -1712,6 +2014,12 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
  
     # Create a CombinedResults object for the combined samples
     combined_results = CombinedResults(combined_samples, combined_weights)
+
+    ### Apply the iron-by-velocity down-weighting ###
+
+    # combined_results = reweight_iron_by_velocity(combined_results, variables)
+
+    ### Apply the iron-by-velocity down-weighting ###
 
     summary_df = summarize_from_cornerplot(
         combined_results,
@@ -1756,7 +2064,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         footer = r"    \end{tabular}}"
         footer2 = rf"""    \caption{{Overall posterior summary statistics for {num_meteors} meteors of the {shower_name_plot} shower.}}
         \label{{tab:overall_summary_{shower_name.lower()}}}
-    \end{{table}}"""
+     \end{{table}}"""
 
         latex_lines.append(footer)
         latex_lines.append(footer2)
@@ -1785,6 +2093,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         if var in ['erosion_coeff', 'sigma', 'erosion_coeff_change', 'erosion_sigma_change']:
             combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
 
+    ### create new directory for rho plots ###
+
+    # create a new folder for the rho plots
+    output_dir_rho = os.path.join(output_dir_show, "rho_plots")
+    os.makedirs(output_dir_rho, exist_ok=True)
 
     ### JD vs rho plot ###
 
@@ -1856,11 +2169,13 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     scatter = ax_scatter.scatter(
         rho, tj,
-        # c=log10_m_init,
-        c=kc_par,
-        cmap='viridis',
+        c=np.log10(meteoroid_diameter_mm),
+        # c=kc_par,
+        # cmap='viridis',
+        cmap='coolwarm',
+        norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)),
         # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
-        norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
+        # norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
         s=30,
         zorder=2
     )
@@ -1870,8 +2185,9 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     pos = ax_scatter.get_position()
     cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
     cbar = plt.colorbar(scatter, cax=cbar_ax)
-    # cbar.set_label('$log_{10}(m_0)$', fontsize=20)
-    cbar.set_label('$k_c$ parameter', fontsize=20)
+    cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+    # cbar.set_label('$log_{10} m_0 [kg]$', fontsize=20)
+    # cbar.set_label('$k_c$ parameter', fontsize=20)
     # the ticks size of the colorbar
     cbar.ax.tick_params(labelsize=20)
 
@@ -1894,8 +2210,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     ax_scatter.grid(True)
 
     # Save
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
-    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10m_combined_plot.png"), bbox_inches='tight', dpi=300)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
             
@@ -1905,15 +2221,195 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     print("Creating JFC, HTC, AST plot...")
 
-    # ---------- Build per-sample mapping to Tj via base_name ----------
-    # # Expect ONE of these to exist for per-event names:
-    # event_names_like = None
-    # for _cand in ['event_names', 'base_names', 'base_name_list', 'names_events', 'all_names']:
-    #     if _cand in globals():
-    #         event_names_like = np.asarray(globals()[_cand])
-    #         break
-    # if event_names_like is None:
-    #     raise RuntimeError("Provide per-event names array (e.g., event_names or base_names) aligned with tj.")
+    # ---------- Helper to always get a 2D axes array ----------
+    def _ensure_axes_2d(axes, nrows, ncols):
+        """Return axes as a 2D ndarray of shape (nrows, ncols)."""
+        if nrows == 1 and ncols == 1:
+            axes = np.asarray([[axes]])
+        elif nrows == 1:
+            axes = np.asarray([axes])
+        elif ncols == 1:
+            axes = np.asarray([[ax] for ax in axes])
+        return axes
+
+    # ---------- Generic grid plotter (rows = cuts, cols = variables) ----------
+    def plot_by_cuts_and_vars(vars_list, cuts_list, weights_all,
+                            nbins=200, smooth=0.02, figsize=None,
+                            bottom_xlabel_per_col=None, tight=True, dpi=300,
+                            out_path=None):
+        """
+        Parameters
+        ----------
+        vars_list : list of dicts
+            Each dict describes one plotted variable (i.e., one column):
+            {
+            "values": array of shape (N_samples,),      # required
+            "label":  r"$\\rho$ (kg/m$^3$)",            # x-axis label for bottom row (optional)
+            "name":   "rho",                            # short name for titles/logging (optional)
+            "xlim":   (lo, hi),                         # limits, if None computed per variable (optional)
+            "color":  "black"                           # fill/line color for this variable (optional)
+            }
+        cuts_list : list of dicts/tuples
+            Each item describes one row (a selection mask and a title prefix):
+            Either a tuple: (mask, title_prefix)
+            or a dict: {"mask": mask, "title": "Tot N.123 AST"}.
+        weights_all : array-like
+            Importance weights aligned with vars_list[j]["values"] (N_samples,).
+        nbins : int
+            Histogram bins.
+        smooth : float
+            Smoothing parameter passed into your `norm_kde` call (keep as in your code).
+        figsize : tuple
+            Figure size.
+        bottom_xlabel_per_col : list[str] | None
+            If provided, length must equal len(vars_list); labels placed on bottom row.
+            If None, tries to use vars_list[j]["label"] if present.
+        tight : bool
+            Use tight bbox when saving.
+        dpi : int
+            Save resolution.
+        out_path : str | None
+            If given, save figure there.
+
+        Returns
+        -------
+        fig, axes : matplotlib Figure and 2D ndarray of Axes (rows=len(cuts_list), cols=len(vars_list))
+        """
+
+        # Local wrapper around your existing panel plotter -------------------------
+        def _panel_like_top(ax, var_vals, weights, title_prefix, lo, hi, nbins, xlim, var_name="", color_plot="black"):
+            # guard
+            m = np.isfinite(var_vals)
+            if weights is not None:
+                m &= np.isfinite(weights)
+            if not np.any(m):
+                ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
+                        ha='center', va='center', fontsize=14, color='black')
+                _style(ax, xlim)
+                return
+
+            r = var_vals[m]
+            w = None
+            if weights is not None:
+                w = weights[m].astype(float)
+                s = np.nansum(w)
+                w = (w / s) if s > 0 else None
+
+            hist, edges = np.histogram(r, bins=nbins, weights=w, range=(lo, hi))
+            hist = norm_kde(hist, 10.0)  # keep your original smoothing kernel span
+            bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+            # Weighted percentiles
+            if w is not None:
+                q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
+            else:
+                q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
+
+            ax.fill_between(bin_centers, hist, alpha=0.6, color=color_plot)
+            for q in (q_lo, q_med, q_hi):
+                ax.axvline(q, linestyle='--', linewidth=1.5, color=color_plot)
+
+            if "log_{10}" in var_name:
+                r = 10**(r)
+                # delete log_{10} from var_name
+                var_name = var_name.replace("$\log_{10}$", "")
+                # Weighted percentiles
+                if w is not None:
+                    q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
+                else:
+                    q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
+
+            plus  = q_hi - q_med
+            minus = q_med - q_lo
+            fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+            if title_prefix == "":
+                title = (rf"{var_name} = {fmt(q_med)}"
+                        rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+            else:
+                title = (rf"{title_prefix} — {var_name} = {fmt(q_med)}"
+                        rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+            ax.set_title(title, fontsize=16)
+
+            _style(ax, xlim)
+
+        def _style(ax, xlim):
+            ax.set_xlim(*xlim)
+            ax.tick_params(axis='x', labelbottom=False)
+            ax.tick_params(axis='y', left=False, labelleft=False)
+            ax.set_ylabel("")
+            for sp in ['left', 'right', 'top']:
+                ax.spines[sp].set_visible(False)
+
+        # Normalize inputs ---------------------------------------------------------
+        cuts_norm = []
+        for i, item in enumerate(cuts_list):
+            if isinstance(item, dict):
+                cuts_norm.append((np.asarray(item["mask"], bool), str(item.get("title", ""))))
+            else:
+                m, t = item
+                cuts_norm.append((np.asarray(m, bool), str(t)))
+        cuts_list = cuts_norm
+
+        # Figure and axes ----------------------------------------------------------
+        nrows = len(cuts_list)
+        ncols = len(vars_list)
+        if figsize is None:
+            figsize = (ncols * 8, nrows * 3)  # (8, 10)
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, sharex=False)
+        axes = _ensure_axes_2d(axes, nrows, ncols)
+
+        # Default bottom x-labels from vars_list if not provided
+        if bottom_xlabel_per_col is None:
+            bottom_xlabel_per_col = [
+                v.get("label", v.get("name", f"var{j}")) for j, v in enumerate(vars_list)
+            ]
+
+        # Per-column global limits (if not provided) -------------------------------
+        for j, vinfo in enumerate(vars_list):
+            vals = np.asarray(vinfo["values"], float)
+            if vinfo.get("xlim") is None:
+                lo = float(np.nanmin(vals))
+                hi = float(np.nanmax(vals))
+                # Avoid identical limits
+                if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+                    lo, hi = -1.0, 1.0
+                vinfo["xlim"] = (lo, hi)
+
+        # Plot grid ----------------------------------------------------------------
+        weights_all = np.asarray(weights_all, float)
+        for i, (mask, cut_title) in enumerate(cuts_list):
+            for j, vinfo in enumerate(vars_list):
+                ax = axes[i, j]
+                vals = np.asarray(vinfo["values"], float)
+                color = vinfo.get("color", "black")
+                xlim  = vinfo["xlim"]
+                lo, hi = xlim
+                if j!=0:
+                    cut_title = ""
+                _panel_like_top(
+                    ax,
+                    vals[mask],
+                    weights_all[mask] if np.ndim(weights_all) else None,
+                    cut_title,
+                    lo, hi, nbins, xlim,
+                    var_name=vinfo.get("label", vinfo.get("name", "")),
+                    color_plot=color
+                )
+
+        # X labels on bottom row only
+        for j in range(ncols):
+            axes[-1, j].tick_params(axis='x', labelbottom=True)
+            axes[-1, j].set_xlabel(bottom_xlabel_per_col[j], fontsize=16)
+
+        # Consistent tick label size
+        for ax in axes.ravel():
+            ax.tick_params(labelsize=14)
+
+        if out_path:
+            plt.savefig(out_path, bbox_inches='tight' if tight else None, dpi=dpi)
+            plt.close(fig)
+
+        return fig, axes
     
     event_names_like = all_names
 
@@ -1953,7 +2449,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         else:
             raise RuntimeError("rho_corrected length mismatch and no 'variables' index found.")
 
-    w_all = np.asarray(combined_weights, float)
+    w_all = np.asarray(combined_results.importance_weights(), float)
     w_all = np.where(np.isfinite(w_all), w_all, 0.0)
     if np.nansum(w_all) > 0:
         w_all = w_all / np.nansum(w_all)
@@ -1966,7 +2462,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     xlim = (-100, 8300)
 
     # ---------- Helper: a panel identical to your top one ----------
-    def _panel_like_top(ax, rho_vals, weights, title_prefix, lo, hi, nbins, xlim):
+    def _panel_like_top(ax, rho_vals, weights, title_prefix, lo, hi, nbins, xlim, var_name="$\\rho$ [kg/m$^3$]", color_plot='black'):
         # guard
         m = np.isfinite(rho_vals)
         if weights is not None:
@@ -1997,14 +2493,14 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
 
         # Fill + lines (black)
-        ax.fill_between(bin_centers, hist, color='black', alpha=0.6)
+        ax.fill_between(bin_centers, hist, color=color_plot, alpha=0.6)
         for q in (q_lo, q_med, q_hi):
-            ax.axvline(q, color='black', linestyle='--', linewidth=1.5)
+            ax.axvline(q, color=color_plot, linestyle='--', linewidth=1.5)
 
         plus  = q_hi - q_med
         minus = q_med - q_lo
         fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-        title = (rf"{title_prefix} — $\rho$ [kg/m$^3$] = {fmt(q_med)}"
+        title = (rf"{title_prefix} — {var_name} = {fmt(q_med)}"
                 rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
         ax.set_title(title, fontsize=20)
 
@@ -2044,12 +2540,141 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     axes[2].set_xticks(np.arange(0, 9000, 2000))
     for ax in axes:
         ax.tick_params(labelsize=20)
-
-    # Save
-    out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_Tj_threepanels_weighted.png")
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_Tj_threepanels_weighted.png")
     plt.savefig(out_path, bbox_inches='tight', dpi=300)
     plt.close()
     print("Saved:", out_path)
+
+    # ### rho distribution plot ###
+
+    # Build group masks (any number of groups works)
+    groups = {
+        "AST": ast_m,
+        "JFC": jfc_m,
+        "HTC": htc_m,
+        # e.g., add a 4th group later:
+        # "IEO": ieo_m,
+    }
+
+    tex, results = weighted_tests_table(
+        values=rho_samp,
+        weights=w_all,
+        groups=groups,
+        resample_n=8000,                 # bump up for smoother p-values
+        random_seed=123,
+        caption=r"Pairwise tests on $\rho$ by Tisserand class (weighted posteriors).",
+        label="tab:rho_tj_weighted_tests",
+        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_orbit.tex"),
+    )
+
+    # --- Masks (rows) ---
+    cuts = [
+        (ast_m, f"Tot N.{num_tj_above_3} AST"),
+        (jfc_m, f"Tot N.{num_tj_between_2_and_3} JFC"),
+        (htc_m, f"Tot N.{num_tj_below_2} HTC"),
+    ]
+
+    # --- Column 1: rho ---
+    rho_vals = np.asarray(rho_samp, float)
+    rho_lo_all, rho_hi_all = float(np.nanmin(rho_vals)), float(np.nanmax(rho_vals))
+    rho_spec = {
+        "values": rho_vals,
+        "label":  r"$\rho$ (kg/m$^3$)",
+        "name":   "rho",
+        "xlim":   (-100, 8300),   # or (rho_lo, rho_hi)
+        "color":  "black",
+    }
+
+    vars_to_plot = [rho_spec]
+    # --- Column 2: erosion_coeff (if present) ---
+    idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
+    if idx_arr.size:
+        index_eros = int(idx_arr[0])
+        eros_vals  = np.log10(samples[:, index_eros].astype(float))
+        eros_lo, eros_hi = float(np.nanmin(eros_vals)), float(np.nanmax(eros_vals))
+        eros_spec = {
+            "values": eros_vals,
+            "label":  r"$\log_{10}$ $\eta$ (kg/MJ)",
+            "name":   "erosion_coeff",
+            "xlim":   (eros_lo, eros_hi),
+            "color":  "blue",
+        }
+        vars_to_plot = vars_to_plot + [eros_spec]
+        
+    idx_arr = np.where(np.asarray(variables) == "sigma")[0]
+    if idx_arr.size:
+        index_sigma = int(idx_arr[0])
+        sigma_vals  = samples[:, index_sigma].astype(float)
+        sigma_lo, sigma_hi = float(np.nanmin(sigma_vals)), float(np.nanmax(sigma_vals))
+        sigma_spec = {
+            "values": sigma_vals,
+            "label":  r"$\sigma$ (kg/MJ)",
+            "name":   "sigma",
+            "xlim":   (sigma_lo, sigma_hi),
+            "color":  "green",
+        }
+        vars_to_plot = vars_to_plot + [sigma_spec]
+
+
+    # add the mass index
+    idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
+    if idx_arr.size:
+        index_s = int(idx_arr[0])
+        s_vals  = samples[:, index_s].astype(float)
+        s_lo, s_hi = float(np.nanmin(s_vals)), float(np.nanmax(s_vals))
+        s_spec = {
+            "values": s_vals,
+            "label":  r"$s$",
+            "name":   "erosion_mass_index",
+            "xlim":   (s_lo, s_hi),
+            "color":  "red",
+        }
+        vars_to_plot = vars_to_plot + [s_spec]
+
+
+    # add the mass index
+    idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
+    if idx_arr.size:
+        index_ml = int(idx_arr[0])
+        ml_vals  = samples[:, index_ml].astype(float)
+        ml_lo, ml_hi = float(np.nanmin(ml_vals)), float(np.nanmax(ml_vals))
+        ml_spec = {
+            "values": ml_vals,
+            "label":   r"$\log_{10}$ $m_{l}$ [kg]",
+            "name":   "erosion_mass_min",
+            "xlim":   (ml_lo, ml_hi),
+            "color":  "purple",
+        }
+        vars_to_plot = vars_to_plot + [ml_spec]
+
+    # add the mass index
+    idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
+    if idx_arr.size:
+        index_mu = int(idx_arr[0])
+        mu_vals  = samples[:, index_mu].astype(float)
+        mu_lo, mu_hi = float(np.nanmin(mu_vals)), float(np.nanmax(mu_vals))
+        mu_spec = {
+            "values": mu_vals,
+            "label":  r"$\log_{10}$ $m_{u}$ [kg]",
+            "name":   "erosion_mass_max",
+            "xlim":   (mu_lo, mu_hi),
+            "color":  "violet",
+        }
+        vars_to_plot = vars_to_plot + [mu_spec]
+
+    # --- Call the plotter ---
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_Tj_grid.png")
+    fig, axes = plot_by_cuts_and_vars(
+        vars_list=vars_to_plot,
+        cuts_list=cuts,
+        weights_all=w_all,
+        nbins=int(round(10.0 / 0.02)),
+        smooth=0.02,
+        out_path=out_path
+    )
+    print("Saved:", out_path)
+    plt.close(fig)
+    
 
     ### mass change plots ###
 
@@ -2067,24 +2692,24 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
 
     # ---------- Class masks at SAMPLE level ----------
     finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
-    big = finite & (m_init_med_samples >= 10**(-4))
-    medium_b = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
-    medium_s = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
-    small = finite & (m_init_med_samples < 10**(-5))
+    big_kg = finite & (m_init_med_samples >= 10**(-4))
+    medium_b_kg = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
+    medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
+    small_kg = finite & (m_init_med_samples < 10**(-5))
 
     # find the number of mass
-    num_big = m_init_med[m_init_med >= 10**(-4)].shape[0]
-    num_medium_b = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
-    num_medium_s = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
-    num_small = m_init_med[m_init_med < 10**(-5)].shape[0]
+    num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
+    num_medium_b_kg = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
+    num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
+    num_small_kg = m_init_med[m_init_med < 10**(-5)].shape[0]
 
     # ---------- Figure with three stacked panels ----------
     fig, axes = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
 
-    _panel_like_top(axes[0], rho_samp[big], w_all[big], "Tot N." + str(num_big) + " above 10$^{-4}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[1], rho_samp[medium_b], w_all[medium_b], "Tot N." + str(num_medium_b) + " 10$^{-4}$ - 5$\cdot$10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[2], rho_samp[medium_s], w_all[medium_s], "Tot N." + str(num_medium_s) + " 5$\cdot$10$^{-5}$ - 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[3], rho_samp[small], w_all[small], "Tot N." + str(num_small) + " below 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[0], rho_samp[big_kg], w_all[big_kg], "Tot N." + str(num_big_kg) + " above 10$^{-4}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[1], rho_samp[medium_b_kg], w_all[medium_b_kg], "Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 5$\cdot$10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[2], rho_samp[medium_s_kg], w_all[medium_s_kg], "Tot N." + str(num_medium_s_kg) + " 5$\cdot$10$^{-5}$ - 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[3], rho_samp[small_kg], w_all[small_kg], "Tot N." + str(num_small_kg) + " below 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
 
     # Bottom labels/ticks to match your style
     axes[3].tick_params(axis='x', labelbottom=True)
@@ -2094,15 +2719,15 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         ax.tick_params(labelsize=20)
 
     # Save
-    out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
     plt.savefig(out_path, bbox_inches='tight', dpi=300)
     plt.close()
     print("Saved:", out_path)
 
     # plot scatter
-    fig, ax = plt.subplots(figsize=(10, 13), constrained_layout=True)  # larger width, auto spacing
+    fig, ax = plt.subplots(figsize=(6, 8), constrained_layout=True)  # larger width, auto spacing
 
-    sc = ax.scatter(rho, log10_m_init, c=meteoroid_diameter_mm, cmap='viridis', s=30, norm=Normalize(vmin=meteoroid_diameter_mm.min(), vmax=meteoroid_diameter_mm.max()), zorder=2)
+    sc = ax.scatter(rho, log10_m_init, c=np.log10(meteoroid_diameter_mm), cmap='viridis', s=30, norm=Normalize(vmin=np.log10(meteoroid_diameter_mm.min()), vmax=np.log10(meteoroid_diameter_mm.max())), zorder=2)
 
     plt.errorbar(rho, log10_m_init, 
             xerr=[abs(rho_lo), abs(rho_hi)],
@@ -2111,7 +2736,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
             fmt='none', ecolor='black', capsize=3, zorder=1)
     
     cbar = fig.colorbar(sc, ax=ax, orientation='vertical', pad=0.08)
-    cbar.set_label("Meteoroid Diameter [mm]", fontsize=20)
+    cbar.set_label("$log_{10}$ Diameter [mm]", fontsize=20)
     cbar.ax.tick_params(labelsize=12)
         
     # Guide lines
@@ -2128,8 +2753,53 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     plt.grid(True, alpha=0.2)
 
     # save the rho vs diameter plot
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_by_mass_scatter.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_scatter.png"), bbox_inches='tight', dpi=300)
     plt.close()
+
+    # ### rho distribution plot ###
+
+    # Build group masks (any number of groups works)
+    groups = {
+        "above 10$^{-4}$ kg": big_kg,
+        "10$^{-4}$ - 5$\cdot$10$^{-5}$ kg": medium_b_kg,
+        "5$\cdot$10$^{-5}$ - 10$^{-5}$ kg": medium_s_kg,
+        "below 10$^{-5}$ kg": small_kg,
+        # e.g., add a 4th group later:
+        # "IEO": ieo_m,
+    }
+
+    tex, results = weighted_tests_table(
+        values=rho_samp,
+        weights=w_all,
+        groups=groups,
+        resample_n=8000,                 # bump up for smoother p-values
+        random_seed=123,
+        caption=r"Pairwise tests on $\rho$ by mass (weighted posteriors).",
+        label="tab:rho_mass_weighted_tests",
+        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_mass.tex"),
+    )
+
+
+    # mass cuts
+    cuts = [
+        (big_kg, rf"Tot N." + str(num_big_kg) + " above 10$^{-4}$ kg"),
+        (medium_b_kg, rf"Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 5$\cdot$10$^{-5}$ kg"),
+        (medium_s_kg, rf"Tot N." + str(num_medium_s_kg) + " 5$\cdot$10$^{-5}$ - 10$^{-5}$ kg"),
+        (small_kg, rf"Tot N." + str(num_small_kg) + " below 10$^{-5}$ kg"),
+    ]
+
+    # --- Call the plotter ---
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_mass_grid.png")
+    fig, axes = plot_by_cuts_and_vars(
+        vars_list=vars_to_plot,
+        cuts_list=cuts,
+        weights_all=w_all,
+        nbins=int(round(10.0 / 0.02)),
+        smooth=0.02,
+        out_path=out_path
+    )
+    print("Saved:", out_path)
+    plt.close(fig)
 
     ### diameter change plots ###
 
@@ -2174,14 +2844,14 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
         ax.tick_params(labelsize=20)
 
     # Save
-    out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_diameter_threepanels_weighted.png")
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_threepanels_weighted.png")
     plt.savefig(out_path, bbox_inches='tight', dpi=300)
     plt.close()
     print("Saved:", out_path)
 
     ### Create scatter plot for rho vs diameter ###
 
-    fig, ax = plt.subplots(figsize=(10, 13), constrained_layout=True)  # larger width, auto spacing
+    fig, ax = plt.subplots(figsize=(6, 8), constrained_layout=True)  # larger width, auto spacing
     # gs = GridSpec(nrows=4, ncols=2, width_ratios=[1.3, 1.0], hspace=0.25, wspace=0.5, figure=fig)
 
     plt.errorbar(rho, meteoroid_diameter_mm, 
@@ -2213,128 +2883,141 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     cbar.ax.tick_params(labelsize=12)
 
     # save the rho vs diameter plot
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_by_diameter_scatter.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_scatter.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
-    # rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=w)
+    # ### rho distribution plot ###
 
-    # ax = plt.gca()
-    # # put the rho distribution smothed with the weighted
-    # smooth = 0.02
-    # # Compute histogram
-    # lo, hi = np.min(rho_corrected), np.max(rho_corrected)
-    # nbins = int(round(10. / smooth))
-    # hist, edges = np.histogram(rho_corrected, bins=nbins, weights=w, range=(lo, hi))
-    # hist = norm_kde(hist, 10.0)  # dynesty-style smoothing
-    # # Compute bin centers
-    # bin_centers = 0.5 * (edges[:-1] + edges[1:])
-    # ax.fill_between(bin_centers, hist, color='blue', alpha=0.6)
-    # plt.xlim(-100, 8300)
-    
-    # # plot the line of the median and the percentiles
-    # plt.axvline(rho_corrected_median, color='blue', linestyle='--', linewidth=1.5)
-    # plt.axvline(rho_corrected_lo, color='blue', linestyle='--', linewidth=1.5)
-    # plt.axvline(rho_corrected_hi, color='blue', linestyle='--', linewidth=1.5)
+    # Build group masks (any number of groups works)
+    groups = {
+        "above 7.5 mm": big,
+        "5 - 7.5 mm": medium_b,
+        "2.5 - 5 mm": medium_s,
+        "below 2.5 mm": small,
+    }
 
-    # plus = rho_corrected_hi - rho_corrected_median
-    # minus = rho_corrected_median - rho_corrected_lo
-    # fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    # title = rf"$\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
-    # ax.set_title(title, fontsize=16)
+    tex, results = weighted_tests_table(
+        values=rho_samp,
+        weights=w_all,
+        groups=groups,
+        resample_n=8000,                 # bump up for smoother p-values
+        random_seed=123,
+        caption=r"Pairwise tests on $\rho$ by diameter class (weighted posteriors).",
+        label="tab:rho_diameter_weighted_tests",
+        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_diameter.tex"),
+    )
 
-    # # save the rho distribution plot
-    # plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=15)
-    # # plt.ylabel('Density', fontsize=15)
-    # # plt.grid(True)
-    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution.png"), bbox_inches='tight', dpi=300)
+    # print(tex)  # also written to file if save_path was given
+
+    cuts = [
+        (big, f"Tot N.{num_big} above 7.5 mm"),
+        (medium_b, f"Tot N.{num_medium_b} 5 - 7.5 mm"),
+        (medium_s, f"Tot N.{num_medium_s} 2.5 - 5 mm"),
+        (small, f"Tot N.{num_small} below 2.5 mm"),
+    ]
+
+    # --- Call the plotter ---
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_diameter_grid.png")
+    fig, axes = plot_by_cuts_and_vars(
+        vars_list=vars_to_plot,
+        cuts_list=cuts,
+        weights_all=w_all,
+        nbins=int(round(10.0 / 0.02)),
+        smooth=0.02,
+        out_path=out_path
+    )
+    print("Saved:", out_path)
+    plt.close(fig)
 
 
+    ### dyn press change plots ###
 
-    # ### JD vs rho plot ###
-    # print("saving rho vs JD plot...")
-    # # plot rho_lo and rho_hi as error bars and rho as points for tj and the error bars for tj_lo and tj_hi
-    # plt.figure(figsize=(8, 6))
+    print("Dyn press change plots for rho...")
 
-    # for i in range(len(tj)):
-    #     # draw error bars for each point
-    #     plt.errorbar(
-    #         rho[i], tj[i],
-    #         xerr=[[abs(rho_lo[i])],[abs(rho_hi[i])]],
-    #         yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
-    #         elinewidth=0.75,
-    #         capthick=0.75,
-    #         fmt='none',
-    #         ecolor='black',
-    #         capsize=3,
-    #         zorder=1
-    #     )
+    # --- Dynamic pressure two-class overlay (NO gradient) ---
+    logq = np.log10(erosion_beg_dyn_press)
+    # thr = 3.2  # log10 Pa  (≈ 1.58 kPa)
 
-    # # then draw points on top, at zorder=2 with black color
-    # # scatter = plt.scatter(
-    # #     rho, tj,
-    # #     c=inclin_val,
-    # #     cmap='viridis',
-    # #     norm=Normalize(vmin=inclin_val.min(), vmax=inclin_val.max()),
-    # #     s=30,
-    # #     zorder=2
-    # # )
+    # mask_hi = logq >= thr
+    # mask_lo = ~mask_hi
 
-    # scatter = plt.scatter(
-    #     rho, tj,
-    #     c=kc_par,
-    #     cmap='viridis',
-    #     norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
-    #     s=30,
-    #     zorder=2
-    # )
+    # same for meteoroid_diameter_mm
+    logq = np.asarray(logq, float) 
+    if logq.shape[0] != event_names_like.shape[0]:
+        raise RuntimeError("Length mismatch: event_names vs meteoroid_diameter_mm.")
 
-    # # increase the size of the tick labels
-    # plt.gca().tick_params(labelsize=15)
-    # # annotate each point with its base_name in tiny text
-    # # for base_name, (rho_val, rho_lo_val, rho_hi_val, tj_val, tj_lo_val, tj_hi_val, inclin_val) in file_rho_jd_dict.items():
-    # #     plt.annotate(
-    # #         base_name,
-    # #         xy=(rho_val, tj_val),
-    # #         xytext=(30, 5),             # 5 points vertical offset
-    # #         textcoords='offset points',
-    # #         ha='center',
-    # #         va='bottom',
-    # #         fontsize=6,
-    # #         alpha=0.8
-    # #     )
+    # dict: base_name -> meteoroid_diameter_mm
+    logq_by_name = {str(n): float(v) for n, v in zip(event_names_like, logq)}
+    # Map each sample's base_name -> meteoroid_diameter_mm (NaN if missing)
+    logq_samples = np.array([logq_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
 
-    # # increase the label size
-    # # cbar = plt.colorbar(scatter, label='Orbital inclination (deg)')
-    # cbar = plt.colorbar(scatter, label='$k_c$ parameter')
+    # ---------- Class masks at SAMPLE level ----------
+    finite = np.isfinite(rho_samp) & np.isfinite(logq_samples) & np.isfinite(w_all)
+    sturdy = finite & (logq_samples >= thr)
+    fragile = finite & (logq_samples < thr)
 
-    # # take the x axis limits
-    # xlim = plt.xlim()
-    # # take the y axis limits
-    # ylim = plt.ylim()
+    # find the number of mass
+    num_sturdy = logq[logq >= thr].shape[0]
+    num_fragile = logq[logq < thr].shape[0]
 
-    # if shower_iau_no == -1:
-    #     # put a green horizontal line at Tj = 3.0
-    #     plt.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1) # label='Tj = 3.0', 
-    #     # write AST on the left side of the line
-    #     plt.text(7500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
-    #     # put a red horizontal line at Tj = 2.0
-    #     plt.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1) # label='Tj = 2.0', 
-    #     # write APT on the left side of the line
-    #     plt.text(7500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
-    #     # # write below at 1.5 'HTC'
-    #     # if the lowest ylim is below 1.5, then put a horizontal line at Tj = 1.5
-    #     if ylim[0] < 1.5:
-    #         plt.text(7500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+    # ---------- Figure with three stacked panels ----------
+    fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
 
-    # # incrrease the x limits
-    # plt.xlim(-100, 8300)
-    # # increase the label size
-    # plt.xlabel(r'$\rho$ (kg/m$^3$)', fontsize=15)
-    # plt.ylabel(r'Tisserand parameter (T$_{j}$)', fontsize=15)
-    # # plt.title('rho vs Tj')
-    # plt.grid(True)
-    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_Tj_CI.png"), bbox_inches='tight', dpi=300)
-    
+    _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_fragile) + " below " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_sturdy) + " above " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
+
+    # Bottom labels/ticks to match your style
+    axes[1].tick_params(axis='x', labelbottom=True)
+    axes[1].set_xlabel(r'$\rho$ (kg/m$^3$)', fontsize=20)
+    axes[1].set_xticks(np.arange(0, 9000, 2000))
+    for ax in axes:
+        ax.tick_params(labelsize=20)
+
+    # Save
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_dynpres_threepanels_weighted.png")
+    plt.savefig(out_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print("Saved:", out_path)
+
+
+    # ### rho distribution plot ###
+
+    # Build group masks (any number of groups works)
+    groups = {
+        "below " + str(10**thr)+" Pa": fragile,
+        "above " + str(10**thr)+" Pa": sturdy
+    }
+
+    tex, results = weighted_tests_table(
+        values=rho_samp,
+        weights=w_all,
+        groups=groups,
+        resample_n=8000,                 # bump up for smoother p-values
+        random_seed=123,
+        caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
+        label="tab:rho_dynpres_weighted_tests",
+        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_dynpres.tex"),
+    )
+
+    # print(tex)  # also written to file if save_path was given
+
+    cuts = [
+        (fragile, f"Tot N.{num_fragile} below {np.round(10**thr)} Pa"),
+        (sturdy, f"Tot N.{num_sturdy} above {np.round(10**thr)} Pa"),
+    ]
+
+    # --- Call the plotter ---
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_dynampres_grid.png")
+    fig, axes = plot_by_cuts_and_vars(
+        vars_list=vars_to_plot,
+        cuts_list=cuts,
+        weights_all=w_all,
+        nbins=int(round(10.0 / 0.02)),
+        smooth=0.02,
+        out_path=out_path
+    )
+    print("Saved:", out_path)
+    plt.close(fig)
 
     # Plot grid settings
     ndim = samples.shape[1]
@@ -2420,160 +3103,161 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name):
     
 
     ### CORNER PLOT ###
-    # # takes forever, so run it last
+    # takes forever, so run it last
+    if plot_correl_flag == True:
 
-    # print('saving corner plot...')
+        print('saving corner plot...')
 
-    # for i, variable in enumerate(variables):
-    #     if 'log' in flags_dict_total[variable]:  
-    #         labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
+        for i, variable in enumerate(variables):
+            if 'log' in flags_dict_total[variable]:  
+                labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
 
-    # # Define weighted correlation
-    # def weighted_corr(x, y, w):
-    #     """Weighted Pearson correlation of x and y with weights w."""
-    #     w = np.asarray(w)
-    #     x = np.asarray(x)
-    #     y = np.asarray(y)
-    #     w_sum = w.sum()
-    #     x_mean = (w * x).sum() / w_sum
-    #     y_mean = (w * y).sum() / w_sum
-    #     cov_xy = (w * (x - x_mean) * (y - y_mean)).sum() / w_sum
-    #     var_x  = (w * (x - x_mean)**2).sum() / w_sum
-    #     var_y  = (w * (y - y_mean)**2).sum() / w_sum
-    #     return cov_xy / np.sqrt(var_x * var_y)
+        # Define weighted correlation
+        def weighted_corr(x, y, w):
+            """Weighted Pearson correlation of x and y with weights w."""
+            w = np.asarray(w)
+            x = np.asarray(x)
+            y = np.asarray(y)
+            w_sum = w.sum()
+            x_mean = (w * x).sum() / w_sum
+            y_mean = (w * y).sum() / w_sum
+            cov_xy = (w * (x - x_mean) * (y - y_mean)).sum() / w_sum
+            var_x  = (w * (x - x_mean)**2).sum() / w_sum
+            var_y  = (w * (y - y_mean)**2).sum() / w_sum
+            return cov_xy / np.sqrt(var_x * var_y)
 
-    # # … your existing prep code …
-    # fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
-    # axes = axes.reshape((ndim, ndim))
+        # … your existing prep code …
+        fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
+        axes = axes.reshape((ndim, ndim))
 
-    # # call dynesty’s cornerplot
-    # fg, ax = dyplot.cornerplot(
-    #     combined_results, 
-    #     color='blue',
-    #     show_titles=True,
-    #     max_n_ticks=3,
-    #     quantiles=None,
-    #     labels=labels_plot,
-    #     label_kwargs={"fontsize": 10},
-    #     title_kwargs={"fontsize": 12},
-    #     title_fmt='.2e',
-    #     fig=(fig, axes[:, :ndim])
-    # )
+        # call dynesty’s cornerplot
+        fg, ax = dyplot.cornerplot(
+            combined_results, 
+            color='blue',
+            show_titles=True,
+            max_n_ticks=3,
+            quantiles=None,
+            labels=labels_plot,
+            label_kwargs={"fontsize": 10},
+            title_kwargs={"fontsize": 12},
+            title_fmt='.2e',
+            fig=(fig, axes[:, :ndim])
+        )
 
-    # # # supertitle, tick formatting, saving …
-    # # fg.suptitle(shower_name, fontsize=16, fontweight='bold')
+        # # supertitle, tick formatting, saving …
+        # fg.suptitle(shower_name, fontsize=16, fontweight='bold')
 
-    # for ax_row in ax:
-    #     for ax_ in ax_row:
-    #         if ax_ is None:
-    #             continue
-    #         ax_.tick_params(axis='both', labelsize=8, direction='in')
-    #         for lbl in ax_.get_xticklabels(): lbl.set_rotation(0)
-    #         for lbl in ax_.get_yticklabels(): lbl.set_rotation(45)
-    #         if len(ax_.xaxis.get_majorticklocs())>0:
-    #             ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
-    #         if len(ax_.yaxis.get_majorticklocs())>0:
-    #             ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
+        for ax_row in ax:
+            for ax_ in ax_row:
+                if ax_ is None:
+                    continue
+                ax_.tick_params(axis='both', labelsize=8, direction='in')
+                for lbl in ax_.get_xticklabels(): lbl.set_rotation(0)
+                for lbl in ax_.get_yticklabels(): lbl.set_rotation(45)
+                if len(ax_.xaxis.get_majorticklocs())>0:
+                    ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
+                if len(ax_.yaxis.get_majorticklocs())>0:
+                    ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
 
-    # for i in range(ndim):
-    #     for j in range(ndim):
-    #         if ax[i, j] is None:
-    #             continue
-    #         if j != 0:
-    #             ax[i, j].set_yticklabels([])
-    #         if i != ndim - 1:
-    #             ax[i, j].set_xticklabels([])
+        for i in range(ndim):
+            for j in range(ndim):
+                if ax[i, j] is None:
+                    continue
+                if j != 0:
+                    ax[i, j].set_yticklabels([])
+                if i != ndim - 1:
+                    ax[i, j].set_xticklabels([])
 
-    # # Overlay weighted correlations in the upper triangle
-    # samples = combined_results['samples'].T  # shape (ndim, nsamps)
-    # weights = combined_results.importance_weights()
+        # Overlay weighted correlations in the upper triangle
+        samples = combined_results['samples'].T  # shape (ndim, nsamps)
+        weights = combined_results.importance_weights()
 
-    # cmap = plt.colormaps['coolwarm']
-    # norm = Normalize(vmin=-1, vmax=1)
+        cmap = plt.colormaps['coolwarm']
+        norm = Normalize(vmin=-1, vmax=1)
 
-    # for i in range(ndim):
-    #     for j in range(ndim):
-    #         if j <= i or ax[i, j] is None:
-    #             continue
+        for i in range(ndim):
+            for j in range(ndim):
+                if j <= i or ax[i, j] is None:
+                    continue
 
-    #         panel = ax[i, j]
-    #         x = samples[j]
-    #         y = samples[i]
-    #         corr_w = weighted_corr(x, y, weights)
+                panel = ax[i, j]
+                x = samples[j]
+                y = samples[i]
+                corr_w = weighted_corr(x, y, weights)
 
-    #         color = cmap(norm(corr_w))
-    #         # paint the background patch
-    #         panel.patch.set_facecolor(color)
-    #         panel.patch.set_alpha(1.0)
+                color = cmap(norm(corr_w))
+                # paint the background patch
+                panel.patch.set_facecolor(color)
+                panel.patch.set_alpha(1.0)
 
-    #         # fallback rectangle if needed
-    #         panel.add_patch(
-    #             plt.Rectangle(
-    #                 (0,0), 1, 1,
-    #                 transform=panel.transAxes,
-    #                 facecolor=color,
-    #                 zorder=0
-    #             )
-    #         )
+                # fallback rectangle if needed
+                panel.add_patch(
+                    plt.Rectangle(
+                        (0,0), 1, 1,
+                        transform=panel.transAxes,
+                        facecolor=color,
+                        zorder=0
+                    )
+                )
 
-    #         panel.text(
-    #             0.5, 0.5,
-    #             f"{corr_w:.2f}",
-    #             transform=panel.transAxes,
-    #             ha='center', va='center',
-    #             fontsize=25, color='black'
-    #         )
-    #         panel.set_xticks([]); panel.set_yticks([])
-    #         for spine in panel.spines.values():
-    #             spine.set_visible(False)
+                panel.text(
+                    0.5, 0.5,
+                    f"{corr_w:.2f}",
+                    transform=panel.transAxes,
+                    ha='center', va='center',
+                    fontsize=25, color='black'
+                )
+                panel.set_xticks([]); panel.set_yticks([])
+                for spine in panel.spines.values():
+                    spine.set_visible(False)
 
-    # # final adjustments & save
-    # # fg.subplots_adjust(wspace=0.1, hspace=0.3)
-    # fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
-    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_correlation_plot.png"),
-    #             bbox_inches='tight', dpi=300)
-    # plt.close(fig)
+        # final adjustments & save
+        # fg.subplots_adjust(wspace=0.1, hspace=0.3)
+        fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_correlation_plot.png"),
+                    bbox_inches='tight', dpi=300)
+        plt.close(fig)
 
-    # print('saving correlation matrix...')
+        print('saving correlation matrix...')
 
-    # # Build the NxN matrix of weigh_corr_ij
-    # corr_mat = np.zeros((ndim, ndim))
-    # for i in range(ndim):
-    #     for j in range(ndim):
-    #         corr_mat[i, j] = weighted_corr(samples[i], samples[j], weights)
+        # Build the NxN matrix of weigh_corr_ij
+        corr_mat = np.zeros((ndim, ndim))
+        for i in range(ndim):
+            for j in range(ndim):
+                corr_mat[i, j] = weighted_corr(samples[i], samples[j], weights)
 
-    # # Wrap it in a DataFrame (so you get row/column labels)
-    # df_corr = pd.DataFrame(
-    #     corr_mat,
-    #     index=labels_plot,
-    #     columns=labels_plot
-    # )
+        # Wrap it in a DataFrame (so you get row/column labels)
+        df_corr = pd.DataFrame(
+            corr_mat,
+            index=labels_plot,
+            columns=labels_plot
+        )
 
-    # # Save to CSV (or TSV, whichever you prefer)
-    # outpath = os.path.join(
-    #     output_dir_show, f"{shower_name}_weighted_correlation_matrix.csv"
-    # )
-    # df_corr.to_csv(outpath, float_format="%.4f")
-    # print(f"Saved weighted correlation matrix to:\n  {outpath}")
+        # Save to CSV (or TSV, whichever you prefer)
+        outpath = os.path.join(
+            output_dir_show, f"{shower_name}_weighted_correlation_matrix.csv"
+        )
+        df_corr.to_csv(outpath, float_format="%.4f")
+        print(f"Saved weighted correlation matrix to:\n  {outpath}")
 
-    # # Create a mask for the strict upper triangle (i<j), diagonal excluded
-    # mask = np.triu(np.ones(df_corr.shape, dtype=bool), k=1)
+        # Create a mask for the strict upper triangle (i<j), diagonal excluded
+        mask = np.triu(np.ones(df_corr.shape, dtype=bool), k=1)
 
-    # # Keep only those entries
-    # upper = df_corr.where(mask)
+        # Keep only those entries
+        upper = df_corr.where(mask)
 
-    # # Stack into a Series of (row, col) → corr_ij
-    # pairs = upper.stack()
+        # Stack into a Series of (row, col) → corr_ij
+        pairs = upper.stack()
 
-    # # For “top 10” by absolute strength:
-    # top10 = pairs.sort_values(key=lambda x: x.abs(), ascending=False).head(10)
-    # print("\nTop 10: highest correlations:")
-    # print(top10)
+        # For “top 10” by absolute strength:
+        top10 = pairs.sort_values(key=lambda x: x.abs(), ascending=False).head(10)
+        print("\nTop 10: highest correlations:")
+        print(top10)
 
-    # # If you want the “bottom 10” (i.e. the smallest absolute correlations):
-    # bottom10 = pairs.sort_values(key=lambda x: x.abs(), ascending=True).head(10)
-    # print("\nBottom 10: lowest correlations:")
-    # print(bottom10)
+        # If you want the “bottom 10” (i.e. the smallest absolute correlations):
+        bottom10 = pairs.sort_values(key=lambda x: x.abs(), ascending=True).head(10)
+        print("\nBottom 10: lowest correlations:")
+        print(bottom10)
 
 
 
@@ -2584,7 +3268,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Slow_sporadics_with_EMCCD",
+         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_with_EMCCD",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -2594,6 +3278,12 @@ if __name__ == "__main__":
     arg_parser.add_argument('--name', metavar='NAME', type=str,
         default=r"",
         help="Name of the input files, if not given is folders name.")
+
+    arg_parser.add_argument('--radiance_plot', action='store_true',
+        help="Flag to enable radiance plot.")
+
+    arg_parser.add_argument('--correlation_plot', action='store_true',
+        help="Flag to enable correlation plot.")
 
     # Parse
     cml_args = arg_parser.parse_args()
@@ -2615,5 +3305,4 @@ if __name__ == "__main__":
         cml_args.name = cml_args.input_dir.split(os.sep)[-1]
         print(f"Setting name to {cml_args.name}")
 
-    shower_distrb_plot(cml_args.input_dir, cml_args.output_dir, cml_args.name)
-    
+    shower_distrb_plot(cml_args.input_dir, cml_args.output_dir, cml_args.name, radiance_plot_flag=True, plot_correl_flag=False) # cml_args.radiance_plot cml_args.correl_plot

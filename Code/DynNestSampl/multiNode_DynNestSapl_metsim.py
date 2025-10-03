@@ -37,17 +37,28 @@ if __name__ == "__main__":
         default=r"",
         help="Path to a .prior file. If blank, we look in the .dynesty folder or default to built-in bounds.")
 
+    arg_parser.add_argument('--extraprior', metavar='EXTRAPRIOR', type=str, 
+        default=r"",
+        help="Path to an .extraprior file these are used to add more FragmentationEntry or diferent types of fragmentations. " \
+        "If blank, no extraprior file will be used so will only use the prior file.")
+    
     arg_parser.add_argument('-all','--all_cameras',
-        help="If active use all data, if not only CAMO data for lag if present in pickle file, or generate json file with CAMO noise. If False, do not use/generate CAMO data (by default is False).",
+        help="If active use all data, if not only CAMO data for lag if present in pickle file. If False, use CAMO data only for deceleration (by default is False). " \
+        "When gnerating json simulations filr if False create a combination EMCCD CAMO data and if True EMCCD only",
         action="store_true")
 
     arg_parser.add_argument('-new','--new_dynesty',
-        help="If active restart a new dynesty run if not resume from existing .dynesty if found. If False, create a new version.",
+        help="If active restart a new dynesty run if not resume from existing .dynesty if found. " \
+        "If False, create a new dynesty version.",
         action="store_false")
     
     arg_parser.add_argument('-plot','--only_plot',
-        help="If active only plot the results of the dynesty run, if not run dynesty.", 
+        help="If active only plot the results of the dynesty run, if not run dynesty and then plot all when finish.", 
         action="store_true")
+
+    arg_parser.add_argument('--pick_pos', metavar='PICK_POSITION_REAL', type=int, default=0,
+        help="corretion for pick postion in the meteor frame raging from from 0 to 1, " \
+        "for leading edge picks is 0 for the centroid on the entire meteor is 0.5.")
 
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")
@@ -59,7 +70,7 @@ if __name__ == "__main__":
     # Parse
     cml_args = arg_parser.parse_args()
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pool_MPI)
+    setup_folder_and_run_dynesty(cml_args.input_dir, output_dir=cml_args.output_dir, prior=cml_args.prior, resume=cml_args.new_dynesty, use_all_cameras=cml_args.all_cameras, only_plot=cml_args.only_plot, cores=cml_args.cores, pool_MPI=pool_MPI, pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior)
 
     # Close the pool if using MPI
     if pool_MPI is not None:

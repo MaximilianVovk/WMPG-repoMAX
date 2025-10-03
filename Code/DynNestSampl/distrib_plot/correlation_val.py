@@ -88,7 +88,7 @@ def load_and_sum_correlations(directory):
 
 
 # Specify the directory where your files are stored
-directory = r'C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP'  # Adjust if needed based on your working directory
+directory = r'C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new'  # Adjust if needed based on your working directory
 
 top_5, bottom_5, output_file = load_and_sum_correlations(directory)
 

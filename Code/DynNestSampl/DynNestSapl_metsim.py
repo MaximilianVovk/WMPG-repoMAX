@@ -31,9 +31,13 @@ from scipy.optimize import minimize,curve_fit
 from scipy.stats import norm, invgamma
 import shutil
 import matplotlib.ticker as ticker
+import matplotlib.gridspec as gridspec
+from matplotlib.patches import Patch
 import multiprocessing
 import math
 import matplotlib.cm as cm
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from matplotlib.ticker import MaxNLocator
 from matplotlib.colors import Normalize
 from wmpl.MetSim.GUI import loadConstants, SimulationResults, FragmentationEntry, saveConstants
@@ -44,6 +48,12 @@ from wmpl.Utils.Physics import calcMass, dynamicPressure, calcRadiatedEnergy
 from wmpl.Utils.TrajConversions import J2000_JD, date2JD
 from wmpl.Utils.AtmosphereDensity import fitAtmPoly
 from wmpl.Utils.Pickling import loadPickle
+
+# Import the correct scipy.integrate.simpson function
+try:
+    from scipy.integrate import simps as simpson
+except ImportError:
+    from scipy.integrate import simpson as simpson
 
 import signal
 
@@ -511,6 +521,655 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     plt.close(fig)
 
 
+
+
+# ---- globals for worker processes ----
+_GLOBALS = {}
+
+def _init_worker(obs_data, variables, flags_dict, fixed_values, align_height):
+    # set once per process to avoid re-pickling per task
+    _GLOBALS['obs_data'] = obs_data
+    _GLOBALS['variables'] = variables
+    _GLOBALS['flags_dict'] = flags_dict
+    _GLOBALS['fixed_values'] = fixed_values
+    _GLOBALS['align_height'] = align_height
+
+def _apply_log_flags_to_sample(sample, variables, flags_dict):
+    s = np.array(sample, dtype=float).copy()
+    for i, var in enumerate(variables):
+        flags = flags_dict.get(var, [])
+        if isinstance(flags, (list, tuple)) and ('log' in flags):
+            s[i] = 10.0**s[i]
+    return s
+
+def _compute_sim_lag(sim, obs_data):
+    """
+    Compute lag exactly as in your snippet:
+        index = argmin |h - obs_data.height_lag[0]|
+        lag = (L - L[index]) - obs_data.v_init*(t - t[index])
+        lag -= lag[index]
+    Uses the closest *valid* height index (maps back to full array index).
+    """
+    h = np.asarray(sim.leading_frag_height_arr)
+    t = np.asarray(sim.time_arr)
+    L = np.asarray(sim.leading_frag_length_arr)
+
+    # Fallback if no height_lag in obs_data
+    ref_h = getattr(obs_data, 'height_lag', None)
+    if ref_h is None or len(ref_h) == 0:
+        ref_h = np.asarray(getattr(obs_data, 'height_lum', [np.nan]))[0]
+    else:
+        ref_h = np.asarray(obs_data.height_lag)[0]
+
+    valid = ~np.isnan(h)
+    if not np.any(valid):
+        return np.full_like(h, np.nan, dtype=float)
+
+    h_valid = h[valid]
+    idx_in_valid = np.argmin(np.abs(h_valid - ref_h))
+    # map back to full-array index to avoid off-by-one when NaNs exist
+    idx = np.flatnonzero(valid)[idx_in_valid]
+
+    v0 = getattr(obs_data, 'v_init', np.nan)  # use obs_data.v_init as in your code
+    lag = (L - L[idx]) - (v0 * (t - t[idx]))
+    lag = lag - lag[idx]  # zero at reference
+    return lag
+
+
+def _worker_simulate_and_interp(sample_equal_row):
+    """
+    Runs one posterior sample through run_simulation() and returns
+    (lum_at_hl, mag_at_hl, vel_at_hl, lag_at_hl) as 1D arrays.
+    Returns None on failure (caller will skip).
+    """
+    try:
+        obs_data     = _GLOBALS['obs_data']
+        variables    = _GLOBALS['variables']
+        flags_dict   = _GLOBALS['flags_dict']
+        fixed_values = _GLOBALS['fixed_values']
+        align_height = _GLOBALS['align_height']
+
+        pars = _apply_log_flags_to_sample(sample_equal_row, variables, flags_dict)
+        sim  = run_simulation(pars, obs_data, variables, fixed_values)
+
+        # NEW: integrate per your condition
+        _maybe_integrate_luminosity(sim, obs_data)
+
+        # build lag exactly per your definition
+        sim_lag = _compute_sim_lag(sim, obs_data)
+
+
+        # prepare monotone height for interp
+        h  = np.asarray(sim.leading_frag_height_arr)
+        ok = ~np.isnan(h)
+        if np.count_nonzero(ok) < 4:
+            return None
+        h  = h[ok]
+        order = np.argsort(h)  # increasing
+        h   = h[order]
+        lum = np.asarray(sim.luminosity_arr)[ok][order]
+        mag = np.asarray(sim.abs_magnitude)[ok][order]
+        vel = np.asarray(sim.leading_frag_vel_arr)[ok][order]
+        lag = np.asarray(sim_lag)[ok][order]
+
+        hl = np.asarray(obs_data.height_lum)
+
+        lum_hl = np.interp(hl, h, lum, left=np.nan, right=np.nan)
+        mag_hl = np.interp(hl, h, mag, left=np.nan, right=np.nan)
+        vel_hl = np.interp(hl, h, vel, left=np.nan, right=np.nan)
+        lag_hl = np.interp(hl, h, lag, left=np.nan, right=np.nan)
+
+        return lum_hl, mag_hl, vel_hl, lag_hl
+    except Exception:
+        return None
+
+def _quantiles_from_samples(arr_2d, qs):
+    """arr_2d shape (S,H). Returns dict of quantiles along axis=0 ignoring NaNs."""
+    out = {}
+    for name, q in qs.items():
+        out[name] = np.nanquantile(arr_2d, q, axis=0, method='linear')
+    return out
+
+def _maybe_integrate_luminosity(sim, obs_data):
+    """
+    If (1/fps_lum) > sim.const.dt, integrate luminosity over fps window and
+    recompute abs magnitude using obs_data.P_0m.
+    """
+    # Pull dt safely
+    dt = None
+    if hasattr(sim, 'const') and hasattr(sim.const, 'dt'):
+        dt = sim.const.dt
+    elif hasattr(sim, 'dt'):
+        dt = sim.dt
+
+    fps = getattr(obs_data, 'fps_lum', None)
+    P0m = getattr(obs_data, 'P_0m', None)
+
+    if dt is None or fps is None or P0m is None:
+        return  # nothing we can do
+
+    try:
+        if fps > 0 and (1.0 / float(fps)) > float(dt):
+            L_new, mag_new = luminosity_integration(
+                np.asarray(sim.time_arr),
+                np.asarray(sim.time_arr),            # same as your call
+                np.asarray(sim.luminosity_arr),
+                float(dt), float(fps), float(P0m)
+            )
+            sim.luminosity_arr = np.asarray(L_new)
+            sim.abs_magnitude  = np.asarray(mag_new)
+    except Exception:
+        # be silent and keep raw arrays if integration fails for any reason
+        pass
+
+
+def posterior_bands_vs_height_parallel(
+    dynesty_results,
+    obs_data,
+    flags_dict,
+    fixed_values,
+    output_folder='',
+    file_name='',
+    nsamples=500,
+    seed=0,
+    n_workers=None,          # default: os.cpu_count()-1
+    chunksize=8,             # tune for your machine
+    color_best='black',
+    label_best='Best guess'
+):
+    """
+    Parallel version: computes posterior bands at obs_data.height_lum using a
+    process pool. Returns the same structure as before; plotting code unchanged.
+    """
+    rng = np.random.default_rng(seed)
+    variables = list(flags_dict.keys())
+
+    # weights -> equal-weight resampling
+    logwt = np.asarray(dynesty_results.logwt)
+    w = np.exp(logwt - np.max(logwt))
+    w /= np.sum(w)
+    samples_eq = dynesty.utils.resample_equal(dynesty_results.samples, w)
+    if nsamples is not None and nsamples < samples_eq.shape[0]:
+        idx_keep = rng.choice(samples_eq.shape[0], size=nsamples, replace=False)
+        samples_eq = samples_eq[idx_keep]
+
+    H = len(obs_data.height_lum)
+    S = samples_eq.shape[0]
+
+    lum_samples = np.full((S, H), np.nan)
+    mag_samples = np.full((S, H), np.nan)
+    vel_samples = np.full((S, H), np.nan)
+    lag_samples = np.full((S, H), np.nan)
+
+    align_height = obs_data.height_lag[0] if hasattr(obs_data, 'height_lag') and len(obs_data.height_lag) > 0 \
+                   else obs_data.height_lum[0]
+
+    if n_workers is None:
+        n_workers = max(1, (os.cpu_count() or 2) - 1)
+        # n_workers = multiprocessing.cpu_count()
+
+    # --- try parallel; if anything goes wrong, do sequential as fallback ---
+    ran_parallel = False
+    try:
+        ctx = mp.get_context("spawn")  # Windows-safe
+        print(f"[{file_name}] Running {S} simulations with {n_workers} workers...", flush=True)
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            mp_context=ctx,
+            initializer=_init_worker,
+            initargs=(obs_data, variables, flags_dict, fixed_values, align_height),
+        ) as ex:
+            # submit and keep a map to their sample index
+            future_to_idx = {
+                ex.submit(_worker_simulate_and_interp, samples_eq[sidx]): sidx
+                for sidx in range(S)
+            }
+
+            done = 0
+            for fut in as_completed(future_to_idx):
+                sidx = future_to_idx[fut]
+                res = fut.result()
+                if res is not None:
+                    lum_hl, mag_hl, vel_hl, lag_hl = res
+                    lum_samples[sidx] = lum_hl
+                    mag_samples[sidx] = mag_hl
+                    vel_samples[sidx] = vel_hl
+                    lag_samples[sidx] = lag_hl
+                done += 1
+                # progress print
+                print(f"[{file_name}] {done}/{S} simulations done", flush=True)
+
+        ran_parallel = True
+    except Exception as e:
+        print(f"[posterior_bands_vs_height_parallel] Parallel run failed ({e}). Falling back to sequential.", flush=True)
+    
+    if not ran_parallel:
+        print(f"[{file_name}] Running {S} simulations sequentially...", flush=True)
+        _init_worker(obs_data, variables, flags_dict, fixed_values, align_height)
+        done = 0
+        for sidx in range(S):
+            res = _worker_simulate_and_interp(samples_eq[sidx])
+            if res is not None:
+                lum_hl, mag_hl, vel_hl, lag_hl = res
+                lum_samples[sidx] = lum_hl
+                mag_samples[sidx] = mag_hl
+                vel_samples[sidx] = vel_hl
+                lag_samples[sidx] = lag_hl
+            done += 1
+            print(f"[{file_name}] {done}/{S} simulations done", flush=True)
+
+    # Quantile bands
+    qs = {
+        "p16": 0.158655, "p50": 0.5, "p84": 0.841345,
+        "p025": 0.025, "p975": 0.975,
+        "p00015": 0.00135, "p99985": 0.99865
+    }
+    bands_lum = _quantiles_from_samples(lum_samples, qs)
+    bands_mag = _quantiles_from_samples(mag_samples, qs)
+    bands_vel = _quantiles_from_samples(vel_samples, qs)
+    bands_lag = _quantiles_from_samples(lag_samples, qs)
+
+    # Best-guess curve (re-use your existing code)
+    best_idx  = int(np.argmax(dynesty_results.logl))
+    best_pars = _apply_log_flags_to_sample(dynesty_results.samples[best_idx], variables, flags_dict)
+    sim_best  = run_simulation(best_pars, obs_data, variables, fixed_values)
+    _maybe_integrate_luminosity(sim_best, obs_data)
+    best_lag_full = _compute_sim_lag(sim_best, obs_data)
+
+
+    ok = ~np.isnan(sim_best.leading_frag_height_arr)
+    order = np.argsort(sim_best.leading_frag_height_arr[ok])
+    hb = sim_best.leading_frag_height_arr[ok][order]
+    hl = np.asarray(obs_data.height_lum)
+
+    best_lum = np.interp(hl, hb, np.asarray(sim_best.luminosity_arr)[ok][order], left=np.nan, right=np.nan)
+    best_mag = np.interp(hl, hb, np.asarray(sim_best.abs_magnitude)[ok][order], left=np.nan, right=np.nan)
+    best_vel = np.interp(hl, hb, np.asarray(sim_best.leading_frag_vel_arr)[ok][order], left=np.nan, right=np.nan)
+    best_lag = np.interp(hl, hb, np.asarray(best_lag_full)[ok][order], left=np.nan, right=np.nan)
+
+    # (Optional) call your previous plotting routine here to draw bands + obs + best.
+    # You can keep the exact plotting code you already have, just swap in the arrays
+    # from lum_samples/mag_samples/... and bands_* dicts.
+
+    # ---- PLOT & SAVE ----
+    _plot_bands_obs_best(
+        obs_data,
+        hl,
+        bands_lum, bands_mag, bands_vel, bands_lag,
+        best_lum, best_mag, best_vel, best_lag,
+        output_folder=output_folder,
+        file_name=file_name,
+        color_best=color_best,
+        label_best=label_best
+    )
+    # ---- RETURN DATA ----
+
+    return {
+        'heights_m': hl.copy(),
+        'lum_samples': lum_samples,
+        'mag_samples': mag_samples,
+        'vel_samples': vel_samples,
+        'lag_samples': lag_samples,
+        'bands': {
+            'lum': bands_lum,
+            'mag': bands_mag,
+            'vel': bands_vel,
+            'lag': bands_lag,
+        },
+        'best_guess': {
+            'luminosity': best_lum,
+            'abs_magnitude': best_mag,
+            'velocity': best_vel,
+            'lag': best_lag,
+        },
+        'sim_best': sim_best
+    }
+
+
+def _plot_bands_obs_best(
+    obs_data,
+    hl,                                  # heights (m) used for interpolation
+    bands_lum, bands_mag, bands_vel, bands_lag,
+    best_lum, best_mag, best_vel, best_lag,
+    output_folder='', file_name='', color_best='black', label_best='Best guess'
+):
+    if output_folder:
+        os.makedirs(output_folder, exist_ok=True)
+
+    heights_km = np.asarray(hl) / 1000.0
+
+    fig = plt.figure(figsize=(15, 4))
+    gs  = gridspec.GridSpec(1, 4, figure=fig, wspace=0.3)
+
+    ax_lum = fig.add_subplot(gs[0, 0])
+    ax_mag = fig.add_subplot(gs[0, 1])
+    ax_vel = fig.add_subplot(gs[0, 2])
+    ax_lag = fig.add_subplot(gs[0, 3])
+
+    def shade(ax, lo3, hi3, lo2, hi2, lo1, hi1, y):
+        # 3σ (light), 2σ (mid), 1σ (dark)
+        ax.fill_betweenx(y, lo3, hi3, color='gray', alpha=0.10, linewidth=0)
+        ax.fill_betweenx(y, lo2, hi2, color='gray', alpha=0.18, linewidth=0)
+        ax.fill_betweenx(y, lo1, hi1, color='gray', alpha=0.28, linewidth=0)
+
+    # --- stable station colors across panels ---
+    cmap = plt.get_cmap("tab10")
+    station_colors = {}
+    plotted_stations = set()
+    stations_lum = np.unique(getattr(obs_data, 'stations_lum', []))
+    stations_lag = np.unique(getattr(obs_data, 'stations_lag', []))
+    try:
+        stations_all = np.unique(np.concatenate([stations_lum, stations_lag]))
+    except Exception:
+        stations_all = stations_lum if len(stations_lum) else stations_lag
+    for i, st in enumerate(stations_all):
+        station_colors[st] = cmap(i % 10)
+
+    # --- LUMINOSITY ---
+    shade(ax_lum, bands_lum["p00015"], bands_lum["p99985"],
+                 bands_lum["p025"],   bands_lum["p975"],
+                 bands_lum["p16"],    bands_lum["p84"], heights_km)
+    for st in np.unique(getattr(obs_data, 'stations_lum', [])):
+        m = obs_data.stations_lum == st
+        ax_lum.plot(
+            obs_data.luminosity[m], obs_data.height_lum[m]/1000.0,
+            linestyle='--', marker='x', markersize=4, linewidth=1,
+            color=station_colors.get(st, 'C0'),
+            label=str(st) if st not in plotted_stations else None
+        )
+        plotted_stations.add(st)
+    ax_lum.plot(best_lum, heights_km, color=color_best, lw=1.8, label=label_best)
+    ax_lum.set_xlabel("Luminosity [W]")
+    ax_lum.set_ylabel("Height [km]")
+    ax_lum.grid(True, linestyle='--', color='lightgray')
+
+    # --- ABS MAG ---
+    shade(ax_mag, bands_mag["p00015"], bands_mag["p99985"],
+                 bands_mag["p025"],   bands_mag["p975"],
+                 bands_mag["p16"],    bands_mag["p84"], heights_km)
+    for st in np.unique(getattr(obs_data, 'stations_lum', [])):
+        m = obs_data.stations_lum == st
+        ax_mag.plot(
+            obs_data.absolute_magnitudes[m], obs_data.height_lum[m]/1000.0,
+            linestyle='--', marker='x', markersize=4, linewidth=1,
+            color=station_colors.get(st, 'C0'),
+        )
+    ax_mag.plot(best_mag, heights_km, color=color_best, lw=1.8)
+    ax_mag.set_xlabel("Abs. Magnitude")
+    ax_mag.invert_xaxis()
+    ax_mag.grid(True, linestyle='--', color='lightgray')
+
+    # --- VELOCITY (km/s) ---
+    shade(ax_vel, bands_vel["p00015"]/1000.0, bands_vel["p99985"]/1000.0,
+                 bands_vel["p025"]/1000.0,   bands_vel["p975"]/1000.0,
+                 bands_vel["p16"]/1000.0,    bands_vel["p84"]/1000.0, heights_km)
+    for st in np.unique(getattr(obs_data, 'stations_lag', [])):
+        m = obs_data.stations_lag == st
+        ax_vel.plot(
+            obs_data.velocities[m]/1000.0, obs_data.height_lag[m]/1000.0,
+            linestyle='--', marker='x', markersize=4, linewidth=1,
+            color=station_colors.get(st, 'C0'),
+        )
+    ax_vel.plot(best_vel/1000.0, heights_km, color=color_best, lw=1.8)
+    ax_vel.set_xlabel("Velocity [km/s]")
+    ax_vel.grid(True, linestyle='--', color='lightgray')
+
+    # --- LAG (m) ---
+    shade(ax_lag, bands_lag["p00015"], bands_lag["p99985"],
+                 bands_lag["p025"],   bands_lag["p975"],
+                 bands_lag["p16"],    bands_lag["p84"], heights_km)
+    station_handles = []
+    station_labels  = []
+    for st in np.unique(getattr(obs_data, 'stations_lag', [])):
+        m = obs_data.stations_lag == st
+        h, = ax_lag.plot(
+            obs_data.lag[m], obs_data.height_lag[m]/1000.0,
+            linestyle='--', marker='x', markersize=4, linewidth=1,
+            color=station_colors.get(st, 'C0'),
+            label=str(st)
+        )
+        station_handles.append(h); station_labels.append(str(st))
+    best_line, = ax_lag.plot(best_lag, heights_km, color=color_best, lw=1.8, label=label_best)
+    ax_lag.set_xlabel("Lag [m]")
+    ax_lag.grid(True, linestyle='--', color='lightgray')
+
+    # --- Legend with σ labels ---
+    proxy_1s = Patch(facecolor='gray', alpha=0.28, label='1σ')
+    proxy_2s = Patch(facecolor='gray', alpha=0.18, label='2σ')
+    proxy_3s = Patch(facecolor='gray', alpha=0.10, label='3σ')
+
+    handles = [best_line] + station_handles + [proxy_1s, proxy_2s, proxy_3s]
+    labels  = [label_best] + station_labels + ['1σ', '2σ', '3σ']
+    ax_lag.legend(handles, labels, loc='best', fontsize=8, frameon=True)
+
+    plt.tight_layout()
+    if output_folder and file_name:
+        outpath = os.path.join(output_folder, file_name + "_posterior_bands_vs_height.png")
+        fig.savefig(outpath, dpi=300, bbox_inches='tight')
+        print(f"[saved] {outpath}")
+    plt.close(fig)
+
+
+def posterior_bands_topk_check(
+    dynesty_results,
+    obs_data,
+    flags_dict,
+    fixed_values,
+    top_k=10,
+    output_folder='',
+    file_name='topk_check',
+    n_workers=None,
+    color_best='black',
+    label_best='Best guess',
+):
+    """
+    Quick-check version: run only the best `top_k` samples (highest logl).
+    Returns the same structure as the full function.
+    """
+    # pick top-K by log-likelihood
+    logl = np.asarray(dynesty_results.logl)
+    if top_k <= 0:
+        raise ValueError("top_k must be >= 1")
+    k = min(top_k, logl.size)
+    top_idx = np.argsort(logl)[-k:]  # ascending -> take last k
+    # keep in descending order (optional)
+    top_idx = top_idx[np.argsort(logl[top_idx])[::-1]]
+
+    # build a tiny dynesty-like view for reuse of the parallel function
+    class _MiniResult:
+        pass
+    mini = _MiniResult()
+    mini.samples = np.asarray(dynesty_results.samples)[top_idx]
+    # fabricate equal weights for top-k (we won’t resample inside)
+    mini.logwt   = np.zeros(k, dtype=float)
+    mini.logl    = logl[top_idx]
+
+    # Reuse the parallel function but tell it “nsamples=k” so it won’t subsample
+    return posterior_bands_vs_height_parallel(
+        dynesty_results=mini,
+        obs_data=obs_data,
+        flags_dict=flags_dict,
+        fixed_values=fixed_values,
+        output_folder=output_folder,
+        file_name=file_name,
+        nsamples=k,
+        n_workers=n_workers,
+        color_best=color_best,
+        label_best=label_best,
+    )
+
+
+def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', color_sim='black', label_sim='Best guess'):
+    fig = plt.figure(figsize=(15, 4))
+    # take only the reg ex with YYYYMMDD_HHMMSS
+    file_name_print = re.search(r'\d{8}_\d{6}', file_name).group(0)
+    fig.suptitle(file_name_print)
+
+    gs_main = gridspec.GridSpec(1, 4, figure=fig, wspace=0.3)
+
+    cmap = plt.get_cmap("tab10")
+    station_colors = {}
+
+    def get_color(station):
+        if station not in station_colors:
+            station_colors[station] = cmap(len(station_colors) % 10)
+        return station_colors[station]
+
+    # Define plotting grid pairs (main, residual) with shared y-axis
+    axes = []
+    for i in range(4):
+        gs = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_main[0, i], wspace=0, width_ratios=[3, 1])
+        ax_main = fig.add_subplot(gs[0])
+        ax_resid = fig.add_subplot(gs[1], sharey=ax_main)
+        axes.append((ax_main, ax_resid))
+
+    ax_lum, ax_lum_res = axes[0]
+    ax_mag, ax_mag_res = axes[1]
+    ax_vel, ax_vel_res = axes[2]
+    ax_lag, ax_lag_res = axes[3]
+
+    #### OBSERVATIONAL DATA ####
+
+    # LUMINOSITY (with camera legend)
+    for station in np.unique(obs_data.stations_lum):
+        mask = obs_data.stations_lum == station
+        color = get_color(station)
+        ax_lum.plot(obs_data.luminosity[mask], obs_data.height_lum[mask] / 1000, 'x--', color=color)
+
+    # # Draw a line for extra lag-only cameras (not in lum)
+    # if not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
+    #     stations_lag_only = np.setdiff1d(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum))
+    #     if len(stations_lag_only) > 0:
+    #         mask = np.isin(obs_data.stations_lag, stations_lag_only)
+    #         ax_lum.plot(obs_data.luminosity[mask], obs_data.height_lag[mask] / 1000, 'x--', color='gray', label='Lag-only')
+
+    ax_lum.set_xlabel("Luminosity [W]")
+    ax_lum.set_ylabel("Height [km]")
+    ax_lum.grid(True, linestyle='--', color='lightgray')
+
+    ax_lum_res.fill_betweenx(obs_data.height_lum / 1000, -obs_data.noise_lum, obs_data.noise_lum, color='darkgray', alpha=0.2)
+    ax_lum_res.fill_betweenx(obs_data.height_lum / 1000, -2*obs_data.noise_lum, 2*obs_data.noise_lum, color='lightgray', alpha=0.2)
+    ax_lum_res.plot([0, 0], ax_lum.get_ylim(), color='lightgray')
+    ax_lum_res.set_xlabel("Res. Lum")
+    ax_lum_res.grid(True, linestyle='--', color='lightgray')
+    ax_lum_res.tick_params(labelleft=False)
+
+    # ABS MAGNITUDE
+    for station in np.unique(obs_data.stations_lum):
+        mask = obs_data.stations_lum == station
+        color = get_color(station)
+        ax_mag.plot(obs_data.absolute_magnitudes[mask], obs_data.height_lum[mask] / 1000, 'x--', color=color)
+    ax_mag.set_xlabel("Abs. Magnitude")
+    ax_mag.invert_xaxis()
+    ax_mag.grid(True, linestyle='--', color='lightgray')
+
+    ax_mag_res.fill_betweenx(obs_data.height_lum / 1000, -obs_data.noise_mag, obs_data.noise_mag, color='darkgray', alpha=0.2)
+    ax_mag_res.fill_betweenx(obs_data.height_lum / 1000, -2*obs_data.noise_mag, 2*obs_data.noise_mag, color='lightgray', alpha=0.2)
+    ax_mag_res.plot([0, 0], ax_mag.get_ylim(), color='lightgray')
+    ax_mag_res.set_xlabel("Res. Mag")
+    ax_mag_res.grid(True, linestyle='--', color='lightgray')
+    ax_mag_res.tick_params(labelleft=False)
+
+    # VELOCITY
+    for station in np.unique(obs_data.stations_lag):
+        mask = obs_data.stations_lag == station
+        color = get_color(station)
+        ax_vel.plot(obs_data.velocities[mask] / 1000, obs_data.height_lag[mask] / 1000, 'x:', color=color)
+    ax_vel.set_xlabel("Velocity [km/s]")
+    ax_vel.grid(True, linestyle='--', color='lightgray')
+
+    ax_vel_res.fill_betweenx(obs_data.height_lag / 1000, -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
+    ax_vel_res.fill_betweenx(obs_data.height_lag / 1000, -2*obs_data.noise_vel/1000, 2*obs_data.noise_vel/1000, color='lightgray', alpha=0.2)
+    ax_vel_res.plot([0, 0], ax_vel.get_ylim(), color='lightgray')
+    ax_vel_res.set_xlabel("Res. Vel")
+    ax_vel_res.grid(True, linestyle='--', color='lightgray')
+    ax_vel_res.tick_params(labelleft=False)
+
+    # LAG
+    for station in np.unique(obs_data.stations_lag):
+        mask = obs_data.stations_lag == station
+        color = get_color(station)
+        ax_lag.plot(obs_data.lag[mask], obs_data.height_lag[mask] / 1000, 'x:', color=color, label=station)
+    ax_lag.set_xlabel("Lag [m]")
+    ax_lag.grid(True, linestyle='--', color='lightgray')
+
+    ax_lag_res.fill_betweenx(obs_data.height_lag / 1000, -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
+    ax_lag_res.fill_betweenx(obs_data.height_lag / 1000, -2*obs_data.noise_lag, 2*obs_data.noise_lag, color='lightgray', alpha=0.2)
+    ax_lag_res.plot([0, 0], ax_lag.get_ylim(), color='lightgray')
+    ax_lag_res.set_xlabel("Res. Lag")
+    ax_lag_res.grid(True, linestyle='--', color='lightgray')
+    ax_lag_res.tick_params(labelleft=False)
+
+    ### FIX AXIS LIMITS BEFORE PLOTTING SIM DATA ###
+    for ax_main, ax_res in axes:
+        xlim = ax_main.get_xlim()
+        ylim = ax_main.get_ylim()
+        ax_main.set_xlim(xlim)
+        ax_main.set_ylim(ylim)
+        ax_res.set_ylim(ylim)
+
+    #### SIMULATED DATA (Interpolated) ####
+    if sim_data is not None:
+        # # Integrate luminosity/magnitude if needed
+        # if (1 / obs_data.fps_lum) > sim_data.const.dt:
+        #     sim_data.luminosity_arr, sim_data.abs_magnitude = luminosity_integration(
+        #         sim_data.time_arr, sim_data.time_arr, sim_data.luminosity_arr,
+        #         sim_data.const.dt, obs_data.fps_lum, obs_data.P_0m
+        #     )
+
+        # SMOOTH PLOTTING using time-based sampling
+        ax_lum.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr / 1000, color=color_sim, label=label_sim)
+        ax_mag.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr / 1000, color=color_sim)
+        ax_vel.plot(sim_data.leading_frag_vel_arr / 1000, sim_data.leading_frag_height_arr / 1000, color=color_sim)
+
+        index = np.argmin(np.abs(sim_data.leading_frag_height_arr[~np.isnan(sim_data.leading_frag_height_arr)]-obs_data.height_lag[0]))
+        # plot lag_arr vs leading_frag_time_arr withouth nan values
+        sim_lag = (sim_data.leading_frag_length_arr-sim_data.leading_frag_length_arr[index])\
+              - ((obs_data.v_init)*(sim_data.time_arr-sim_data.time_arr[index]))
+        
+        sim_lag -= sim_lag[index]
+
+        ax_lag.plot(sim_lag, sim_data.leading_frag_height_arr / 1000, color=color_sim, label=label_sim)
+        
+        # RESIDUALS (interpolated at obs heights)
+        lum_res = obs_data.luminosity - np.interp(obs_data.height_lum, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_data.luminosity_arr))
+        mag_res = np.interp(obs_data.height_lum, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_data.abs_magnitude)) - obs_data.absolute_magnitudes
+        vel_res = (obs_data.velocities - np.interp(obs_data.height_lag, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_data.leading_frag_vel_arr))) / 1000
+        lag_res = obs_data.lag - np.interp(obs_data.height_lag, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_lag))
+
+        # ax_lum_res.plot(lum_res, obs_data.height_lum / 1000, '.', color=color_sim)
+        # ax_mag_res.plot(mag_res, obs_data.height_lum / 1000, '.', color=color_sim)
+        # ax_vel_res.plot(vel_res, obs_data.height_lag / 1000, '.', color=color_sim)
+        # ax_lag_res.plot(lag_res, obs_data.height_lag / 1000, '.', color=color_sim)
+
+        # LUMINOSITY residuals (station-based)
+        for station in np.unique(obs_data.stations_lum):
+            mask = np.where(obs_data.stations_lum == station)
+            ax_lum_res.plot(lum_res[mask], obs_data.height_lum[mask] / 1000, '.', color=station_colors[station])
+
+        # MAGNITUDE residuals (station-based)
+        for station in np.unique(obs_data.stations_lum):
+            mask = np.where(obs_data.stations_lum == station)
+            ax_mag_res.plot(mag_res[mask], obs_data.height_lum[mask] / 1000, '.', color=station_colors[station])
+
+        # VELOCITY residuals (station-based)
+        for station in np.unique(obs_data.stations_lag):
+            mask = np.where(obs_data.stations_lag == station)
+            ax_vel_res.plot(vel_res[mask], obs_data.height_lag[mask] / 1000, '.', color=station_colors[station])
+
+        # LAG residuals (station-based)
+        for station in np.unique(obs_data.stations_lag):
+            mask = np.where(obs_data.stations_lag == station)
+            ax_lag_res.plot(lag_res[mask], obs_data.height_lag[mask] / 1000, '.', color=station_colors[station])
+
+    ax_lag.legend()
+
+    ### Finalize and save ###
+    plt.tight_layout()
+    fig.savefig(os.path.join(output_folder, file_name + '_vs_height.png'), dpi=300, bbox_inches='tight')
+    plt.close(fig)
+
+
 # Plotting function dynesty
 def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name='', log_file=''):
     ''' Plot the dynesty results '''
@@ -575,8 +1234,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         'grain_mass_min': r"$m_{l}$ [kg]",
         'grain_mass_max': r"$m_{u}$ [kg]",
         'mass_index': r"$s$",
-        'noise_lag': r"$\varepsilon_{lag}$ [m]",
-        'noise_lum': r"$\varepsilon_{lum}$ [W]"
+        'noise_lag': r"$\sigma_{lag}$ [m]",
+        'noise_lum': r"$\sigma_{lum}$ [W]"
     }
 
     # Mapping of original variable names to LaTeX-style labels
@@ -603,8 +1262,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         'grain_mass_min': r"$m_{l}$ [kg]",
         'grain_mass_max': r"$m_{u}$ [kg]",
         'mass_index': r"$s$",
-        'noise_lag': r"$\varepsilon_{lag}$ [m]",
-        'noise_lum': r"$\varepsilon_{lum}$ [W]"
+        'noise_lag': r"$\sigma_{lag}$ [m]",
+        'noise_lum': r"$\sigma_{lum}$ [W]"
     }
 
     # check if there are variables in the flags_dict that are not in the variable_map
@@ -751,8 +1410,67 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
 
+    # find the index of m_init in variables
+    i_m_init = variables.index('m_init')
+    tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples_equal[:, i_m_init]*obs_data.velocities[0]**2) * 100
+    # calculate the weights calculate the weighted median and the 95 CI for tau
+    tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=weights)
+    print(f"Tau: {tau_median:.4f} % 95CI ({tau_low95:.4f} - {tau_high95:.4f} %)")
+
+
+    # find the closest index to obs_data.height_lum[0] in best_guess_obj_plot.leading_frag_height_arr[:-1] 
+    index_up = np.argmin(np.abs(best_guess_obj_plot.leading_frag_height_arr[:-1]-obs_data.height_lum[0]))
+    index_down = np.argmin(np.abs(best_guess_obj_plot.leading_frag_height_arr[:-1]-obs_data.height_lum[-1]))
+
+    # # too high frame rate, just interpolate the luminosity
+    # simulated_lc_intensity = np.interp(obs_data.height_lum, 
+    #                                     np.flip(best_guess_obj_plot.leading_frag_height_arr), 
+    #                                     np.flip(best_guess_obj_plot.luminosity_arr))
+    # simulated_lc_time = np.interp(obs_data.height_lum, 
+    #                                 np.flip(best_guess_obj_plot.leading_frag_height_arr),
+    #                                 np.flip(best_guess_obj_plot.time_arr))
+                                    
+
+    # # print(f"first heigth obs: {obs_data.height_lum[0]:.2f} m, last height obs: {obs_data.height_lum[-1]:.2f} m, first height sim: {best_guess_obj_plot.leading_frag_height_arr[index_up]:.2f} m, last height sim: {best_guess_obj_plot.leading_frag_height_arr[index_down]:.2f} m")
+    # print(f"total radiated energy:", calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m), "J and total simulated radiated energy same timestep:",simpson(np.array(simulated_lc_intensity),x=np.array(simulated_lc_time)),"J")
+
+    # res_top10 = posterior_bands_topk_check(
+    #     dynesty_run_results, obs_data, flags_dict, fixed_values,
+    #     top_k=10, output_folder=output_folder +os.sep+ 'fit_plots', file_name=f'{file_name}_top1000_check',
+    # )
+
+    ### TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
+    # posterior_bands_vs_height_parallel(
+    #     dynesty_results=dynesty_run_results,
+    #     obs_data=obs_data,
+    #     flags_dict=flags_dict,
+    #     fixed_values=fixed_values,
+    #     output_folder=output_folder +os.sep+ 'fit_plots',
+    #     file_name=f'{file_name}_posterior_bands',
+    #     nsamples=None,  # use all samples
+    # )
+
+    lum_eff_val = tau_median
+    # fid the fixed_values that have the lum_eff
+    for key in fixed_values.keys():
+        # exact name is lum_eff
+        if 'lum_eff' == key:    
+            print(f"Fixed value for {key}: {fixed_values[key]}")
+            lum_eff_val = fixed_values[key]
+            break
+
+
+
+    # find the index of m_init in variables
+    tau_real = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))/(simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val) * 100
+    print(f"first heigth obs: {obs_data.height_lum[0]:.2f} m, last height obs: {obs_data.height_lum[-1]:.2f} m, first height sim: {best_guess_obj_plot.leading_frag_height_arr[index_up]:.2f} m, last height sim: {best_guess_obj_plot.leading_frag_height_arr[index_down]:.2f} m")
+    print(f"total radiated energy:", calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m), "J and total simulated radiated energy:",simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val,"J")
+    print(f"Tau real best fit: {tau_real:.4f} %")
+
     # Plot the data with residuals and the best fit
     plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
+    plot_all_vs_height(obs_data, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
+    # plot_all_vs_height(obs_data, None, output_folder , file_name + "_data_only")
 
     _ = build_const(best_guess, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_BestGuess.json')
 
@@ -900,6 +1618,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Plot the data with residuals and the best fit
     plot_data_with_residuals_and_real(obs_data, approx_mode_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mode','red', 'Mode')
+    plot_all_vs_height(obs_data, approx_mode_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_mode_height", color_sim='red', label_sim='Mode')
 
     _ = build_const(approx_modes_all, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_mode.json')
 
@@ -909,6 +1628,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Plot the data with residuals and the best fit
     plot_data_with_residuals_and_real(obs_data, mean_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mean','blue', 'Mean')
+    plot_all_vs_height(obs_data, mean_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_mean_height", color_sim='blue', label_sim='Mean')
 
     _ = build_const(all_samples_mean, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_mean.json')
 
@@ -918,6 +1638,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     # Plot the data with residuals and the best fit
     plot_data_with_residuals_and_real(obs_data, median_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_median','cornflowerblue', 'Median')
+    plot_all_vs_height(obs_data, median_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_median_height", color_sim='cornflowerblue', label_sim='Median')
 
     _ = build_const(all_samples_median, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_median.json')
 
@@ -1048,6 +1769,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         f.write("eff(%) i.e. (niter/ncall)*100 eff. of the logL call \n")
         f.write("logz i.e. final estimated evidence\n")
         f.write("H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need for a lot of live points\n")
+        f.write(f"\nTau: {tau_median:.2f} % 95CI ({tau_low95:.2f} - {tau_high95:.2f} %)\n")
         f.write("\nBest fit:\n")
         for i in range(len(best_guess)):
             f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
@@ -1058,6 +1780,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             f.write('Rel.Error % diff logL: '+str(abs(diff_logL/real_logL)*100)+'%\n')
             f.write('\nCoverage mask per dimension: '+str(coverage_mask)+'\n')
             f.write('Fraction of dimensions covered: '+str(coverage_mask.mean())+'\n')
+
 
     # Print LaTeX code for quick copy-pasting
     print(latex_str)
@@ -4374,6 +5097,6 @@ if __name__ == "__main__":
     if cml_args.pick_pos < 0 or cml_args.pick_pos > 1:
         raise ValueError("pick_position must be between 0 and 1, 0 leading edge, 0.5 centroid full meteor, 1 trailing edge.")
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, cml_args.output_dir, cml_args.prior, cml_args.new_dynesty, cml_args.all_cameras, cml_args.only_plot, cml_args.cores, pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior)
+    setup_folder_and_run_dynesty(cml_args.input_dir, output_dir=cml_args.output_dir, prior=cml_args.prior, resume=cml_args.new_dynesty, use_all_cameras=cml_args.all_cameras, only_plot=cml_args.only_plot, cores=cml_args.cores, pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

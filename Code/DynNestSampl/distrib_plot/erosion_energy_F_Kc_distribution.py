@@ -273,7 +273,8 @@ def extract_other_prop(input_dirfile, output_dir_show):
             heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
             mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
 
-            mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+            # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+            mass_before = best_guess_obj_plot.const.mass_at_erosion_change
 
 
             # # precise erosion tal energy calculation ########################
@@ -445,6 +446,20 @@ def extract_other_prop(input_dirfile, output_dir_show):
     
     ###########################################################################################################
 
+    # save i a .tex file the results in a table for ID F lenght_par eeucs
+    with open(os.path.join(output_dir_show, "erosion_energy_results_table.tex"), "w") as f:
+        f.write("\\begin{tabular}{lcccccccccc}\n")
+        f.write("\\hline\n")
+        f.write("ID & $E_{erosion}/A$ (MJ/m$^2$) & $E_{erosion}/m$ (MJ/kg) & F & $h_{kc}$ (km) & Length (km) & $\\rho$ (kg/m$^3$) & Zenith Angle (°) & $E_{erosion}/A$ end (MJ/m$^2$) & $E_{erosion}/m$ end (MJ/kg) & $m_{init}$ (kg) \\\\\n")
+        f.write("\\hline\n")
+        for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1, zenith_angle_1, eeucs_end_1, eeum_end_1, m_init_1) in file_eeu_dict.items():
+            f.write(f"{base_name} & {eeucs_1:.2f} & {eeum_1:.2f} & {F_par_1:.2f} & {kc_par_1:.2f} & {lenght_par_1:.2f} & {rho_total_1:.2f} & {zenith_angle_1:.2f} & {eeucs_end_1:.2f} & {eeum_end_1:.2f} & {m_init_1:.2f} \\\\\n")
+        f.write("\\hline\n")
+        f.write("\\end{tabular}\n")
+    print(f"Results table saved successfully in {os.path.join(output_dir_show, 'erosion_energy_results_table.tex')}.")
+
+    ###########################################################################################################
+
     # plot the distribution of rho_total
 
     print("\nIron case F len erosion_energy_per_unit_cross_section ...")
@@ -577,7 +592,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_with_EMCCD",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

@@ -36,6 +36,7 @@ from scipy.stats import gaussian_kde
 from wmpl.Formats.WmplTrajectorySummary import loadTrajectorySummaryFast
 from multiprocessing import Pool
 from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
+from types import SimpleNamespace
 
 # try to resolve dynesty's internal _hist2d no matter how it's imported
 try:
@@ -326,6 +327,7 @@ def weighted_tests_table(
     return tex_str, rows
 
 
+# ---------- EEU calculation helper ----------
 def run_single_eeu(sim_num_and_data):
     sim_num, tot_sim, sample, obs_data, variables, fixed_values, flags_dict = sim_num_and_data
 
@@ -338,13 +340,6 @@ def run_single_eeu(sim_num_and_data):
     for i, variable in enumerate(variables):
         if 'log' in flags_dict[variable]:
             guess[i] = 10**guess[i]
-        if variable == 'noise_lag':
-            obs_data.noise_lag = guess[i]
-            obs_data.noise_vel = guess[i] * np.sqrt(2)/(1.0/32)
-        if variable == 'noise_lum':
-            obs_data.noise_lum = guess[i]
-        if variable == 'erosion_rho_change':
-            flag_total_rho = True
 
     # Build const_nominal (same as in your current loop)
     const_nominal = Constants()
@@ -366,12 +361,22 @@ def run_single_eeu(sim_num_and_data):
     try:
         eeucs, eeum = energyReceivedBeforeErosion(const_nominal)
 
-        return (sim_num, eeucs, eeum)
-
     except Exception as e:
         print(f"Simulation {sim_num} failed: {e}")
-        return (sim_num, np.nan, np.nan)
-    
+        eeucs, eeum = np.nan, np.nan
+
+    const_nominal.erosion_height_start = obs_data.height_lum[-1] # calculate the erosion energy until the last height
+    const_nominal.v_init = np.mean(obs_data.velocities) # calculate the erosion energy until using the mean velocity
+
+    # Extract physical quantities
+    try:
+        eeucs_end, eeum_end = energyReceivedBeforeErosion(const_nominal)
+
+        return (sim_num, eeucs, eeum, eeucs_end, eeum_end)
+
+    except Exception as e:
+        print(f"Simulation end {sim_num} failed: {e}")
+        return (sim_num, eeucs, eeum, np.nan, np.nan)
 
 def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plot_flag=False, plot_correl_flag=False):
     """
@@ -431,7 +436,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
         'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
         'noise_lag': r"$\sigma_{lag}$ [m]",
-        'noise_lum': r"$\sigma_{lum}$ [W]"
+        'noise_lum': r"$\sigma_{lum}$ [W]",
+        'eeucs': r"$E_s$ [MJ/m$^2$]",
+        'eeum': r"$E_m$ [MJ/kg]",
+        'eeucs_end': r"$E_{s\,end}$ [MJ/m$^2$]",
+        'eeum_end': r"$E_{m\,end}$ [MJ/kg]"
     }
 
     # Mapping of original variable names to LaTeX-style labels
@@ -451,7 +460,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
         'erosion_sigma_change': r"$\sigma_{2}$ [kg/J]",
         'noise_lag': r"$\sigma_{lag}$ [m]",
-        'noise_lum': r"$\sigma_{lum}$ [W]"
+        'noise_lum': r"$\sigma_{lum}$ [W]",
+        'eeucs': r"$E_s$ [J/m$^2$]",
+        'eeum': r"$E_m$ [J/kg]",
+        'eeucs_end': r"$E_{s\,end}$ [J/m$^2$]",
+        'eeum_end': r"$E_{m\,end}$ [J/kg]"
     }
 
     # check if there are variables in the flags_dict that are not in the variable_map
@@ -923,6 +936,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     eta_corrected = []
     sigma_corrected = []
     tau_corrected = []
+    erosion_energy_per_unit_cross_section_corrected = []
+    erosion_energy_per_unit_mass_corrected = []
+    erosion_energy_per_unit_cross_section_end_corrected = []
+    erosion_energy_per_unit_mass_end_corrected = []
 
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
@@ -971,7 +988,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         weights = dynesty_run_results.importance_weights()
         w = weights / np.sum(weights)
         samples = dynesty_run_results.samples
-        ndim = len(variables)
+        ndim_single = len(variables)
         sim_num = np.argmax(dynesty_run_results.logl)
 
         # copy the best guess values
@@ -1157,56 +1174,116 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         # print(f"sigma: {sigma} kg/m^3, 95% CI = [{sigma_lo}, {sigma_hi}]")
 
         # ### EROSION ENERGY CALCULATION ###
+        if plot_correl_flag == True:
+            # take from dynesty_file folder name
+            folder_name = os.path.dirname(dynesty_file)
 
-        # print("Calculating erosion energy per unit cross section and mass...")
-        # # Package inputs
-        # inputs = [
-        #     (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
-        #     for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
-        # ]
-        # #     for i in range(len(dynesty_run_results.samples)) # 
-        # num_cores = multiprocessing.cpu_count()
-        # print(f"Using {base_name}.")
-        # # Run in parallel
-        # with Pool(processes=num_cores) as pool:  # adjust to number of cores
-        #     results = pool.map(run_single_eeu, inputs)
+            # look if in folder_name it exist a file that ends in .dynestyres exist in 
+            if any(f.endswith(".dynestyres") for f in os.listdir(folder_name)):
+                print(f"\nFound existing results in {folder_name}.dynestyres, loading them.")
 
-        # N = len(dynesty_run_results.samples)
+                # look for the file that ends in .dynestyres
+                dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
+                with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
+                    dynesty_run_results = pickle.load(f)
 
-        # erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
-        # erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
+                erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
+                erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
+                erosion_energy_per_unit_cross_section_arr_end = dynesty_run_results.erosion_energy_per_unit_cross_section_end
+                erosion_energy_per_unit_mass_arr_end = dynesty_run_results.erosion_energy_per_unit_mass_arr_end
 
-        # for res in results:
-        #     i, eeucs, eeum = res
-        #     erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1000000 # convert to MJ/m^2
-        #     erosion_energy_per_unit_mass_arr[i] = eeum / 1000000 # convert to kg/MJ
-        
-        # weights = dynesty_run_results.importance_weights()
-        # w = weights / np.sum(weights)
-    
-        # for i, x in enumerate([erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr]):
-        #     # mask out NaNs
-        #     mask = ~np.isnan(x)
-        #     if not np.any(mask):
-        #         print("Warning: All values are NaN, skipping quantile calculation.")
-        #         continue
-        #     mask = ~np.isnan(x)
-        #     x_valid = x[mask]
-        #     w_valid = w[mask]
-        #     # renormalize
-        #     w_valid /= np.sum(w_valid)
-        #     if i == 0:
-        #         # weighted quantiles
-        #         eeucs_lo, eeucs, eeucs_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
-        #         print(f"erosion energy per unit cross section: {eeucs} J/m^2, 95% CI = [{eeucs_lo:.6f}, {eeucs_hi:.6f}]")
-        #         eeucs_lo = (eeucs - eeucs_lo)
-        #         eeucs_hi = (eeucs_hi - eeucs)
-        #     elif i == 1:
-        #         # weighted quantiles
-        #         eeum_lo, eeum, eeum_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
-        #         print(f"erosion energy per unit mass: {eeum} J/kg, 95% CI = [{eeum_lo:.6f}, {eeum_hi:.6f}]")
-        #         eeum_lo = (eeum - eeum_lo)
-        #         eeum_hi = (eeum_hi - eeum)
+            else:
+                print(f"\nNo existing results found in {folder_name}.dynestyres, running dynesty.")
+                dynesty_run_results = dsampler.results
+
+                ### add MORE PARAMETERS ###
+
+                # Package inputs
+                inputs = [
+                    (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables, fixed_values, flags_dict)
+                    for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
+                ]
+                #     for i in range(len(dynesty_run_results.samples)) # 
+                num_cores = multiprocessing.cpu_count()
+
+                # Run in parallel
+                with Pool(processes=num_cores) as pool:  # adjust to number of cores
+                    results = pool.map(run_single_eeu, inputs)
+
+                N = len(dynesty_run_results.samples)
+
+                erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
+                erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
+                erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
+                erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
+
+                for res in results:
+                    i, eeucs, eeum, eeucs_end, eeum_end = res
+                    erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
+                    erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
+                    erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
+                    erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
+
+                sim_num = np.argmax(dynesty_run_results.logl)
+                # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
+                # create a copy of the best guess
+                best_guess = dynesty_run_results.samples[sim_num].copy()
+                samples = dynesty_run_results.samples
+                # for variable in variables: for 
+                for i, variable in enumerate(variables):
+                    if 'log' in flags_dict[variable]:
+                        # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")  
+                        best_guess[i] = 10**(best_guess[i])
+                        # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")
+                        samples[:, i] = 10**(samples[:, i])  # also transform all samples
+                best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
+
+                # find erosion change height
+                if 'erosion_height_change' in variables:
+                    erosion_height_change = best_guess[variables.index('erosion_height_change')]
+                if 'm_init' in variables:
+                    m_init = best_guess[variables.index('m_init')]
+
+                heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+                mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+
+                # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+                mass_before = best_guess_obj_plot.const.mass_at_erosion_change
+                
+                # # precise erosion tal energy calculation ########################
+
+                if 'erosion_rho_change' in variables:
+                    rho_total_arr = samples[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+                else:
+                    rho_total_arr = samples[:, variables.index('rho')].astype(float)
+
+                rho_total_arr = np.array(rho_total_arr, dtype=np.float64)
+
+                # Create a namespace object for dot-style access
+                results = SimpleNamespace(**dsampler.results.__dict__)  # load all default results
+
+                # Add your custom attributes
+                results.weights = dynesty_run_results.importance_weights()
+                results.norm_weights = w
+                results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
+                results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
+                results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
+                results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
+                results.rho_total = rho_total_arr
+
+                # delete from base_name _combined if it exists
+                if '_combined' in base_name:
+                    base_name = base_name.replace('_combined', '')
+
+                # Save
+                with open(folder_name + os.sep + base_name+"_results.dynestyres", "wb") as f:
+                    pickle.dump(results, f)
+                    print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.dynestyres'}.")
+
+            erosion_energy_per_unit_cross_section_corrected.append(erosion_energy_per_unit_cross_section_arr)
+            erosion_energy_per_unit_mass_corrected.append(erosion_energy_per_unit_mass_arr)
+            erosion_energy_per_unit_cross_section_end_corrected.append(erosion_energy_per_unit_cross_section_arr_end)
+            erosion_energy_per_unit_mass_end_corrected.append(erosion_energy_per_unit_mass_arr_end)
 
         ### SAVE DATA ###
 
@@ -1315,6 +1392,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     eta_corrected = np.concatenate(eta_corrected)
     sigma_corrected = np.concatenate(sigma_corrected)
     tau_corrected = np.concatenate(tau_corrected)
+    if plot_correl_flag == True:
+        erosion_energy_per_unit_cross_section_corrected = np.concatenate(erosion_energy_per_unit_cross_section_corrected)
+        erosion_energy_per_unit_mass_corrected = np.concatenate(erosion_energy_per_unit_mass_corrected)
+        erosion_energy_per_unit_cross_section_end_corrected = np.concatenate(erosion_energy_per_unit_cross_section_end_corrected)
+        erosion_energy_per_unit_mass_end_corrected = np.concatenate(erosion_energy_per_unit_mass_end_corrected)
 
     # eeucs = np.array([v[0] for v in file_eeu_dict.values()])
     # eeucs_lo = np.array([v[1] for v in file_eeu_dict.values()])
@@ -3174,12 +3256,13 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     
     
 
+
     ### CORNER PLOT ###
     # takes forever, so run it last
     if plot_correl_flag == True:
 
         combined_samples_cov_plot = combined_samples.copy()
-        labels_plot_copy_plot = labels.copy()
+        # labels_plot_copy_plot = labels.copy()
         for j, var in enumerate(variables):
             if np.all(np.isnan(combined_samples_cov_plot[:, j])):
                 continue
@@ -3188,7 +3271,67 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
             if var in ['sigma', 'erosion_sigma_change','erosion_coeff', 'erosion_coeff_change']:
                 combined_samples_cov_plot[:, j] = combined_samples_cov_plot[:, j] * 1e6
 
-        print('saving corner plot...')
+        variables_corr = variables.copy()
+        # add to the variable eeucs and eeum
+        variables_corr.extend(['eeucs', 'eeum', 'eeucs_end', 'eeum_end'])
+        # add the two new variables to the combined_samples_cov_plot
+        combined_samples_cov_plot = np.hstack(( combined_samples_cov_plot, erosion_energy_per_unit_cross_section_corrected.reshape(-1, 1), erosion_energy_per_unit_mass_corrected.reshape(-1, 1)
+                                                , erosion_energy_per_unit_cross_section_end_corrected.reshape(-1, 1), erosion_energy_per_unit_mass_end_corrected.reshape(-1, 1) ))
+
+        if "ORI" in shower_name: # special case for ORI to avoid overly long names
+            shower_name_short = "ORI"
+        elif "CAP" in shower_name: # special case for GEM to avoid overly long names
+            shower_name_short = "CAP"
+        elif "DRA" in shower_name: # special case for DRA to avoid overly long names
+            shower_name_short = "DRA"
+        else:
+            shower_name_short = ""
+
+        def delete_var_and_substitute(samples, variables, var_to_delete, var_to_correct, values_to_add):
+            """Delete a variable from samples and correct another variable."""
+            idx_delete = variables.index(var_to_delete) if var_to_delete in variables else None
+            idx_correct = variables.index(var_to_correct) if var_to_correct in variables else None
+            
+            if idx_delete is not None:
+                # Remove the variable to delete
+                samples = np.delete(samples, idx_delete, axis=1)
+                variables.pop(idx_delete)
+                print(f"Deleted variable '{var_to_delete}' at index {idx_delete}.")
+                
+                if idx_correct is not None:
+                    # Correct the target variable by adding the extracted values
+                    samples[:, idx_correct] = values_to_add
+                    print(f"Corrected variable '{var_to_correct}' at index {idx_correct} by adding new values.")
+            
+            return samples, variables
+
+        if shower_name_short != "":
+            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+                combined_samples_cov_plot, variables_corr,
+                var_to_delete='erosion_rho_change',
+                var_to_correct='rho',
+                values_to_add=rho_corrected
+            )
+            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+                combined_samples_cov_plot, variables_corr,
+                var_to_delete='erosion_coeff_change',
+                var_to_correct='erosion_coeff',
+                values_to_add=eta_corrected * 1e6
+            )
+            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+                combined_samples_cov_plot, variables_corr,
+                var_to_delete='erosion_sigma_change',
+                var_to_correct='sigma',
+                values_to_add=sigma_corrected * 1e6
+            )
+
+        ndim = len(variables_corr)
+        labels_plot_copy_plot = [variable_map[variable] for variable in variables_corr]
+
+        # check the size of combined_samples_cov_plot the labels_plot_copy_plot, the ndim and combined_weights
+        print(f"combined_samples_cov_plot shape: {combined_samples_cov_plot.shape}, ndim: {ndim}, labels length: {len(labels_plot_copy_plot)}, combined_weights length: {len(combined_weights)}")
+
+        print('Calculating correlation...')
         combined_results_units = CombinedResults(combined_samples_cov_plot, combined_weights)
 
         # Ensure output folder
@@ -3199,126 +3342,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         #     if 'log' in flags_dict_total[variable]:  
         #         labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
 
-        # Define weighted correlation
-        def weighted_corr(x, y, w):
-            """Weighted Pearson correlation of x and y with weights w."""
-            w = np.asarray(w)
-            x = np.asarray(x)
-            y = np.asarray(y)
-            w_sum = w.sum()
-            x_mean = (w * x).sum() / w_sum
-            y_mean = (w * y).sum() / w_sum
-            cov_xy = (w * (x - x_mean) * (y - y_mean)).sum() / w_sum
-            var_x  = (w * (x - x_mean)**2).sum() / w_sum
-            var_y  = (w * (y - y_mean)**2).sum() / w_sum
-            return cov_xy / np.sqrt(var_x * var_y)
-
-        # … your existing prep code …
-        fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
-        axes = axes.reshape((ndim, ndim))
-
-        # call dynesty’s cornerplot
-        fg, ax = dyplot.cornerplot(
-            combined_results_units, 
-            color='blue',
-            show_titles=True,
-            max_n_ticks=3,
-            quantiles=None,
-            labels=labels,
-            label_kwargs={"fontsize": 10},
-            title_kwargs={"fontsize": 12},
-            title_fmt='.2e',
-            fig=(fig, axes[:, :ndim])
-        )
-
-        # # supertitle, tick formatting, saving …
-        # fg.suptitle(shower_name, fontsize=16, fontweight='bold')
-
-        for ax_row in ax:
-            for ax_ in ax_row:
-                if ax_ is None:
-                    continue
-                ax_.tick_params(axis='both', labelsize=8, direction='in')
-                for lbl in ax_.get_xticklabels(): lbl.set_rotation(0)
-                for lbl in ax_.get_yticklabels(): lbl.set_rotation(45)
-                if len(ax_.xaxis.get_majorticklocs())>0:
-                    ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
-                if len(ax_.yaxis.get_majorticklocs())>0:
-                    ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
-
-        for i in range(ndim):
-            for j in range(ndim):
-                if ax[i, j] is None:
-                    continue
-                if j != 0:
-                    ax[i, j].set_yticklabels([])
-                if i != ndim - 1:
-                    ax[i, j].set_xticklabels([])
-
-        # Overlay weighted correlations in the upper triangle
-        samples = combined_results_units['samples'].T  # shape (ndim, nsamps)
-        weights = combined_results_units.importance_weights()
-
-        cmap = plt.colormaps['coolwarm']
-        norm = Normalize(vmin=-1, vmax=1)
-
-        for i in range(ndim):
-            for j in range(ndim):
-                if j <= i or ax[i, j] is None:
-                    continue
-
-                panel = ax[i, j]
-                x = samples[j]
-                y = samples[i]
-                corr_w = weighted_corr(x, y, weights)
-
-                color = cmap(norm(corr_w))
-                # paint the background patch
-                panel.patch.set_facecolor(color)
-                panel.patch.set_alpha(1.0)
-
-                # fallback rectangle if needed
-                panel.add_patch(
-                    plt.Rectangle(
-                        (0,0), 1, 1,
-                        transform=panel.transAxes,
-                        facecolor=color,
-                        zorder=0
-                    )
-                )
-
-                panel.text(
-                    0.5, 0.5,
-                    f"{corr_w:.2f}",
-                    transform=panel.transAxes,
-                    ha='center', va='center',
-                    fontsize=25, color='black'
-                )
-                panel.set_xticks([]); panel.set_yticks([])
-                for spine in panel.spines.values():
-                    spine.set_visible(False)
-
-        # final adjustments & save
-        # fg.subplots_adjust(wspace=0.1, hspace=0.3)
-        fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
-        plt.savefig(os.path.join(cov_dir, f"{shower_name}_correlation_plot.png"),
-                    bbox_inches='tight', dpi=300)
-        plt.close(fig)
-
-        print('saving correlation matrix...')
-
-        # Build the NxN matrix of weigh_corr_ij
-        corr_mat = np.zeros((ndim, ndim))
-        for i in range(ndim):
-            for j in range(ndim):
-                corr_mat[i, j] = weighted_corr(samples[i], samples[j], weights)
-
-        # Wrap it in a DataFrame (so you get row/column labels)
-        df_corr = pd.DataFrame(
-            corr_mat,
-            index=labels,
-            columns=labels
-        )
+        # --- utils functions --- ##########################################################################################
 
         def _sanitize_labels(labels, ndim):
             # coerce to strings, strip, and fill blanks
@@ -3338,41 +3362,162 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
                 out.extend([f"p{i}" for i in range(len(out), ndim)])
             return out[:ndim]
 
-        labels_clean = _sanitize_labels(labels, ndim)
+        def weighted_corr(x, y, w):
+            """Weighted Pearson correlation of x and y with weights w."""
+            w = np.asarray(w)
+            x = np.asarray(x)
+            y = np.asarray(y)
+            w_sum = w.sum()
+            x_mean = (w * x).sum() / w_sum
+            y_mean = (w * y).sum() / w_sum
+            cov_xy = (w * (x - x_mean) * (y - y_mean)).sum() / w_sum
+            var_x  = (w * (x - x_mean)**2).sum() / w_sum
+            var_y  = (w * (y - y_mean)**2).sum() / w_sum
+            return cov_xy / np.sqrt(var_x * var_y)
 
-        df_corr = pd.DataFrame(corr_mat, index=labels_clean, columns=labels_clean)
+        def plot_correlation_func(combined_results_units, ndim, labels, shower_name, cov_dir):
+            """Simple Gaussian smoothing of a histogram."""
+            # … your existing prep code …
+            fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
+            axes = axes.reshape((ndim, ndim))
 
-        # Save the full matrix
-        outpath = os.path.join(cov_dir, f"{shower_name}_weighted_globalCorr_matrix.csv")
-        df_corr.to_csv(outpath, float_format="%.4f")
-        print(f"Saved weighted correlation matrix to:\n  {outpath}")
+            # call dynesty’s cornerplot
+            fg, ax = dyplot.cornerplot(
+                combined_results_units, 
+                color='blue',
+                show_titles=True,
+                max_n_ticks=3,
+                quantiles=None,
+                labels=labels,
+                label_kwargs={"fontsize": 10},
+                title_kwargs={"fontsize": 12},
+                title_fmt='.2e',
+                fig=(fig, axes[:, :ndim])
+            )
 
-        # Upper-triangle only (exclude diagonal)
-        mask = np.triu(np.ones(df_corr.shape, dtype=bool), k=1)
-        upper = df_corr.where(mask)
+            # # supertitle, tick formatting, saving …
+            # fg.suptitle(shower_name, fontsize=16, fontweight='bold')
 
-        # Turn into a *DataFrame* so both columns always print (no MultiIndex collapse)
-        pairs_df = (
-            upper
-            .stack()                      # drop NaNs from the lower triangle
-            .rename("corr")
-            .reset_index()
-            .rename(columns={"level_0": "param_i", "level_1": "param_j"})
-        )
+            for ax_row in ax:
+                for ax_ in ax_row:
+                    if ax_ is None:
+                        continue
+                    ax_.tick_params(axis='both', labelsize=8, direction='in')
+                    for lbl in ax_.get_xticklabels(): lbl.set_rotation(0)
+                    for lbl in ax_.get_yticklabels(): lbl.set_rotation(45)
+                    if len(ax_.xaxis.get_majorticklocs())>0:
+                        ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
+                    if len(ax_.yaxis.get_majorticklocs())>0:
+                        ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
 
-        # Sort by absolute correlation and print clean tables
-        pairs_df["abs_corr"] = pairs_df["corr"].abs()
+            for i in range(ndim):
+                for j in range(ndim):
+                    if ax[i, j] is None:
+                        continue
+                    if j != 0:
+                        ax[i, j].set_yticklabels([])
+                    if i != ndim - 1:
+                        ax[i, j].set_xticklabels([])
 
-        top10 = pairs_df.sort_values("abs_corr", ascending=False).head(10)
-        bottom10 = pairs_df.sort_values("abs_corr", ascending=True).head(10)
+            # Overlay weighted correlations in the upper triangle
+            samples = combined_results_units['samples'].T  # shape (ndim, nsamps)
+            weights = combined_results_units.importance_weights()
 
-        pd.set_option("display.max_colwidth", None)
-        print("\nTop 10: highest correlations:")
-        print(top10[["param_i", "param_j", "corr"]].to_string(index=False))
+            cmap = plt.colormaps['coolwarm']
+            norm = Normalize(vmin=-1, vmax=1)
 
-        print("\nBottom 10: lowest correlations:")
-        print(bottom10[["param_i", "param_j", "corr"]].to_string(index=False))
+            for i in range(ndim):
+                for j in range(ndim):
+                    if j <= i or ax[i, j] is None:
+                        continue
 
+                    panel = ax[i, j]
+                    x = samples[j]
+                    y = samples[i]
+                    corr_w = weighted_corr(x, y, weights)
+
+                    color = cmap(norm(corr_w))
+                    # paint the background patch
+                    panel.patch.set_facecolor(color)
+                    panel.patch.set_alpha(1.0)
+
+                    # fallback rectangle if needed
+                    panel.add_patch(
+                        plt.Rectangle(
+                            (0,0), 1, 1,
+                            transform=panel.transAxes,
+                            facecolor=color,
+                            zorder=0
+                        )
+                    )
+
+                    panel.text(
+                        0.5, 0.5,
+                        f"{corr_w:.2f}",
+                        transform=panel.transAxes,
+                        ha='center', va='center',
+                        fontsize=25, color='black'
+                    )
+                    panel.set_xticks([]); panel.set_yticks([])
+                    for spine in panel.spines.values():
+                        spine.set_visible(False)
+
+            # final adjustments & save
+            # fg.subplots_adjust(wspace=0.1, hspace=0.3)
+            fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
+            plt.savefig(os.path.join(cov_dir, f"{shower_name}_correlation_plot.png"),
+                        bbox_inches='tight', dpi=300)
+            plt.close(fig)
+
+            print('saving correlation matrix...')
+
+            # Build the NxN matrix of weigh_corr_ij
+            corr_mat = np.zeros((ndim, ndim))
+            for i in range(ndim):
+                for j in range(ndim):
+                    corr_mat[i, j] = weighted_corr(samples[i], samples[j], weights)
+
+            # Wrap it in a DataFrame (so you get row/column labels)
+            df_corr = pd.DataFrame(
+                corr_mat,
+                index=labels,
+                columns=labels
+            )
+
+            df_corr = pd.DataFrame(corr_mat, index=labels_clean, columns=labels_clean)
+
+            # Save the full matrix
+            outpath = os.path.join(cov_dir, f"{shower_name}_weighted_globalCorr_matrix.csv")
+            df_corr.to_csv(outpath, float_format="%.4f")
+            print(f"Saved weighted correlation matrix to:\n  {outpath}")
+
+            # Upper-triangle only (exclude diagonal)
+            mask = np.triu(np.ones(df_corr.shape, dtype=bool), k=1)
+            upper = df_corr.where(mask)
+
+            # Turn into a *DataFrame* so both columns always print (no MultiIndex collapse)
+            pairs_df = (
+                upper
+                .stack()                      # drop NaNs from the lower triangle
+                .rename("corr")
+                .reset_index()
+                .rename(columns={"level_0": "param_i", "level_1": "param_j"})
+            )
+
+            # Sort by absolute correlation and print clean tables
+            pairs_df["abs_corr"] = pairs_df["corr"].abs()
+
+            top10 = pairs_df.sort_values("abs_corr", ascending=False).head(10)
+            bottom10 = pairs_df.sort_values("abs_corr", ascending=True).head(10)
+
+            pd.set_option("display.max_colwidth", None)
+            print("\nTop 10: highest correlations:")
+            print(top10[["param_i", "param_j", "corr"]].to_string(index=False))
+
+            print("\nBottom 10: lowest correlations:")
+            print(bottom10[["param_i", "param_j", "corr"]].to_string(index=False))
+
+            return df_corr, pairs_df, top10, bottom10
 
         def _HIST2D(x, y, **kwargs):
             """Wrapper that calls dynesty's _hist2d wherever it lives."""
@@ -3384,7 +3529,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
             raise RuntimeError("Could not locate dynesty.plotting._hist2d. "
                             "Ensure dynesty>=2.x is installed or import _hist2d yourself.")
 
-        # --- utils ---
         def _safe_name(s):
             s = re.sub(r"\$|\\[a-zA-Z]+|[\{\}\^\_]", "", str(s))
             s = re.sub(r"[^A-Za-z0-9\-\.]+", "_", s).strip("_")
@@ -3506,15 +3650,20 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
                 plt.close(fig)
 
             print(f"Saved {len(iterable)} covariance plots in:\n  {cov_dir}")
+        
+        # --- utils functions end --- ######################################################################################
+        
+        labels_clean = _sanitize_labels(labels_plot_copy_plot, ndim)
 
-        if "ORI" in shower_name: # special case for ORI to avoid overly long names
-            shower_name_short = "ORI"
-        elif "CAP" in shower_name: # special case for GEM to avoid overly long names
-            shower_name_short = "CAP"
-        elif "DRA" in shower_name: # special case for DRA to avoid overly long names
-            shower_name_short = "DRA"
-        else:
-            shower_name_short = ""
+        df_corr, pairs_df, top10, bottom10 = plot_correlation_func(
+            combined_results_units,
+            ndim=ndim,
+            labels=labels_clean,
+            shower_name=shower_name_short,
+            cov_dir=cov_dir
+        )
+
+        ### Call the correlation plot function ###
 
         print("Plotting top covariances 1vs1...")
         # Top-50 by absolute correlation (as you already computed)
@@ -3542,7 +3691,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
+         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\Publish_results-Letter",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

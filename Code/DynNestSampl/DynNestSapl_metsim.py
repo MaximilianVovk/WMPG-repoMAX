@@ -741,7 +741,7 @@ def posterior_bands_vs_height_parallel(
 
         ran_parallel = True
     except Exception as e:
-        print(f"[posterior_bands_vs_height_parallel] Parallel run failed ({e}). Falling back to sequential.", flush=True)
+        print(f"[meteor uncertainty bands plot] Parallel run failed ({e}). Falling back to sequential.", flush=True)
     
     if not ran_parallel:
         print(f"[{file_name}] Running {S} simulations sequentially...", flush=True)
@@ -1442,9 +1442,10 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     if cores is None:
         cores = multiprocessing.cpu_count()
-
+    ## TAKES A LOT OF TIME Only use on Node7 or Node8 where there are 96 cores ###
     if os.name == 'posix' and cores > 30:
         ## TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
+        print(f"Running all the simulations to have the uncertaty regions with {cores} cores")
         posterior_bands_vs_height_parallel(
             dynesty_results=dynesty_run_results,
             obs_data=obs_data,
@@ -1455,6 +1456,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             nsamples=None,  # use all samples
             n_workers=cores,
         )
+    else:
+        print(f"Skipping the meteor plot with the uncertaty regions, too long with {cores} cores")
 
     lum_eff_val = tau_median
     # fid the fixed_values that have the lum_eff

@@ -125,6 +125,256 @@ def reweight_iron_by_velocity(results, variables, rho_threshold=4000.0):
     return CombinedResults(samples, w)
 
 
+def plot_rho_vs_kinetic_energy(
+    shower_name,
+    output_dir_show,
+    rho,
+    rho_lo,
+    rho_hi,
+    kinetic_energy_median,
+    meteoroid_diameter_mm,
+):
+    """Create and save the rho vs kinetic energy scatter plot."""
+    print("Plotting rho vs kinetic energy...")
+    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+    scatter_d = plt.scatter(
+        rho,
+        np.log10(kinetic_energy_median),
+        c=np.log10(meteoroid_diameter_mm),
+        cmap='coolwarm',
+        s=30,
+        norm=Normalize(
+            vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025),
+            vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975),
+        ),
+        zorder=2,
+    )
+    plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
+    plt.errorbar(
+        rho,
+        np.log10(kinetic_energy_median),
+        xerr=[abs(rho_lo), abs(rho_hi)],
+        elinewidth=0.75,
+        capthick=0.75,
+        fmt='none',
+        ecolor='black',
+        capsize=3,
+        zorder=1,
+    )
+    plt.xlabel("$\\rho$ [kg/m³]", fontsize=15)
+    plt.ylabel("log$_{10}$ Kinetic Energy [J]", fontsize=15)
+    plt.grid(True)
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_rho_vs_kinetic_energy.png"),
+        bbox_inches='tight',
+        dpi=300,
+    )
+    plt.close(fig)
+
+
+def plot_rho_vs_dynamic_pressure(
+    shower_name,
+    output_dir_show,
+    rho,
+    rho_lo,
+    rho_hi,
+    erosion_beg_dyn_press,
+    meteoroid_diameter_mm,
+    v_init_meteor_median,
+    thr=3.1,
+):
+    """Create and save the rho vs dynamic pressure scatter plot."""
+    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+    scatter_d = plt.scatter(
+        rho,
+        np.log10(erosion_beg_dyn_press),
+        c=np.log10(meteoroid_diameter_mm),
+        cmap='coolwarm',
+        s=60,
+        norm=Normalize(
+            vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025),
+            vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975),
+        ),
+        zorder=2,
+    )
+    plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
+    scatter = plt.scatter(
+        rho,
+        np.log10(erosion_beg_dyn_press),
+        c=v_init_meteor_median,
+        cmap='viridis',
+        s=30,
+        norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()),
+        zorder=2,
+    )
+    plt.errorbar(
+        rho,
+        np.log10(erosion_beg_dyn_press),
+        xerr=[abs(rho_lo), abs(rho_hi)],
+        elinewidth=0.75,
+        capthick=0.75,
+        fmt='none',
+        ecolor='black',
+        capsize=3,
+        zorder=1,
+    )
+    plt.gca().invert_yaxis()
+    plt.colorbar(scatter, label='v$_{0}$ [km/s]')
+    plt.xlabel("$\\rho$ [kg/m³]", fontsize=15)
+    plt.ylabel("log$_{10}$ Dynamic Pressure [Pa]", fontsize=15)
+    plt.axhline(y=thr, color='gray', linestyle='--', linewidth=1)
+    plt.grid(True)
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_rho_vs_dynamic_pressure.png"),
+        bbox_inches='tight',
+        dpi=300,
+    )
+    plt.close(fig)
+
+
+def plot_rho_vs_eta(
+    shower_name,
+    output_dir_show,
+    rho,
+    eta_meteor_begin,
+    v_init_meteor_median,
+):
+    """Create and save the rho vs eta scatter plot."""
+    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+    scatter = plt.scatter(
+        np.log10(rho),
+        np.log10(eta_meteor_begin),
+        c=v_init_meteor_median,
+        cmap='viridis',
+        s=30,
+        norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()),
+        zorder=2,
+    )
+    plt.colorbar(scatter, label='v$_{0}$ [km/s]')
+    plt.xlabel("log$_{10}$ $\\rho$ [kg/m³]", fontsize=15)
+    plt.ylabel("log$_{10}$ $\eta$ [kg/MJ]", fontsize=15)
+    plt.grid(True)
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_rho_vs_eta.png"),
+        bbox_inches='tight',
+        dpi=300,
+    )
+    plt.close(fig)
+
+
+def plot_rho_vs_q_and_Q(
+    shower_name,
+    output_dir_show,
+    rho,
+    rho_lo,
+    rho_hi,
+    q_val,
+    Q_val,
+    tj,
+):
+    """Create and save rho vs. perihelion and aphelion scatter plots."""
+    fig = plt.figure(figsize=(10, 6), constrained_layout=True)
+    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 0.05])
+
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = fig.add_subplot(gs[0, 1])
+    cax = fig.add_subplot(gs[0, 2])
+
+    ax1.errorbar(
+        rho,
+        q_val,
+        xerr=[abs(rho_lo), abs(rho_hi)],
+        elinewidth=0.75,
+        capthick=0.75,
+        fmt='none',
+        ecolor='black',
+        capsize=3,
+        zorder=1,
+    )
+    sc = ax1.scatter(
+        rho,
+        q_val,
+        c=tj,
+        cmap='viridis',
+        norm=Normalize(vmin=tj.min(), vmax=tj.max()),
+        s=30,
+        zorder=2,
+    )
+    ax1.axhline(0.2, color='red', linestyle='-.', linewidth=1)
+    ax1.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
+    ax1.set_ylabel("Perihelion [AU]", fontsize=15)
+    ax1.set_yscale("log")
+
+    ax2.errorbar(
+        rho,
+        Q_val,
+        xerr=[abs(rho_lo), abs(rho_hi)],
+        elinewidth=0.75,
+        capthick=0.75,
+        fmt='none',
+        ecolor='black',
+        capsize=3,
+        zorder=1,
+    )
+    sc = ax2.scatter(
+        rho,
+        Q_val,
+        c=tj,
+        cmap='viridis',
+        norm=Normalize(vmin=tj.min(), vmax=tj.max()),
+        s=30,
+        zorder=2,
+    )
+    ax2.axhline(4.5, color='red', linestyle='--', linewidth=1)
+    ax2.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
+    ax2.set_ylabel("Aphelion [AU]", fontsize=15)
+    ax2.set_yscale("log")
+
+    cbar = fig.colorbar(sc, cax=cax)
+    cbar.set_label(r"Tisserand parameter (T$_j$)", fontsize=12)
+
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_rho_vs_Q_q.png"),
+        dpi=300,
+    )
+    plt.close(fig)
+
+
+def plot_rho_vs_observables_grid(
+    shower_name,
+    output_dir_show,
+    rho,
+    observable_names,
+    observable_arrays,
+):
+    """Create and save the grid of rho vs observable scatter plots."""
+    fig, axes = plt.subplots(2, 5, figsize=(15, 5))
+    axes = axes.flatten()
+
+    for i, (name, obs) in enumerate(zip(observable_names, observable_arrays)):
+        ax = axes[i]
+        ax.scatter(obs, rho, alpha=0.7, s=40, edgecolor='k', linewidth=0.3, color='blue')
+        corr = np.corrcoef(obs, rho)[0, 1]
+        ax.set_title(f'corr: {corr:.2f}', fontsize=15)
+        z = np.polyfit(obs, rho, 1)
+        p = np.poly1d(z)
+        ax.plot(obs, p(obs), color='red', linewidth=1, label=f'corr: {corr:.2f}')
+        ax.set_xlabel(f'{name}', fontsize=12)
+        ax.set_ylabel(r'$\\rho$ [kg/m$^3$]' if i in [0, 5] else '', fontsize=12)
+        ax.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_rho_vs_observables_grid.png"),
+        dpi=300,
+        bbox_inches='tight',
+    )
+    plt.close(fig)
+
+
 # ---------- Weighted resampling helper ----------
 def _weighted_resample(data, weights, n=None, rng=None):
     """Resample values ~ weights (with replacement). NaNs handled upstream."""
@@ -1344,154 +1594,52 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
 
     ### PLOT rho and error against dynamic pressure color by speed ###
-    print("Plotting rho vs kinetic energy...")
-    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+    plot_rho_vs_kinetic_energy(
+        shower_name,
+        output_dir_show,
+        rho,
+        rho_lo,
+        rho_hi,
+        kinetic_energy_median,
+        meteoroid_diameter_mm,
+    )
 
-    
-    scatter_d = plt.scatter(rho, np.log10(kinetic_energy_median), c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
-    plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
-    plt.errorbar(rho, np.log10(kinetic_energy_median),
-                xerr=[abs(rho_lo), abs(rho_hi)],
-                # yerr=[abs(kinetic_energy_lo), abs(kinetic_energy_hi)],
-                elinewidth=0.75,
-            capthick=0.75,
-            fmt='none',
-            ecolor='black',
-            capsize=3,
-            zorder=1
-        )
-    # # plot for each the all_names close to their name
-    # for i, txt in enumerate(all_names):
-    #     # put th text in the plot
-    #     plt.annotate(txt, (rho[i], np.log10(erosion_beg_dyn_press[i])), fontsize=8, color='black')
-    # invert the y axis
-    plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
-    plt.ylabel("log$_{10}$ Kinetic Energy [J]", fontsize=15)
-    # plt.yscale("log")
-    # grid on
-    plt.grid(True)
-
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_kinetic_energy.png"), bbox_inches='tight', dpi=300)
-
-    ### PLOT rho and error against dynamic pressure color by speed ###
     thr = 3.1  # log10 Pa  (≈ 1.58 kPa)
-    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+    plot_rho_vs_dynamic_pressure(
+        shower_name,
+        output_dir_show,
+        rho,
+        rho_lo,
+        rho_hi,
+        erosion_beg_dyn_press,
+        meteoroid_diameter_mm,
+        v_init_meteor_median,
+        thr=thr,
+    )
 
-    
-    scatter_d = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
-    plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
-    scatter = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
-    plt.errorbar(rho, np.log10(erosion_beg_dyn_press),
-                xerr=[abs(rho_lo), abs(rho_hi)],
-                elinewidth=0.75,
-            capthick=0.75,
-            fmt='none',
-            ecolor='black',
-            capsize=3,
-            zorder=1
-        )
-    # # plot for each the all_names close to their name
-    # for i, txt in enumerate(all_names):
-    #     # put th text in the plot
-    #     plt.annotate(txt, (rho[i], np.log10(erosion_beg_dyn_press[i])), fontsize=8, color='black')
-    # invert the y axis
-    plt.gca().invert_yaxis()
-    plt.colorbar(scatter, label='v$_{0}$ [km/s]')
-    plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
-    plt.ylabel("log$_{10}$ Dynamic Pressure [Pa]", fontsize=15)
-    # plot the thr line
-    plt.axhline(y=thr, color='gray', linestyle='--', linewidth=1)
-    # plt.yscale("log")
-    # grid on
-    plt.grid(True)
+    plot_rho_vs_eta(
+        shower_name,
+        output_dir_show,
+        rho,
+        eta_meteor_begin,
+        v_init_meteor_median,
+    )
 
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_dynamic_pressure.png"), bbox_inches='tight', dpi=300)
+    plot_rho_vs_q_and_Q(
+        shower_name,
+        output_dir_show,
+        rho,
+        rho_lo,
+        rho_hi,
+        q_val,
+        Q_val,
+        tj,
+    )
 
-
-    ### PLOT rho and error against eta pressure color by speed ###
-
-    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
-
-    scatter = plt.scatter(np.log10(rho), np.log10(eta_meteor_begin), c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
-    # plt.errorbar(np.log10(rho), np.log10(eta_meteor_begin),
-    #             xerr=[abs(rho_lo), abs(rho_hi)],
-    #             elinewidth=0.75,
-    #         capthick=0.75,
-    #         fmt='none',
-    #         ecolor='black',
-    #         capsize=3,
-    #         zorder=1
-    #     )
-    plt.colorbar(scatter, label='v$_{0}$ [km/s]')
-    plt.xlabel("log$_{10}$ $\\rho$ [kg/m³]", fontsize=15) # log$_{10}$
-    plt.ylabel("log$_{10}$ $\eta$ [kg/MJ]", fontsize=15)
-    # plt.yscale("log")
-    # grid on
-    plt.grid(True)
-
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_eta.png"), bbox_inches='tight', dpi=300)
-
-    ### PLOT rho and error of rho agaist Q ###
-
-    fig = plt.figure(figsize=(10, 6), constrained_layout=True)
-    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 0.05])
-
-    # axes
-    ax1 = fig.add_subplot(gs[0, 0])
-    ax2 = fig.add_subplot(gs[0, 1])
-    cax = fig.add_subplot(gs[0, 2])
-
-    # first plot
-    ax1.errorbar(rho, q_val,
-                xerr=[abs(rho_lo), abs(rho_hi)],
-                elinewidth=0.75,
-            capthick=0.75,
-            fmt='none',
-            ecolor='black',
-            capsize=3,
-            zorder=1
-        )
-    sc = ax1.scatter(rho, q_val, c=tj, cmap='viridis',
-                    norm=Normalize(vmin=tj.min(), vmax=tj.max()), s=30, zorder=2)
-    ax1.axhline(0.2, color='red', linestyle='-.', linewidth=1)
-    # ax1.text(100, 0.18, "Sun-approaching", color='black', fontsize=12, va='bottom')
-    ax1.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
-    ax1.set_ylabel("Perihelion [AU]", fontsize=15)
-    ax1.set_yscale("log")
-
-    # second plot
-    ax2.errorbar(rho, Q_val,
-                xerr=[abs(rho_lo), abs(rho_hi)],
-            elinewidth=0.75,
-            capthick=0.75,
-            fmt='none',
-            ecolor='black',
-            capsize=3,
-            zorder=1
-        )
-    sc = ax2.scatter(rho, Q_val, c=tj, cmap='viridis',
-                    norm=Normalize(vmin=tj.min(), vmax=tj.max()), s=30, zorder=2)
-    ax2.axhline(4.5, color='red', linestyle='--', linewidth=1)
-    # ax2.text(100, 4.2, "AST", color='black', fontsize=12, va='bottom')
-    ax2.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
-    ax2.set_ylabel("Aphelion [AU]", fontsize=15)
-    ax2.set_yscale("log")
-
-    # shared colorbar
-    cbar = fig.colorbar(sc, cax=cax)
-    cbar.set_label(r"Tisserand parameter (T$_j$)", fontsize=12)
-
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_Q_q.png"),
-                dpi=300)
-    plt.close()
-
-    ### CORELATION OBSERVABLE PLOT ###
     print('Creating Correlation plot for the observable and the rho...')
 
+    log10_m_init = np.log10(m_init_med)
 
-    log10_m_init= np.log10(m_init_med)
-
-    # Define your observable names and corresponding data arrays
     observable_names = [
         "$v_{avg}$ [km/s]", "$T$ [s]", "log$_{10}$($m_0$) [kg]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
         "$k_c$", "$F$", "$d$ [mm]", "$T_j$", "$z_c$ [deg]"
@@ -1502,47 +1650,13 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         kc_par, F_par, meteoroid_diameter_mm, tj, zenith_angle
     ]
 
-    # observable_names = [
-    #     "$v_{avg}$ [km/s]", "$T$ [s]", "$L$ [km]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
-    #     "$k_c$", "$F$", "$L$/$cos(z_c)$ [km]", "$h_{peak}$ [km]", "$M_{peak}$"
-    # ]
-
-    # observable_arrays = [
-    #     avg_vel, time_tot, lenght_par, beg_height, end_height,
-    #     kc_par, F_par, leng_coszen, max_lum_height, max_mag
-    # ]
-
-    # Create figure with 2 rows and 5 columns
-    fig, axes = plt.subplots(2, 5, figsize=(15, 5))
-    axes = axes.flatten()  # flatten to easily index 0-9
-
-    for i, (name, obs) in enumerate(zip(observable_names, observable_arrays)):
-        ax = axes[i]
-        
-        # Plot scatter of observable vs. rho_corrected
-        ax.scatter(obs, rho, alpha=0.7, s=40, edgecolor='k', linewidth=0.3, color='blue')
-
-        # Compute and annotate correlation coefficient
-        corr = np.corrcoef(obs, rho)[0, 1]
-        ax.set_title(f'corr: {corr:.2f}', fontsize=15)
-        # put a line of best fit
-        z = np.polyfit(obs, rho, 1)
-        p = np.poly1d(z)
-        ax.plot(obs, p(obs), color='red', linewidth=1, label=f'corr: {corr:.2f}')
-
-        ax.set_xlabel(f'{name}', fontsize=12)
-        ax.set_ylabel(r'$\rho$ [kg/m$^3$]' if i in [0, 5] else '', fontsize=12)
-        # # if $M_{peak}$ in the name invert the x axis
-        # if 'M_{peak}' in name:
-        #     ax.set_xlim(ax.get_xlim()[::-1])
-        ax.grid(True)
-
-    # Adjust layout and save
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_observables_grid.png"), dpi=300, bbox_inches='tight')
-    plt.close()
-
-
+    plot_rho_vs_observables_grid(
+        shower_name,
+        output_dir_show,
+        rho,
+        observable_names,
+        observable_arrays,
+    )
 
     ### RADIANCE PLOT ###
     print("saving radiance plot...")

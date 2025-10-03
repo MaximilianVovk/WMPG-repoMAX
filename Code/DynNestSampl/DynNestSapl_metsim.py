@@ -1171,7 +1171,7 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
 
 
 # Plotting function dynesty
-def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name='', log_file=''):
+def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name='', log_file='', cores=None):
     ''' Plot the dynesty results '''
 
     if log_file == '':
@@ -1439,16 +1439,22 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     #     top_k=10, output_folder=output_folder +os.sep+ 'fit_plots', file_name=f'{file_name}_top1000_check',
     # )
 
-    ### TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
-    # posterior_bands_vs_height_parallel(
-    #     dynesty_results=dynesty_run_results,
-    #     obs_data=obs_data,
-    #     flags_dict=flags_dict,
-    #     fixed_values=fixed_values,
-    #     output_folder=output_folder +os.sep+ 'fit_plots',
-    #     file_name=f'{file_name}_posterior_bands',
-    #     nsamples=None,  # use all samples
-    # )
+
+    if cores is None:
+        cores = multiprocessing.cpu_count()
+
+    if os.name == 'posix' and cores > 30:
+        ## TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
+        posterior_bands_vs_height_parallel(
+            dynesty_results=dynesty_run_results,
+            obs_data=obs_data,
+            flags_dict=flags_dict,
+            fixed_values=fixed_values,
+            output_folder=output_folder +os.sep+ 'fit_plots',
+            file_name=f'{file_name}_posterior_bands',
+            nsamples=None,  # use all samples
+            n_workers=cores,
+        )
 
     lum_eff_val = tau_median
     # fid the fixed_values that have the lum_eff
@@ -3834,7 +3840,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                     # now try and plot the dynesty file results
                     try:
                         dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-                        plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path)
+                        plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path,cml_args.cores)
                     except Exception as e:
                         with open(log_file_path, "a") as log_file:
                             log_file.write(f"Error encountered in dynestsy plot: {e}")
@@ -3864,7 +3870,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                 print("Only plotting requested. Skipping dynesty run.")
                 dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
                 # dsampler = dynesty oad DynamicNestedSampler by restore(dynesty_file)
-                plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path)
+                plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path,cml_args.cores)
 
             else:
                 print("Fail to generate dynesty plots, dynasty file not found:",dynesty_file)
@@ -5032,7 +5038,7 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
         print("dynesty file copied to:", output_folder)
     
     # dsampler use to plot dynesty DynamicNestedSampler
-    plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, output_folder, file_name,log_file_path)
+    plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, output_folder, file_name, log_file_path, n_core)
 
 
 

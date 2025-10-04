@@ -946,6 +946,14 @@ def _plot_bands_obs_best(
     proxy_2s = Patch(facecolor='gray', alpha=0.18, label='2σ')
     proxy_3s = Patch(facecolor='gray', alpha=0.10, label='3σ')
 
+    # take the index of the unique station_handles and station_labels
+    unique_stations = {}
+    for h, l in zip(station_handles, station_labels):
+        if l not in unique_stations:
+            unique_stations[l] = h
+    station_handles = list(unique_stations.values())
+    station_labels  = list(unique_stations.keys())
+
     handles = [best_line] + station_handles + [proxy_1s, proxy_2s, proxy_3s]
     labels  = [label_best] + station_labels + ['1σ', '2σ', '3σ']
     ax_lag.legend(handles, labels, loc='best', fontsize=8, frameon=True)
@@ -1178,6 +1186,14 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
         for station in np.unique(obs_data.stations_lag):
             mask = np.where(obs_data.stations_lag == station)
             ax_lag_res.plot(lag_res[mask], obs_data.height_lag[mask] / 1000, '.', color=station_colors[station])
+
+    # take the index of the unique station_handles and station_labels
+    unique_stations = {}
+    for h, l in zip(station_handles, station_labels):
+        if l not in unique_stations:
+            unique_stations[l] = h
+    station_handles = list(unique_stations.values())
+    station_labels  = list(unique_stations.keys())
 
     handles = [best_line] + station_handles
     labels  = [label_sim] + station_labels
@@ -1462,7 +1478,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     if cores is None:
         cores = multiprocessing.cpu_count()
     ## TAKES A LOT OF TIME Only use on Node7 or Node8 where there are 96 cores ###
-    if os.name == 'posix' and cores > 30:
+    if cores > 1:
         ## TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
         print(f"Running all the simulations to have the uncertaty regions with {cores} cores")
         posterior_bands_vs_height_parallel(
@@ -1472,7 +1488,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             fixed_values=fixed_values,
             output_folder=output_folder +os.sep+ 'fit_plots',
             file_name=f'{file_name}',
-            nsamples=None,  # use all samples
+            nsamples=10,  # use all samples
             n_workers=cores,
         )
     else:

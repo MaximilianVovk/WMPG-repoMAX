@@ -105,7 +105,7 @@ def meteor_abs_magnitude_to_apparent(abs_mag, distance):
 ###############################################################################
 
 # Plotting function
-def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',file_name='', color_sim='black', label_sim='Best guess'):
+def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',file_name='', color_sim='black', label_sim='Best Fit'):
     ''' Plot the data with residuals and real data '''
 
     # Create the figure and main GridSpec with specified height ratios
@@ -613,13 +613,14 @@ def _worker_simulate_and_interp(sample_equal_row):
         lag = np.asarray(sim_lag)[ok][order]
 
         hl = np.asarray(obs_data.height_lum)
+        hv = np.asarray(obs_data.height_lag)
 
         lum_hl = np.interp(hl, h, lum, left=np.nan, right=np.nan)
         mag_hl = np.interp(hl, h, mag, left=np.nan, right=np.nan)
-        vel_hl = np.interp(hl, h, vel, left=np.nan, right=np.nan)
-        lag_hl = np.interp(hl, h, lag, left=np.nan, right=np.nan)
+        vel_hv = np.interp(hv, h, vel, left=np.nan, right=np.nan)
+        lag_hv = np.interp(hv, h, lag, left=np.nan, right=np.nan)
 
-        return lum_hl, mag_hl, vel_hl, lag_hl
+        return lum_hl, mag_hl, vel_hv, lag_hv
     except Exception:
         return None
 
@@ -675,7 +676,7 @@ def posterior_bands_vs_height_parallel(
     n_workers=None,          # default: os.cpu_count()-1
     chunksize=8,             # tune for your machine
     color_best='black',
-    label_best='Best guess'
+    label_best='Best Fit'
 ):
     """
     Parallel version: computes posterior bands at obs_data.height_lum using a
@@ -693,13 +694,14 @@ def posterior_bands_vs_height_parallel(
         idx_keep = rng.choice(samples_eq.shape[0], size=nsamples, replace=False)
         samples_eq = samples_eq[idx_keep]
 
-    H = len(obs_data.height_lum)
+    H_l = len(obs_data.height_lum)
+    H_v = len(obs_data.height_lag) if hasattr(obs_data, 'height_lag') and len(obs_data.height_lag) > 0 else len(obs_data.height_lum)
     S = samples_eq.shape[0]
 
-    lum_samples = np.full((S, H), np.nan)
-    mag_samples = np.full((S, H), np.nan)
-    vel_samples = np.full((S, H), np.nan)
-    lag_samples = np.full((S, H), np.nan)
+    lum_samples = np.full((S, H_l), np.nan)
+    mag_samples = np.full((S, H_l), np.nan)
+    vel_samples = np.full((S, H_v), np.nan)
+    lag_samples = np.full((S, H_v), np.nan)
 
     align_height = obs_data.height_lag[0] if hasattr(obs_data, 'height_lag') and len(obs_data.height_lag) > 0 \
                    else obs_data.height_lum[0]
@@ -781,11 +783,12 @@ def posterior_bands_vs_height_parallel(
     order = np.argsort(sim_best.leading_frag_height_arr[ok])
     hb = sim_best.leading_frag_height_arr[ok][order]
     hl = np.asarray(obs_data.height_lum)
+    hv = np.asarray(obs_data.height_lag)
 
     best_lum = np.interp(hl, hb, np.asarray(sim_best.luminosity_arr)[ok][order], left=np.nan, right=np.nan)
     best_mag = np.interp(hl, hb, np.asarray(sim_best.abs_magnitude)[ok][order], left=np.nan, right=np.nan)
-    best_vel = np.interp(hl, hb, np.asarray(sim_best.leading_frag_vel_arr)[ok][order], left=np.nan, right=np.nan)
-    best_lag = np.interp(hl, hb, np.asarray(best_lag_full)[ok][order], left=np.nan, right=np.nan)
+    best_vel = np.interp(hv, hb, np.asarray(sim_best.leading_frag_vel_arr)[ok][order], left=np.nan, right=np.nan)
+    best_lag = np.interp(hv, hb, np.asarray(best_lag_full)[ok][order], left=np.nan, right=np.nan)
 
     # (Optional) call your previous plotting routine here to draw bands + obs + best.
     # You can keep the exact plotting code you already have, just swap in the arrays
@@ -794,7 +797,7 @@ def posterior_bands_vs_height_parallel(
     # ---- PLOT & SAVE ----
     _plot_bands_obs_best(
         obs_data,
-        hl,
+        hl, hv,
         bands_lum, bands_mag, bands_vel, bands_lag,
         best_lum, best_mag, best_vel, best_lag,
         output_folder=output_folder,
@@ -828,15 +831,16 @@ def posterior_bands_vs_height_parallel(
 
 def _plot_bands_obs_best(
     obs_data,
-    hl,                                  # heights (m) used for interpolation
+    hl, hv,                                  # heights (m) used for interpolation
     bands_lum, bands_mag, bands_vel, bands_lag,
     best_lum, best_mag, best_vel, best_lag,
-    output_folder='', file_name='', color_best='black', label_best='Best guess'
+    output_folder='', file_name='', color_best='black', label_best='Best Fit'
 ):
     if output_folder:
         os.makedirs(output_folder, exist_ok=True)
 
-    heights_km = np.asarray(hl) / 1000.0
+    heights_km_lum = np.asarray(hl) / 1000.0
+    heights_km_lag = np.asarray(hv) / 1000.0
 
     fig = plt.figure(figsize=(15, 4))
     gs  = gridspec.GridSpec(1, 4, figure=fig, wspace=0.3)
@@ -856,20 +860,18 @@ def _plot_bands_obs_best(
     cmap = plt.get_cmap("tab10")
     station_colors = {}
     plotted_stations = set()
-    stations_lum = np.unique(getattr(obs_data, 'stations_lum', []))
-    stations_lag = np.unique(getattr(obs_data, 'stations_lag', []))
-    try:
-        stations_all = np.unique(np.concatenate([stations_lum, stations_lag]))
-    except Exception:
-        stations_all = stations_lum if len(stations_lum) else stations_lag
-    for i, st in enumerate(stations_all):
-        station_colors[st] = cmap(i % 10)
+
+    station_handles = []
+    station_labels  = []
 
     # --- LUMINOSITY ---
     shade(ax_lum, bands_lum["p00015"], bands_lum["p99985"],
                  bands_lum["p025"],   bands_lum["p975"],
-                 bands_lum["p16"],    bands_lum["p84"], heights_km)
+                 bands_lum["p16"],    bands_lum["p84"], heights_km_lum)
     for st in np.unique(getattr(obs_data, 'stations_lum', [])):
+        # Assign a unique color if not already used
+        if st not in station_colors:
+            station_colors[st] = cmap(len(station_colors) % 10)
         m = obs_data.stations_lum == st
         ax_lum.plot(
             obs_data.luminosity[m], obs_data.height_lum[m]/1000.0,
@@ -878,7 +880,7 @@ def _plot_bands_obs_best(
             label=str(st) if st not in plotted_stations else None
         )
         plotted_stations.add(st)
-    ax_lum.plot(best_lum, heights_km, color=color_best, lw=1.8, label=label_best)
+    ax_lum.plot(best_lum, heights_km_lum, color=color_best, lw=1.8, label=label_best)
     ax_lum.set_xlabel("Luminosity [W]")
     ax_lum.set_ylabel("Height [km]")
     ax_lum.grid(True, linestyle='--', color='lightgray')
@@ -886,15 +888,18 @@ def _plot_bands_obs_best(
     # --- ABS MAG ---
     shade(ax_mag, bands_mag["p00015"], bands_mag["p99985"],
                  bands_mag["p025"],   bands_mag["p975"],
-                 bands_mag["p16"],    bands_mag["p84"], heights_km)
+                 bands_mag["p16"],    bands_mag["p84"], heights_km_lum)
     for st in np.unique(getattr(obs_data, 'stations_lum', [])):
+        if st not in station_colors:
+            station_colors[st] = cmap(len(station_colors) % 10)
         m = obs_data.stations_lum == st
-        ax_mag.plot(
+        h, = ax_mag.plot(
             obs_data.absolute_magnitudes[m], obs_data.height_lum[m]/1000.0,
             linestyle='--', marker='x', markersize=4, linewidth=1,
             color=station_colors.get(st, 'C0'),
         )
-    ax_mag.plot(best_mag, heights_km, color=color_best, lw=1.8)
+        station_handles.append(h); station_labels.append(str(st))
+    ax_mag.plot(best_mag, heights_km_lum, color=color_best, lw=1.8)
     ax_mag.set_xlabel("Abs. Magnitude")
     ax_mag.invert_xaxis()
     ax_mag.grid(True, linestyle='--', color='lightgray')
@@ -902,25 +907,28 @@ def _plot_bands_obs_best(
     # --- VELOCITY (km/s) ---
     shade(ax_vel, bands_vel["p00015"]/1000.0, bands_vel["p99985"]/1000.0,
                  bands_vel["p025"]/1000.0,   bands_vel["p975"]/1000.0,
-                 bands_vel["p16"]/1000.0,    bands_vel["p84"]/1000.0, heights_km)
+                 bands_vel["p16"]/1000.0,    bands_vel["p84"]/1000.0, heights_km_lag)
     for st in np.unique(getattr(obs_data, 'stations_lag', [])):
+        if st not in station_colors:
+            station_colors[st] = cmap(len(station_colors) % 10)
         m = obs_data.stations_lag == st
         ax_vel.plot(
             obs_data.velocities[m]/1000.0, obs_data.height_lag[m]/1000.0,
             linestyle='--', marker='x', markersize=4, linewidth=1,
             color=station_colors.get(st, 'C0'),
         )
-    ax_vel.plot(best_vel/1000.0, heights_km, color=color_best, lw=1.8)
+    ax_vel.plot(best_vel/1000.0, heights_km_lag, color=color_best, lw=1.8)
     ax_vel.set_xlabel("Velocity [km/s]")
     ax_vel.grid(True, linestyle='--', color='lightgray')
 
     # --- LAG (m) ---
     shade(ax_lag, bands_lag["p00015"], bands_lag["p99985"],
                  bands_lag["p025"],   bands_lag["p975"],
-                 bands_lag["p16"],    bands_lag["p84"], heights_km)
-    station_handles = []
-    station_labels  = []
+                 bands_lag["p16"],    bands_lag["p84"], heights_km_lag)
+
     for st in np.unique(getattr(obs_data, 'stations_lag', [])):
+        if st not in station_colors:
+            station_colors[st] = cmap(len(station_colors) % 10)
         m = obs_data.stations_lag == st
         h, = ax_lag.plot(
             obs_data.lag[m], obs_data.height_lag[m]/1000.0,
@@ -929,7 +937,7 @@ def _plot_bands_obs_best(
             label=str(st)
         )
         station_handles.append(h); station_labels.append(str(st))
-    best_line, = ax_lag.plot(best_lag, heights_km, color=color_best, lw=1.8, label=label_best)
+    best_line, = ax_lag.plot(best_lag, heights_km_lag, color=color_best, lw=1.8, label=label_best)
     ax_lag.set_xlabel("Lag [m]")
     ax_lag.grid(True, linestyle='--', color='lightgray')
 
@@ -941,6 +949,11 @@ def _plot_bands_obs_best(
     handles = [best_line] + station_handles + [proxy_1s, proxy_2s, proxy_3s]
     labels  = [label_best] + station_labels + ['1σ', '2σ', '3σ']
     ax_lag.legend(handles, labels, loc='best', fontsize=8, frameon=True)
+    # add a suptitle with file_name if it contains a date-time stamp like YYYYMMDD_HHMMSS
+    if file_name:
+        m = re.search(r'\d{8}_\d{6}', file_name)
+        if m:
+            fig.suptitle(m.group(0))
 
     plt.tight_layout()
     if output_folder and file_name:
@@ -960,7 +973,7 @@ def posterior_bands_topk_check(
     file_name='topk_check',
     n_workers=None,
     color_best='black',
-    label_best='Best guess',
+    label_best='Best Fit',
 ):
     """
     Quick-check version: run only the best `top_k` samples (highest logl).
@@ -999,7 +1012,7 @@ def posterior_bands_topk_check(
     )
 
 
-def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', color_sim='black', label_sim='Best guess'):
+def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', color_sim='black', label_sim='Best Fit'):
     fig = plt.figure(figsize=(15, 4))
     # take only the reg ex with YYYYMMDD_HHMMSS
     file_name_print = re.search(r'\d{8}_\d{6}', file_name).group(0)
@@ -1009,6 +1022,8 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
 
     cmap = plt.get_cmap("tab10")
     station_colors = {}
+    station_handles = []
+    station_labels  = []
 
     def get_color(station):
         if station not in station_colors:
@@ -1058,7 +1073,8 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     for station in np.unique(obs_data.stations_lum):
         mask = obs_data.stations_lum == station
         color = get_color(station)
-        ax_mag.plot(obs_data.absolute_magnitudes[mask], obs_data.height_lum[mask] / 1000, 'x--', color=color)
+        h, = ax_mag.plot(obs_data.absolute_magnitudes[mask], obs_data.height_lum[mask] / 1000, 'x--', color=color)
+        station_handles.append(h); station_labels.append(str(station))
     ax_mag.set_xlabel("Abs. Magnitude")
     ax_mag.invert_xaxis()
     ax_mag.grid(True, linestyle='--', color='lightgray')
@@ -1074,7 +1090,7 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     for station in np.unique(obs_data.stations_lag):
         mask = obs_data.stations_lag == station
         color = get_color(station)
-        ax_vel.plot(obs_data.velocities[mask] / 1000, obs_data.height_lag[mask] / 1000, 'x:', color=color)
+        ax_vel.plot(obs_data.velocities[mask] / 1000, obs_data.height_lag[mask] / 1000, 'x--', color=color)
     ax_vel.set_xlabel("Velocity [km/s]")
     ax_vel.grid(True, linestyle='--', color='lightgray')
 
@@ -1089,7 +1105,8 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     for station in np.unique(obs_data.stations_lag):
         mask = obs_data.stations_lag == station
         color = get_color(station)
-        ax_lag.plot(obs_data.lag[mask], obs_data.height_lag[mask] / 1000, 'x:', color=color, label=station)
+        h, = ax_lag.plot(obs_data.lag[mask], obs_data.height_lag[mask] / 1000, 'x--', color=color, label=station)
+        station_handles.append(h); station_labels.append(str(station))
     ax_lag.set_xlabel("Lag [m]")
     ax_lag.grid(True, linestyle='--', color='lightgray')
 
@@ -1129,7 +1146,7 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
         
         sim_lag -= sim_lag[index]
 
-        ax_lag.plot(sim_lag, sim_data.leading_frag_height_arr / 1000, color=color_sim, label=label_sim)
+        best_line, = ax_lag.plot(sim_lag, sim_data.leading_frag_height_arr / 1000, color=color_sim, label=label_sim)
         
         # RESIDUALS (interpolated at obs heights)
         lum_res = obs_data.luminosity - np.interp(obs_data.height_lum, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_data.luminosity_arr))
@@ -1162,7 +1179,9 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
             mask = np.where(obs_data.stations_lag == station)
             ax_lag_res.plot(lag_res[mask], obs_data.height_lag[mask] / 1000, '.', color=station_colors[station])
 
-    ax_lag.legend()
+    handles = [best_line] + station_handles
+    labels  = [label_sim] + station_labels
+    ax_lag.legend(handles, labels, loc='best', fontsize=8, frameon=True)
 
     ### Finalize and save ###
     plt.tight_layout()
@@ -1297,10 +1316,10 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     ndim = len(variables)
     sim_num = np.argmax(dynesty_run_results.logl)
-    # print the best guess index and the last index
-    print('Best guess index:', sim_num, 'Last index:', len(dynesty_run_results.logl)-1)
-    # print('Best guess index:', sim_num)
-    # copy the best guess values
+    # print the Best Fit index and the last index
+    print('Best Fit index:', sim_num, 'Last index:', len(dynesty_run_results.logl)-1)
+    # print('Best Fit index:', sim_num)
+    # copy the Best Fit values
     best_guess = copy.deepcopy(dynesty_run_results.samples[sim_num])
     best_guess_table = copy.deepcopy(dynesty_run_results.samples[sim_num])
     # for variable in variables: for 
@@ -1359,8 +1378,8 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         else:
             return obj
 
-    print('Best fit:')
-    # write the best fit variable names and then the best guess values
+    print('Best Fit:')
+    # write the best fit variable names and then the Best Fit values
     for i in range(len(best_guess)):
         print(variables[i],':\t', best_guess[i])
     # print('logL:', dynesty_run_results.logl[sim_num])
@@ -1452,7 +1471,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             flags_dict=flags_dict,
             fixed_values=fixed_values,
             output_folder=output_folder +os.sep+ 'fit_plots',
-            file_name=f'{file_name}_posterior_bands',
+            file_name=f'{file_name}',
             nsamples=None,  # use all samples
             n_workers=cores,
         )
@@ -1710,7 +1729,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \resizebox{\textwidth}{!}{ % Resizing table to fit page width
     \begin{tabular}{|l|c|c|c|c|c|c|c||c|c||c|}
     \hline
-    Parameter & 2.5CI & True Value & Best Guess & Mode & Mean & Median & 97.5CI & Abs.Error & Rel.Error\% & Cover \\
+    Parameter & 2.5CI & True Value & Best Fit & Mode & Mean & Median & 97.5CI & Abs.Error & Rel.Error\% & Cover \\
     \hline
 
 """
@@ -1729,7 +1748,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \resizebox{\textwidth}{!}{ % Resizing table to fit page width
     \begin{tabular}{|l|c|c|c|c|c|c|}
     \hline
-    Parameter & 2.5CI & Best Guess & Mode & Mean & Median & 97.5CI\\
+    Parameter & 2.5CI & Best Fit & Mode & Mean & Median & 97.5CI\\
     \hline
 
 """
@@ -1750,9 +1769,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         file_name_caption = file_name
 
     if hasattr(obs_data, 'const'):
-        latex_str += f"Posterior summary statistics for {file_name_caption} test case. The Best Guess is the simulation with the highest likelihood. Absolute and relative errors are calculated based on the Best Guess. The Cover column indicates whether the true value lies within the 95\% CI."
+        latex_str += f"Posterior summary statistics for {file_name_caption} test case. The Best Fit is the simulation with the highest likelihood. Absolute and relative errors are calculated based on the Best Fit. The Cover column indicates whether the true value lies within the 95\% CI."
     else:
-        latex_str += f"Posterior summary statistics for {file_name_caption} meteor. The Best Guess is the simulation with the highest likelihood."
+        latex_str += f"Posterior summary statistics for {file_name_caption} meteor. The Best Fit is the simulation with the highest likelihood."
     latex_str += r"""}
     \label{tab:posterior_summary}
 \end{table}"""

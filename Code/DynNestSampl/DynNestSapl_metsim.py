@@ -1478,7 +1478,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     if cores is None:
         cores = multiprocessing.cpu_count()
     ## TAKES A LOT OF TIME Only use on Node7 or Node8 where there are 96 cores ###
-    if cores > 1:
+    if os.name == 'posix' and cores > 30:
         ## TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
         print(f"Running all the simulations to have the uncertaty regions with {cores} cores")
         posterior_bands_vs_height_parallel(
@@ -1488,7 +1488,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             fixed_values=fixed_values,
             output_folder=output_folder +os.sep+ 'fit_plots',
             file_name=f'{file_name}',
-            nsamples=10,  # use all samples
+            nsamples=None,  # use all samples
             n_workers=cores,
         )
     else:

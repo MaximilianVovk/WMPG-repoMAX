@@ -1189,8 +1189,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
                 erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
                 erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
-                erosion_energy_per_unit_cross_section_arr_end = dynesty_run_results.erosion_energy_per_unit_cross_section_end
-                erosion_energy_per_unit_mass_arr_end = dynesty_run_results.erosion_energy_per_unit_mass_arr_end
+                # erosion_energy_per_unit_cross_section_arr_end = dynesty_run_results.erosion_energy_per_unit_cross_section_end
+                # erosion_energy_per_unit_mass_arr_end = dynesty_run_results.erosion_energy_per_unit_mass_arr_end
 
             else:
                 print(f"\nNo existing results found in {folder_name}.dynestyres, running dynesty.")
@@ -1200,7 +1200,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
                 # Package inputs
                 inputs = [
-                    (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables, fixed_values, flags_dict)
+                    (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
                     for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
                 ]
                 #     for i in range(len(dynesty_run_results.samples)) # 
@@ -1214,15 +1214,15 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
                 erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
                 erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
-                erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
-                erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
+                # erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
+                # erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
 
                 for res in results:
                     i, eeucs, eeum, eeucs_end, eeum_end = res
                     erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
                     erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
-                    erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
-                    erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
+                    # erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
+                    # erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
 
                 sim_num = np.argmax(dynesty_run_results.logl)
                 # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
@@ -1230,19 +1230,19 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
                 best_guess = dynesty_run_results.samples[sim_num].copy()
                 samples = dynesty_run_results.samples
                 # for variable in variables: for 
-                for i, variable in enumerate(variables):
+                for i, variable in enumerate(variables_sing):
                     if 'log' in flags_dict[variable]:
                         # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")  
                         best_guess[i] = 10**(best_guess[i])
                         # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")
                         samples[:, i] = 10**(samples[:, i])  # also transform all samples
-                best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
+                best_guess_obj_plot = run_simulation(best_guess, obs_data, variables_sing, fixed_values)
 
                 # find erosion change height
-                if 'erosion_height_change' in variables:
-                    erosion_height_change = best_guess[variables.index('erosion_height_change')]
-                if 'm_init' in variables:
-                    m_init = best_guess[variables.index('m_init')]
+                if 'erosion_height_change' in variables_sing:
+                    erosion_height_change = best_guess[variables_sing.index('erosion_height_change')]
+                if 'm_init' in variables_sing:
+                    m_init = best_guess[variables_sing.index('m_init')]
 
                 heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
                 mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
@@ -1252,10 +1252,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
                 
                 # # precise erosion tal energy calculation ########################
 
-                if 'erosion_rho_change' in variables:
-                    rho_total_arr = samples[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+                if 'erosion_rho_change' in variables_sing:
+                    rho_total_arr = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
                 else:
-                    rho_total_arr = samples[:, variables.index('rho')].astype(float)
+                    rho_total_arr = samples[:, variables_sing.index('rho')].astype(float)
 
                 rho_total_arr = np.array(rho_total_arr, dtype=np.float64)
 
@@ -1267,8 +1267,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
                 results.norm_weights = w
                 results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
                 results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
-                results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
-                results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
+                # results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
+                # results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
                 results.rho_total = rho_total_arr
 
                 # delete from base_name _combined if it exists
@@ -1282,8 +1282,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
             erosion_energy_per_unit_cross_section_corrected.append(erosion_energy_per_unit_cross_section_arr)
             erosion_energy_per_unit_mass_corrected.append(erosion_energy_per_unit_mass_arr)
-            erosion_energy_per_unit_cross_section_end_corrected.append(erosion_energy_per_unit_cross_section_arr_end)
-            erosion_energy_per_unit_mass_end_corrected.append(erosion_energy_per_unit_mass_arr_end)
+            # erosion_energy_per_unit_cross_section_end_corrected.append(erosion_energy_per_unit_cross_section_arr_end)
+            # erosion_energy_per_unit_mass_end_corrected.append(erosion_energy_per_unit_mass_arr_end)
 
         ### SAVE DATA ###
 
@@ -1395,8 +1395,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     if plot_correl_flag == True:
         erosion_energy_per_unit_cross_section_corrected = np.concatenate(erosion_energy_per_unit_cross_section_corrected)
         erosion_energy_per_unit_mass_corrected = np.concatenate(erosion_energy_per_unit_mass_corrected)
-        erosion_energy_per_unit_cross_section_end_corrected = np.concatenate(erosion_energy_per_unit_cross_section_end_corrected)
-        erosion_energy_per_unit_mass_end_corrected = np.concatenate(erosion_energy_per_unit_mass_end_corrected)
+        # erosion_energy_per_unit_cross_section_end_corrected = np.concatenate(erosion_energy_per_unit_cross_section_end_corrected)
+        # erosion_energy_per_unit_mass_end_corrected = np.concatenate(erosion_energy_per_unit_mass_end_corrected)
 
     # eeucs = np.array([v[0] for v in file_eeu_dict.values()])
     # eeucs_lo = np.array([v[1] for v in file_eeu_dict.values()])
@@ -2130,12 +2130,13 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
             line = f"    {param} & {low} & {mode} & {mean} & {median} & {high} \\\\"
             latex_lines.append(line)
-            latex_lines.append("    \\hline")
+            # latex_lines.append("    \\hline")
 
         # if there is _ in the shower_name put a \
         shower_name_plot = shower_name.replace("_", "\\_")
         # Footer
-        footer = r"    \end{tabular}}"
+        footer = r"""    \hline 
+        \end{tabular}}"""
         footer2 = rf"""    \caption{{Overall posterior summary statistics for {num_meteors} meteors of the {shower_name_plot} shower.}}
         \label{{tab:overall_summary_{shower_name.lower()}}}
      \end{{table}}"""
@@ -3272,11 +3273,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
                 combined_samples_cov_plot[:, j] = combined_samples_cov_plot[:, j] * 1e6
 
         variables_corr = variables.copy()
-        # add to the variable eeucs and eeum
-        variables_corr.extend(['eeucs', 'eeum', 'eeucs_end', 'eeum_end'])
-        # add the two new variables to the combined_samples_cov_plot
-        combined_samples_cov_plot = np.hstack(( combined_samples_cov_plot, erosion_energy_per_unit_cross_section_corrected.reshape(-1, 1), erosion_energy_per_unit_mass_corrected.reshape(-1, 1)
-                                                , erosion_energy_per_unit_cross_section_end_corrected.reshape(-1, 1), erosion_energy_per_unit_mass_end_corrected.reshape(-1, 1) ))
+        # # add to the variable eeucs and eeum
+        # variables_corr.extend(['eeucs', 'eeum', 'eeucs_end', 'eeum_end'])
+        # # add the two new variables to the combined_samples_cov_plot
+        # combined_samples_cov_plot = np.hstack(( combined_samples_cov_plot, erosion_energy_per_unit_cross_section_corrected.reshape(-1, 1), erosion_energy_per_unit_mass_corrected.reshape(-1, 1)
+        #                                         , erosion_energy_per_unit_cross_section_end_corrected.reshape(-1, 1), erosion_energy_per_unit_mass_end_corrected.reshape(-1, 1) ))
 
         if "ORI" in shower_name: # special case for ORI to avoid overly long names
             shower_name_short = "ORI"
@@ -3691,7 +3692,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\Publish_results-Letter",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

@@ -1743,17 +1743,17 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \renewcommand{\arraystretch}{1.2} % Increase row height for readability
     \setlength{\tabcolsep}{4pt} % Adjust column spacing
     \resizebox{\textwidth}{!}{ % Resizing table to fit page width
-    \begin{tabular}{|l|c|c|c|c|c|c|c||c|c||c|}
+    \begin{tabular}{lrrrrrrr|rr|c}
     \hline
     Parameter & 2.5CI & True Value & Best Fit & Mode & Mean & Median & 97.5CI & Abs.Error & Rel.Error\% & Cover \\
     \hline
 
-"""
+    """
         for i, label in enumerate(labels):
             coverage_val = "\ding{51}" if coverage_mask[i] else "\ding{55}"  # Use checkmark/x for coverage
             latex_str += (f"    {label} & {lower_95[i]:.4g} & {truths[i]:.4g} & {best_guess_table[i]:.4g} & {approx_modes[i]:.4g} "
                         f"& {posterior_mean[i]:.4g} & {posterior_median[i]:.4g} & {upper_95[i]:.4g} "
-                        f"& {abs_error[i]:.4g} & {rel_error[i]:.4g}\% & {coverage_val} \\\\\n    \hline\n")
+                        f"& {abs_error[i]:.4g} & {rel_error[i]:.4g}\% & {coverage_val} \\\\\n") #\hline\n
 
     else:
         # Generate LaTeX table
@@ -1762,19 +1762,19 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     \renewcommand{\arraystretch}{1.2} % Increase row height for readability
     \setlength{\tabcolsep}{4pt} % Adjust column spacing
     \resizebox{\textwidth}{!}{ % Resizing table to fit page width
-    \begin{tabular}{|l|c|c|c|c|c|c|}
+    \begin{tabular}{lrrrrrr}
     \hline
     Parameter & 2.5CI & Best Fit & Mode & Mean & Median & 97.5CI\\
     \hline
 
-"""
+    """
         # & Mode
         # {approx_modes[i]:.4g} &
         for i, label in enumerate(labels):
             latex_str += (f"    {label} & {lower_95[i]:.4g} & {best_guess_table[i]:.4g} & {approx_modes[i]:.4g} & {posterior_mean[i]:.4g} "
-                        f"& {posterior_median[i]:.4g} & {upper_95[i]:.4g} \\\\\n    \hline\n")
+                        f"& {posterior_median[i]:.4g} & {upper_95[i]:.4g} \\\\\n") #  \hline\n
 
-    latex_str += r"""
+    latex_str += r"""\hline
     \end{tabular}} 
     \caption{"""
 
@@ -1790,7 +1790,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         latex_str += f"Posterior summary statistics for {file_name_caption} meteor. The Best Fit is the simulation with the highest likelihood."
     latex_str += r"""}
     \label{tab:posterior_summary}
-\end{table}"""
+    \end{table}"""
 
     # Capture the printed output of summary()
     summary_buffer = io.StringIO()
@@ -3042,9 +3042,7 @@ class observation_data:
 
             # Fit the polynomail describing the density
             self.dens_co = fitAtmPoly(lat_mean, lon_mean, dens_fit_ht_end, dens_fit_ht_beg, jd_dat)
-
             zenith_angle_list.append(zenithAngleAtSimulationBegin(const.h_init, traj.rbeg_ele, traj.orbit.zc, const.r_earth))
-
             time_mag_arr = []
             avg_t_diff_max = 0
             # take only the stations that are unique in the stations_lum
@@ -4380,6 +4378,8 @@ class find_dynestyfile_and_priors:
 
         lag_noise_prior = np.nan
         lum_noise_prior = np.nan
+        fps_prior = np.nan
+        P_0m_prior = np.nan
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
             prior_path_noise = self.prior_file

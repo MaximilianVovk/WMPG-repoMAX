@@ -39,27 +39,27 @@ from types import SimpleNamespace
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-# def run_total_energy_received(sim_num_and_data):
-#     sim_num, best_guess_obj_plot, unique_heights_massvar_init, unique_heights_massvar, mass_best_massvar, velocities_massvar_init = sim_num_and_data
+def run_total_energy_received(sim_num_and_data):
+    sim_num, best_guess_obj_plot, unique_heights_massvar_init, unique_heights_massvar, mass_best_massvar, velocities_massvar_init = sim_num_and_data
 
-#     # extract the const from the best_guess_obj_plot
-#     const_nominal = best_guess_obj_plot.const
+    # extract the const from the best_guess_obj_plot
+    const_nominal = best_guess_obj_plot.const
 
-#     const_nominal.h_init = unique_heights_massvar_init
-#     const_nominal.erosion_height_start = unique_heights_massvar
-#     const_nominal.v_init = velocities_massvar_init
-#     const_nominal.m_init = mass_best_massvar
+    const_nominal.h_init = unique_heights_massvar_init
+    const_nominal.erosion_height_start = unique_heights_massvar
+    const_nominal.v_init = velocities_massvar_init
+    const_nominal.m_init = mass_best_massvar
 
-#     # Extract physical quantities
-#     try:
-#         _, eeum = energyReceivedBeforeErosion(const_nominal)
-#         total_energy = eeum * const_nominal.m_init  # Total energy received before erosion in MJ
+    # Extract physical quantities
+    try:
+        eeucs, eeum = energyReceivedBeforeErosion(const_nominal)
+        total_energy = eeum * const_nominal.m_init  # Total energy received before erosion in MJ
 
-#         return (sim_num, total_energy)
+        return (sim_num, eeucs, eeum, total_energy)
 
-#     except Exception as e:
-#         print(f"Simulation {sim_num} failed: {e}")
-#         return (sim_num, np.nan)
+    except Exception as e:
+        print(f"Simulation {sim_num} failed: {e}")
+        return (sim_num, np.nan, np.nan, np.nan)
 
 def run_single_eeu(sim_num_and_data):
     sim_num, tot_sim, sample, obs_data, variables, fixed_values, flags_dict = sim_num_and_data
@@ -161,21 +161,25 @@ def extract_other_prop(input_dirfile, output_dir_show):
 
         # load the variable names
         variables = list(flags_dict.keys())
-        
-        # look if in folder_name it exist a file that ends in .dynestyres exist in 
-        if any(f.endswith(".dynestyres") for f in os.listdir(folder_name)):
-            print(f"\nFound existing results in {folder_name}.dynestyres, loading them.")
 
-            # look for the file that ends in .dynestyres
-            dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
+        # look if in folder_name it exist a file that ends in .eenres exist in 
+        if any(f.endswith(".eenres-") for f in os.listdir(folder_name)):
+            print(f"\nFound existing results in {folder_name}.eenres, loading them.")
+
+            # look for the file that ends in .eenres
+            dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".eenres")][0]
             with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
                 dynesty_run_results = pickle.load(f)
 
             erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
             erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
-            erosion_energy_per_unit_cross_section_arr_end = dynesty_run_results.erosion_energy_per_unit_cross_section_end
-            erosion_energy_per_unit_mass_arr_end = dynesty_run_results.erosion_energy_per_unit_mass_arr_end
+            # erosion_energy_per_unit_cross_section_arr_end = dynesty_run_results.erosion_energy_per_unit_cross_section_end
+            # erosion_energy_per_unit_mass_arr_end = dynesty_run_results.erosion_energy_per_unit_mass_arr_end
+            total_energy_before_erosion = dynesty_run_results.total_energy_before_erosion
+            total_energy_before_second_erosion = dynesty_run_results.total_energy_before_second_erosion
+            Tot_energy = dynesty_run_results.Tot_energy
             rho_total_arr = dynesty_run_results.rho_total
+            # check if erosion_energy_total_end exists
 
             samples = dynesty_run_results.samples
 
@@ -183,7 +187,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
             w = weights / np.sum(weights)
 
         else:
-            print(f"\nNo existing results found in {folder_name}.dynestyres, running dynesty.")
+            print(f"\nNo existing results found in {folder_name} .eenres, running dynesty.")
             dynesty_run_results = dsampler.results
 
             weights = dynesty_run_results.importance_weights()
@@ -250,6 +254,9 @@ def extract_other_prop(input_dirfile, output_dir_show):
                 # F_par_arr[i] = F
                 # trail_length_arr[i] = tl
 
+            # get total erosion_energy from samples
+            total_energy_before_erosion = erosion_energy_per_unit_mass_arr * dynesty_run_results.samples[:, variables.index('m_init')]  # Total energy received before erosion in MJ
+
             sim_num = np.argmax(dynesty_run_results.logl)
             # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
             # create a copy of the best guess
@@ -262,6 +269,184 @@ def extract_other_prop(input_dirfile, output_dir_show):
                     best_guess[i] = 10**(best_guess[i])
                     # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")
                     samples[:, i] = 10**(samples[:, i])  # also transform all samples
+                if variable == 'noise_lag':
+                    obs_data.noise_lag = best_guess[i]
+                    obs_data.noise_vel = best_guess[i] * np.sqrt(2)/(1.0/32)
+                if variable == 'noise_lum':
+                    obs_data.noise_lum = best_guess[i]
+                if variable == 'erosion_rho_change':
+                    flag_total_rho = True
+
+            constjson_bestfit = Constants()
+
+            constjson_bestfit.__dict__['P_0m'] = obs_data.P_0m
+            constjson_bestfit.__dict__['lum_eff_type'] = obs_data.lum_eff_type
+            constjson_bestfit.__dict__['disruption_on'] = obs_data.disruption_on
+            constjson_bestfit.__dict__['dens_co'] = obs_data.dens_co
+            constjson_bestfit.__dict__['dt'] = obs_data.dt
+            constjson_bestfit.__dict__['h_kill'] = obs_data.h_kill
+            constjson_bestfit.__dict__['v_kill'] = obs_data.v_kill
+
+            # change Constants that have the same variable names and the one fixed
+            for variable in variables:
+                if variable in constjson_bestfit.__dict__.keys():
+                    constjson_bestfit.__dict__[variable] = best_guess[variables.index(variable)]
+
+            # do te same for the fixed values
+            for variable in fixed_values.keys():
+                if variable in constjson_bestfit.__dict__.keys():
+                    constjson_bestfit.__dict__[variable] = fixed_values[variable]
+                    print(f"Fixed value for {variable}: {fixed_values[variable]}")
+
+            best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
+
+            # extract the const from the best_guess_obj_plot
+            const_nominal = best_guess_obj_plot.const
+
+            # const_nominal.h_init = unique_heights_massvar_init
+            # const_nominal.erosion_height_start = unique_heights_massvar
+            # const_nominal.v_init = velocities_massvar_init
+            # const_nominal.m_init = mass_best_massvar
+
+            mass_best = np.array(best_guess_obj_plot.main_mass_arr[:-1], dtype=np.float64) # mass_total_active_arr # main_mass_arr
+            heights = np.array(best_guess_obj_plot.leading_frag_height_arr[:-1], dtype=np.float64)
+            velocities = np.array(best_guess_obj_plot.leading_frag_vel_arr[:-1], dtype=np.float64)
+
+            # Extract physical quantities
+            eeucs, eeum = energyReceivedBeforeErosion(const_nominal)
+            total_energy_before_erosion = eeum * best_guess_obj_plot.const.m_init / 1e3  # Total energy received before erosion in kJ from the erosion energy not the one computed
+
+            # precise erosion tal energy calculation ########################
+            erosion_height_start = best_guess_obj_plot.const.erosion_height_start+10000
+            ### get for each mass_best that is different from te previuse one get the height at which the mass loss happens
+            diff_mask = np.concatenate(([True], np.diff(mass_best) != 0))
+            ### only consider when mass actually changes enought
+            # diff_mask = np.concatenate(([True], ~np.isclose(np.diff(mass_best), 0)))
+            unique_heights_massvar = heights[diff_mask]
+            mass_best_massvar = mass_best[diff_mask]
+            velocities_massvar = velocities[diff_mask]
+            # # now delete any unique_heights_massvar and mass_best_massvar that are bigger than erosion_height_change
+            mass_best_massvar = mass_best_massvar[unique_heights_massvar < erosion_height_start]
+            velocities_massvar = velocities_massvar[unique_heights_massvar < erosion_height_start]
+            unique_heights_massvar = unique_heights_massvar[unique_heights_massvar < erosion_height_start]
+            
+            # add at the begnning the m_init to mass_best_massvar and h_init_best to unique_heights_massvar
+            ### same as erosion energy at erosion heiht
+            # unique_heights_massvar_init = np.concatenate(([best_guess_obj_plot.const.h_init,best_guess_obj_plot.const.erosion_height_start], unique_heights_massvar[1:]))
+            # unique_heights_massvar[0] = best_guess_obj_plot.const.erosion_height_start
+            ### normal way
+            unique_heights_massvar_init = np.concatenate(([best_guess_obj_plot.const.h_init], unique_heights_massvar))
+            mass_best_massvar = np.concatenate(([best_guess_obj_plot.const.m_init], mass_best_massvar))
+            velocities_massvar_init = np.concatenate(([best_guess_obj_plot.const.v_init], velocities_massvar))
+            # deete the last element of unique_heights_massvar_init and mass_best_massvar
+            unique_heights_massvar_init = unique_heights_massvar_init[:-1]
+            mass_best_massvar = mass_best_massvar[:-1]
+            velocities_massvar_init = velocities_massvar_init[:-1]
+
+            # Package inputs
+            inputs = [
+                (i, best_guess_obj_plot, unique_heights_massvar_init[i], unique_heights_massvar[i], mass_best_massvar[i], velocities_massvar_init[i])
+                for i in range(len(mass_best_massvar)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
+            ]
+            #     for i in range(len(dynesty_run_results.samples)) # 
+            num_cores = multiprocessing.cpu_count()
+
+            # Run in parallel
+            with Pool(processes=num_cores) as pool:  # adjust to number of cores
+                results = pool.map(run_total_energy_received, inputs)
+
+            N = len(mass_best_massvar)
+
+            # Pre-allocate
+            Tot_energy_arr = np.full(N, np.nan, dtype=float)
+            eeucs_end      = np.full(N, np.nan, dtype=float)   # MJ/m^2
+            eeum_end       = np.full(N, np.nan, dtype=float)   # MJ/kg
+            for res in results:
+                i, eeucs, eeum, tot_en = res
+                i = int(i)  # just in case
+                if 0 <= i < N:
+                    Tot_energy_arr[i] = np.nan if tot_en is None else (tot_en / 1e3)
+                    eeucs_end[i]      = np.nan if eeucs  is None else (eeucs  / 1e3)
+                    eeum_end[i]       = np.nan if eeum   is None else (eeum   / 1e3)
+
+            # now sum Tot_energy
+            Tot_energy = np.sum(Tot_energy_arr)
+            Tot_energy_per_unit_cross_section = np.nansum(eeucs_end)
+            Tot_energy_per_unit_mass = np.nansum(eeum_end) 
+            # print(f"Check: {total_energy_before_erosion} MJ")
+            # print(f"Precise total erosion energy before first erosion: {Tot_energy_arr[0]} MJ")
+
+            # plot y axis the unique_heights_massvar vs Tot_energy_arr
+            fig, ax = plt.subplots(1,2, figsize=(12, 6))
+            # make a first subplot with the lightcurve against height
+            ax[0].plot(best_guess_obj_plot.abs_magnitude,best_guess_obj_plot.leading_frag_height_arr/1000, color='k', label='Lightcurve')
+            ax[0].set_ylabel('Height [km]', fontsize=15)
+            ax[0].set_xlabel('Abs.Mag [-]', fontsize=15)
+            # make the Tot_energy_arr the sum of the previous values
+            Tot_energy_arr_cum = np.cumsum(Tot_energy_arr)
+            ax[1].plot(Tot_energy_arr_cum, unique_heights_massvar/1000, color='k', label='Erosion Energy Profile')
+            # add a hrizontal line at y=total_energy_before_erosion
+            ax[1].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Change')
+            ax[0].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Change')
+            
+            # found the index of erosion_height_change in variables
+            erosion_height_best = constjson_bestfit.erosion_height_start
+            # find the closest unique_heights_massvar to erosion_height_change_best
+            idx_closest = (np.abs(unique_heights_massvar - erosion_height_best)).argmin()
+            # summ all of the Tot_energy_arr until idx_closest
+            total_energy_before_first_erosion = Tot_energy_arr[:idx_closest].sum()
+            # found the index of erosion_height_change in variables
+            print(f"Total energy before first erosion: {total_energy_before_first_erosion} MJ")
+            total_energy_before_second_erosion = total_energy_before_first_erosion
+            if flag_total_rho:
+                # found the index of erosion_height_change in variables
+                erosion_height_change_best = constjson_bestfit.erosion_height_change
+                # find the closest unique_heights_massvar to erosion_height_change_best
+                idx_closest = (np.abs(unique_heights_massvar - erosion_height_change_best)).argmin()
+                # summ all of the Tot_energy_arr until idx_closest
+                total_energy_before_second_erosion = Tot_energy_arr[:idx_closest].sum()
+                print(f"Total energy before second erosion: {total_energy_before_second_erosion} MJ")
+                # print the constjson_bestfit.erosion_height_change as a line
+                ax[1].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.', label='Erosion Height Change')
+                ax[0].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.', label='Erosion Height Change')
+            print(f"Precise total erosion energy: {Tot_energy} MJ")
+            # ax[1].set_ylabel('Height (km)', fontsize=15)
+            ax[1].set_xlabel('Erosion Energy [kJ]', fontsize=15)
+            # put the x axis in log
+            ax[1].set_xscale('log')
+            Fe_mol = 55.845  # g/mol
+            Hentalpy_fusion_iron = 13.81  # kJ/mol
+            Hentalpy_vapor_iron = 340.0  # kJ/mol
+            print(f"Fusion energy iron: {Hentalpy_fusion_iron * best_guess_obj_plot.const.m_init*1000 / Fe_mol} kJ")
+            print(f"Vaporization energy iron: {Hentalpy_vapor_iron * best_guess_obj_plot.const.m_init*1000 / Fe_mol} kJ")   
+            # create a red line with the energy of fusion of iron 0.272 MJ/kg * m_init
+            fusion_energy_iron_kJ = Hentalpy_fusion_iron * best_guess_obj_plot.const.m_init*1000 / Fe_mol # kJ
+            Hentalpy_vapor_iron_kJ = Hentalpy_vapor_iron * best_guess_obj_plot.const.m_init*1000 / Fe_mol # kJ
+            ax[1].axvline(x=fusion_energy_iron_kJ, color='b', linestyle=':', label='Fusion Energy Iron')
+            ax[1].axvline(x=Hentalpy_vapor_iron_kJ, color='r', linestyle=':', label='Vaporization Energy Iron')
+            # put the legend
+            ax[1].legend()
+            # take the value of the y axis max and min value from ax[1] 
+            y_min = ax[1].get_ylim()[0]
+            y_max = ax[1].get_ylim()[1]
+            ax[0].set_ylim([y_min, y_max])
+            # put the x axis form 8 to the max value of abs magnitude
+            x_min = ax[0].get_xlim()[0]
+            ax[0].set_xlim([x_min, 8])
+            # flip the x axis
+            ax[0].invert_xaxis()
+            # add grid
+            ax[0].grid()
+            ax[1].grid()
+            # plt.show()
+            # save in folder_name as base_name+"_erosion_energy_profile.png"
+            fig.savefig(folder_name + os.sep + base_name+"_erosion_energy_profile.png", dpi=300)
+            plt.close(fig)
+
+            # # precise erosion tal energy calculation ########################
+
+            # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+
             best_guess_obj_plot = run_simulation(best_guess, obs_data, variables, fixed_values)
 
             # find erosion change height
@@ -273,55 +458,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
             heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
             mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
 
-            # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
             mass_before = best_guess_obj_plot.const.mass_at_erosion_change
-
-
-            # # precise erosion tal energy calculation ########################
-            # velocities = np.array(best_guess_obj_plot.leading_frag_vel_arr, dtype=np.float64)[:-1]
-            # erosion_height_start = best_guess_obj_plot.const.erosion_height_start
-            # # get for each mass_best that is different from te previuse one get the height at which the mass loss happens
-            # # diff_mask = np.concatenate(([True], np.diff(mass_best) != 0))
-            # diff_mask = np.concatenate(([True], ~np.isclose(np.diff(mass_best), 0)))
-            # unique_heights_massvar = heights[diff_mask]
-            # mass_best_massvar = mass_best[diff_mask]
-            # velocities_massvar = velocities[diff_mask]
-            # # now delete any unique_heights_massvar and mass_best_massvar that are bigger than erosion_height_change
-            # unique_heights_massvar = unique_heights_massvar[unique_heights_massvar <= erosion_height_start]
-            # mass_best_massvar = mass_best_massvar[:len(unique_heights_massvar)]
-            # velocities_massvar = velocities_massvar[:len(unique_heights_massvar)]
-            # # print the unique_heights_massvar and next to it the mass_best_massvar
-            # # add at the begnning the m_init to mass_best_massvar and h_init_best to unique_heights_massvar
-            # unique_heights_massvar_init = np.concatenate(([best_guess_obj_plot.const.h_init], unique_heights_massvar))
-            # mass_best_massvar = np.concatenate(([m_init], mass_best_massvar))
-            # velocities_massvar_init = np.concatenate(([best_guess_obj_plot.const.v_init], velocities_massvar))
-            # # deete the last element of unique_heights_massvar_init and mass_best_massvar
-            # unique_heights_massvar_init = unique_heights_massvar_init[:-1]
-            # mass_best_massvar = mass_best_massvar[:-1]
-            # velocities_massvar_init = velocities_massvar_init[:-1]
-
-            # # Package inputs
-            # inputs = [
-            #     (i, best_guess_obj_plot, unique_heights_massvar_init[i], unique_heights_massvar[i], mass_best_massvar[i], velocities_massvar_init[i])
-            #     for i in range(len(mass_best_massvar)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
-            # ]
-            # #     for i in range(len(dynesty_run_results.samples)) # 
-            # num_cores = multiprocessing.cpu_count()
-
-            # # Run in parallel
-            # with Pool(processes=num_cores) as pool:  # adjust to number of cores
-            #     results = pool.map(run_total_energy_received, inputs)
-
-            # N = len(mass_best_massvar)
-
-            # Tot_energy_arr = np.full(N, np.nan)
-            # for res in results:
-            #     i, tot_en = res
-            #     Tot_energy_arr[i] = tot_en / 1e3  # convert to kJ
-            # # now sum Tot_energy
-            # Tot_energy = np.sum(Tot_energy_arr)
-            
-            # # precise erosion tal energy calculation ########################
 
             if 'erosion_rho_change' in variables:
                 rho_total_arr = samples[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
@@ -338,8 +475,11 @@ def extract_other_prop(input_dirfile, output_dir_show):
             results.norm_weights = w
             results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
             results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
-            results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
-            results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
+            # results.erosion_energy_per_unit_cross_section_end = Tot_energy_per_unit_cross_section
+            # results.erosion_energy_per_unit_mass_arr_end = Tot_energy_per_unit_mass
+            results.total_energy_before_erosion = total_energy_before_erosion
+            results.total_energy_before_second_erosion = total_energy_before_second_erosion
+            results.Tot_energy = Tot_energy
             results.rho_total = rho_total_arr
 
             # delete from base_name _combined if it exists
@@ -347,11 +487,11 @@ def extract_other_prop(input_dirfile, output_dir_show):
                 base_name = base_name.replace('_combined', '')
 
             # Save
-            with open(folder_name + os.sep + base_name+"_results.dynestyres", "wb") as f:
+            with open(folder_name + os.sep + base_name+"_results.eenres", "wb") as f:
                 pickle.dump(results, f)
-                print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.dynestyres'}.")
+                print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.eenres'}.")
 
-        for i, x in enumerate([erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr, rho_total_arr, samples[:, variables.index('v_init')].astype(float), erosion_energy_per_unit_cross_section_arr_end, erosion_energy_per_unit_mass_arr_end, samples[:, variables.index('m_init')].astype(float)]):
+        for i, x in enumerate([erosion_energy_per_unit_cross_section_arr, erosion_energy_per_unit_mass_arr, rho_total_arr, samples[:, variables.index('v_init')].astype(float), samples[:, variables.index('m_init')].astype(float)]):
             # mask out NaNs
             mask = ~np.isnan(x)
             if not np.any(mask):
@@ -425,7 +565,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
         print(f"zenith_angle: {zenith_angle}°")
 
         # save the results for the file
-        file_eeu_dict[base_name] = (eeucs, eeum, F_par, kc_par, lenght_par, rho_total, zenith_angle, eeucs_end, eeum_end, m_init)
+        file_eeu_dict[base_name] = (eeucs, eeum, F_par, kc_par, lenght_par, rho_total, zenith_angle, total_energy_before_first_erosion, total_energy_before_second_erosion, Tot_energy, m_init)
 
         # with open(folder_name + os.sep + base_name+"_dynesty_results_only.dynestyres", "rb") as f:
         #     results = pickle.load(f)
@@ -440,9 +580,10 @@ def extract_other_prop(input_dirfile, output_dir_show):
     lenght_par = np.array([v[4] for v in file_eeu_dict.values()])
     rho_total = np.array([v[5] for v in file_eeu_dict.values()])
     zenith_angle = np.array([v[6] for v in file_eeu_dict.values()])
-    eeucs_end = np.array([v[7] for v in file_eeu_dict.values()])
-    eeum_end = np.array([v[8] for v in file_eeu_dict.values()])
-    m_init = np.array([v[9] for v in file_eeu_dict.values()])
+    eebest_first = np.array([v[7] for v in file_eeu_dict.values()])
+    eebest_second = np.array([v[8] for v in file_eeu_dict.values()])
+    Tot_energy = np.array([v[9] for v in file_eeu_dict.values()])
+    m_init = np.array([v[10] for v in file_eeu_dict.values()])
     
     ###########################################################################################################
 
@@ -450,19 +591,54 @@ def extract_other_prop(input_dirfile, output_dir_show):
     with open(os.path.join(output_dir_show, "erosion_energy_results_table.tex"), "w") as f:
         f.write("\\begin{tabular}{lcccccccccc}\n")
         f.write("\\hline\n")
-        f.write("ID & $E_{erosion}/A$ (MJ/m$^2$) & $E_{erosion}/m$ (MJ/kg) & F & $h_{kc}$ (km) & Length (km) & $\\rho$ (kg/m$^3$) & Zenith Angle (°) & $E_{erosion}/A$ end (MJ/m$^2$) & $E_{erosion}/m$ end (MJ/kg) & $m_{init}$ (kg) \\\\\n")
+        f.write("ID & $E_{erosion}/A$ (MJ/m$^2$) & $E_{erosion}/m$ (MJ/kg) & F & $h_{kc}$ (km) & Length (km) & $\\rho$ (kg/m$^3$) & Zenith Angle (°) & $m_{init}$ (kg) & $E_{erosion}$ to $h_e$ (MJ) & $E_{erosion}$ to $h_{e2}$ (MJ) & Tot $E_{erosion}$ \\\\\n")
         f.write("\\hline\n")
-        for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1, zenith_angle_1, eeucs_end_1, eeum_end_1, m_init_1) in file_eeu_dict.items():
-            f.write(f"{base_name} & {eeucs_1:.2f} & {eeum_1:.2f} & {F_par_1:.2f} & {kc_par_1:.2f} & {lenght_par_1:.2f} & {rho_total_1:.2f} & {zenith_angle_1:.2f} & {eeucs_end_1:.2f} & {eeum_end_1:.2f} & {m_init_1:.2f} \\\\\n")
+        for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1, zenith_angle_1, eebest_first_1, eebest_second_1, Tot_energy_1, m_init_1) in file_eeu_dict.items():
+            f.write(f"{base_name} & {eeucs_1:.2f} & {eeum_1:.2f} & {F_par_1:.2f} & {kc_par_1:.2f} & {lenght_par_1:.2f} & {rho_total_1:.2f} & {zenith_angle_1:.2f} & {m_init_1:.2f} & {eebest_first_1:.2f} & {eebest_second_1:.2f} & {Tot_energy_1:.2f} \\\\\n")
         f.write("\\hline\n")
         f.write("\\end{tabular}\n")
     print(f"Results table saved successfully in {os.path.join(output_dir_show, 'erosion_energy_results_table.tex')}.")
+
+    print("\nPlots:")
+
+    ###########################################################################################################
+
+    print("Bar plot for ID and 3 bar for eebest_first, eebest_second, Tot_energy...")
+
+    # create a bar plot with the ID on the x axis and 3 bars for eebest_first, eebest_second, Tot_energy
+    x = np.arange(len(file_eeu_dict))  # the label locations
+    width = 0.25  # the width of the bars  
+    fig, ax = plt.subplots(figsize=(12, 6))
+    bars1 = ax.bar(x - width, eebest_first, width, label='Erosion Energy to $h_e$', color='tab:blue')
+    bars2 = ax.bar(x, eebest_second, width, label='Erosion Energy to $h_{e2}$', color='tab:orange')
+    bars3 = ax.bar(x + width, Tot_energy, width, label='Total Erosion Energy', color='tab:green')
+    # add the value on top of each bar
+    for bars in [bars1, bars2, bars3]:
+        for bar in bars:
+            height = bar.get_height()
+            ax.annotate(f'{height:.3g}',
+                        xy=(bar.get_x() + bar.get_width() / 2, height),
+                        xytext=(0, 3),  # 3 points vertical offset
+                        textcoords="offset points",
+                        ha='center', va='bottom', fontsize=8)
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_ylabel('Erosion Energy [kJ]', fontsize=15)
+    # set the y axis in log
+    ax.set_yscale('log')
+    # ax.set_title('Erosion Energy before and after Erosion Height Change', fontsize=15)
+    ax.set_xticks(x)
+    ax.set_xticklabels(file_eeu_dict.keys(), rotation=45, ha='right', fontsize=10)
+    ax.legend(fontsize=12)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir_show, f"erosion_energy_bar_plot.png"), bbox_inches='tight', dpi=300)
+    # close the plot
+    plt.close()
 
     ###########################################################################################################
 
     # plot the distribution of rho_total
 
-    print("\nIron case F len erosion_energy_per_unit_cross_section ...")
+    print("Iron case F len erosion_energy_per_unit_cross_section ...")
 
     # plot the lenght_par against eeucs and color with F_par
     plt.figure(figsize=(10, 6))
@@ -546,11 +722,11 @@ def extract_other_prop(input_dirfile, output_dir_show):
     # plot the lenght_par against eeucs and color with F_par
     plt.figure(figsize=(10, 10))
     # after you’ve built your rho array:
-    scatter = plt.scatter(eeum, eeum_end, c=np.log10(rho_total), cmap='viridis', s=30,
+    scatter = plt.scatter(eeum, Tot_energy, c=np.log10(rho_total), cmap='viridis', s=30,
                             norm=norm, zorder=2)
     plt.colorbar(scatter, label='log$_{10}$ $\\rho$ (kg/m³)')
     plt.xlabel('Erosion Energy per Unit Mass before erosion (MJ/kg)', fontsize=15)
-    plt.ylabel('Total Energy for complete ablation per Unit Mass (MJ/kg)', fontsize=15)
+    plt.ylabel('Total Energy for complete ablation (MJ)', fontsize=15)
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
 
@@ -569,11 +745,11 @@ def extract_other_prop(input_dirfile, output_dir_show):
     # plot the lenght_par against eeucs and color with F_par
     plt.figure(figsize=(10, 10))
     # after you’ve built your rho array:
-    scatter = plt.scatter(eeucs, eeucs_end, c=np.log10(rho_total), cmap='viridis', s=30,
+    scatter = plt.scatter(eeucs, Tot_energy, c=np.log10(rho_total), cmap='viridis', s=30,
                             norm=norm, zorder=2)
     plt.colorbar(scatter, label='log$_{10}$ $\\rho$ (kg/m³)')
     plt.xlabel('Erosion Energy per Unit Cross Section before erosion (MJ/m²)', fontsize=15)
-    plt.ylabel('Total Energy for complete ablation per Unit Cross Section (MJ/m²)', fontsize=15)
+    plt.ylabel('Total Energy for complete ablation (MJ)', fontsize=15)
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
 
@@ -590,9 +766,10 @@ if __name__ == "__main__":
     import argparse
     ### COMMAND LINE ARGUMENTS
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
-    
+    # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Validation_nlive\nlive500
+    # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

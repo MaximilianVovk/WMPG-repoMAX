@@ -159,6 +159,7 @@ def plot_vel_lag_residuals_CAMO_EMCCD(obs_data, output_folder: str = "", file_na
                 [0.0, tmax], [-rmsd_v, -rmsd_v], [rmsd_v, rmsd_v],
                 color='lightgray', alpha=0.18, zorder=0
             )
+            print(f"RMSD Velocity Residuals: {rmsd_v:.4f} km/s")
 
         # Lag residual RMSD
         if res_l_all:
@@ -168,6 +169,7 @@ def plot_vel_lag_residuals_CAMO_EMCCD(obs_data, output_folder: str = "", file_na
                 [0.0, tmax], [-rmsd_l, -rmsd_l], [rmsd_l, rmsd_l],
                 color='lightgray', alpha=0.18, zorder=0
             )
+            print(f"RMSD Lag Residuals: {rmsd_l:.4f} m")
 
     ax_vel_res.set_xlabel('Time [s]')
     ax_vel_res.set_ylabel('Res.Vel [km/s]')
@@ -522,7 +524,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"/srv/public/mvovk/ASTRA/astra/CAMO+EMCCD-ASTRA",
+        default=r"/srv/public/mvovk/ASTRA/astra/CAMO+EMCCD-man",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

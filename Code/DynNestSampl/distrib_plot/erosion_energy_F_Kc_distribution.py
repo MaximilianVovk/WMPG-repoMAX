@@ -220,7 +220,7 @@ def run_single_eeu(sim_num_and_data):
         print(f"Simulation end {sim_num} failed: {e}")
         return (sim_num, eeucs, eeum, np.nan, np.nan)
 
-def extract_other_prop(input_dirfile, output_dir_show):
+def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_eenres=False):
     """
     Function to plot the distribution of the parameters from the dynesty files and save them as a table in LaTeX format.
     """
@@ -271,8 +271,14 @@ def extract_other_prop(input_dirfile, output_dir_show):
         # load the variable names
         variables = list(flags_dict.keys())
 
+        if recompute_eenres:
+            print(f"\nRecomputing .eenres for {folder_name}.")
+            check_flag = False  
+        else:
+            check_flag = True
+
         # look if in folder_name it exist a file that ends in .eenres exist in 
-        if any(f.endswith(".eenres") for f in os.listdir(folder_name)):
+        if any(f.endswith(".eenres") for f in os.listdir(folder_name)) and check_flag:
             print(f"\nFound existing results in {folder_name}.eenres, loading them.")
 
             # look for the file that ends in .eenres
@@ -541,6 +547,19 @@ def extract_other_prop(input_dirfile, output_dir_show):
 
             # plot y axis the unique_heights_massvar vs Tot_energy_arr
             fig, ax = plt.subplots(1,2, figsize=(12, 6))
+            # ABS MAGNITUDE
+            for station in np.unique(obs_data.stations_lum):
+                mask = obs_data.stations_lum == station
+                color = get_color(station)
+                ax[0].plot(obs_data.absolute_magnitudes[mask], obs_data.height_lum[mask] / 1000, 'x--', color=color)
+
+            # Integrate luminosity/magnitude if needed
+            if (1 / obs_data.fps_lum) > best_guess_obj_plot.const.dt:
+                best_guess_obj_plot.luminosity_arr, best_guess_obj_plot.abs_magnitude = luminosity_integration(
+                    best_guess_obj_plot.time_arr, best_guess_obj_plot.time_arr, best_guess_obj_plot.luminosity_arr,
+                    best_guess_obj_plot.const.dt, obs_data.fps_lum, obs_data.P_0m
+                )
+
             # make a first subplot with the lightcurve against height
             ax[0].plot(best_guess_obj_plot.abs_magnitude,best_guess_obj_plot.leading_frag_height_arr/1000, color='k', label='Lightcurve')
             ax[0].set_ylabel('Height [km]', fontsize=15)
@@ -771,7 +790,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
     ###########################################################################################################
 
     # save i a .tex file the results in a table for ID F lenght_par eeucs
-    with open(os.path.join(output_dir_show, "erosion_energy_results_table.tex"), "w") as f:
+    with open(os.path.join(output_dir_show, name_distr + "_erosion_energy_results_table.tex"), "w") as f:
         f.write("\\begin{tabular}{lcccccccccc}\n")
         f.write("\\hline\n")
         f.write("ID & $E_{erosion}/A$ (MJ/m$^2$) & $E_{erosion}/m$ (MJ/kg) & F & $h_{kc}$ (km) & Length (km) & $\\rho$ (kg/m$^3$) & Zenith Angle (°) & $m_{init}$ (kg) & $E_{erosion}$ to $h_e$ (MJ) & $E_{erosion}$ to $h_{e2}$ (MJ) & Tot $E_{erosion}$ \\\\\n")
@@ -781,7 +800,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
             f.write(f"{base_name} & {eeucs_1:.2f} & {eeum_1:.2f} & {F_par_1:.2f} & {kc_par_1:.2f} & {lenght_par_1:.2f} & {rho_total_1:.2f} & {zenith_angle_1:.2f} & {m_init_1:.2f} & {eebest_first_1:.2f} & {eebest_second_1:.2f} & {Tot_energy_1:.2f} \\\\\n")
         f.write("\\hline\n")
         f.write("\\end{tabular}\n")
-    print(f"Results table saved successfully in {os.path.join(output_dir_show, 'erosion_energy_results_table.tex')}.")
+    print(f"Results table saved successfully in {os.path.join(output_dir_show, name_distr + '_erosion_energy_results_table.tex')}.")
 
     print("\nPlots:")
 
@@ -814,7 +833,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
     ax.set_xticklabels(file_eeu_dict.keys(), rotation=45, ha='right', fontsize=10)
     ax.legend(fontsize=12)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"erosion_energy_bar_plot.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_erosion_energy_bar_plot.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -846,7 +865,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
     ax.set_xticklabels(file_eeu_dict.keys(), rotation=45, ha='right', fontsize=10)
     ax.legend(fontsize=12)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"erosion_energy_per_unit_mass_bar_plot.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_erosion_energy_per_unit_mass_bar_plot.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -870,7 +889,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
     plt.tick_params(axis='both', which='major', labelsize=12)
     plt.tick_params(axis='both', which='minor', labelsize=10)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"initial_velocity_vs_initial_mass.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_initial_velocity_vs_initial_mass.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -910,7 +929,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
     # plt.title('Kinetic Energy per Unit Cross Section vs Length')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -947,7 +966,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
     # plt.title('Kinetic Energy per Unit Cross Section vs Length')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"erosion_energy_vs_length_rho_total.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_erosion_energy_vs_length_rho_total.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -972,7 +991,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
 
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"Tot_energy_vs_erosion_energy_x_unitMass.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Tot_energy_vs_erosion_energy_x_unitMass.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -995,7 +1014,7 @@ def extract_other_prop(input_dirfile, output_dir_show):
 
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"Tot_energy_vs_erosion_energy_x_unitCrossSec.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Tot_energy_vs_erosion_energy_x_unitCrossSec.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
     
@@ -1020,6 +1039,10 @@ if __name__ == "__main__":
         default=r"",
         help="Name of the input files, if not given is folders name.")
 
+    arg_parser.add_argument('-new', '--new_eenres',
+        help="Recompute the .eenres files, even if they exist.",
+        action="store_false")
+
     # Parse
     cml_args = arg_parser.parse_args()
 
@@ -1030,5 +1053,11 @@ if __name__ == "__main__":
     if not os.path.exists(cml_args.output_dir):
         os.makedirs(cml_args.output_dir)
 
-    extract_other_prop(cml_args.input_dir, cml_args.output_dir)
+    # if name is empty set it to the input_dir
+    if cml_args.name == "":
+        # split base on the os.sep() and get the last element
+        cml_args.name = cml_args.input_dir.split(os.sep)[-1]
+        print(f"Setting name to {cml_args.name}")
+
+    extract_other_prop(cml_args.input_dir, cml_args.output_dir, cml_args.name, cml_args.new_eenres)
     

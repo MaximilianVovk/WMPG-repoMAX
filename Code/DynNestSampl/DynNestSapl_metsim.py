@@ -1022,9 +1022,11 @@ def posterior_bands_topk_check(
 
 def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', color_sim='black', label_sim='Best Fit'):
     fig = plt.figure(figsize=(15, 4))
-    # take only the reg ex with YYYYMMDD_HHMMSS
-    file_name_print = re.search(r'\d{8}_\d{6}', file_name).group(0)
-    fig.suptitle(file_name_print)
+    # # take only the reg ex with YYYYMMDD_HHMMSS
+    file_name_print = re.search(r'\d{8}_\d{6}', file_name)
+    # check if file_name_print is a None type object you can use .group(0)
+    if file_name_print is not None:
+        fig.suptitle(file_name_print.group(0))
 
     gs_main = gridspec.GridSpec(1, 4, figure=fig, wspace=0.3)
 

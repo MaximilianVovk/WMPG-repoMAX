@@ -50,7 +50,7 @@ def plot_vel_lag_residuals_CAMO_EMCCD(obs_data, output_folder: str = "", file_na
     """
 
     # ---- Figure layout: 2 cols (Velocity, Lag) × 2 rows (data, residuals)
-    fig = plt.figure(figsize=(8, 6))
+    fig = plt.figure(figsize=(14, 6)) # - 8, 6))
     gs = gridspec.GridSpec(
         2, 2, figure=fig,
         height_ratios=[3, 1], width_ratios=[1, 1],
@@ -91,6 +91,12 @@ def plot_vel_lag_residuals_CAMO_EMCCD(obs_data, output_folder: str = "", file_na
     ax_lag.set_ylabel('Lag [m]')
     ax_lag.grid(True, linestyle='--', color='lightgray')
 
+    # To collect residuals for RMSD
+    res_v_all = []  # km/s
+    res_l_all = []  # m
+    # Zero lines on residuals
+    ax_vel_res.axhline(0, color='lightgray')
+    ax_lag_res.axhline(0, color='lightgray')
     # ---- Build 01T/02T reference pool from lag arrays
     stations_lag_arr = np.asarray(obs_data.stations_lag)
     ref_mask = np.array([_is_01T02T(s) for s in stations_lag_arr])
@@ -129,14 +135,39 @@ def plot_vel_lag_residuals_CAMO_EMCCD(obs_data, output_folder: str = "", file_na
             res_v = (v_ok - ref_vel[idx]) / 1000.0  # km/s
             res_l = (l_ok - ref_lag[idx])
 
+            # Accumulate for RMSD
+            res_v_all.append(res_v)
+            res_l_all.append(res_l)
+
             ax_vel_res.plot(t_ok, res_v, '.', markersize=3,
                             label=f'{other_st} Δv', color=station_colors[other_st])
             ax_lag_res.plot(t_ok, res_l, '.', markersize=3,
                             label=f'{other_st} Δlag', color=station_colors[other_st])
 
-    # Zero lines on residuals
-    ax_vel_res.axhline(0, color='lightgray')
-    ax_lag_res.axhline(0, color='lightgray')
+    # ---- RMSD shading from t=0 to final time (if we have any residuals)
+    if hasattr(obs_data, 'time_lag') and len(obs_data.time_lag) > 0:
+        tmax = float(np.nanmax(obs_data.time_lag))
+        # # Ensure the shared x spans [0, tmax]
+        # ax_vel.set_xlim(0.0, tmax)
+        # ax_lag.set_xlim(0.0, tmax)
+
+        # Velocity residual RMSD
+        if res_v_all:
+            res_v_cat = np.concatenate(res_v_all)
+            rmsd_v = float(np.sqrt(np.nanmean(res_v_cat**2)))
+            ax_vel_res.fill_between(
+                [0.0, tmax], [-rmsd_v, -rmsd_v], [rmsd_v, rmsd_v],
+                color='lightgray', alpha=0.18, zorder=0
+            )
+
+        # Lag residual RMSD
+        if res_l_all:
+            res_l_cat = np.concatenate(res_l_all)
+            rmsd_l = float(np.sqrt(np.nanmean(res_l_cat**2)))
+            ax_lag_res.fill_between(
+                [0.0, tmax], [-rmsd_l, -rmsd_l], [rmsd_l, rmsd_l],
+                color='lightgray', alpha=0.18, zorder=0
+            )
 
     ax_vel_res.set_xlabel('Time [s]')
     ax_vel_res.set_ylabel('Res.Vel [km/s]')
@@ -491,7 +522,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"/srv/public/mvovk/ASTRA/Justin_paper/20221022_075829_skyfit2_ZB/20221022-075828.925593_manEMCCD+CAMO",
+        default=r"/srv/public/mvovk/ASTRA/astra/CAMO+EMCCD-ASTRA",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

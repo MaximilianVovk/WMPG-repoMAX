@@ -23,6 +23,7 @@ import itertools
 from dynesty.utils import quantile as _quantile
 from scipy.ndimage import gaussian_filter as norm_kde
 import matplotlib.cm as cm
+from matplotlib import ticker as mticker
 from matplotlib.colors import Normalize
 from dynesty import utils as dyfunc
 from matplotlib.ticker import MaxNLocator, NullLocator, ScalarFormatter
@@ -41,7 +42,7 @@ import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 def run_total_energy_received(sim_num_and_data):
-    sim_num, best_guess_obj_plot, unique_heights_massvar_init, unique_heights_massvar, mass_best_massvar, velocities_massvar_init = sim_num_and_data
+    sim_num, best_guess_obj_plot, unique_heights_massvar_init, unique_heights_massvar, mass_best_massvar, velocities_massvar_init, lambda_val = sim_num_and_data
 
     # extract the const from the best_guess_obj_plot
     const_nominal = best_guess_obj_plot.const
@@ -53,7 +54,7 @@ def run_total_energy_received(sim_num_and_data):
 
     # Extract physical quantities
     try:
-        eeucs, eeum = energyReceivedBeforeErosion(const_nominal)
+        eeucs, eeum = energyReceivedBeforeErosion(const_nominal, lambda_val)
         total_energy = eeum * const_nominal.m_init  # Total energy received before erosion in MJ
 
         return (sim_num, eeucs, eeum, total_energy)
@@ -73,7 +74,7 @@ def compute_temperature_profile_iron(
     Tm0=280.0,               # initial meteoroid temperature [K]
     emissivity=0.80,         # iron emissivity (oxidized/hot surface ~0.7–0.9) DRAMA iron: 0.7
     c_spec=450.0,            # iron specific heat [J/kg/K] (room-T value; rises with T, but this is a good baseline)
-    heat_xfer_coeff=1,       # heat transfer coefficient (same form as paper; aerodynamic, not material)
+    lambda_val=1,       # heat transfer coefficient (same form as paper; aerodynamic, not material)
     sigma_B=5.670374419e-8   # Stefan–Boltzmann constant
 ):
     """
@@ -137,7 +138,7 @@ def compute_temperature_profile_iron(
 
         # Aerodynamic (convective) heating power term:
         #   (ϕ * 1/2 * ρ_a * v^3) * S
-        q_in = heat_xfer_coeff * 0.5 * rho_a * (vi ** 3) * Sa
+        q_in = lambda_val * 0.5 * rho_a * (vi ** 3) * Sa
 
         # Radiative loss power term:
         #   4 * σB * ε * (T_m^4 - T_a^4) * S
@@ -164,14 +165,14 @@ def compute_temperature_profile_iron(
     rho_a_last = float(rho_a_fn(h[-1]))
     Ta_last = float(T_a_fn(h[-1]))
     Sa_last = area_factor(m[-1])
-    q_conv[-1] = heat_xfer_coeff * 0.5 * rho_a_last * (v[-1] ** 3) * Sa_last
+    q_conv[-1] = lambda_val * 0.5 * rho_a_last * (v[-1] ** 3) * Sa_last
     q_rad[-1]  = 4.0 * sigma_B * emissivity * (Tm[-1] ** 4 - Ta_last ** 4) * Sa_last
 
     return h, Tm, dT, q_conv, q_rad, E_conv, E_rad, E_net
 
 
 def run_single_eeu(sim_num_and_data):
-    sim_num, tot_sim, sample, obs_data, variables, fixed_values, flags_dict = sim_num_and_data
+    sim_num, tot_sim, sample, obs_data, variables, fixed_values, flags_dict, lambda_val = sim_num_and_data
 
     # print(f"Running simulation {sim_num}/{tot_sim}")
     
@@ -201,7 +202,7 @@ def run_single_eeu(sim_num_and_data):
 
     # Extract physical quantities
     try:
-        eeucs, eeum = energyReceivedBeforeErosion(const_nominal)
+        eeucs, eeum = energyReceivedBeforeErosion(const_nominal, lambda_val)
 
     except Exception as e:
         print(f"Simulation {sim_num} failed: {e}")
@@ -212,7 +213,7 @@ def run_single_eeu(sim_num_and_data):
 
     # Extract physical quantities
     try:
-        eeucs_end, eeum_end = energyReceivedBeforeErosion(const_nominal)
+        eeucs_end, eeum_end = energyReceivedBeforeErosion(const_nominal, lambda_val)
 
         return (sim_num, eeucs, eeum, eeucs_end, eeum_end)
 
@@ -220,7 +221,7 @@ def run_single_eeu(sim_num_and_data):
         print(f"Simulation end {sim_num} failed: {e}")
         return (sim_num, eeucs, eeum, np.nan, np.nan)
 
-def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_eenres=False):
+def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val=1, recompute_eenres=False):
     """
     Function to plot the distribution of the parameters from the dynesty files and save them as a table in LaTeX format.
     """
@@ -296,6 +297,11 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
             energy_per_mass_before_second_erosion = dynesty_run_results.energy_per_mass_before_second_erosion
             Tot_energy = dynesty_run_results.Tot_energy
             rho_total_arr = dynesty_run_results.rho_total
+            # check if lambda_val exists in the dynesty_run_results
+            if hasattr(dynesty_run_results, 'lambda_val'):
+                lambda_val = dynesty_run_results.lambda_val
+            else:
+                lambda_val = 1
             # check if erosion_energy_total_end exists
 
             samples = dynesty_run_results.samples
@@ -304,7 +310,8 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
             w = weights / np.sum(weights)
 
         else:
-            print(f"\nNo existing results found in {folder_name} .eenres, running dynesty.")
+            if not recompute_eenres:
+                print(f"\nNo existing results found in {folder_name} .eenres, running dynesty.")
             dynesty_run_results = dsampler.results
 
             weights = dynesty_run_results.importance_weights()
@@ -338,7 +345,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
 
             # Package inputs
             inputs = [
-                (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables, fixed_values, flags_dict)
+                (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables, fixed_values, flags_dict, lambda_val)
                 for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
             ]
             #     for i in range(len(dynesty_run_results.samples)) # 
@@ -430,7 +437,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
             velocities = np.array(best_guess_obj_plot.leading_frag_vel_arr[:-1], dtype=np.float64)
 
             # Extract physical quantities
-            eeucs_best, eeum_best = energyReceivedBeforeErosion(const_nominal)
+            eeucs_best, eeum_best = energyReceivedBeforeErosion(const_nominal, lambda_val)
             total_energy_before_erosion = eeum_best * best_guess_obj_plot.const.m_init / 1e3  # Total energy received before erosion in kJ from the Kinetic Energy not the one computed
             eeum_best = eeum_best / 1e6  # convert to MJ/kg
             # precise erosion tal energy calculation ########################
@@ -454,6 +461,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
                 velocities_ms=velocities_massvar,
                 masses_kg=mass_best_massvar,
                 const=best_guess_obj_plot.const,
+                lambda_val=lambda_val,
                 rho_a_fn=rho_a_poly,              # or your own atmosphere function
                 T_a_fn=lambda h: 280.0,           # constant Ta per the paper assumption
                 Tm0=280.0
@@ -480,8 +488,8 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
             ax[1].set_xlabel('Power [kW]', fontsize=15)
             # ax[1].set_ylabel('Height [km]', fontsize=15)
             # put te line when the erosion starts
-            ax[0].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Change')
-            ax[1].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Change')
+            ax[0].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start $h_{e}$')
+            ax[1].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start $h_{e}$')
             ax[1].legend()
             # put the x axis in log scale
             # ax[0].set_xscale('log')
@@ -514,7 +522,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
 
             # Package inputs
             inputs = [
-                (i, best_guess_obj_plot, unique_heights_massvar_init[i], unique_heights_massvar[i], mass_best_massvar[i], velocities_massvar_init[i])
+                (i, best_guess_obj_plot, unique_heights_massvar_init[i], unique_heights_massvar[i], mass_best_massvar[i], velocities_massvar_init[i], lambda_val)
                 for i in range(len(mass_best_massvar)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
             ]
             #     for i in range(len(dynesty_run_results.samples)) # 
@@ -547,11 +555,14 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
 
             # plot y axis the unique_heights_massvar vs Tot_energy_arr
             fig, ax = plt.subplots(1,2, figsize=(12, 6))
+            station_colors = {}
+            cmap = plt.get_cmap("tab10")
             # ABS MAGNITUDE
             for station in np.unique(obs_data.stations_lum):
                 mask = obs_data.stations_lum == station
-                color = get_color(station)
-                ax[0].plot(obs_data.absolute_magnitudes[mask], obs_data.height_lum[mask] / 1000, 'x--', color=color)
+                if station not in station_colors:
+                    station_colors[station] = cmap(len(station_colors) % 10)
+                ax[0].plot(obs_data.absolute_magnitudes[mask], obs_data.height_lum[mask] / 1000, 'x--', color=station_colors[station], label=station)
 
             # Integrate luminosity/magnitude if needed
             if (1 / obs_data.fps_lum) > best_guess_obj_plot.const.dt:
@@ -561,15 +572,15 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
                 )
 
             # make a first subplot with the lightcurve against height
-            ax[0].plot(best_guess_obj_plot.abs_magnitude,best_guess_obj_plot.leading_frag_height_arr/1000, color='k', label='Lightcurve')
+            ax[0].plot(best_guess_obj_plot.abs_magnitude,best_guess_obj_plot.leading_frag_height_arr/1000, color='k', label='Best Fit Simulation')
             ax[0].set_ylabel('Height [km]', fontsize=15)
             ax[0].set_xlabel('Abs.Mag [-]', fontsize=15)
             # make the Tot_energy_arr the sum of the previous values
             Tot_energy_arr_cum = np.cumsum(Tot_energy_arr)
-            ax[1].plot(Tot_energy_arr_cum, unique_heights_massvar/1000, color='k', label='Kinetic Energy Profile')
+            ax[1].plot(Tot_energy_arr_cum, unique_heights_massvar/1000, color='k', label='Receive Energy Profile')
             # add a hrizontal line at y=total_energy_before_erosion
-            ax[1].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start')
-            ax[0].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start')
+            ax[1].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start $h_{e}$')
+            ax[0].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--')
             
             # found the index of erosion_height_change in variables
             erosion_height_best = constjson_bestfit.erosion_height_start
@@ -594,15 +605,15 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
                 print(f"Unit energy before second erosion: {energy_per_mass_before_second_erosion} MJ/kg")
                 # print(f"Total energy before second erosion: {total_energy_before_second_erosion} kJ")
                 # print the constjson_bestfit.erosion_height_change as a line
-                ax[1].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.', label='Erosion Height Change')
-                ax[0].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.', label='Erosion Height Change')
+                ax[1].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.', label='Erosion Height Change $h_{e_2}$')
+                ax[0].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.')
             print(f"Precise total Kinetic Energy: {Tot_energy} MJ")
             # temperature line when is 1811 K
             if len(melting_idx) > 0:
-                ax[1].axhline(y=melting_height, color='r', linestyle='--', label='Melting Point Reached')
+                ax[1].axhline(y=melting_height, color='r', linestyle='--')
                 ax[0].axhline(y=melting_height, color='r', linestyle='--', label='Melting Point Reached')
             # ax[1].set_ylabel('Height (km)', fontsize=15)
-            ax[1].set_xlabel('Kinetic Energy [kJ]', fontsize=15)
+            ax[1].set_xlabel('Energy [kJ]', fontsize=15)
             # put the x axis in log
             ax[1].set_xscale('log')
             Fe_mol = 55.845  # g/mol
@@ -628,6 +639,10 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
             ax[0].set_ylim([y_min, y_max])
             ax[1].set_xlim([x_min, x_max])
             ax[1].set_ylim([y_min, y_max])
+            # tilt by 45 degrees the tics of x
+            ax[1].tick_params(axis='x', rotation=45)
+            # also the minor tics tilt them by 45 degrees
+            ax[1].tick_params(axis='x', which='minor', rotation=45)
             # put the x axis form 8 to the max value of abs magnitude
             x_min = ax[0].get_xlim()[0]
             ax[0].set_xlim([x_min, 8])
@@ -642,9 +657,11 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
             ax[1].grid()
             # put the legend
             ax[1].legend()
+            ax[0].legend()
             # plt.show()
             # save in folder_name as base_name+"_erosion_energy_profile.png"
-            fig.savefig(folder_name + os.sep + base_name+"_erosion_energy_profile.png", dpi=300)
+            fig.tight_layout()
+            fig.savefig(folder_name + os.sep + base_name+"_Lambda"+str(lambda_val)+"_erosion_energy_profile.png", bbox_inches='tight', dpi=300)
             plt.close(fig)
 
             # # precise erosion tal energy calculation ########################
@@ -689,6 +706,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
             results.energy_per_mass_before_second_erosion = energy_per_mass_before_second_erosion
             results.Tot_energy = Tot_energy
             results.rho_total = rho_total_arr
+            results.lambda_val = lambda_val
 
             # delete from base_name _combined if it exists
             if '_combined' in base_name:
@@ -812,9 +830,9 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
     x = np.arange(len(file_eeu_dict))  # the label locations
     width = 0.25  # the width of the bars  
     fig, ax = plt.subplots(figsize=(12, 6))
-    bars1 = ax.bar(x - width, eebest_first, width, label='Kinetic Energy to $h_e$', color='tab:blue')
-    bars2 = ax.bar(x, eebest_second, width, label='Kinetic Energy to $h_{e2}$', color='tab:orange')
-    bars3 = ax.bar(x + width, Tot_energy, width, label='Total Kinetic Energy', color='tab:green')
+    bars1 = ax.bar(x - width, eebest_first, width, label='Received Energy before $h_e$', color='tab:blue')
+    bars2 = ax.bar(x, eebest_second, width, label='Received Energy before $h_{e2}$', color='tab:orange')
+    bars3 = ax.bar(x + width, Tot_energy, width, label='Total Received Energy', color='tab:green')
     # add the value on top of each bar
     for bars in [bars1, bars2, bars3]:
         for bar in bars:
@@ -825,7 +843,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
                         textcoords="offset points",
                         ha='center', va='bottom', fontsize=8)
     # Add some text for labels, title and custom x-axis tick labels, etc.
-    ax.set_ylabel('Kinetic Energy [kJ]', fontsize=15)
+    ax.set_ylabel('Energy [kJ]', fontsize=15)
     # set the y axis in log
     ax.set_yscale('log')
     # ax.set_title('Kinetic Energy before and after Erosion Height Change', fontsize=15)
@@ -833,7 +851,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
     ax.set_xticklabels(file_eeu_dict.keys(), rotation=45, ha='right', fontsize=10)
     ax.legend(fontsize=12)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_erosion_energy_bar_plot.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Lambda{lambda_val}_erosion_energy_bar_plot.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -843,8 +861,8 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
     print("Bar plot for ID and 2 bar for eeum_best, eeum_best2 with fusion energy of iron...")
     fusion_energy_iron_MJ = (13.81 / 55.845 + (1811 - 275) * 0.000449)  # MJ/kg
     fig, ax = plt.subplots(figsize=(12, 6))
-    bars1 = ax.bar(x - width/2, eeum_best, width, label='Kinetic Energy per unit mass to $h_e$', color='tab:blue')
-    bars2 = ax.bar(x + width/2, eeum_best2, width, label='Kinetic Energy per unit mass to $h_{e2}$', color='tab:red')
+    bars1 = ax.bar(x - width/2, eeum_best, width, label='Received Energy per unit mass before $h_e$', color='tab:blue')
+    bars2 = ax.bar(x + width/2, eeum_best2, width, label='Received Energy per unit mass before $h_{e2}$', color='tab:red')
     # add the value on top of each bar
     for bars in [bars1, bars2]:
         for bar in bars:
@@ -855,7 +873,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
                         textcoords="offset points",
                         ha='center', va='bottom', fontsize=8)
     # Add some text for labels, title and custom x-axis tick labels, etc.
-    ax.set_ylabel('Kinetic Energy per Unit mass [MJ/kg]', fontsize=15)
+    ax.set_ylabel('Energy per Unit mass [MJ/kg]', fontsize=15)
     # set the y axis in log
     ax.set_yscale('log')
     ax.axhline(y=fusion_energy_iron_MJ, color='purple', linestyle='-.', label='Tot.energy per unit mass for Fusion of Iron')
@@ -865,7 +883,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
     ax.set_xticklabels(file_eeu_dict.keys(), rotation=45, ha='right', fontsize=10)
     ax.legend(fontsize=12)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_erosion_energy_per_unit_mass_bar_plot.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Lambda{lambda_val}_erosion_energy_per_unit_mass_bar_plot.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -907,7 +925,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
                             norm=norm, zorder=2)
     plt.colorbar(scatter, label='F')
     plt.xlabel('Length (km)', fontsize=15)
-    plt.ylabel('Kinetic Energy per Unit Cross Section (MJ/m²)', fontsize=15)
+    plt.ylabel('Received Energy per Unit Cross Section (MJ/m²)', fontsize=15)
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
 
@@ -929,7 +947,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
     # plt.title('Kinetic Energy per Unit Cross Section vs Length')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Lambda{lambda_val}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -944,7 +962,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
                             norm=norm, zorder=2)
     plt.colorbar(scatter, label='log$_{10}$ $\\rho$ (kg/m³)')
     plt.xlabel('Length (km)', fontsize=15)
-    plt.ylabel('Kinetic Energy per Unit Cross Section (MJ/m²)', fontsize=15)
+    plt.ylabel('Received Energy per Unit Cross Section (MJ/m²)', fontsize=15)
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
 
@@ -966,7 +984,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
     # plt.title('Kinetic Energy per Unit Cross Section vs Length')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_erosion_energy_vs_length_rho_total.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Lambda{lambda_val}_erosion_energy_vs_length_rho_total.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -974,7 +992,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
 
     # plot the distribution of rho_total
 
-    print("Until end and energy up to erosion  unit mass plot...")
+    print("Until end and energy up to erosion unit mass plot...")
 
     # # do the negative log of the m_initt 
     # m_init = abs(np.log10(m_init))
@@ -984,14 +1002,14 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
     scatter = plt.scatter(eeum, Tot_energy, c=np.log10(rho_total), cmap='viridis', s=30,
                             norm=norm, zorder=2)
     plt.colorbar(scatter, label='log$_{10}$ $\\rho$ (kg/m³)')
-    plt.xlabel('Kinetic Energy per Unit Mass before erosion (MJ/kg)', fontsize=15)
+    plt.xlabel('Received Energy per Unit Mass before erosion (MJ/kg)', fontsize=15)
     plt.ylabel('Total Energy for complete ablation (kJ)', fontsize=15)
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
 
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Tot_energy_vs_erosion_energy_x_unitMass.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Lambda{lambda_val}_Tot_energy_vs_erosion_energy_x_unitMass.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
 
@@ -1007,14 +1025,14 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", recompute_
     scatter = plt.scatter(eeucs, Tot_energy, c=np.log10(rho_total), cmap='viridis', s=30,
                             norm=norm, zorder=2)
     plt.colorbar(scatter, label='log$_{10}$ $\\rho$ (kg/m³)')
-    plt.xlabel('Kinetic Energy per Unit Cross Section before erosion (MJ/m²)', fontsize=15)
+    plt.xlabel('Received Energy per Unit Cross Section before erosion (MJ/m²)', fontsize=15)
     plt.ylabel('Total Energy for complete ablation (kJ)', fontsize=15)
     # increase the size of the tick labels
     plt.gca().tick_params(labelsize=15)
 
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Tot_energy_vs_erosion_energy_x_unitCrossSec.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{name_distr}_Lambda{lambda_val}_Tot_energy_vs_erosion_energy_x_unitCrossSec.png"), bbox_inches='tight', dpi=300)
     # close the plot
     plt.close()
     
@@ -1028,7 +1046,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Validation_nlive\nlive500
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Best_iron_tau",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau008\20181231_023918",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -1039,9 +1057,12 @@ if __name__ == "__main__":
         default=r"",
         help="Name of the input files, if not given is folders name.")
 
+    arg_parser.add_argument('--lam', metavar='LAMBDA', type=float, default=1,
+        help="Heat transfer coefficient.")
+
     arg_parser.add_argument('-new', '--new_eenres',
         help="Recompute the .eenres files, even if they exist.",
-        action="store_false")
+        action="store_true")
 
     # Parse
     cml_args = arg_parser.parse_args()
@@ -1059,5 +1080,5 @@ if __name__ == "__main__":
         cml_args.name = cml_args.input_dir.split(os.sep)[-1]
         print(f"Setting name to {cml_args.name}")
 
-    extract_other_prop(cml_args.input_dir, cml_args.output_dir, cml_args.name, cml_args.new_eenres)
+    extract_other_prop(cml_args.input_dir, cml_args.output_dir, cml_args.name, cml_args.lam, True)
     

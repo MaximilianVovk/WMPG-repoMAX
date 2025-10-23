@@ -9,6 +9,7 @@ Date: 2025-04-16
 import sys
 import os
 
+from matplotlib.lines import Line2D
 import numpy as np
 
 # Add the parent directory to the sys.path
@@ -24,6 +25,7 @@ from scipy.stats import gaussian_kde
 from dynesty import utils as dyfunc
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.gridspec import GridSpec
+from matplotlib.colors import LinearSegmentedColormap
 import itertools
 from dynesty.utils import quantile as _quantile
 from scipy.ndimage import gaussian_filter as norm_kde
@@ -74,6 +76,65 @@ def iron_percent(v_km_s):
     z = np.maximum(np.asarray(v_km_s) - v0, 0.0)
     return A * (z**(k-1.0)) * np.exp(- (z/theta)**m)
 
+
+def _weighted_quantile(x, q, w):
+    x = np.asarray(x); w = np.asarray(w)
+    m = np.isfinite(x) & np.isfinite(w) & (w >= 0)
+    x = x[m]; w = w[m]
+    if x.size == 0:
+        return np.nan if np.isscalar(q) else [np.nan]*len(q)
+    order = np.argsort(x)
+    x = x[order]; w = w[order]
+    cdf = np.cumsum(w)
+    cdf = (cdf - 0.5*w[order]) / np.sum(w)
+    def interp(qi):
+        if qi <= 0: return x[0]
+        if qi >= 1: return x[-1]
+        return np.interp(qi, cdf, x)
+    if np.isscalar(q):
+        return interp(q)
+    return [interp(qi) for qi in q]
+
+def _HIST2D(x, y, **kwargs):
+    """Wrapper that calls dynesty's _hist2d wherever it lives."""
+    # if dyplot has it as a private attr, prefer that (matches your cornerplot call site)
+    if hasattr(dyplot, "_hist2d"):
+        return dyplot._hist2d(x, y, **kwargs)
+    if _hist2d_func is not None:
+        return _hist2d_func(x, y, **kwargs)
+    raise RuntimeError("Could not locate dynesty.plotting._hist2d. "
+                    "Ensure dynesty>=2.x is installed or import _hist2d yourself.")
+
+def _plot_2d_distribution(ax, x, y, w, span_frac=0.98, levels=[0.1, 0.4, 0.65, 0.85], pad_frac=0.05, smooth_frac=0.02, color='black'):
+
+    qlo = (1.0 - span_frac)/2.0
+    qhi = 1.0 - qlo
+    xlo, xhi = _weighted_quantile(x, [qlo, qhi], w)
+    ylo, yhi = _weighted_quantile(y, [qlo, qhi], w)
+
+    xr = (xhi - xlo) or 1.0
+    yr = (yhi - ylo) or 1.0
+    xspan = [xlo - pad_frac*xr, xhi + pad_frac*xr]
+    yspan = [ylo - pad_frac*yr, yhi + pad_frac*yr]
+
+    sx = smooth_frac
+    sy = smooth_frac
+
+    _HIST2D(x, y,
+            ax=ax,
+            span=[xspan, yspan],
+            weights=w,
+            color=color,
+            smooth=[sx, sy],
+            levels=levels,
+            fill_contours=True,
+            plot_contours=True)
+
+    # ax.set_xlim(xspan); ax.set_ylim(yspan)
+    # ax.xaxis.set_major_locator(MaxNLocator(5, prune="lower"))
+    # ax.yaxis.set_major_locator(MaxNLocator(5, prune="lower"))
+    # ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=False))
+    # ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
 
 def reweight_iron_by_velocity(results, variables, rho_threshold=4000.0):
     """
@@ -936,6 +997,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     eta_corrected = []
     sigma_corrected = []
     tau_corrected = []
+    mm_size_corrected = []
+    mass_distr = []
     erosion_energy_per_unit_cross_section_corrected = []
     erosion_energy_per_unit_mass_corrected = []
     erosion_energy_per_unit_cross_section_end_corrected = []
@@ -1161,6 +1224,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
         # compute the meteoroid_diameter from a spherical shape in mm
         all_diameter_mm = (6 * samples[:, variables_sing.index('m_init')].astype(float) / (np.pi * x_valid_rho))**(1/3) * 1000
+        mm_size_corrected.append(all_diameter_mm)
+        mass_distr.append(samples[:, variables_sing.index('m_init')].astype(float))
         # make the quntile base on w 
         meteoroid_diameter_mm_lo, meteoroid_diameter_mm, meteoroid_diameter_mm_hi = _quantile(all_diameter_mm, [0.025, 0.5, 0.975], weights=w)
         meteoroid_diameter_mm_lo = (meteoroid_diameter_mm - meteoroid_diameter_mm_lo) #/1.96
@@ -1182,47 +1247,45 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
             if any(f.endswith(".dynestyres") for f in os.listdir(folder_name)):
                 print(f"\nFound existing results in {folder_name}.dynestyres, loading them.")
 
-                # look for the file that ends in .dynestyres
-                dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
-                with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
-                    dynesty_run_results = pickle.load(f)
+                # # look for the file that ends in .dynestyres
+                # dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
+                # with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
+                #     dynesty_run_results = pickle.load(f)
 
-                erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
-                erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
-                # erosion_energy_per_unit_cross_section_arr_end = dynesty_run_results.erosion_energy_per_unit_cross_section_end
-                # erosion_energy_per_unit_mass_arr_end = dynesty_run_results.erosion_energy_per_unit_mass_arr_end
+                # erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
+                # erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
 
             else:
                 print(f"\nNo existing results found in {folder_name}.dynestyres, running dynesty.")
-                dynesty_run_results = dsampler.results
+                # dynesty_run_results = dsampler.results
 
-                ### add MORE PARAMETERS ###
+                # ### add MORE PARAMETERS ###
 
-                # Package inputs
-                inputs = [
-                    (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
-                    for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
-                ]
-                #     for i in range(len(dynesty_run_results.samples)) # 
-                num_cores = multiprocessing.cpu_count()
+                # # Package inputs
+                # inputs = [
+                #     (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
+                #     for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
+                # ]
+                # #     for i in range(len(dynesty_run_results.samples)) # 
+                # num_cores = multiprocessing.cpu_count()
 
-                # Run in parallel
-                with Pool(processes=num_cores) as pool:  # adjust to number of cores
-                    results = pool.map(run_single_eeu, inputs)
+                # # Run in parallel
+                # with Pool(processes=num_cores) as pool:  # adjust to number of cores
+                #     results = pool.map(run_single_eeu, inputs)
 
-                N = len(dynesty_run_results.samples)
+                # N = len(dynesty_run_results.samples)
 
-                erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
-                erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
-                # erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
-                # erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
+                # erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
+                # erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
+                # # erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
+                # # erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
 
-                for res in results:
-                    i, eeucs, eeum, eeucs_end, eeum_end = res
-                    erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
-                    erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
-                    # erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
-                    # erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
+                # for res in results:
+                #     i, eeucs, eeum, eeucs_end, eeum_end = res
+                #     erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
+                #     erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
+                #     # erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
+                #     # erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
 
                 sim_num = np.argmax(dynesty_run_results.logl)
                 # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
@@ -1249,6 +1312,9 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
                 # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
                 mass_before = best_guess_obj_plot.const.mass_at_erosion_change
+                # if mass_before is None use the old method
+                if mass_before is None:
+                    mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
                 
                 # # precise erosion tal energy calculation ########################
 
@@ -1265,8 +1331,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
                 # Add your custom attributes
                 results.weights = dynesty_run_results.importance_weights()
                 results.norm_weights = w
-                results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
-                results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
+                # results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
+                # results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
                 # results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
                 # results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
                 results.rho_total = rho_total_arr
@@ -1280,8 +1346,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
                     pickle.dump(results, f)
                     print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.dynestyres'}.")
 
-            erosion_energy_per_unit_cross_section_corrected.append(erosion_energy_per_unit_cross_section_arr)
-            erosion_energy_per_unit_mass_corrected.append(erosion_energy_per_unit_mass_arr)
+            # erosion_energy_per_unit_cross_section_corrected.append(erosion_energy_per_unit_cross_section_arr)
+            # erosion_energy_per_unit_mass_corrected.append(erosion_energy_per_unit_mass_arr)
             # erosion_energy_per_unit_cross_section_end_corrected.append(erosion_energy_per_unit_cross_section_arr_end)
             # erosion_energy_per_unit_mass_end_corrected.append(erosion_energy_per_unit_mass_arr_end)
 
@@ -1391,12 +1457,12 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     rho_corrected = np.concatenate(rho_corrected)
     eta_corrected = np.concatenate(eta_corrected)
     sigma_corrected = np.concatenate(sigma_corrected)
+    mm_size_corrected = np.concatenate(mm_size_corrected)
+    mass_distr = np.concatenate(mass_distr)
     tau_corrected = np.concatenate(tau_corrected)
-    if plot_correl_flag == True:
-        erosion_energy_per_unit_cross_section_corrected = np.concatenate(erosion_energy_per_unit_cross_section_corrected)
-        erosion_energy_per_unit_mass_corrected = np.concatenate(erosion_energy_per_unit_mass_corrected)
-        # erosion_energy_per_unit_cross_section_end_corrected = np.concatenate(erosion_energy_per_unit_cross_section_end_corrected)
-        # erosion_energy_per_unit_mass_end_corrected = np.concatenate(erosion_energy_per_unit_mass_end_corrected)
+    # if plot_correl_flag == True:
+    #     erosion_energy_per_unit_cross_section_corrected = np.concatenate(erosion_energy_per_unit_cross_section_corrected)
+    #     erosion_energy_per_unit_mass_corrected = np.concatenate(erosion_energy_per_unit_mass_corrected)
 
     # eeucs = np.array([v[0] for v in file_eeu_dict.values()])
     # eeucs_lo = np.array([v[1] for v in file_eeu_dict.values()])
@@ -1860,6 +1926,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
                 plt.savefig(os.path.join(output_dir_show, f"{shower_name}_geo_radiant_distribution_CI.png"), bbox_inches='tight', dpi=300)
                 plt.close()
 
+                # plot the size again the rho_corrected with the weights
+                # if a label isn't found due to prior duplication/cleaning, fail loudly with context
+
+
             else: 
                 ### Velocity vs begin height scaterd with rho ###
                 print('Creating Velocity vs Begin Height scatter plot with stream...')
@@ -2100,6 +2170,242 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         variables,
         labels
     )
+
+
+    weights = combined_results.importance_weights()  # shape (nsamps,)
+    # normalize weights
+    w = weights.copy()
+    w /= np.sum(w)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    print("Creating 2D density plot against size...")
+    _plot_2d_distribution(ax, mm_size_corrected, rho_corrected, w)
+    ax.set_xlabel("Size [mm]", fontsize=15)
+    ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
+
+    ### stratospheric dust overlays ###
+
+    arr_dens_love1994_left  = np.array([   0,  500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500])
+    arr_dens_love1994_right = np.array([ 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000])
+    arr_w_love1994   = np.array([0.00, 0.02, 0.12, 0.20, 0.18, 0.12, 0.07, 0.05, 0.03, 0, 0.02, 0.02, 0.01, 0.01])  # must sum to 1
+
+    # --- x extent for the block strip ---
+    size_min_love1994, size_max_love1994 = 0.005, 0.015
+    # Z must have shape (len(y_edges)-1, len(x_edges)-1). Repeat across x.
+    Z = arr_w_love1994[:, None]
+
+    plt.pcolormesh(np.array(sorted([size_min_love1994, size_max_love1994])), np.r_[arr_dens_love1994_left, arr_dens_love1994_right[-1]], Z, shading="flat", cmap="Reds")  # default cmap
+    # Legend (so it plays nicely with other overlays)
+    proxy_red = Patch(facecolor=plt.cm.Reds(0.7), edgecolor='none', label="Stratospheric - Love et al. (1994)") # edgecolor='none',
+
+
+
+    # Density bins [kg/m^3] (g/cm^3 × 1000)
+    arr_dens_left  = np.array([ 200,  400,  600,  800, 1400, 1600, 1800], dtype=float)
+    arr_dens_right = np.array([ 400,  600,  800, 1000, 1600, 1800, 2000], dtype=float)
+
+    # Weights (sum to 1)
+    arr_w_Flynn = np.array([0.13, 0.13, 0.2727, 0.13, 0.1818, 0.1818, 0.13], dtype=float)
+
+    # Size extent in mm for the strip
+    size_min_mm_Flynn, size_max_mm_Flynn = 0.006, 0.030  # 6–30 µm
+    Z = arr_w_Flynn[:, None]  # repeat weights across the x-range
+
+    plt.pcolormesh(np.array([size_min_mm_Flynn, size_max_mm_Flynn]), np.r_[arr_dens_left, arr_dens_right[-1]], Z, shading="flat", cmap="Purples", alpha=0.5)  # choose any cmap
+
+    # Optional legend proxy
+    proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none', alpha=0.5, label="Stratospheric - Flynn and Sutton (1990)")
+
+    ###### Fulle et al. (2017)
+
+    # Density binning (50 kg/m^3 bins across 670–1280)
+    dens_min, dens_max = 670.0, 1280.0
+    bin_width = 50.0
+    edges = np.arange(dens_min, dens_max + bin_width, bin_width)  # inclusive of top edge
+    bin_left = edges[:-1]
+    bin_right = edges[1:]
+    bin_center = 0.5 * (bin_left + bin_right)
+
+    # Gaussian-like weights centered at 785
+    mu = 785.0
+    sigma = 120.0  # choose a width so most weight lies in the specified span
+    weights_raw = np.exp(-0.5 * ((bin_center - mu) / sigma) ** 2)
+    # Truncate outside the stated range is already implied by bins
+    weights = weights_raw / weights_raw.sum()
+
+    # Create the top-down block strip across x = 0.1–0.8 mm
+    x_min_mm, x_max_mm = 0.1, 0.80
+    x_edges = np.array(sorted([x_min_mm, x_max_mm]))
+
+    y_edges = np.r_[bin_left, bin_right[-1]]
+    Z = weights[:, None]
+
+    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Blues")
+
+    proxy_blue = Patch(facecolor=plt.cm.Blues(0.7), edgecolor='none', label="GIADA - Fulle et al. (2017)")
+
+    #### Misc papers overlays ####
+
+    def from_mass2size(mass_kg, density_kg_m3):
+        """Convert mass (kg) and density (kg/m^3) to size (mm)."""
+        volume_m3 = mass_kg / density_kg_m3
+        radius_m = (3 * volume_m3 / (4 * np.pi)) ** (1/3)
+        size_mm = 2 * radius_m * 1000  # convert to mm
+        return size_mm
+    
+    # add a line with two dot at the edges of 4000 between 0.15 and 0.5 mm put a circle marker the edges
+    ax.plot([0.15, 0.5], [4000, 4000], marker='o', color='blue', linewidth=1, label="GIADA - Güttler et al. (2019)", markersize=6)
+
+    # add a line with two dot at the edges of 4000 between 0.15 and 0.5 mm put a circle marker the edges
+    ax.plot([10, 0.1], [1, 1], marker='d', color='blue', linewidth=1, linestyle='--', label="GIADA - Fulle et al. (2015)", markersize=6)
+
+    # make a shadeded green area between 0.3 and 10 between 100 and 1000 with alpha of 0.1 and a z order of 0
+    ax.fill_between([0.3, 100], 100, 1000, color='teal', alpha=0.1,  label="OSIRIS - Güttler et al. (2017)") # , edgecolor='none'
+
+    # add a dot as a DIM point at (0.9, 250) coor dark green
+    ax.scatter(0.9, 250, color='olive', marker='s', s=30, label="DIM - Flanders et al. (2018)")
+
+    # Diameters [μm]
+    diam_um = np.array([74, 63, 45, 42, 36, 34, 32, 24, 19, 19, 17], dtype=float)/1000
+
+    # Densities [g/cm^3]; row 2 set to 2.4 from "<3.2 (2.4?)"
+    rho_gcm3 = np.array([3.3, 2.4, 3.2, 3.2, 4.6, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2], dtype=float)*1000
+
+    ax.scatter(diam_um, rho_gcm3, color='purple', marker='^', s=50, label="Stardust - Kearsley et al. (2008)")
+
+    # Whole particle diameter dp [µm]
+    dp_um = np.array([ 3.92,  2.72, 21.4,  2.54, 34.7, 12.4,  3.78, 73.8, 2.66, 21.1, 142.0,  7.11,  4.46 ], dtype=float)/1000
+
+    # Whole particle density qp [g/cm^3]
+    qp_gcm3 = np.array([ 5.73, 4.28, 3.66, 3.30, 3.11, 2.84, 2.39, 1.14, 1.02, 0.92, 0.89, 2.92, 3.20 ], dtype=float)*1000
+
+    ax.scatter(dp_um, qp_gcm3, color='pink', marker='v', s=50, label="Stardust - Iida et al. (2010)")
+
+    # Halley 10~12 \ m \ 10~3 kg for 50 \ o \ 500 kg m~3
+    ax.plot([from_mass2size(10**(-13), 300), from_mass2size(10**(-9), 300)], [300, 300], marker='p', color='cyan', linestyle=':', linewidth=1, label="Vega-2 - Krasnopolsky et al. (1988)", markersize=6)
+
+    # Halley 10~12 \ m \ 10~3 kg for 50 \ o \ 500 kg m~3
+    ax.fill_between([from_mass2size(10**(-12), 100), from_mass2size(10**(-3), 100)], 50, 500, color='cyan', alpha=0.1,  label="Giotto - Levasseur-Regourd et al. (2000)") # , edgecolor='none'
+
+    # Size [µm]
+    size_um = np.array([
+        320, 390, 170, 190, 330, 450,
+        630, 530, 850, 550, 590,
+        610, 670, 720, 670, 710,
+        630, 680, 550, 670, 600, 700, 630, 600
+    ], dtype=float) / 1000  # convert to mm
+
+    # Bulk density ρB [g/cm³]
+    rhoB_gcm3 = np.array([
+        3.5, 3.6, 3.4, 5.6, 3.3, 3.3,
+        3.0, 3.2, 2.9, 3.1, 3.0,
+        3.0, 3.1, 3.0, 3.2, 3.0,
+        3.3, 3.1, 3.0, 2.9, 3.1, 3.0, 2.9, 2.9
+    ], dtype=float) * 1000  # convert to kg/m³
+    
+    ax.scatter(size_um, rhoB_gcm3, color='darkorange', marker='o', s=50, label="Micrometeorites - Kohout et al. (2014)")
+
+    ax.fill_between([0.0001, 0.1], 3000, 8000, color='lime', alpha=0.1, zorder=0, label="Lunar Microcraters - Nagel et al. (1980)")
+
+    # LDEF ranges from 2.0 to 5 g cm3 for masses of 10^-15 - 10^-9 kg
+    ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 5000, color='yellow', alpha=0.1, zorder=0, label="LDEF - Love et al. (1995)*") # , edgecolor='none'
+
+    # LDEF ranges from 2.0 to 2.4 g cm3 for masses of 10^-15 - 10^-9 kg
+    ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 2400, color='gold', alpha=0.5, zorder=0, label="LDEF - McDonnell and Gardner (1998)") # , edgecolor='none'
+
+    mass_g = np.array([
+        0.50,   # 06C13136
+        1.19,   # 06C14529
+        1.54,   # 08927101
+        0.16,   # 08928235
+        0.13,   # 09818120
+        12.0,   # 09B17055
+        0.267,  # 09B17084
+        0.0783, # 12421024
+        4.00,   # 12B14150
+        0.274,  # 13811101
+        0.00448,# 14814153
+        0.154,  # DRA01
+        0.426,  # DRA03
+        0.356,  # DRA05
+        2.68    # DRA06
+    ], dtype=float)/1000  # convert to kg
+
+    rho_kgm3 = np.array([
+        2200,  # 06C13136
+        600,   # 06C14529
+        700,   # 08927101
+        790,   # 08928235
+        1500,  # 09818120
+        2800,  # 09B17055
+        2100,  # 09B17084
+        220,   # 12421024
+        1000,  # 12B14150
+        1500,  # 13811101
+        2040,  # 14814153
+        440,   # DRA01
+        99,    # DRA03
+        370,   # DRA05
+        390    # DRA06
+    ], dtype=float)
+
+    ax.scatter(from_mass2size(mass_g, rho_kgm3), rho_kgm3, color='peru', marker='x', s=70, label="Meteors - Vojáček et al. (2019)", zorder=5)
+
+    def rho_particle_divine1986(a_um, rho0=3.0, delta=2.2, a2_um=2.0, out="g/cm^3"):
+        """
+        Particle bulk density as a function of grain radius a (in µm).
+
+        rho(a) = rho0 - delta * a / (a + a2_um)
+        rho0  : asymptotic small-grain density [g/cm^3]
+        delta : rho0 - rho(large) [g/cm^3]  (here 3.0 - 0.8 = 2.2)
+        a2_um : scale radius [µm]
+        out   : "g/cm^3" or "kg/m^3"
+        """
+        rho = rho0 - delta * (a_um / (a_um + a2_um))
+        if out == "kg/m^3":
+            return rho * 1000.0
+        return rho
+
+    a_um = np.logspace(-3, 4, 400)  # ~0.05 to 100 µm
+    rho_kgm3 = rho_particle_divine1986(a_um, out="kg/m^3")
+
+    ax.plot(a_um/1000, rho_kgm3, color='green', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)")
+
+    ##########
+
+    ax.set_xlim([10**(-3), 10])
+    ax.set_ylim([-100, 8100])
+    # plt.colorbar(ax.collections[0], ax=ax, label='Probability Density')
+    # grid on dashed
+    plt.grid(True, linestyle='--', alpha=0.5)
+    # build legend only from artists with useful labels (exclude "_nolegend_")
+    handles, labels_plot_mm = ax.get_legend_handles_labels()
+    handles = [proxy_red, proxy_purple, proxy_blue] + handles
+    labels_plot_mm  = [proxy_red.get_label(), proxy_purple.get_label(), proxy_blue.get_label()] + labels_plot_mm
+    by_label = {l: h for h, l in zip(handles, labels_plot_mm)}  # de-duplicate by label
+    # put the legend at the right outside the plot after the y axis
+    ax.legend(by_label.values(), by_label.keys(), loc='upper right', bbox_to_anchor=(1.45, 1), fontsize=10)
+    ax.set_xscale("log")
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_density_size_rho_PAPERS.png"), bbox_inches='tight', dpi=300)
+    plt.close()
+
+    # plot 2D density of mass vs rho_corrected
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    print("Creating 2D density plot against mass...")
+    _plot_2d_distribution(ax, mass_distr, rho_corrected, w)
+    ax.set_xlabel("Initial Mass [kg]", fontsize=15)
+    ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
+    # set the x axis to log scale
+    ax.set_xscale("log")
+    ax.set_xlim([10**(-7.5), 10**(-3)])
+    ax.set_ylim([-100, 8100])
+    # plt.colorbar(ax.collections[0], ax=ax, label='Probability Density')
+    # grid on dashed
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_density_m_init_rho_PAPERS.png"), bbox_inches='tight', dpi=300)
+    plt.close()
+
 
     ### CREATE A TABLE of the Combination of all samples ###
 
@@ -3520,38 +3826,12 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
             return df_corr, pairs_df, top10, bottom10
 
-        def _HIST2D(x, y, **kwargs):
-            """Wrapper that calls dynesty's _hist2d wherever it lives."""
-            # if dyplot has it as a private attr, prefer that (matches your cornerplot call site)
-            if hasattr(dyplot, "_hist2d"):
-                return dyplot._hist2d(x, y, **kwargs)
-            if _hist2d_func is not None:
-                return _hist2d_func(x, y, **kwargs)
-            raise RuntimeError("Could not locate dynesty.plotting._hist2d. "
-                            "Ensure dynesty>=2.x is installed or import _hist2d yourself.")
+
 
         def _safe_name(s):
             s = re.sub(r"\$|\\[a-zA-Z]+|[\{\}\^\_]", "", str(s))
             s = re.sub(r"[^A-Za-z0-9\-\.]+", "_", s).strip("_")
             return s or "param"
-
-        def _weighted_quantile(x, q, w):
-            x = np.asarray(x); w = np.asarray(w)
-            m = np.isfinite(x) & np.isfinite(w) & (w >= 0)
-            x = x[m]; w = w[m]
-            if x.size == 0:
-                return np.nan if np.isscalar(q) else [np.nan]*len(q)
-            order = np.argsort(x)
-            x = x[order]; w = w[order]
-            cdf = np.cumsum(w)
-            cdf = (cdf - 0.5*w[order]) / np.sum(w)
-            def interp(qi):
-                if qi <= 0: return x[0]
-                if qi >= 1: return x[-1]
-                return np.interp(qi, cdf, x)
-            if np.isscalar(q):
-                return interp(q)
-            return [interp(qi) for qi in q]
 
         def plot_top_covariances(results,
                                 top_pairs,            # DataFrame with columns param_i,param_j,corr OR list of tuples
@@ -3692,7 +3972,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -3729,4 +4009,4 @@ if __name__ == "__main__":
         cml_args.name = cml_args.input_dir.split(os.sep)[-1]
         print(f"Setting name to {cml_args.name}")
 
-    shower_distrb_plot(cml_args.input_dir, cml_args.output_dir, cml_args.name, radiance_plot_flag=True, plot_correl_flag=True) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.input_dir, cml_args.output_dir, cml_args.name, radiance_plot_flag=False, plot_correl_flag=False) # cml_args.radiance_plot cml_args.correl_plot

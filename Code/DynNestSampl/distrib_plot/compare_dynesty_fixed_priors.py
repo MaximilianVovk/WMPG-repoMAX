@@ -415,7 +415,7 @@ def compare_fixed_priors_with_flags(
         # Only first column shows y tick labels; others share y but hide labels
         if (ax_idx % ncols) == 0:
             ax.set_yticks(y_pos)
-            ax.set_yticklabels(eids[::-1], fontsize=12)
+            ax.set_yticklabels(eids[::-1], fontsize=9)
             ax.set_ylim(-0.5, len(eids) - 0.5)  # keep full list of meteors visible
         else:
             ax.set_yticks(y_pos)
@@ -515,35 +515,35 @@ def compare_fixed_priors_with_flags(
 # )
 # print(info)
 
-info = compare_fixed_priors_with_flags(
-    input_folders=[
-        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\ORI_radiance",
-        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
-    ],
-    labels=[r"EMCCD only", r"EMCCD + CAMO"],  # legend labels
-    colors=["brown", "blue"],              # requested colors
-    ci=0.95,
-    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORIcompare_Camera_runs.png",    # figure path
-    # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
-    verbose=True,              # << turn on once to see diagnostics
-    # align_mode="labels",  # << default; uses your flags order
-)
-print(info)
+# info = compare_fixed_priors_with_flags(
+#     input_folders=[
+#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\ORI_radiance",
+#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
+#     ],
+#     labels=[r"EMCCD only", r"EMCCD + CAMO"],  # legend labels
+#     colors=["brown", "blue"],              # requested colors
+#     ci=0.95,
+#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORIcompare_Camera_runs.png",    # figure path
+#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+#     verbose=True,              # << turn on once to see diagnostics
+#     # align_mode="labels",  # << default; uses your flags order
+# )
+# print(info)
 
-info = compare_fixed_priors_with_flags(
-    input_folders=[
-        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\CAP_radiance",
-        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
-    ],
-    labels=[r"EMCCD only", r"EMCCD + CAMO"],  # legend labels
-    colors=["brown", "blue"],              # requested colors
-    ci=0.95,
-    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAPcompare_Camera_runs.png",    # figure path
-    # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
-    verbose=True,              # << turn on once to see diagnostics
-    # align_mode="labels",  # << default; uses your flags order
-)
-print(info)
+# info = compare_fixed_priors_with_flags(
+#     input_folders=[
+#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\CAP_radiance",
+#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
+#     ],
+#     labels=[r"EMCCD only", r"EMCCD + CAMO"],  # legend labels
+#     colors=["brown", "blue"],              # requested colors
+#     ci=0.95,
+#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAPcompare_Camera_runs.png",    # figure path
+#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+#     verbose=True,              # << turn on once to see diagnostics
+#     # align_mode="labels",  # << default; uses your flags order
+# )
+# print(info)
 
 # info = compare_fixed_priors_with_flags(
 #     input_folders=[
@@ -625,21 +625,21 @@ print(info)
 
 ##################################### Iron PLOT #####################################
 
-# info = compare_fixed_priors_with_flags(
-#     input_folders=[
-#         r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau3",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau008",
-#     ],
-#     labels=[r"$\tau$=3%", r"$\tau$=0.3%", r"$\tau$=0.08%"],  # legend labels
-#     colors=["red", "blue", "green"],              # requested colors
-#     ci=0.95,
-#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Iron_compare_tau_runs.png",    # figure path
-#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
-#     verbose=True,              # << turn on once to see diagnostics
-#     align_mode="labels",  # << default; uses your flags order
-# )
-# print(info)
+info = compare_fixed_priors_with_flags(
+    input_folders=[
+        r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau3",
+        r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03",
+        r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau008",
+    ],
+    labels=[r"$\tau$=3%", r"$\tau$=0.3%", r"$\tau$=0.08%"],  # legend labels
+    colors=["red", "blue", "green"],              # requested colors
+    ci=0.95,
+    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Iron_compare_tau_runs.png",    # figure path
+    # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+    verbose=True,              # << turn on once to see diagnostics
+    align_mode="labels",  # << default; uses your flags order
+)
+print(info)
 
 # info = compare_fixed_priors_with_flags(
 #     input_folders=[

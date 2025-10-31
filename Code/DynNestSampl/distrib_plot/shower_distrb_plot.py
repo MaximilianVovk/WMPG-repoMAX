@@ -53,6 +53,28 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 import numpy as np
 
 
+# create a txt file where you save averithing that has been printed
+class Logger(object):
+    def __init__(self, directory=".", filename="log.txt"):
+        self.terminal = sys.stdout
+        # Ensure the directory exists
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        # Combine the directory and filename to create the full path
+        filepath = os.path.join(directory, filename)
+        self.log = open(filepath, "a")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        # This might be necessary as stdout could call flush
+        self.terminal.flush()
+
+    def close(self):
+        # Close the log file when done
+        self.log.close()
 
 # Create Results-like object for cornerplot
 class CombinedResults:
@@ -1004,6 +1026,14 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     erosion_energy_per_unit_cross_section_end_corrected = []
     erosion_energy_per_unit_mass_end_corrected = []
 
+
+    # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
+    if os.path.exists(output_dir_show+os.sep+"log_shower_distrb_plot.txt"):
+        # remove the file
+        os.remove(output_dir_show+os.sep+"log_shower_distrb_plot.txt")
+    # use the Logger class to redirect the print to a file 
+    sys.stdout = Logger(output_dir_show,"log_shower_distrb_plot.txt")
+
     for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
         dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
         print('\n', base_name)
@@ -1016,8 +1046,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         # Align to the union of all variables (padding missing ones with NaN and 0 weights)
         samples_aligned, weights_aligned = align_dynesty_samples(dsampler, variables, flags_dict)
 
-        print("number of simulations with posteriory above zero :",len(np.where(weights_aligned != 0))," out of ",len(weights_aligned))
-        
         output_dir = os.path.dirname(dynesty_file)
         report_file = None
         for name in os.listdir(output_dir):
@@ -1384,6 +1412,11 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     for base_name, lum in worst_lum_items:
         print(f"{base_name}: {lum} W")
 
+    # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+    sys.stdout.close()
+
+    # Reset sys.stdout to its original value if needed
+    sys.stdout = sys.__stdout__
 
     # Extract data for plotting
     lg_min_la_sun = np.array([v[0] for v in file_radiance_rho_dict.values()])
@@ -1496,9 +1529,9 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     fig = plt.figure(figsize=(6, 4), constrained_layout=True)
 
     
-    scatter_d = plt.scatter(rho, np.log10(kinetic_energy_median), c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+    scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
     plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
-    plt.errorbar(rho, np.log10(kinetic_energy_median),
+    plt.errorbar(rho, (kinetic_energy_median)/1000,
                 xerr=[abs(rho_lo), abs(rho_hi)],
                 # yerr=[abs(kinetic_energy_lo), abs(kinetic_energy_hi)],
                 elinewidth=0.75,
@@ -1514,8 +1547,8 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     #     plt.annotate(txt, (rho[i], np.log10(erosion_beg_dyn_press[i])), fontsize=8, color='black')
     # invert the y axis
     plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
-    plt.ylabel("log$_{10}$ Kinetic Energy [J]", fontsize=15)
-    # plt.yscale("log")
+    plt.ylabel("Kinetic Energy [kJ]", fontsize=15)
+    plt.yscale("log")
     # grid on
     plt.grid(True)
 
@@ -2185,10 +2218,44 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
     ### stratospheric dust overlays ###
 
-    arr_dens_love1994_left  = np.array([   0,  500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500])
-    arr_dens_love1994_right = np.array([ 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000])
-    arr_w_love1994   = np.array([0.00, 0.02, 0.12, 0.20, 0.18, 0.12, 0.07, 0.05, 0.03, 0, 0.02, 0.02, 0.01, 0.01])  # must sum to 1
+    # arr_dens_love1994_left  = np.array([   0,  500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500])
+    # arr_dens_love1994_right = np.array([ 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000])
+    # arr_w_love1994   = np.array([0.00, 0.02, 0.12, 0.20, 0.18, 0.12, 0.07, 0.05, 0.03, 0, 0.02, 0.02, 0.01, 0.01])  # must sum to 1
 
+    # density bins (g/cm^3 × 1000)
+    arr_dens_love1994_left  = np.arange(375, 6376, 250)   # 375, 625, ..., 6875
+    arr_dens_love1994_right = arr_dens_love1994_left + 250         # 625, 875, ..., 7125
+
+    # # bin centers, just in case you need them (in kg/m^3)
+    # arr_dens_center = (arr_dens_left + arr_dens_right) / 2.0
+    arr_w_love1994 = np.array([
+        3,   # 0.375–0.625 g/cm^3
+        9,   # 0.625–0.875
+        21,   # 0.875–1.125
+        29,   # 1.125–1.375
+        50,   # 1.375–1.625
+        62,   # 1.625–1.875
+        76,   # 1.875–2.125  ← peak
+        61,   # 2.125–2.375
+        53,   # 2.375–2.625
+        36,   # 2.625–2.875
+        37,   # 2.875–3.125
+        33,   # 3.125–3.375
+        35,   # 3.375–3.625
+        34,   # 3.625–3.875
+        32,   # 3.875–4.125
+        17,   # 4.125–4.375
+        9,   # 4.375–4.625
+        0,   # 4.625–4.875  (0 valley)
+        0,   # 4.875–5.125  (0 valley)
+        16,   # 5.125–5.375  (little high "island")
+        17,   # 5.375–5.625
+        18,   # 5.625–5.875
+        6,   # 5.875–6.125
+        7,   # 6.125–6.375
+        8,   # 6.375–6.625
+    ], dtype=int)
+    arr_w_love1994 = arr_w_love1994/ arr_w_love1994.sum()  # normalize to sum to 1
     # --- x extent for the block strip ---
     size_min_love1994, size_max_love1994 = 0.005, 0.015
     # Z must have shape (len(y_edges)-1, len(x_edges)-1). Repeat across x.
@@ -2201,11 +2268,13 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
 
     # Density bins [kg/m^3] (g/cm^3 × 1000)
-    arr_dens_left  = np.array([ 200,  400,  600,  800, 1400, 1600, 1800], dtype=float)
-    arr_dens_right = np.array([ 400,  600,  800, 1000, 1600, 1800, 2000], dtype=float)
+    arr_dens_left  = np.array([ 375,  625,  875,  1125, 1375, 1625, 1875, 2125, 2375, 2625, 3125, 3375], dtype=float)
+    arr_dens_right = np.array([ 625,  875,  1125, 1375, 1625, 1875, 2125, 2375, 2625, 3125, 3375, 3625], dtype=float)
 
     # Weights (sum to 1)
-    arr_w_Flynn = np.array([0.13, 0.13, 0.2727, 0.13, 0.1818, 0.1818, 0.13], dtype=float)
+    arr_w_Flynn = np.array([7, 4, 2, 1, 2, 3, 1, 3, 0, 0, 0, 1], dtype=float)
+
+    arr_w_Flynn /= arr_w_Flynn.sum()  # normalize weights
 
     # Size extent in mm for the strip
     size_min_mm_Flynn, size_max_mm_Flynn = 0.006, 0.030  # 6–30 µm
@@ -2214,7 +2283,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     plt.pcolormesh(np.array([size_min_mm_Flynn, size_max_mm_Flynn]), np.r_[arr_dens_left, arr_dens_right[-1]], Z, shading="flat", cmap="Purples", alpha=0.5)  # choose any cmap
 
     # Optional legend proxy
-    proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none', alpha=0.5, label="Stratospheric - Flynn and Sutton (1990)")
+    proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none', alpha=0.5, label="Stratospheric - Flynn and Sutton (1990)*")
 
     ###### Fulle et al. (2017)
 
@@ -2263,23 +2332,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     ax.fill_between([0.3, 100], 100, 1000, color='teal', alpha=0.1,  label="OSIRIS - Güttler et al. (2017)") # , edgecolor='none'
 
     # add a dot as a DIM point at (0.9, 250) coor dark green
-    ax.scatter(0.9, 250, color='olive', marker='s', s=30, label="DIM - Flanders et al. (2018)")
-
-    # Diameters [μm]
-    diam_um = np.array([74, 63, 45, 42, 36, 34, 32, 24, 19, 19, 17], dtype=float)/1000
-
-    # Densities [g/cm^3]; row 2 set to 2.4 from "<3.2 (2.4?)"
-    rho_gcm3 = np.array([3.3, 2.4, 3.2, 3.2, 4.6, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2], dtype=float)*1000
-
-    ax.scatter(diam_um, rho_gcm3, color='purple', marker='^', s=50, label="Stardust - Kearsley et al. (2008)")
-
-    # Whole particle diameter dp [µm]
-    dp_um = np.array([ 3.92,  2.72, 21.4,  2.54, 34.7, 12.4,  3.78, 73.8, 2.66, 21.1, 142.0,  7.11,  4.46 ], dtype=float)/1000
-
-    # Whole particle density qp [g/cm^3]
-    qp_gcm3 = np.array([ 5.73, 4.28, 3.66, 3.30, 3.11, 2.84, 2.39, 1.14, 1.02, 0.92, 0.89, 2.92, 3.20 ], dtype=float)*1000
-
-    ax.scatter(dp_um, qp_gcm3, color='pink', marker='v', s=50, label="Stardust - Iida et al. (2010)")
+    ax.scatter(0.9, 250, color='navy', marker='s', s=30, label="DIM - Flanders et al. (2018)")
 
     # Halley 10~12 \ m \ 10~3 kg for 50 \ o \ 500 kg m~3
     ax.plot([from_mass2size(10**(-13), 300), from_mass2size(10**(-9), 300)], [300, 300], marker='p', color='cyan', linestyle=':', linewidth=1, label="Vega-2 - Krasnopolsky et al. (1988)", markersize=6)
@@ -2287,31 +2340,55 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     # Halley 10~12 \ m \ 10~3 kg for 50 \ o \ 500 kg m~3
     ax.fill_between([from_mass2size(10**(-12), 100), from_mass2size(10**(-3), 100)], 50, 500, color='cyan', alpha=0.1,  label="Giotto - Levasseur-Regourd et al. (2000)") # , edgecolor='none'
 
-    # Size [µm]
-    size_um = np.array([
-        320, 390, 170, 190, 330, 450,
-        630, 530, 850, 550, 590,
-        610, 670, 720, 670, 710,
-        630, 680, 550, 670, 600, 700, 630, 600
-    ], dtype=float) / 1000  # convert to mm
+    # Whole particle diameter dp [µm]
+    dp_um = np.array([ 3.92,  2.72, 21.4,  2.54, 34.7, 12.4,  3.78, 73.8, 2.66, 21.1, 142.0,  7.11,  4.46 ], dtype=float)/1000
 
-    # Bulk density ρB [g/cm³]
-    rhoB_gcm3 = np.array([
-        3.5, 3.6, 3.4, 5.6, 3.3, 3.3,
-        3.0, 3.2, 2.9, 3.1, 3.0,
-        3.0, 3.1, 3.0, 3.2, 3.0,
-        3.3, 3.1, 3.0, 2.9, 3.1, 3.0, 2.9, 2.9
-    ], dtype=float) * 1000  # convert to kg/m³
-    
-    ax.scatter(size_um, rhoB_gcm3, color='darkorange', marker='o', s=50, label="Micrometeorites - Kohout et al. (2014)")
+    # Whole particle density qp [g/cm^3]
+    qp_gcm3 = np.array([ 5.73, 4.28, 3.66, 3.30, 3.11, 2.84, 2.39, 1.14, 1.02, 0.92, 0.89, 2.92, 3.20 ], dtype=float)*1000
+
+    ax.scatter(dp_um, qp_gcm3, color='hotpink', marker='v', s=50, label="Stardust - Iida et al. (2010)")
+
+    # # Diameters [μm]
+    # diam_um = np.array([74, 63, 45, 42, 36, 34, 32, 24, 19, 19, 17], dtype=float)/1000
+
+    # # Densities [g/cm^3]; row 2 set to 2.4 from "<3.2 (2.4?)"
+    # rho_gcm3 = np.array([3.3, 2.4, 3.2, 3.2, 4.6, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2], dtype=float)*1000
+
+    # particle diameters inferred/stated in the paper [micrometers]
+    impactor_diam_um = np.array([
+    100.0,           # C029W,1  “100 µm-scale aggregate” (text); crater is 167×133 µm
+    55.0,            # C091N,1  crater on ambient = 55 µm → treat as ≈55 µm aggregate footprint
+    295.0 / 5.0,     # C086W,1  top lip 295 µm → ~59 µm particle
+    12.0,            # C009N,1  given explicitly (~12 µm)
+    57.0 / 5.0,      # C086N,1  top lip 57 µm → ~11–12 µm
+    17.0,            # C107W,1  given explicitly
+    14.0,            # C118N,1  given explicitly
+    ]) / 1000
+
+    # bulk densities [g/cm^3]
+    rho_gcm3 = np.array([
+    0.79,   # C029W,1 aggregate
+    2.2,    # C091N,1 aggregate (midpoint of 1.8–2.6)
+    3.3,    # C086W,1 big dense silicate(-rich)
+    3.2,    # C009N,1
+    3.2,    # C086N,1
+    3.2,    # C107W,1
+    3.2,    # C118N,1
+    ]) * 1000
+
+
+    ax.scatter(impactor_diam_um, rho_gcm3, color='magenta', marker='^', s=50, label="Stardust - Kearsley et al. (2008)**")
 
     ax.fill_between([0.0001, 0.1], 3000, 8000, color='lime', alpha=0.1, zorder=0, label="Lunar Microcraters - Nagel et al. (1980)")
 
     # LDEF ranges from 2.0 to 5 g cm3 for masses of 10^-15 - 10^-9 kg
-    ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 5000, color='yellow', alpha=0.1, zorder=0, label="LDEF - Love et al. (1995)*") # , edgecolor='none'
+    ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 5000, color='yellow', alpha=0.1, zorder=0, label="LDEF - Love et al. (1995)***") # , edgecolor='none'
 
     # LDEF ranges from 2.0 to 2.4 g cm3 for masses of 10^-15 - 10^-9 kg
     ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 2400, color='gold', alpha=0.5, zorder=0, label="LDEF - McDonnell and Gardner (1998)") # , edgecolor='none'
+
+    # put a line between min 50, max is 296 / 1000 mm
+    ax.plot([50/1000, 296/1000], [2700, 2700], color='gold', linestyle='-.', marker='p', label="Hubble - Kearsley et al. (2024)")
 
     mass_g = np.array([
         0.50,   # 06C13136
@@ -2349,7 +2426,259 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         390    # DRA06
     ], dtype=float)
 
+    mass_kg = np.array([
+        7.2e-6, 3.2e-5, 3.5e-5, 7.7e-5, 4.3e-5, 3.1e-5,
+        6.0e-5, 3.6e-5, 1.3e-4, 3.8e-5, 2.7e-4, 2.6e-5,
+        1.7e-4, 3.1e-4, 5.0e-4, 6.7e-5, 4.5e-5, 7.0e-5
+    ], dtype=float)
+
+    delta_kgm3 = np.array([
+        2590, 2000, 1100, 2800, 1090, 2000,
+        2430, 2300, 1500, 1900, 1500, 3300,
+        1400, 2000, 2200, 1100, 1850, 700
+    ], dtype=float)
+
+    # append the mass_kg and delta_kgm3 to the previous mass_g and rho_kgm3
+    mass_g = np.concatenate((mass_g, mass_kg))
+    rho_kgm3 = np.concatenate((rho_kgm3, delta_kgm3))
+
     ax.scatter(from_mass2size(mass_g, rho_kgm3), rho_kgm3, color='peru', marker='x', s=70, label="Meteors - Vojáček et al. (2019)", zorder=5)
+
+    # Meteors - Kikwaya et al. (2009) - Sporadic meteoroids
+
+    # (code, mass_kg, rho_kgm3)
+    rows = [
+        # 2006
+        ("20060430084301", 7.10e-6, 1450.0),
+        ("20060430103000", 6.15e-6,  950.0),
+        ("20060430104845", 6.85e-6,  690.0),
+        ("20060502100335", 6.75e-6,  780.0),
+        ("20060503091349", 7.65e-6,  970.0),
+        ("20060504093103", 7.95e-6, 3550.0),
+        ("20060505102944", 1.95e-5, 4550.0),
+
+        # 2007
+        ("20070420082356", 4.05e-6,  630.0),
+        ("20070422061849", 2.20e-6,  730.0),
+        ("20070519040843", 6.15e-6,  975.0),
+        ("20070519075753", 2.80e-5, 1240.0),
+
+        ("20070519082713", 6.45e-6,  830.0),
+        ("20070812062117", 2.10e-6,  710.0),
+        ("20070812083450", 2.85e-6,  920.0),
+        ("20070813044452", 4.35e-6,  420.0),
+
+        ("20070813065047", 4.10e-6,  470.0),
+        ("20070813065828", 1.00e-5, 3150.0),
+        ("20070813073054", 2.15e-6,  380.0),
+        ("20070813075355", 5.20e-6,  670.0),
+
+        ("20070813081229", 1.90e-5, 1550.0),
+        ("20070813084353", 1.40e-6, 1510.0),
+        ("20070813084901", 3.55e-6,  360.0),
+        ("20070813085448", 2.40e-6,  590.0),
+
+        ("20070813085457", 5.80e-6,  910.0),
+        ("20070813085548", 2.30e-6,  640.0),
+
+        # 2008-09-10
+        ("20080910052352", 1.45e-5, 3500.0),
+        ("20080910053428", 1.95e-6, 4100.0),
+        ("20080910064102", 5.20e-6, 3550.0),
+        ("20080910075255", 3.75e-6,  990.0),
+        ("20080910075454", 3.40e-6,  730.0),
+        ("20080910091403", 4.15e-6,  820.0),
+
+        # 2008-09-11
+        ("20080911060638", 7.40e-6, 1095.0),
+        ("20080911065211", 5.10e-7,  945.0),
+        ("20080911071428", 1.10e-5, 4150.0),
+
+        ("20080911075207", 7.20e-7,  980.0),
+        ("20080911075323", 2.60e-6, 1070.0),
+        ("20080911075846", 3.20e-6, 1070.0),
+        ("20080911081630", 3.15e-6,  865.0),
+
+        ("20080911084108", 3.80e-7,  650.0),
+        ("20080911084529", 2.15e-6, 3150.0),
+        ("20080911084739", 1.17e-6,  610.0),
+        ("20080911085605", 8.35e-7, 1065.0),
+
+        ("20080911090242", 1.85e-6,  760.0),
+        ("20080911090512", 2.05e-6,  915.0),
+        ("20080911093436", 4.90e-6, 1055.0),
+        ("20080911094752", 9.95e-7, 1015.0),
+
+        ("20080911094844", 1.70e-6, 3470.0),
+
+        # 2009
+        ("20090624054307", 2.75e-6,  965.0),
+        ("20090625053313", 3.05e-6, 2950.0),
+
+        ("20090820014058", 4.99e-6, 3150.0),
+        ("20090825032616", 4.30e-6, 4950.0),
+        ("20090825033603", 1.19e-6, 2825.0),
+        ("20090825034528", 1.02e-6, 4150.0),
+        ("20090825035145", 1.35e-6, 2815.0),
+        ("20090825035228", 2.89e-6, 3025.0),
+        ("20090825040603", 8.85e-7,  635.0),
+        ("20090825040835", 3.75e-6,  675.0),
+        ("20090825043435", 4.80e-6, 2780.0),
+        ("20090825050631", 1.25e-6, 3195.0),
+        ("20090825050904", 5.05e-6, 4820.0),
+        ("20090825053106", 1.95e-6, 3020.0),
+        ("20090825060500", 2.55e-6, 2860.0),
+        ("20090825061542", 1.70e-6,  925.0),
+        ("20090825063604", 2.35e-6,  715.0),
+        ("20090825063641", 1.25e-6,  965.0),
+        ("20090825064646", 1.80e-6,  660.0),
+        ("20090825065903", 3.90e-6, 2645.0),
+        ("20090825070044", 6.25e-7, 4895.0),
+        ("20090825081927", 7.95e-8, 5425.0),
+        ("20090825070933", 3.10e-6, 3215.0),
+        ("20090825085804", 1.80e-6,  620.0),
+        ("20090826020835", 1.10e-6, 4780.0),
+        ("20090902084143", 6.25e-6, 1230.0),
+
+        ("20090902085534", 1.55e-6, 4495.0),
+        ("20090902085832", 1.55e-6, 1165.0),
+        ("20090902092028", 6.40e-7,  725.0),
+
+        ("20090902093338", 2.25e-6,  605.0),
+        ("20090909010643", 2.50e-6, 4910.0),
+        ("20090909012810", 2.15e-6, 5010.0),
+        ("20090909013647", 4.85e-6, 5030.0),
+
+        ("20090911021830", 1.45e-6, 5070.0),
+        ("20090911030523", 4.80e-6, 3130.0),
+        ("20090911034442", 1.65e-6, 4850.0),
+        ("20090911035942", 1.35e-6, 3515.0),
+
+        ("20090911040233", 6.75e-7, 1460.0),
+        ("20090911040433", 2.25e-5, 4010.0),
+    ]
+
+    mass_kg = np.array([row[1] for row in rows], dtype=float)
+    rho_kgm3 = np.array([row[2] for row in rows], dtype=float)
+    
+    ax.scatter(from_mass2size(mass_kg, rho_kgm3), rho_kgm3, color='sienna', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5) 
+
+    # Size [µm]
+    size_um = np.array([
+        320, 390, 170, 190, 330, 450,
+        630, 530, 850, 550, 590,
+        610, 670, 720, 670, 710,
+        630, 680, 550, 670, 600, 700, 630, 600, 230, 230
+    ], dtype=float) / 1000  # convert to mm
+
+    # Bulk density ρB [g/cm³]
+    rhoB_gcm3 = np.array([
+        3.5, 3.6, 3.4, 5.6, 3.3, 3.3,
+        3.0, 3.2, 2.9, 3.1, 3.0,
+        3.0, 3.1, 3.0, 3.2, 3.0,
+        3.3, 3.1, 3.0, 2.9, 3.1, 3.0, 2.9, 2.9, 3.0, 3.1
+    ], dtype=float) * 1000  # convert to kg/m³
+    
+    ax.scatter(size_um, rhoB_gcm3, color='darkorange', marker='o', s=50, label="Micrometeorites - Kohout et al. (2014)")
+
+
+    ###### Fulle et al. (2016) PAPERS density distribution
+
+    # Density binning (say 100 kg/m^3 bins across 1100–4200)
+    dens_min, dens_max = 1100.0, 4200.0
+    bin_width = 100.0
+    edges = np.arange(dens_min, dens_max + bin_width, bin_width)
+    bin_left = edges[:-1]
+    bin_right = edges[1:]
+    bin_center = 0.5 * (bin_left + bin_right)
+
+    # Target: mode ~2300, mean/median ~2700
+    # Do it as a 2-component mixture:
+    mu_mode   = 2300.0   # where the histogram clearly peaks
+    sigma_mode = 180.0   # narrowish peak
+
+    mu_tail    = 2900.0  # pushes mean/median toward 2700
+    sigma_tail = 450.0   # broad tail
+
+    # Relative weights: most in the modal component, some in tail
+    w_mode = 0.7
+    w_tail = 0.3
+
+    g_mode = np.exp(-0.5 * ((bin_center - mu_mode) / sigma_mode) ** 2)
+    g_tail = np.exp(-0.5 * ((bin_center - mu_tail) / sigma_tail) ** 2)
+
+    weights_raw = w_mode * g_mode + w_tail * g_tail
+    weights = weights_raw / weights_raw.sum()
+
+    # Size range: 375–210 µm = 0.375–0.210 mm
+    x_min_mm, x_max_mm = 0.210, 0.375
+    x_edges = np.array(sorted([x_min_mm, x_max_mm]))
+
+    y_edges = np.r_[bin_left, bin_right[-1]]
+    Z = weights[:, None]  # one vertical strip
+
+    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Oranges", zorder=0)    
+ 
+    # Micro Meteoroids - Fulle et al. (2016)moccasin
+    ax.fill_between([200/1000, 275/1000], 5000, 5800, color='#ff7f0e', alpha=0.2, zorder=0, edgecolor='none', label="G & S-type - Suttle and Folco (2020)") # , edgecolor='none'
+
+    ###### Feng et al. (2005) I-type micrometeorites
+
+    # r_optical in micrometres
+    r_optical_um = np.array([
+        140.0,  # KK298A-01
+        180.0,  # KK298A-03
+        145.0,  # KK298A-04
+        122.0,  # KK298A-06
+        180.0,  # KK298A-07
+        140.0,  # KK298A-08
+        140.0,  # KK298A-10
+        141.0,  # KK298A-11
+        145.0,  # KK298A-12
+        113.0,  # KK298A-13
+        113.0,  # KK298A-14
+        130.0,  # KK298A-15
+        125.0,  # KK298A-17
+        120.0,  # KK298A-18
+        105.0,  # KK298A-19
+        135.0,  # KK298A-20
+        150.0,  # KK298A-21
+        140.0,  # KK298A-22
+        100.0,  # KK298A-23
+        150.0,  # KK298A-25
+        178.0,  # KK298A-27
+        122.0,  # KK298A-30
+    ], dtype=float)
+
+    # bulk density in g/cm^3
+    bulk_density_gcm3 = np.array([
+        5.04,  # KK298A-01
+        5.03,  # KK298A-03
+        4.88,  # KK298A-04
+        4.63,  # KK298A-06
+        4.77,  # KK298A-07
+        5.26,  # KK298A-08
+        5.93,  # KK298A-10
+        5.77,  # KK298A-11
+        5.34,  # KK298A-12
+        4.76,  # KK298A-13
+        5.39,  # KK298A-14
+        5.75,  # KK298A-15
+        4.93,  # KK298A-17
+        4.43,  # KK298A-18
+        4.25,  # KK298A-19
+        4.95,  # KK298A-20
+        4.88,  # KK298A-21
+        4.24,  # KK298A-22
+        4.72,  # KK298A-23
+        4.57,  # KK298A-25
+        5.46,  # KK298A-27
+        5.14,  # KK298A-30
+    ], dtype=float)
+
+    ax.scatter(r_optical_um/1000, bulk_density_gcm3*1000, color='silver', marker='*', s=50, label="I-type - Feng et al. (2005)")
+
+    ###### Divine et al. (1986) density vs size function
 
     def rho_particle_divine1986(a_um, rho0=3.0, delta=2.2, a2_um=2.0, out="g/cm^3"):
         """
@@ -2369,7 +2698,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     a_um = np.logspace(-3, 4, 400)  # ~0.05 to 100 µm
     rho_kgm3 = rho_particle_divine1986(a_um, out="kg/m^3")
 
-    ax.plot(a_um/1000, rho_kgm3, color='green', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)")
+    ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)")
 
     ##########
 
@@ -3033,6 +3362,20 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         (htc_m, f"Tot N.{num_tj_below_2} HTC"),
     ]
 
+    # --- Column 0: m_init ---
+    idx_arr = np.where(np.asarray(variables) == "m_init")[0]
+    index_m_init = int(idx_arr[0])
+    m_init_vals  = samples[:, index_m_init].astype(float)
+    m_init_lo, m_init_hi = float(np.nanmin(m_init_vals)), float(np.nanmax(m_init_vals))
+    m_init_spec = {
+        "values": m_init_vals,
+        "label":  r"$\log_{10}$ $m_0$ [kg]",
+        "name":   "m_init",
+        "xlim":   (m_init_lo, m_init_hi),
+        "color":  "gold",
+    }
+    vars_to_plot = [m_init_spec]
+
     # --- Column 1: rho ---
     rho_vals = np.asarray(rho_samp, float)
     rho_lo_all, rho_hi_all = float(np.nanmin(rho_vals)), float(np.nanmax(rho_vals))
@@ -3044,7 +3387,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
         "color":  "black",
     }
 
-    vars_to_plot = [rho_spec]
+    vars_to_plot = vars_to_plot + [rho_spec]
     # --- Column 2: erosion_coeff (if present) ---
     idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
     if idx_arr.size:

@@ -2822,8 +2822,10 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     w = weights / np.sum(weights)
 
     rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=w)
+    # do the quantile for the 1 sigma range
+    rho_corrected_1sigma_lo, rho_corrected_1sigma_hi = _quantile(rho_corrected, [0.1587, 0.8413], weights=w)
 
-    print("Creating combined plot T_j rho and k_c...")
+    print("Creating combined plot T_j rho and k_c, 1-sigma range:", rho_corrected_1sigma_lo, rho_corrected_1sigma_hi, "kg/m^3 ...")
     
     # print("Creating combined plot T_j rho and mass...")
 
@@ -4315,7 +4317,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Best_iron-fit",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

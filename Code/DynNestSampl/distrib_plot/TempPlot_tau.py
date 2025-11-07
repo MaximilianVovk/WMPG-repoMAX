@@ -326,6 +326,7 @@ def extract_other_prop(input_dirfile_all, output_dir_show, lambda_val=1):
     ax.legend(fontsize=12)
     plt.tight_layout()
     plt.savefig(output_dir_show + os.sep + base_name + "_temperature_change_tau.png")
+    print(f"Saved temperature profile plot to {output_dir_show + os.sep + base_name + '_temperature_change_tau.png'}")
     plt.close()
 
 
@@ -338,13 +339,13 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Validation_nlive\nlive500
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=[r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Temp_plot\20181231_023918_tau3",
-                 r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Temp_plot\20181231_023918_tau03",
-                 r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Temp_plot\20181231_023918_tau008"],
+        default=[r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau3\20210813_022604",
+                 r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03\20210813_022604",
+                 r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau008\20210813_022604"],
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Temp_plot",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Temp_plot",
         help="Output directory, if not given is the same as input_dir.")
     
     arg_parser.add_argument('--name', metavar='NAME', type=str,

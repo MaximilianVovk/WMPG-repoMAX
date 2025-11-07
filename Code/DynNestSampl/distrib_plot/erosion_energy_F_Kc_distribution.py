@@ -30,18 +30,230 @@ from matplotlib.ticker import MaxNLocator, NullLocator, ScalarFormatter
 from scipy.stats import gaussian_kde
 from wmpl.Formats.WmplTrajectorySummary import loadTrajectorySummaryFast
 from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
+from wmpl.Utils.AtmosphereDensity import getAtmDensity, atmDensPoly
+from wmpl.Utils.TrajConversions import jd2Date
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from wmpl.MetSim.MetSimErosionCyTools import atmDensityPoly
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
-import numpy as np
-from multiprocessing import Pool
-from types import SimpleNamespace
+# (optional) avoid oversubscription if nrlmsise uses OpenMP
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
 # avoid showing warnings
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
+# Define Julian epoch
+JULIAN_EPOCH = datetime(2000, 1, 1, 12) # J2000.0 noon
 
-def energyReceivedBeforeErosion_var25percent(const, lam=1.0):
+def date2JD(year, month, day, hour, minute, second, millisecond=0, UT_corr=0.0):
+    """ Convert date and time to Julian Date in J2000.0. 
+    
+    Arguments:
+        year: [int] year
+        month: [int] month
+        day: [int] day of the date
+        hour: [int] hours
+        minute: [int] minutes
+        second: [int] seconds
+
+    Kwargs:
+        millisecond: [int] milliseconds (optional)
+        UT_corr: [float] UT correction in hours (difference from local time to UT)
+    
+    Return:
+        [float] julian date, J2000.0 epoch
+    """
+
+    # Convert all input arguments to integer (except milliseconds)
+    year, month, day, hour, minute, second = map(int, (year, month, day, hour, minute, second))
+
+    # Create datetime object of current time
+    dt = datetime(year, month, day, hour, minute, second, int(millisecond*1000))
+
+    # Calculate Julian date
+    julian = dt - JULIAN_EPOCH + J2000_JD - timedelta(hours=UT_corr)
+    
+    # Convert seconds to day fractions
+    return julian.days + (julian.seconds + julian.microseconds/1000000.0)/86400.0
+
+def _build_wide_jd_sample(center_jd, years_span=11, diurnal_hours=(0, 6, 12, 18)):
+    """
+    Build a broad JD set around a center JD:
+      - Monthly samples across ±years_span
+      - 4 diurnal times per day (default)
+    This covers seasonal + solar-cycle variability reasonably well.
+    """
+    print("Building wide JD sample...")
+    center_dt = jd2Date(center_jd, dt_obj=True)
+    jds = []
+    # From (year - years_span) .. (year + years_span), months 1..12, mid-month day=15
+    for dy in range(-years_span, years_span + 1):
+        for m in range(1, 13):
+            # Clamp day=15 safely for all months
+            day = 15
+            for hr in diurnal_hours:
+                try:
+                    dt = datetime(center_dt.year + dy, m, day, hr, 0, 0)
+                except ValueError:
+                    # Fallback: last day of month if needed
+                    if m == 2:
+                        day_fallback = 28
+                    elif m in (4, 6, 9, 11):
+                        day_fallback = 30
+                    else:
+                        day_fallback = 31
+                    dt = datetime(center_dt.year + dy, m, day_fallback, hr, 0, 0)
+                jds.append(date2JD(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond/1000.0))
+    return np.array(jds, dtype=float)
+
+
+def _dens_row_for_jd(jd_i, lat, lon, height_arr):
+    # top-level function so it's picklable
+    return [getAtmDensity(lat, lon, h, jd_i) for h in height_arr]
+
+def compute_dens_matrix_pool(lat, lon, height_arr, jds, processes=None):
+    processes = processes or cpu_count()
+    func = partial(_dens_row_for_jd, lat=lat, lon=lon, height_arr=height_arr)
+
+    # chunksize helps performance when jds is large
+    chunksize = max(1, len(jds) // (processes * 4))
+    print(f"Computing density matrix using {processes} processes with chunksize={chunksize}... (takes a while)")
+    with Pool(processes=processes) as pool:
+        dens_list = pool.map(func, jds, chunksize=chunksize)
+    print("Density matrix computation complete.")
+    dens_matrix = np.asarray(dens_list, dtype=float)
+    return dens_matrix
+
+
+def fitAtmPoly_variance(
+    lat, lon,
+    height_min_m, height_max_m,
+    jd_or_jds,
+    order=7,
+    n_heights=200,
+    use_median_nominal=True,
+    auto_span_if_scalar=True,
+    years_span=11,
+    diurnal_hours=(0, 6, 12, 18),
+    ):
+    """
+    Build a height-resolved nominal density and variance from NRLMSISE-00 over many JDs.
+
+    Parameters
+    ----------
+    lat, lon : float
+        Geodetic latitude/longitude in radians.
+    height_min_m, height_max_m : float
+        Height range in meters (e.g., 80e3 to 180e3).
+    jd_or_jds : float or array-like
+        Single Julian Date or an iterable of JDs to sample.
+        If a scalar and auto_span_if_scalar=True, a wide JD set is generated
+        around it (monthly over ±years_span, with diurnal_hours per day).
+    order : int
+        Polynomial order (in height [km]) to fit the *log nominal density*.
+    n_heights : int
+        Number of height samples between min and max.
+    use_median_nominal : bool
+        If True, nominal = exp(median(ln rho)); else exp(mean(ln rho)).
+        (Median is robust; mean is classical log-normal μ.)
+    auto_span_if_scalar : bool
+        If True and jd_or_jds is scalar, auto-generate a broad JD set.
+    years_span : int
+        Half-span of years for auto-JD generation (±years_span).
+    diurnal_hours : tuple
+        Local hours used in auto-JD sampling.
+
+    Returns
+    -------
+    result : dict
+        {
+          'height_m'        : (n_heights,) heights in meters,
+          'height_km'       : (n_heights,) heights in km,
+          'rho_nominal'     : (n_heights,) nominal density (kg/m^3),
+          'mu_ln'           : (n_heights,) mean of ln(rho),
+          'sigma_ln'        : (n_heights,) std of ln(rho),
+          'poly_coeffs_ln'  : (order+1,) np.polyfit coeffs for ln(rho_nominal) vs height_km,
+          'rho_1sigma_low'  : (n_heights,) = rho_nominal * exp(-sigma_ln),
+          'rho_1sigma_high' : (n_heights,) = rho_nominal * exp(+sigma_ln),
+          'rho_2sigma_low'  : ...
+          'rho_2sigma_high' : ...
+          'rho_3sigma_low'  : ...
+          'rho_3sigma_high' : ...
+          'var_linear'      : (n_heights,) variance of rho using log-normal moments,
+          'dens_matrix'     : (n_times, n_heights) raw densities used [kg/m^3] (for diagnostics)
+        }
+    """
+    print("Fitting atmospheric density polynomial with variance estimation...")
+    # Heights
+    height_arr = np.linspace(height_min_m, height_max_m, int(n_heights))
+
+    atm_densities = np.array([getAtmDensity(lat, lon, ht, jd_or_jds) for ht in height_arr])
+
+    # JD set
+    if np.isscalar(jd_or_jds) and auto_span_if_scalar:
+        jds = _build_wide_jd_sample(float(jd_or_jds), years_span=years_span, diurnal_hours=diurnal_hours)
+    else:
+        jds = np.atleast_1d(jd_or_jds).astype(float)
+
+    dens_matrix = compute_dens_matrix_pool(lat, lon, height_arr, jds)
+
+    # # Evaluate densities: shape (n_times, n_heights)
+    # dens_list = []
+    # for ii,jd_i in enumerate(jds):
+    #     print(f"  [{ii+1}/{len(jds)}] Evaluating densities for JD={jd_i:.5f}...")
+    #     dens_list.append([getAtmDensity(lat, lon, h, jd_i) for h in height_arr])
+    # dens_matrix = np.array(dens_list, dtype=float)
+
+    # Work in log-space
+    ln_rho = np.log(np.clip(dens_matrix, 1e-300, None))  # guard tiny values
+
+    # Statistics in log-space
+    if use_median_nominal:
+        mu_ln = np.median(ln_rho, axis=0)    # robust center
+    else:
+        mu_ln = np.mean(ln_rho, axis=0)      # classical log-normal μ
+
+    sigma_ln = np.std(ln_rho, axis=0, ddof=1) if ln_rho.shape[0] > 1 else np.zeros_like(mu_ln)
+
+    # Nominal density profile (kg/m^3)
+    rho_nominal = np.exp(mu_ln)
+
+    # # Log-normal moments for variance in linear space:
+    # # Var[ρ] = (exp(σ^2) - 1) * exp(2μ + σ^2)
+    # var_linear = (np.exp(sigma_ln**2) - 1.0) * np.exp(2.0 * mu_ln + sigma_ln**2)
+
+    atm_densities_log_nominal = np.log10(rho_nominal)
+    # print("atm_densities_log_nominal:", rho_nominal)
+    # print("atm_densities_log_nominal sigma:", rho_nominal * np.exp(+sigma_ln))
+
+    def atmDensPolyLog(height_arr, *dens_co):
+        return np.log10(atmDensPoly(height_arr, dens_co))
+
+    # Fit the 7th order polynomial
+    dens_co_atm_nominal, _ = scipy.optimize.curve_fit(atmDensPolyLog, height_arr, atm_densities_log_nominal, \
+        p0=np.zeros(7), maxfev=10000)
+
+    atm_densities_log_sigma = np.log10(rho_nominal * np.exp(+sigma_ln))
+    # Fit the 7th order polynomial
+    dens_co_sigma, _ = scipy.optimize.curve_fit(atmDensPolyLog, height_arr, atm_densities_log_sigma, \
+        p0=np.zeros(7), maxfev=10000)
+
+    return {
+        'height_arr': height_arr,
+        'rho_true': atm_densities,
+        'rho_nominal': rho_nominal,
+        'sigma': np.exp(sigma_ln),
+        'dens_co_atm_nominal': dens_co_atm_nominal,
+        # 'dens_co_sigma': dens_co_sigma,
+        # # 'var_linear': var_linear,
+        'dens_matrix': dens_matrix,
+    }
+
+
+def energyReceivedBeforeErosion_varNom(const, dens_co_atm_nominal, lam=1.0):
     """ Compute the energy the meteoroid receive prior to erosion +- 25%, assuming no major mass loss occured. 
     
     Arguments:
@@ -61,7 +273,11 @@ def energyReceivedBeforeErosion_var25percent(const, lam=1.0):
     dens_integ = scipy.integrate.quad(atmDensityPoly, const.erosion_height_start, const.h_init, \
         args=(const.dens_co))[0]
 
-    dens_integ = np.array([dens_integ, dens_integ * 0.75, dens_integ * 1.25])
+    # Integrate atmosphere density from the beginning of simulation to beginning of erosion.
+    dens_integ_atm_nominal = scipy.integrate.quad(atmDensityPoly, const.erosion_height_start, const.h_init, \
+        args=(dens_co_atm_nominal))[0]
+
+    dens_integ = np.array([dens_integ, dens_integ_atm_nominal])  # dens_integ * 0.75, dens_integ * 1.25])
 
     # Compute the energy per unit cross-section
     es = 1/2*lam*(const.v_init**2)*dens_integ/np.cos(const.zenith_angle)
@@ -74,21 +290,21 @@ def energyReceivedBeforeErosion_var25percent(const, lam=1.0):
 
     return es, ev
 
-def run_total_energy_received_var25percent(sim_num_and_data):
-    sim_num, best_guess_obj_plot, unique_heights_massvar_init, unique_heights_massvar, mass_best_massvar, velocities_massvar_init, lambda_val = sim_num_and_data
+def run_total_energy_received_varNom(sim_num_and_data):
+    sim_num, best_guess_obj_plot, unique_heights_massvar_init, unique_heights_massvar, mass_best_massvar, velocities_massvar_init, lambda_val, dens_co_atm_nominal = sim_num_and_data
 
     # extract the const from the best_guess_obj_plot
-    const_nominal = best_guess_obj_plot.const
+    const_bestguess = best_guess_obj_plot.const
 
-    const_nominal.h_init = unique_heights_massvar_init
-    const_nominal.erosion_height_start = unique_heights_massvar
-    const_nominal.v_init = velocities_massvar_init
-    const_nominal.m_init = mass_best_massvar
+    const_bestguess.h_init = unique_heights_massvar_init
+    const_bestguess.erosion_height_start = unique_heights_massvar
+    const_bestguess.v_init = velocities_massvar_init
+    const_bestguess.m_init = mass_best_massvar
 
     # Extract physical quantities
     try:
-        eeucs, eeum = energyReceivedBeforeErosion_var25percent(const_nominal, lambda_val)
-        total_energy = eeum * const_nominal.m_init  # Total energy received before erosion in MJ
+        eeucs, eeum = energyReceivedBeforeErosion_varNom(const_bestguess, dens_co_atm_nominal, lambda_val)
+        total_energy = eeum * const_bestguess.m_init  # Total energy received before erosion in MJ
 
         return (sim_num, eeucs, eeum, total_energy)
 
@@ -269,6 +485,84 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
         # split dynesty_file in folder and file name
         folder_name, _ = os.path.split(dynesty_file)
         print(f"\nProcessing {i+1}/{num_meteors}: {base_name} in {folder_name}")
+
+        if i == 0:
+            # check if .pikle file exists where the python script is located
+            local_dir_script = os.path.dirname(os.path.abspath(__file__))
+            # look for files that end in atm.pickle
+            pickle_files_atm = [f for f in os.listdir(local_dir_script) if f.endswith('atm.pickle')]
+            if len(pickle_files_atm) == 0:
+                print("No atmospheric density variance pickle file found in the script directory. Running density variance computation and saving the pickle file...")
+                # check if dynesty_file is an array of files
+                if isinstance(pickle_file, (list, tuple)):
+                    curr_lum_file = pickle_file[0]
+                else:
+                    curr_lum_file = pickle_file
+                # take the m_init_list from the trajectory file
+                traj=loadPickle(*os.path.split(curr_lum_file))
+
+                # now find the zenith angle mass v_init and dens_co
+                dens_fit_ht_beg = 180000
+                dens_fit_ht_end = 50000
+                # dens_fit_ht_end = traj.rend_ele - 5000
+                # if dens_fit_ht_end < 14000:
+                #     dens_fit_ht_end = 14000
+
+                lat_mean = np.mean([traj.rbeg_lat, traj.rend_lat])
+                lon_mean = meanAngle([traj.rbeg_lon, traj.rend_lon])
+                jd_dat=traj.jdt_ref
+
+                # Fit the polynomail describing the density
+                dens_co_var = fitAtmPoly_variance(lat_mean, lon_mean, dens_fit_ht_end, dens_fit_ht_beg, jd_dat)
+                
+                # plot the density profile with variance
+                heights = dens_co_var['height_arr']
+                rho_nominal = dens_co_var['rho_nominal']
+                rho_true = dens_co_var['rho_true']
+                sigma_mult = dens_co_var['sigma']
+
+                # Log-normal bands (multiplicative)
+                rho_1_low, rho_1_high = rho_nominal / sigma_mult,            rho_nominal * sigma_mult
+                rho_2_low, rho_2_high = rho_nominal / (sigma_mult**2),       rho_nominal * (sigma_mult**2)
+                rho_3_low, rho_3_high = rho_nominal / (sigma_mult**3),       rho_nominal * (sigma_mult**3)
+
+                # compute the percentage difference at the heights
+                percent_diff_1sigm = abs(np.mean(((rho_nominal - rho_1_high) / rho_1_high) * 100))
+                percent_diff_2sigm = abs(np.mean(((rho_nominal - rho_2_high) / rho_2_high) * 100))
+                percent_diff_3sigm = abs(np.mean(((rho_nominal - rho_3_high) / rho_3_high) * 100))
+
+                fig, ax = plt.subplots(figsize=(8,6))
+                ax.plot(rho_nominal, heights/1000, label='Nominal Density', color='blue')
+                ax.fill_betweenx(heights/1000, rho_1_low, rho_1_high, color='blue', alpha=0.3, label=f'±1σ {percent_diff_1sigm:.2f}%')
+                ax.fill_betweenx(heights/1000, rho_2_low, rho_2_high, color='blue', alpha=0.2, label=f'±2σ {percent_diff_2sigm:.2f}%')
+                ax.fill_betweenx(heights/1000, rho_3_low, rho_3_high, color='blue', alpha=0.1, label=f'±3σ {percent_diff_3sigm:.2f}%')
+                ax.plot(rho_true, heights/1000, label='Sampled Densities', color='black')
+                ax.set_xscale('log')
+                ax.set_xlabel('Atmospheric Density [kg/m³]')
+                ax.set_ylabel('Height [km]')
+                # ax.set_title('Fitted Atmospheric Density Profile with Variance')
+                ax.legend()
+                plt.grid(True, which="both", ls="--", lw=0.5)
+                # save the figure
+                fig.savefig(local_dir_script + os.sep + f"atmospheric_density_profile_variance_{name_distr}.png", dpi=300)
+
+                # save in a pickle file in local_dir_script
+                atm_variance_pickle_file = local_dir_script + os.sep + f"{name_distr}_variance_rho_atm.pickle"
+                with open(atm_variance_pickle_file, "wb") as f:
+                    pickle.dump(dens_co_var, f)
+                print(f"Saved atmospheric density variance data to {atm_variance_pickle_file}.")
+            else:
+                atm_variance_pickle_file = local_dir_script + os.sep + pickle_files_atm[0]
+                print(f"Loaded atmospheric density variance data from pickle file: {atm_variance_pickle_file}.")
+
+            # load the pickle file
+            with open(atm_variance_pickle_file, "rb") as f:
+                dens_co_nominal_and_var = pickle.load(f)
+                sigma_mult_atm = dens_co_nominal_and_var['sigma']
+                heights_atm = dens_co_nominal_and_var['height_arr']
+                dens_co_atm_nominal = dens_co_nominal_and_var['dens_co_atm_nominal']
+
+            
 
         # set up the observation data object
         obs_data = finder.observation_instance(base_name)
@@ -557,7 +851,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
 
             # Package inputs
             inputs = [
-                (i, best_guess_obj_plot, unique_heights_massvar_init[i], unique_heights_massvar[i], mass_best_massvar[i], velocities_massvar_init[i], lambda_val)
+                (i, best_guess_obj_plot, unique_heights_massvar_init[i], unique_heights_massvar[i], mass_best_massvar[i], velocities_massvar_init[i], lambda_val, dens_co_atm_nominal)
                 for i in range(len(mass_best_massvar)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
             ]
             #     for i in range(len(dynesty_run_results.samples)) # 
@@ -565,14 +859,14 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
 
             # Run in parallel
             with Pool(processes=num_cores) as pool:  # adjust to number of cores
-                results = pool.map(run_total_energy_received_var25percent, inputs)
+                results = pool.map(run_total_energy_received_varNom, inputs)
 
             N = len(mass_best_massvar)
 
             # Pre-allocate for 3 results for each simulation
-            Tot_energy_arr = np.full((3, N), np.nan, dtype=float)  # kJ
-            eeucs_end      = np.full((3, N), np.nan, dtype=float)   # MJ/m^2
-            eeum_end       = np.full((3, N), np.nan, dtype=float)   # MJ/kg
+            Tot_energy_arr = np.full((2, N), np.nan, dtype=float)  # kJ
+            eeucs_end      = np.full((2, N), np.nan, dtype=float)   # MJ/m^2
+            eeum_end       = np.full((2, N), np.nan, dtype=float)   # MJ/kg
 
             # Collect
             for res in results:
@@ -617,15 +911,28 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
             ax[0].set_xlabel('Abs.Mag [-]', fontsize=15)
             # make the Tot energy_arr the sum of the previous values
             Tot_energy_arr_cum = np.cumsum(Tot_energy_arr[0,:])
-            Tot_energy_arr_cum_075 = np.cumsum(Tot_energy_arr[1,:])
-            Tot_energy_arr_cum_125 = np.cumsum(Tot_energy_arr[2,:])
+            Tot_energy_arr_cum_atmNom = np.cumsum(Tot_energy_arr[1,:])
+            # Tot_energy_arr_cum_075 = np.cumsum(Tot_energy_arr[1,:])
+            # Tot_energy_arr_cum_125 = np.cumsum(Tot_energy_arr[2,:])
+
+            # interpolate the sigma vaues at each unique_heights_massvar
+            sigma_mult_interp = np.interp(unique_heights_massvar, heights_atm, sigma_mult_atm)
+            # create the sigma from the nominal value Log-normal bands (multiplicative)
+            Tot_energy_arr_sigma1_low, Tot_energy_arr_sigma1_high = Tot_energy_arr_cum_atmNom / sigma_mult_interp,            Tot_energy_arr_cum_atmNom * sigma_mult_interp
+            Tot_energy_arr_sigma2_low, Tot_energy_arr_sigma2_high = Tot_energy_arr_cum_atmNom / (sigma_mult_interp**2),       Tot_energy_arr_cum_atmNom * (sigma_mult_interp**2)
+            Tot_energy_arr_sigma3_low, Tot_energy_arr_sigma3_high = Tot_energy_arr_cum_atmNom / (sigma_mult_interp**3),       Tot_energy_arr_cum_atmNom * (sigma_mult_interp**3)
+
             # create the atmpsperic uncertanty as a shaded area between Tot_energy_arr_cum_075 and Tot_energy_arr_cum_125
-            ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_cum_075, Tot_energy_arr_cum_125, color='lightgray', alpha=0.3, label='Receive Energy Atm. Uncert. (±25%)')
+            # ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_cum_075, Tot_energy_arr_cum_125, color='lightgray', alpha=0.3, label='Receive Energy Atm. Uncert. (±25%)')
+            # ax[1].plot(Tot_energy_arr_cum_atmNom, unique_heights_massvar/1000, color='gray', linestyle='-', label='Receive Energy Profile (Nominal Atm.)')
+            ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma1_low, Tot_energy_arr_sigma1_high, color='darkgray', alpha=0.3, label='Atm. Density Uncert. (±1σ)')
+            ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma2_low, Tot_energy_arr_sigma2_high, color='gray', alpha=0.2, label='Atm. Density Uncert. (±2σ)')
+            ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma3_low, Tot_energy_arr_sigma3_high, color='lightgray', alpha=0.1, label='Atm. Density Uncert. (±3σ)')
             ax[1].plot(Tot_energy_arr_cum, unique_heights_massvar/1000, color='k', label='Receive Energy Profile')
-            # add a hrizontal line at y=total_energy_before_erosion
+            # # add a hrizontal line at y=total_energy_before_erosion
             ax[1].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start $h_{e}$')
             ax[0].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--')
-            
+
             # found the index of erosion_height_change in variables
             erosion_height_best = constjson_bestfit.erosion_height_start
             # find the closest unique_heights_massvar to erosion_height_change_best
@@ -649,14 +956,14 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
                 print(f"Unit energy before second erosion: {energy_per_mass_before_second_erosion} MJ/kg")
                 # print(f"Total energy before second erosion: {total_energy_before_second_erosion} kJ")
                 # print the constjson_bestfit.erosion_height_change as a line
-                ax[1].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.', label='Erosion Height Change $h_{e_2}$')
+                ax[1].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.', label='Erosion Height Change $h_{e_2}$') # , label='Erosion Height Change $h_{e_2}$')
                 ax[0].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.')
 
             print(f"Precise total Kinetic Energy: {Tot_energy} kJ")
             # temperature line when is 1811 K
             if len(melting_idx) > 0:
-                ax[1].axhline(y=melting_height, color='peru', linestyle='--')
-                ax[0].axhline(y=melting_height, color='peru', linestyle='--', label=f'Melting Point Reached{f" at {melting_height:.1f} km" if melting_height >= 0 else ""}')
+                ax[1].axhline(y=melting_height, color='peru', linestyle='--', linewidth=1.5)
+                ax[0].axhline(y=melting_height, color='peru', linestyle='--', linewidth=1.5, label=f'Melting Point Reached{f" at {melting_height:.1f} km" if melting_height >= 0 else ""}')
             # ax[1].set_ylabel('Height (km)', fontsize=15)
             ax[1].set_xlabel('Energy [kJ]', fontsize=15)
             # put the x axis in log
@@ -674,7 +981,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
             # create a red line with the energy of fusion of iron 0.272 MJ/kg * m_init
             fusion_energy_iron_kJ = best_guess_obj_plot.const.m_init*1000 * (Hentalpy_fusion_iron / Fe_mol + (1811 - 275) * specific_heat_capacity_iron) # MJ/kg# kJ
             # Hentalpy_vapor_iron_kJ = Hentalpy_vapor_iron * best_guess_obj_plot.const.m_init*1000 / Fe_mol # kJ
-            ax[1].axvline(x=fusion_energy_iron_kJ+E_rad[-1]/1e3, color='purple', linestyle=':', label='Tot.energy for Fusion of Iron + radiation')
+            ax[1].axvline(x=fusion_energy_iron_kJ+E_rad[-1]/1e3, color='purple', linestyle=':', label='Tot.Energy for Fusion of Iron + radiation')
             #find the index where Tot_energy_arr_cum is closest to fusion_energy_iron_kJ+E_rad[-1]/1e3 from the interpolated values to have a more precise value
             # increase by an order of magnitude the number of Tot_energy_arr_cum points by interpolation
             target_E = fusion_energy_iron_kJ + E_rad[-1]/1e3  # kJ
@@ -683,7 +990,10 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
 
             if target_E >= E_min and target_E <= E_max:
                 height_at_target_m = np.interp( target_E, Tot_energy_arr_cum, unique_heights_massvar )
-                ax[1].plot( target_E,  height_at_target_m/1000, 'o', color='purple', label=f'Fusion Energy reached at {height_at_target_m/1000:.1f} km')
+                # put a red line at the height_at_target_m on both plots
+                ax[0].axhline(y=height_at_target_m/1000, color='red', linestyle=':', linewidth=2.5, label=f'Fusion Energy Reached at {height_at_target_m/1000:.1f} km')
+                ax[1].axhline(y=height_at_target_m/1000, color='red', linestyle=':', linewidth=2.5) # , label=f'Fusion Energy reached at {height_at_target_m/1000:.1f} km'
+                ax[1].plot( target_E,  height_at_target_m/1000, 'o', color='purple') # , label=f'Fusion Energy reached at {height_at_target_m/1000:.1f} km'
             else:
                 print("⚠ target energy outside cumulative range, not plotting intersection.")
 
@@ -711,9 +1021,9 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
             # add grid
             ax[0].grid()
             ax[1].grid()
-            # put the legend
-            ax[1].legend()
-            ax[0].legend()
+            # put the legend in the right lower corner
+            ax[1].legend(loc='lower left')
+            ax[0].legend(loc='lower right')
             # plt.show()
             # save in folder_name as base_name+"_erosion_energy_profile.png"
             fig.tight_layout()
@@ -1138,7 +1448,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Validation_nlive\nlive500
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Best_thermal",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Best_iron-fit",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

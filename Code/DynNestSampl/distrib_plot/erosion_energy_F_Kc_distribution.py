@@ -922,12 +922,12 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
             Tot_energy_arr_sigma2_low, Tot_energy_arr_sigma2_high = Tot_energy_arr_cum_atmNom / (sigma_mult_interp**2),       Tot_energy_arr_cum_atmNom * (sigma_mult_interp**2)
             Tot_energy_arr_sigma3_low, Tot_energy_arr_sigma3_high = Tot_energy_arr_cum_atmNom / (sigma_mult_interp**3),       Tot_energy_arr_cum_atmNom * (sigma_mult_interp**3)
 
-            # create the atmpsperic uncertanty as a shaded area between Tot_energy_arr_cum_075 and Tot_energy_arr_cum_125
-            # ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_cum_075, Tot_energy_arr_cum_125, color='lightgray', alpha=0.3, label='Receive Energy Atm. Uncert. (±25%)')
-            # ax[1].plot(Tot_energy_arr_cum_atmNom, unique_heights_massvar/1000, color='gray', linestyle='-', label='Receive Energy Profile (Nominal Atm.)')
-            ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma1_low, Tot_energy_arr_sigma1_high, color='darkgray', alpha=0.3, label='Atm. Density Uncert. (±1σ)')
-            ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma2_low, Tot_energy_arr_sigma2_high, color='gray', alpha=0.2, label='Atm. Density Uncert. (±2σ)')
-            ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma3_low, Tot_energy_arr_sigma3_high, color='lightgray', alpha=0.1, label='Atm. Density Uncert. (±3σ)')
+            # # create the atmpsperic uncertanty as a shaded area between Tot_energy_arr_cum_075 and Tot_energy_arr_cum_125
+            # # ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_cum_075, Tot_energy_arr_cum_125, color='lightgray', alpha=0.3, label='Receive Energy Atm. Uncert. (±25%)')
+            # # ax[1].plot(Tot_energy_arr_cum_atmNom, unique_heights_massvar/1000, color='gray', linestyle='-', label='Receive Energy Profile (Nominal Atm.)')
+            # ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma1_low, Tot_energy_arr_sigma1_high, color='darkgray', alpha=0.3, label='Atm. Density Uncert. (±1σ)')
+            # ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma2_low, Tot_energy_arr_sigma2_high, color='gray', alpha=0.2, label='Atm. Density Uncert. (±2σ)')
+            # ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma3_low, Tot_energy_arr_sigma3_high, color='lightgray', alpha=0.1, label='Atm. Density Uncert. (±3σ)')
             ax[1].plot(Tot_energy_arr_cum, unique_heights_massvar/1000, color='k', label='Receive Energy Profile')
             # # add a hrizontal line at y=total_energy_before_erosion
             ax[1].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start $h_{e}$')

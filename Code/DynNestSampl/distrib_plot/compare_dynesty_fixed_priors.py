@@ -623,18 +623,36 @@ def compare_fixed_priors_with_flags(
 # )
 # print(info)
 
-##################################### Iron PLOT #####################################
+# ##################################### Iron PLOT #####################################
+
+# info = compare_fixed_priors_with_flags(
+#     input_folders=[
+#         r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau3",
+#         r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03",
+#         r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau008",
+#     ],
+#     labels=[r"$\tau$=3%", r"$\tau$=0.3%", r"$\tau$=0.08%"],  # legend labels
+#     colors=["red", "blue", "green"],              # requested colors
+#     ci=0.95,
+#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Iron_compare_tau_runs.png",    # figure path
+#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+#     verbose=True,              # << turn on once to see diagnostics
+#     align_mode="labels",  # << default; uses your flags order
+# )
+# print(info)
+
+##################################### ASTRA #####################################
 
 info = compare_fixed_priors_with_flags(
     input_folders=[
-        r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau3",
-        r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03",
-        r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau008",
+        r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\ASTRA",
+        r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\CAMO+EMCCD",
+        r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\EMCCD_only",
     ],
-    labels=[r"$\tau$=3%", r"$\tau$=0.3%", r"$\tau$=0.08%"],  # legend labels
-    colors=["red", "blue", "green"],              # requested colors
+    labels=[r"ASTRA", r"EMCCD+CAMO", r"EMCCD only"],  # legend labels
+    colors=["red", "blue", "green"],              # requested colors # 
     ci=0.95,
-    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Iron_compare_tau_runs.png",    # figure path
+    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\LogUnif_runs.png",    # figure path
     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
     verbose=True,              # << turn on once to see diagnostics
     align_mode="labels",  # << default; uses your flags order

@@ -52,6 +52,56 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 import numpy as np
 
+from datetime import datetime, timedelta
+import re
+
+
+variable_map = {
+    'v_init': r"$v_0$ [km/s]",
+    'zenith_angle': r"$z_c$ [rad]",
+    'm_init': r"$m_0$ [kg]",
+    'rho': r"$\rho$ [kg/m$^3$]",
+    'sigma': r"$\sigma$ [kg/MJ]",
+    'erosion_height_start': r"$h_e$ [km]",
+    'erosion_coeff': r"$\eta$ [kg/MJ]",
+    'erosion_mass_index': r"$s$",
+    'erosion_mass_min': r"$m_{l}$ [kg]",
+    'erosion_mass_max': r"$m_{u}$ [kg]",
+    'erosion_height_change': r"$h_{e2}$ [km]",
+    'erosion_coeff_change': r"$\eta_{2}$ [kg/MJ]",
+    'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
+    'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
+    'noise_lag': r"$\sigma_{lag}$ [m]",
+    'noise_lum': r"$\sigma_{lum}$ [W]",
+    'eeucs': r"$E_s$ [MJ/m$^2$]",
+    'eeum': r"$E_m$ [MJ/kg]",
+    'eeucs_end': r"$E_{s\,end}$ [MJ/m$^2$]",
+    'eeum_end': r"$E_{m\,end}$ [MJ/kg]"
+}
+
+# Mapping of original variable names to LaTeX-style labels
+variable_map_plot = {
+    'v_init': r"$v_0$ [m/s]",
+    'zenith_angle': r"$z_c$ [rad]",
+    'm_init': r"$m_0$ [kg]",
+    'rho': r"$\rho$ [kg/m$^3$]",
+    'sigma': r"$\sigma$ [kg/J]",
+    'erosion_height_start': r"$h_e$ [m]",
+    'erosion_coeff': r"$\eta$ [kg/J]",
+    'erosion_mass_index': r"$s$",
+    'erosion_mass_min': r"$m_{l}$ [kg]",
+    'erosion_mass_max': r"$m_{u}$ [kg]",
+    'erosion_height_change': r"$h_{e2}$ [m]",
+    'erosion_coeff_change': r"$\eta_{2}$ [kg/J]",
+    'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
+    'erosion_sigma_change': r"$\sigma_{2}$ [kg/J]",
+    'noise_lag': r"$\sigma_{lag}$ [m]",
+    'noise_lum': r"$\sigma_{lum}$ [W]",
+    'eeucs': r"$E_s$ [J/m$^2$]",
+    'eeum': r"$E_m$ [J/kg]",
+    'eeucs_end': r"$E_{s\,end}$ [J/m$^2$]",
+    'eeum_end': r"$E_{m\,end}$ [J/kg]"
+}
 
 # create a txt file where you save averithing that has been printed
 class Logger(object):
@@ -98,6 +148,36 @@ def iron_percent(v_km_s):
     z = np.maximum(np.asarray(v_km_s) - v0, 0.0)
     return A * (z**(k-1.0)) * np.exp(- (z/theta)**m)
 
+
+def _normalize_code_to_dt(code: str) -> datetime:
+    """Return a datetime from a code like 'YYYYMMDD_hhmmss' or 'YYYYMMDDhhmm', 
+    padding missing seconds with '00'. Non-digits (e.g., '_') are ignored."""
+    digits = re.sub(r"\D", "", str(code))              # keep only digits
+    if len(digits) < 12:                               # need at least YYYYMMDDHHMM
+        raise ValueError(f"Code too short to parse: {code}")
+    if len(digits) == 12:                              # no seconds, pad '00'
+        digits += "00"
+    elif len(digits) > 14:                             # if longer, trim to 14
+        digits = digits[:14]
+    # if len == 13, pad one more 0 (rare, but just in case)
+    digits = digits.ljust(14, "0")
+    return datetime.strptime(digits, "%Y%m%d%H%M%S")
+
+def find_close_in_list(target_code: str, candidates, tol_seconds: int = 3):
+    """Return the candidate from 'candidates' whose timestamp is within ±tol_seconds of target_code.
+       If multiple are within tolerance, return the closest. If none, return None."""
+    tdt = _normalize_code_to_dt(target_code)
+    best = None
+    best_abs_dt = None
+    for cand in candidates:
+        try:
+            cdt = _normalize_code_to_dt(cand)
+        except Exception:
+            continue
+        dt = abs((cdt - tdt).total_seconds())
+        if dt <= tol_seconds and (best_abs_dt is None or dt < best_abs_dt):
+            best, best_abs_dt = cand, dt
+    return best
 
 def _weighted_quantile(x, q, w):
     x = np.asarray(x); w = np.asarray(w)
@@ -461,7 +541,443 @@ def run_single_eeu(sim_num_and_data):
         print(f"Simulation end {sim_num} failed: {e}")
         return (sim_num, eeucs, eeum, np.nan, np.nan)
 
-def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plot_flag=False, plot_correl_flag=False):
+
+def align_dynesty_samples(dsampler, all_variables, current_flags):
+    """
+    Aligns dsampler samples to the full list of all variables by padding missing variables with 0
+    Weights remain unchanged for non-missing dimensions.
+    """
+    samples = dsampler.results['samples']
+    weights = dsampler.results.importance_weights()
+    n_samples = samples.shape[0]
+
+    for i, variable in enumerate(current_flags):
+        if 'log' in current_flags[variable]:
+            samples[:, i] = 10**samples[:, i]
+
+    # Create mapping of existing variables in current run
+    flag_keys = list(current_flags.keys())
+    flag_index = {v: i for i, v in enumerate(flag_keys)}
+
+    # Prepare padded samples with NaNs for missing variables
+    padded_samples = np.full((n_samples, len(all_variables)), np.nan)
+
+    # # create a float array full of zeros (or use np.nan if you prefer)
+    # padded_samples = np.zeros((n_samples, len(all_variables)), dtype=float)
+
+    for j, var in enumerate(all_variables):
+        if var in flag_index:
+            padded_samples[:, j] = samples[:, flag_index[var]]
+
+    return padded_samples, weights
+
+
+def extract_radiant_and_la_sun(report_path):
+    """
+    Returns:
+    lg_mean, lg_err_lo,
+    bg_mean, bg_err,
+    la_sun_mean
+
+    lg_err_lo/bg_err are the '+/-' values if present, else 0.0.
+    """
+
+    # storage
+    lg = bg = la_sun = None
+    lg_err_lo  = lg_err_hi = bg_err_lo  = bg_err_hi = None
+    lg_helio = bg_helio = None
+    lg_err_lo_helio = lg_err_hi_helio = bg_err_lo_helio = bg_err_hi_helio = None
+    in_ecl = False
+    in_ecl_helio = False
+
+    # regexes for Lg/Bg with CI
+    re_lg_ci = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
+    re_bg_ci = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
+    # look for "Lg = 246.70202 +/- 0.46473"
+    re_lg_pm  = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
+    re_bg_pm  = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
+    # fallback plain values
+    re_lg_val = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)')
+    re_bg_val = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)')
+    # solar longitude
+    re_lasun  = re.compile(r'^\s*La Sun\s*=\s*([+-]?\d+\.\d+)')
+
+    # regexes for Lh/Bh with CI
+    re_lg_ci_h = re.compile(r'^\s*Lh\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
+    re_bg_ci_h = re.compile(r'^\s*Bh\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
+    # look for "Lh = 246.70202 +/- 0.46473"
+    re_lg_pm_h  = re.compile(r'^\s*Lh\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
+    re_bg_pm_h  = re.compile(r'^\s*Bh\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
+    # fallback plain values
+    re_lg_val_h = re.compile(r'^\s*Lh\s*=\s*([+-]?\d+\.\d+)')
+    re_bg_val_h = re.compile(r'^\s*Bh\s*=\s*([+-]?\d+\.\d+)')
+
+    with open(report_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            s = line.strip()
+
+            # enter the block
+            if s.startswith('Radiant (ecliptic geocentric'):
+                in_ecl = True
+                continue
+
+            if in_ecl:
+                # blank line → exit
+                if not s:
+                    in_ecl = False
+                else:
+                    # try 95CI first
+                    m = re_lg_ci.match(line)
+                    if m:
+                        lg, lg_err_lo, lg_err_hi = map(float, m.groups())
+                    else:
+                        # try ± after
+                        m = re_lg_pm.match(line)
+                        if m:
+                            lg, lg_err_lo = float(m.group(1)), float(m.group(2))
+                        else:
+                            # then plain
+                            m = re_lg_val.match(line)
+                            if m and lg is None:
+                                lg = float(m.group(1))
+                    # try 95CI first
+                    m = re_bg_ci.match(line)
+                    if m:
+                        bg, bg_err_lo, bg_err_hi = map(float, m.groups())
+                    else:
+                        m = re_bg_pm.match(line)
+                        if m:
+                            bg, bg_err_lo = float(m.group(1)), float(m.group(2))
+                        else:
+                            m = re_bg_val.match(line)
+                            if m and bg is None:
+                                bg = float(m.group(1))
+
+            if s.startswith('Radiant (ecliptic heliocentric'):
+                in_ecl_helio = True
+                continue
+
+            if in_ecl_helio:
+                # blank line → exit
+                if not s:
+                    in_ecl_helio = False
+                else:
+                    # try 95CI first
+                    m = re_lg_ci_h.match(line)
+                    if m:
+                        lg_helio, lg_err_lo_helio, lg_err_hi_helio = map(float, m.groups())
+                    else:
+                        # try ± after
+                        m = re_lg_pm_h.match(line)
+                        if m:
+                            lg_helio, lg_err_lo_helio = float(m.group(1)), float(m.group(2))
+                        else:
+                            # then plain
+                            m = re_lg_val_h.match(line)
+                            if m and lg_helio is None:
+                                lg_helio = float(m.group(1))
+                    # try 95CI first
+                    m = re_bg_ci_h.match(line)
+                    if m:
+                        bg_helio, bg_err_lo_helio, bg_err_hi_helio = map(float, m.groups())
+                    else:
+                        m = re_bg_pm_h.match(line)
+                        if m:
+                            bg_helio, bg_err_lo_helio = float(m.group(1)), float(m.group(2))
+                        else:
+                            m = re_bg_val_h.match(line)
+                            if m and bg_helio is None:
+                                bg_helio = float(m.group(1))
+
+
+            # always grab La Sun
+            if la_sun is None:
+                m = re_lasun.match(line)
+                if m:
+                    la_sun = float(m.group(1))
+
+            # stop if we have all three
+            if lg is not None and bg is not None and la_sun is not None and lg_helio is not None and bg_helio is not None:
+                break
+
+    if lg is None or bg is None:
+        raise RuntimeError(f"Couldn t find Lg/Bg in {report_path!r}")
+    if la_sun is None:
+        raise RuntimeError(f"Couldn t find La Sun in {report_path!r}")
+    if lg_err_lo is None:
+        lg_err_lo = lg
+        lg_err_hi = lg
+    if bg_err_lo is None:
+        bg_err_lo = bg
+        bg_err_hi = bg
+    if lg_err_hi is None:
+        lg_err_hi = lg + abs(lg_err_lo)
+        lg_err_lo = lg - abs(lg_err_lo)
+    if bg_err_hi is None:
+        bg_err_hi = bg + abs(bg_err_lo)
+        bg_err_lo = bg - abs(bg_err_lo)
+    if lg_err_lo_helio is None:
+        lg_err_lo_helio = lg_helio
+        lg_err_hi_helio = lg_helio
+    if bg_err_lo_helio is None:
+        bg_err_lo_helio = bg_helio
+        bg_err_hi_helio = bg_helio
+    if lg_err_hi_helio is None:
+        lg_err_hi_helio = lg_helio + abs(lg_err_lo_helio)
+        lg_err_lo_helio = lg_helio - abs(lg_err_lo_helio)
+    if bg_err_hi_helio is None:
+        bg_err_hi_helio = bg_helio + abs(bg_err_lo_helio)
+        bg_err_lo_helio = bg_helio - abs(bg_err_lo_helio)
+
+    print(f"Radiant (ecliptic heliocentric): Lg = {lg_helio}° 95CI [{lg_err_lo_helio:.3f}°, {lg_err_hi_helio:.3f}°], Bg = {bg_helio}° 95CI [{bg_err_lo_helio:.3f}°, {bg_err_hi_helio:.3f}°]")
+    # print the results
+    print(f"Radiant (ecliptic geocentric): Lg = {lg}° 95CI [{lg_err_lo:.3f}°, {lg_err_hi:.3f}°], Bg = {bg}° 95CI [{bg_err_lo:.3f}°, {bg_err_hi:.3f}°]")
+    lg_lo = (lg - lg_err_lo)/1.96
+    lg_hi = (lg_err_hi - lg)/1.96
+    bg_lo = (bg_err_hi - bg)/1.96
+    bg_hi = (bg - bg_err_lo)/1.96
+    lg_helio_lo = (lg_helio - lg_err_lo_helio)/1.96
+    lg_helio_hi = (lg_err_hi_helio - lg_helio)/1.96
+    bg_helio_lo = (bg_err_hi_helio - bg_helio)/1.96
+    bg_helio_hi = (bg_helio - bg_err_lo_helio)/1.96
+    print(f"Error range: Lg = {lg}° ± {lg_lo:.3f}° / {lg_hi:.3f}°, Bg = {bg}° ± {bg_lo:.3f}° / {bg_hi:.3f}°")
+
+    return lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun, lg_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi
+
+
+def extract_tj_from_report(report_path):
+    Tj = Tj_low = Tj_high = None
+    inclin_val = Q_val = q_val = a_val = e_val = Vinf_val = None
+    
+    re_i_val = re.compile(
+        r'^\s*i\s*=\s*'                           
+        r'([+-]?\d+\.\d+)'                         
+    )
+
+    re_Vinf_val = re.compile(
+        r'^\s*Vinf\s*=\s*'                           
+        r'([+-]?\d+\.\d+)'                         
+    )
+
+    re_a_val = re.compile(
+        r'^\s*a\s*=\s*'                           
+        r'([+-]?\d+\.\d+)'                         
+    )
+
+    re_e_val = re.compile(
+        r'^\s*e\s*=\s*'                           
+        r'([+-]?\d+\.\d+)'                         
+    )
+
+    re_q_val = re.compile(
+        r'^\s*q\s*=\s*'                           
+        r'([+-]?\d+\.\d+)'                         
+    )
+
+    re_Q_val = re.compile(
+        r'^\s*Q\s*=\s*'                           
+        r'([+-]?\d+\.\d+)'                         
+    )
+
+    re_Vinf_val = re.compile(
+        r'^\s*Vinf\s*=\s*'                           
+        r'([+-]?\d+\.\d+)'                         
+    )
+
+    # 1) “CI present” (captures best‐fit, ci_low, ci_high)
+    re_tj_ci = re.compile(
+        r'^\s*Tj\s*=\s*'                           # “Tj = ”
+        r'([+-]?\d+\.\d+)'                         # 1) best‐fit value
+        r'(?:\s*\+/-\s*[0-9.]+)?'                  #    optional “± err” (we don’t need to capture it here)
+        r'\s*,\s*95%\s*CI\s*\[\s*'
+        r'([+-]?\d+\.\d+)\s*,\s*'                  # 2) ci_low
+        r'([+-]?\d+\.\d+)\s*\]'                    # 3) ci_high
+    )
+
+    # 2) “± err” only (no CI)
+    re_tj_pm = re.compile(
+        r'^\s*Tj\s*=\s*'                           # “Tj = ”
+        r'([+-]?\d+\.\d+)\s*'                      # 1) best‐fit value
+        r'\+/-\s*([0-9.]+)'                        # 2) err
+        r'\s*$'
+    )
+
+    # 3) Plain value only
+    re_tj_val = re.compile(
+        r'^\s*Tj\s*=\s*'                           # “Tj = ”
+        r'([+-]?\d+\.\d+)'                         # 1) best‐fit value
+        r'\s*$'
+    )
+
+    with open(report_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            # Try “CI present” first
+            m = re_tj_ci.match(line)
+            if m:
+                Tj, Tj_low, Tj_high = map(float, m.groups())
+            else:
+                # Next, try “± err” only
+                m = re_tj_pm.match(line)
+                if m:
+                    val = float(m.group(1))
+                    err = float(m.group(2))
+                    Tj = val
+                    Tj_low = val - err
+                    Tj_high = val + err
+                else:
+                    # Finally, try bare “Tj = <val>”
+                    m = re_tj_val.match(line)
+                    if m:
+                        val = float(m.group(1))
+                        Tj = val
+                        Tj_low = val
+                        Tj_high = val
+
+            if inclin_val is None:
+                m = re_i_val.match(line)
+                if m:
+                    inclin_val = float(m.group(1))
+            if Vinf_val is None:
+                m = re_Vinf_val.match(line)
+                if m:
+                    Vinf_val = float(m.group(1))
+            if Q_val is None:
+                m = re_Q_val.match(line)
+                if m:
+                    Q_val = float(m.group(1))
+            if q_val is None:
+                m = re_q_val.match(line)
+                if m:
+                    q_val = float(m.group(1))
+            if a_val is None:
+                m = re_a_val.match(line)
+                if m:
+                    a_val = float(m.group(1))
+            if e_val is None:
+                m = re_e_val.match(line)
+                if m:
+                    e_val = float(m.group(1))
+                    
+
+            if Tj is not None and inclin_val is not None and Vinf_val is not None and Q_val is not None and q_val is not None and a_val is not None and e_val is not None:
+                break
+
+
+    if Tj is None:
+        raise RuntimeError(f"Couldn’t find any Tj line in {report_path!r}")
+    if inclin_val is None:
+        raise RuntimeError(f"Couldn’t find inclination (i) in {report_path!r}")
+    if Vinf_val is None:
+        raise RuntimeError(f"Couldn’t find Vinf in {report_path!r}")
+
+    print(f"Tj = {Tj:.6f} 95% CI = [{Tj_low:.6f}, {Tj_high:.6f}]")
+    Tj_low = (Tj - Tj_low)#/1.96
+    Tj_high = (Tj_high - Tj)#/1.96
+    print(f"Vinf = {Vinf_val:.6f} km/s")
+    print(f"a = {a_val:.6f} AU")
+    print(f"e = {e_val:.6f}")
+    print(f"i = {inclin_val:.6f} deg")
+    print(f"Q = {Q_val:.6f} AU")
+    print(f"q = {q_val:.6f} AU")
+
+    return Tj, Tj_low, Tj_high, inclin_val, Vinf_val, Q_val, q_val, a_val, e_val
+
+
+def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
+    """
+    Summarize dynesty results, using the sample of max weight as the mode.
+    """
+    samples = results.samples               # shape (nsamps, ndim)
+    weights = results.importance_weights()  # shape (nsamps,)
+
+    # normalize weights
+    w = weights.copy()
+    w /= np.sum(w)
+
+    # find the single sample index with highest weight
+    mode_idx = np.nanargmax(w)   # index of peak-weight sample
+    mode_raw = samples[mode_idx] # array shape (ndim,)
+
+    rows = []
+    for i, (var, lab) in enumerate(zip(variables, labels_plot)):
+        x = samples[:, i].astype(float)
+        # mask out NaNs
+        mask = ~np.isnan(x)
+        x_valid = x[mask]
+        w_valid = w[mask]
+        if x_valid.size == 0:
+            rows.append((var, lab, *([np.nan]*5)))
+            continue
+        # renormalize
+        w_valid /= np.sum(w_valid)
+
+        # weighted quantiles
+        low95, med, high95 = _quantile(x_valid,
+                                    [0.025, 0.5, 0.975],
+                                    weights=w_valid)
+        # weighted mean
+        mean_raw = np.sum(x_valid * w_valid)
+        # simple mode from max-weight sample
+        mode_value = mode_raw[i]
+
+        # mode via corner logic
+        lo, hi = np.min(x), np.max(x)
+        if isinstance(smooth, int):
+            hist, edges = np.histogram(x, bins=smooth, weights=w, range=(lo,hi))
+        else:
+            nbins = int(round(10. / smooth))
+            hist, edges = np.histogram(x, bins=nbins, weights=w, range=(lo,hi))
+            hist = norm_kde(hist, 10.0)
+        centers = 0.5 * (edges[1:] + edges[:-1])
+        mode_Ndim = centers[np.argmax(hist)]
+
+        # now apply your log & unit transforms *after* computing stats
+        def transform(v):
+            if var in ['v_init',
+                    'erosion_height_start',
+                    'erosion_height_change']:
+                v = v / 1e3
+            if var in ['erosion_coeff',
+                    'sigma',
+                    'erosion_coeff_change',
+                    'erosion_sigma_change']:
+                v = v * 1e6
+            return v
+
+        rows.append((
+            var,
+            lab,
+            transform(low95),
+            transform(mode_value),
+            transform(mode_Ndim),
+            transform(mean_raw),
+            transform(med),
+            transform(high95),
+        ))
+
+    return pd.DataFrame(
+        rows,
+        columns=["Variable","Label","Low95","Mode","Mode_{Ndim}","Mean","Median","High95"]
+    )
+
+
+def weighted_var_eros_height_change(var_start, var_heightchange, mass_before, m_init, w):
+    x = var_start*(abs(m_init-mass_before) / m_init) + var_heightchange * (mass_before / m_init)
+    mask = ~np.isnan(x)
+    x_valid = x[mask]
+    w_valid = w[mask]
+
+    # renormalize
+    w_valid /= np.sum(w_valid)
+
+    # weighted quantiles
+    rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+    rho_lo = (rho - rho_lo) #/1.96
+    rho_hi = (rho_hi - rho) #/1.96
+    return x_valid, rho, rho_lo, rho_hi
+
+
+def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radiance_plot_flag=False, plot_correl_flag=False):
     """
     Function to plot the distribution of the parameters from the dynesty files and save them as a table in LaTeX format.
     """
@@ -502,53 +1018,7 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
     print(f"Shared labels: {variables}")
 
     ndim = len(variables)
-    # Mapping of original variable names to LaTeX-style labels
-    variable_map = {
-        'v_init': r"$v_0$ [km/s]",
-        'zenith_angle': r"$z_c$ [rad]",
-        'm_init': r"$m_0$ [kg]",
-        'rho': r"$\rho$ [kg/m$^3$]",
-        'sigma': r"$\sigma$ [kg/MJ]",
-        'erosion_height_start': r"$h_e$ [km]",
-        'erosion_coeff': r"$\eta$ [kg/MJ]",
-        'erosion_mass_index': r"$s$",
-        'erosion_mass_min': r"$m_{l}$ [kg]",
-        'erosion_mass_max': r"$m_{u}$ [kg]",
-        'erosion_height_change': r"$h_{e2}$ [km]",
-        'erosion_coeff_change': r"$\eta_{2}$ [kg/MJ]",
-        'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
-        'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
-        'noise_lag': r"$\sigma_{lag}$ [m]",
-        'noise_lum': r"$\sigma_{lum}$ [W]",
-        'eeucs': r"$E_s$ [MJ/m$^2$]",
-        'eeum': r"$E_m$ [MJ/kg]",
-        'eeucs_end': r"$E_{s\,end}$ [MJ/m$^2$]",
-        'eeum_end': r"$E_{m\,end}$ [MJ/kg]"
-    }
-
-    # Mapping of original variable names to LaTeX-style labels
-    variable_map_plot = {
-        'v_init': r"$v_0$ [m/s]",
-        'zenith_angle': r"$z_c$ [rad]",
-        'm_init': r"$m_0$ [kg]",
-        'rho': r"$\rho$ [kg/m$^3$]",
-        'sigma': r"$\sigma$ [kg/J]",
-        'erosion_height_start': r"$h_e$ [m]",
-        'erosion_coeff': r"$\eta$ [kg/J]",
-        'erosion_mass_index': r"$s$",
-        'erosion_mass_min': r"$m_{l}$ [kg]",
-        'erosion_mass_max': r"$m_{u}$ [kg]",
-        'erosion_height_change': r"$h_{e2}$ [m]",
-        'erosion_coeff_change': r"$\eta_{2}$ [kg/J]",
-        'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
-        'erosion_sigma_change': r"$\sigma_{2}$ [kg/J]",
-        'noise_lag': r"$\sigma_{lag}$ [m]",
-        'noise_lum': r"$\sigma_{lum}$ [W]",
-        'eeucs': r"$E_s$ [J/m$^2$]",
-        'eeum': r"$E_m$ [J/kg]",
-        'eeucs_end': r"$E_{s\,end}$ [J/m$^2$]",
-        'eeum_end': r"$E_{m\,end}$ [J/kg]"
-    }
+    
 
     # check if there are variables in the flags_dict that are not in the variable_map
     for variable in variables:
@@ -564,441 +1034,6 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
             # Add the variable to the map with a default label
             variable_map_plot[variable] = variable
     labels_plot = [variable_map_plot[variable] for variable in variables]
-
-
-
-    def align_dynesty_samples(dsampler, all_variables, current_flags):
-        """
-        Aligns dsampler samples to the full list of all variables by padding missing variables with 0
-        Weights remain unchanged for non-missing dimensions.
-        """
-        samples = dsampler.results['samples']
-        weights = dsampler.results.importance_weights()
-        n_samples = samples.shape[0]
-
-        for i, variable in enumerate(current_flags):
-            if 'log' in current_flags[variable]:
-                samples[:, i] = 10**samples[:, i]
-
-        # Create mapping of existing variables in current run
-        flag_keys = list(current_flags.keys())
-        flag_index = {v: i for i, v in enumerate(flag_keys)}
-
-        # Prepare padded samples with NaNs for missing variables
-        padded_samples = np.full((n_samples, len(all_variables)), np.nan)
-
-        # # create a float array full of zeros (or use np.nan if you prefer)
-        # padded_samples = np.zeros((n_samples, len(all_variables)), dtype=float)
-
-        for j, var in enumerate(all_variables):
-            if var in flag_index:
-                padded_samples[:, j] = samples[:, flag_index[var]]
-
-        return padded_samples, weights
-
-
-    def extract_radiant_and_la_sun(report_path):
-        """
-        Returns:
-        lg_mean, lg_err_lo,
-        bg_mean, bg_err,
-        la_sun_mean
-
-        lg_err_lo/bg_err are the '+/-' values if present, else 0.0.
-        """
-
-        # storage
-        lg = bg = la_sun = None
-        lg_err_lo  = lg_err_hi = bg_err_lo  = bg_err_hi = None
-        lg_helio = bg_helio = None
-        lg_err_lo_helio = lg_err_hi_helio = bg_err_lo_helio = bg_err_hi_helio = None
-        in_ecl = False
-        in_ecl_helio = False
-
-        # regexes for Lg/Bg with CI
-        re_lg_ci = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
-        re_bg_ci = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
-        # look for "Lg = 246.70202 +/- 0.46473"
-        re_lg_pm  = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
-        re_bg_pm  = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
-        # fallback plain values
-        re_lg_val = re.compile(r'^\s*Lg\s*=\s*([+-]?\d+\.\d+)')
-        re_bg_val = re.compile(r'^\s*Bg\s*=\s*([+-]?\d+\.\d+)')
-        # solar longitude
-        re_lasun  = re.compile(r'^\s*La Sun\s*=\s*([+-]?\d+\.\d+)')
-
-        # regexes for Lh/Bh with CI
-        re_lg_ci_h = re.compile(r'^\s*Lh\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
-        re_bg_ci_h = re.compile(r'^\s*Bh\s*=\s*([+-]?\d+\.\d+)[^[]*\[\s*([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)\s*\]')
-        # look for "Lh = 246.70202 +/- 0.46473"
-        re_lg_pm_h  = re.compile(r'^\s*Lh\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
-        re_bg_pm_h  = re.compile(r'^\s*Bh\s*=\s*([+-]?\d+\.\d+)\s*\+/-\s*([0-9.]+)')
-        # fallback plain values
-        re_lg_val_h = re.compile(r'^\s*Lh\s*=\s*([+-]?\d+\.\d+)')
-        re_bg_val_h = re.compile(r'^\s*Bh\s*=\s*([+-]?\d+\.\d+)')
-
-        with open(report_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                s = line.strip()
-
-                # enter the block
-                if s.startswith('Radiant (ecliptic geocentric'):
-                    in_ecl = True
-                    continue
-
-                if in_ecl:
-                    # blank line → exit
-                    if not s:
-                        in_ecl = False
-                    else:
-                        # try 95CI first
-                        m = re_lg_ci.match(line)
-                        if m:
-                            lg, lg_err_lo, lg_err_hi = map(float, m.groups())
-                        else:
-                            # try ± after
-                            m = re_lg_pm.match(line)
-                            if m:
-                                lg, lg_err_lo = float(m.group(1)), float(m.group(2))
-                            else:
-                                # then plain
-                                m = re_lg_val.match(line)
-                                if m and lg is None:
-                                    lg = float(m.group(1))
-                        # try 95CI first
-                        m = re_bg_ci.match(line)
-                        if m:
-                            bg, bg_err_lo, bg_err_hi = map(float, m.groups())
-                        else:
-                            m = re_bg_pm.match(line)
-                            if m:
-                                bg, bg_err_lo = float(m.group(1)), float(m.group(2))
-                            else:
-                                m = re_bg_val.match(line)
-                                if m and bg is None:
-                                    bg = float(m.group(1))
-
-                if s.startswith('Radiant (ecliptic heliocentric'):
-                    in_ecl_helio = True
-                    continue
-
-                if in_ecl_helio:
-                    # blank line → exit
-                    if not s:
-                        in_ecl_helio = False
-                    else:
-                        # try 95CI first
-                        m = re_lg_ci_h.match(line)
-                        if m:
-                            lg_helio, lg_err_lo_helio, lg_err_hi_helio = map(float, m.groups())
-                        else:
-                            # try ± after
-                            m = re_lg_pm_h.match(line)
-                            if m:
-                                lg_helio, lg_err_lo_helio = float(m.group(1)), float(m.group(2))
-                            else:
-                                # then plain
-                                m = re_lg_val_h.match(line)
-                                if m and lg_helio is None:
-                                    lg_helio = float(m.group(1))
-                        # try 95CI first
-                        m = re_bg_ci_h.match(line)
-                        if m:
-                            bg_helio, bg_err_lo_helio, bg_err_hi_helio = map(float, m.groups())
-                        else:
-                            m = re_bg_pm_h.match(line)
-                            if m:
-                                bg_helio, bg_err_lo_helio = float(m.group(1)), float(m.group(2))
-                            else:
-                                m = re_bg_val_h.match(line)
-                                if m and bg_helio is None:
-                                    bg_helio = float(m.group(1))
-
-
-                # always grab La Sun
-                if la_sun is None:
-                    m = re_lasun.match(line)
-                    if m:
-                        la_sun = float(m.group(1))
-
-                # stop if we have all three
-                if lg is not None and bg is not None and la_sun is not None and lg_helio is not None and bg_helio is not None:
-                    break
-
-        if lg is None or bg is None:
-            raise RuntimeError(f"Couldn t find Lg/Bg in {report_path!r}")
-        if la_sun is None:
-            raise RuntimeError(f"Couldn t find La Sun in {report_path!r}")
-        if lg_err_lo is None:
-            lg_err_lo = lg
-            lg_err_hi = lg
-        if bg_err_lo is None:
-            bg_err_lo = bg
-            bg_err_hi = bg
-        if lg_err_hi is None:
-            lg_err_hi = lg + abs(lg_err_lo)
-            lg_err_lo = lg - abs(lg_err_lo)
-        if bg_err_hi is None:
-            bg_err_hi = bg + abs(bg_err_lo)
-            bg_err_lo = bg - abs(bg_err_lo)
-        if lg_err_lo_helio is None:
-            lg_err_lo_helio = lg_helio
-            lg_err_hi_helio = lg_helio
-        if bg_err_lo_helio is None:
-            bg_err_lo_helio = bg_helio
-            bg_err_hi_helio = bg_helio
-        if lg_err_hi_helio is None:
-            lg_err_hi_helio = lg_helio + abs(lg_err_lo_helio)
-            lg_err_lo_helio = lg_helio - abs(lg_err_lo_helio)
-        if bg_err_hi_helio is None:
-            bg_err_hi_helio = bg_helio + abs(bg_err_lo_helio)
-            bg_err_lo_helio = bg_helio - abs(bg_err_lo_helio)
-
-        print(f"Radiant (ecliptic heliocentric): Lg = {lg_helio}° 95CI [{lg_err_lo_helio:.3f}°, {lg_err_hi_helio:.3f}°], Bg = {bg_helio}° 95CI [{bg_err_lo_helio:.3f}°, {bg_err_hi_helio:.3f}°]")
-        # print the results
-        print(f"Radiant (ecliptic geocentric): Lg = {lg}° 95CI [{lg_err_lo:.3f}°, {lg_err_hi:.3f}°], Bg = {bg}° 95CI [{bg_err_lo:.3f}°, {bg_err_hi:.3f}°]")
-        lg_lo = (lg - lg_err_lo)/1.96
-        lg_hi = (lg_err_hi - lg)/1.96
-        bg_lo = (bg_err_hi - bg)/1.96
-        bg_hi = (bg - bg_err_lo)/1.96
-        lg_helio_lo = (lg_helio - lg_err_lo_helio)/1.96
-        lg_helio_hi = (lg_err_hi_helio - lg_helio)/1.96
-        bg_helio_lo = (bg_err_hi_helio - bg_helio)/1.96
-        bg_helio_hi = (bg_helio - bg_err_lo_helio)/1.96
-        print(f"Error range: Lg = {lg}° ± {lg_lo:.3f}° / {lg_hi:.3f}°, Bg = {bg}° ± {bg_lo:.3f}° / {bg_hi:.3f}°")
-
-        return lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun, lg_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi
-
-
-    def extract_tj_from_report(report_path):
-        Tj = Tj_low = Tj_high = None
-        inclin_val = Q_val = q_val = a_val = e_val = Vinf_val = None
-        
-        re_i_val = re.compile(
-            r'^\s*i\s*=\s*'                           
-            r'([+-]?\d+\.\d+)'                         
-        )
-
-        re_Vinf_val = re.compile(
-            r'^\s*Vinf\s*=\s*'                           
-            r'([+-]?\d+\.\d+)'                         
-        )
-
-        re_a_val = re.compile(
-            r'^\s*a\s*=\s*'                           
-            r'([+-]?\d+\.\d+)'                         
-        )
-
-        re_e_val = re.compile(
-            r'^\s*e\s*=\s*'                           
-            r'([+-]?\d+\.\d+)'                         
-        )
-
-        re_q_val = re.compile(
-            r'^\s*q\s*=\s*'                           
-            r'([+-]?\d+\.\d+)'                         
-        )
-
-        re_Q_val = re.compile(
-            r'^\s*Q\s*=\s*'                           
-            r'([+-]?\d+\.\d+)'                         
-        )
-
-        re_Vinf_val = re.compile(
-            r'^\s*Vinf\s*=\s*'                           
-            r'([+-]?\d+\.\d+)'                         
-        )
-
-        # 1) “CI present” (captures best‐fit, ci_low, ci_high)
-        re_tj_ci = re.compile(
-            r'^\s*Tj\s*=\s*'                           # “Tj = ”
-            r'([+-]?\d+\.\d+)'                         # 1) best‐fit value
-            r'(?:\s*\+/-\s*[0-9.]+)?'                  #    optional “± err” (we don’t need to capture it here)
-            r'\s*,\s*95%\s*CI\s*\[\s*'
-            r'([+-]?\d+\.\d+)\s*,\s*'                  # 2) ci_low
-            r'([+-]?\d+\.\d+)\s*\]'                    # 3) ci_high
-        )
-
-        # 2) “± err” only (no CI)
-        re_tj_pm = re.compile(
-            r'^\s*Tj\s*=\s*'                           # “Tj = ”
-            r'([+-]?\d+\.\d+)\s*'                      # 1) best‐fit value
-            r'\+/-\s*([0-9.]+)'                        # 2) err
-            r'\s*$'
-        )
-
-        # 3) Plain value only
-        re_tj_val = re.compile(
-            r'^\s*Tj\s*=\s*'                           # “Tj = ”
-            r'([+-]?\d+\.\d+)'                         # 1) best‐fit value
-            r'\s*$'
-        )
-
-        with open(report_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                # Try “CI present” first
-                m = re_tj_ci.match(line)
-                if m:
-                    Tj, Tj_low, Tj_high = map(float, m.groups())
-                else:
-                    # Next, try “± err” only
-                    m = re_tj_pm.match(line)
-                    if m:
-                        val = float(m.group(1))
-                        err = float(m.group(2))
-                        Tj = val
-                        Tj_low = val - err
-                        Tj_high = val + err
-                    else:
-                        # Finally, try bare “Tj = <val>”
-                        m = re_tj_val.match(line)
-                        if m:
-                            val = float(m.group(1))
-                            Tj = val
-                            Tj_low = val
-                            Tj_high = val
-
-                if inclin_val is None:
-                    m = re_i_val.match(line)
-                    if m:
-                        inclin_val = float(m.group(1))
-                if Vinf_val is None:
-                    m = re_Vinf_val.match(line)
-                    if m:
-                        Vinf_val = float(m.group(1))
-                if Q_val is None:
-                    m = re_Q_val.match(line)
-                    if m:
-                        Q_val = float(m.group(1))
-                if q_val is None:
-                    m = re_q_val.match(line)
-                    if m:
-                        q_val = float(m.group(1))
-                if a_val is None:
-                    m = re_a_val.match(line)
-                    if m:
-                        a_val = float(m.group(1))
-                if e_val is None:
-                    m = re_e_val.match(line)
-                    if m:
-                        e_val = float(m.group(1))
-                        
-
-                if Tj is not None and inclin_val is not None and Vinf_val is not None and Q_val is not None and q_val is not None and a_val is not None and e_val is not None:
-                    break
-
-
-        if Tj is None:
-            raise RuntimeError(f"Couldn’t find any Tj line in {report_path!r}")
-        if inclin_val is None:
-            raise RuntimeError(f"Couldn’t find inclination (i) in {report_path!r}")
-        if Vinf_val is None:
-            raise RuntimeError(f"Couldn’t find Vinf in {report_path!r}")
-
-        print(f"Tj = {Tj:.6f} 95% CI = [{Tj_low:.6f}, {Tj_high:.6f}]")
-        Tj_low = (Tj - Tj_low)#/1.96
-        Tj_high = (Tj_high - Tj)#/1.96
-        print(f"Vinf = {Vinf_val:.6f} km/s")
-        print(f"a = {a_val:.6f} AU")
-        print(f"e = {e_val:.6f}")
-        print(f"i = {inclin_val:.6f} deg")
-        print(f"Q = {Q_val:.6f} AU")
-        print(f"q = {q_val:.6f} AU")
-
-        return Tj, Tj_low, Tj_high, inclin_val, Vinf_val, Q_val, q_val, a_val, e_val
-
-
-    def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
-        """
-        Summarize dynesty results, using the sample of max weight as the mode.
-        """
-        samples = results.samples               # shape (nsamps, ndim)
-        weights = results.importance_weights()  # shape (nsamps,)
-
-        # normalize weights
-        w = weights.copy()
-        w /= np.sum(w)
-
-        # find the single sample index with highest weight
-        mode_idx = np.nanargmax(w)   # index of peak-weight sample
-        mode_raw = samples[mode_idx] # array shape (ndim,)
-
-        rows = []
-        for i, (var, lab) in enumerate(zip(variables, labels_plot)):
-            x = samples[:, i].astype(float)
-            # mask out NaNs
-            mask = ~np.isnan(x)
-            x_valid = x[mask]
-            w_valid = w[mask]
-            if x_valid.size == 0:
-                rows.append((var, lab, *([np.nan]*5)))
-                continue
-            # renormalize
-            w_valid /= np.sum(w_valid)
-
-            # weighted quantiles
-            low95, med, high95 = _quantile(x_valid,
-                                        [0.025, 0.5, 0.975],
-                                        weights=w_valid)
-            # weighted mean
-            mean_raw = np.sum(x_valid * w_valid)
-            # simple mode from max-weight sample
-            mode_value = mode_raw[i]
-
-            # mode via corner logic
-            lo, hi = np.min(x), np.max(x)
-            if isinstance(smooth, int):
-                hist, edges = np.histogram(x, bins=smooth, weights=w, range=(lo,hi))
-            else:
-                nbins = int(round(10. / smooth))
-                hist, edges = np.histogram(x, bins=nbins, weights=w, range=(lo,hi))
-                hist = norm_kde(hist, 10.0)
-            centers = 0.5 * (edges[1:] + edges[:-1])
-            mode_Ndim = centers[np.argmax(hist)]
-
-            # now apply your log & unit transforms *after* computing stats
-            def transform(v):
-                if var in ['v_init',
-                        'erosion_height_start',
-                        'erosion_height_change']:
-                    v = v / 1e3
-                if var in ['erosion_coeff',
-                        'sigma',
-                        'erosion_coeff_change',
-                        'erosion_sigma_change']:
-                    v = v * 1e6
-                return v
-
-            rows.append((
-                var,
-                lab,
-                transform(low95),
-                transform(mode_value),
-                transform(mode_Ndim),
-                transform(mean_raw),
-                transform(med),
-                transform(high95),
-            ))
-
-        return pd.DataFrame(
-            rows,
-            columns=["Variable","Label","Low95","Mode","Mode_{Ndim}","Mean","Median","High95"]
-        )
-
-    def weighted_var_eros_height_change(var_start, var_heightchange, mass_before, m_init, w):
-        x = var_start*(abs(m_init-mass_before) / m_init) + var_heightchange * (mass_before / m_init)
-        mask = ~np.isnan(x)
-        x_valid = x[mask]
-        w_valid = w[mask]
-
-        # renormalize
-        w_valid /= np.sum(w_valid)
-
-        # weighted quantiles
-        rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
-        rho_lo = (rho - rho_lo) #/1.96
-        rho_hi = (rho_hi - rho) #/1.96
-        return x_valid, rho, rho_lo, rho_hi
 
     # the on that are not variables are the one that were not used in the dynesty run give a np.nan weight to dsampler for those
     all_samples = []
@@ -1417,6 +1452,27 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
     # Reset sys.stdout to its original value if needed
     sys.stdout = sys.__stdout__
+
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+
+def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+
+
+    # check if there are variables in the flags_dict that are not in the variable_map
+    for variable in variables:
+        if variable not in variable_map:
+            print(f"Warning: {variable} not found in variable_map")
+            # Add the variable to the map with a default label
+            variable_map[variable] = variable
+    labels = [variable_map[variable] for variable in variables]
+
+    for variable in variables:
+        if variable not in variable_map_plot:
+            print(f"Warning: {variable} not found in variable_map")
+            # Add the variable to the map with a default label
+            variable_map_plot[variable] = variable
+    labels_plot = [variable_map_plot[variable] for variable in variables]
+
 
     # Extract data for plotting
     lg_min_la_sun = np.array([v[0] for v in file_radiance_rho_dict.values()])
@@ -2446,122 +2502,147 @@ def shower_distrb_plot(input_dirfile, output_dir_show, shower_name, radiance_plo
 
     # Meteors - Kikwaya et al. (2009) - Sporadic meteoroids
 
-    # (code, mass_kg, rho_kgm3)
+    # (code, mass_kg, rho_kgm3) 
     rows = [
         # 2006
-        ("20060430084301", 7.10e-6, 1450.0),
-        ("20060430103000", 6.15e-6,  950.0),
-        ("20060430104845", 6.85e-6,  690.0),
-        ("20060502100335", 6.75e-6,  780.0),
-        ("20060503091349", 7.65e-6,  970.0),
-        ("20060504093103", 7.95e-6, 3550.0),
-        ("20060505102944", 1.95e-5, 4550.0),
+        ("20060430_084301", 7.10e-6, 1450.0),
+        ("20060430_103000", 6.15e-6,  950.0),
+        ("20060430_104845", 6.85e-6,  690.0),
+        ("20060502_100335", 6.75e-6,  780.0),
+        ("20060503_091349", 7.65e-6,  970.0),
+        ("20060504_093103", 7.95e-6, 3550.0),
+        ("20060505_102944", 1.95e-5, 4550.0),
 
         # 2007
-        ("20070420082356", 4.05e-6,  630.0),
-        ("20070422061849", 2.20e-6,  730.0),
-        ("20070519040843", 6.15e-6,  975.0),
-        ("20070519075753", 2.80e-5, 1240.0),
+        ("20070420_082356", 4.05e-6,  630.0),
+        ("20070422_061849", 2.20e-6,  730.0),
+        ("20070519_040843", 6.15e-6,  975.0),
+        ("20070519_075753", 2.80e-5, 1240.0),
 
-        ("20070519082713", 6.45e-6,  830.0),
-        ("20070812062117", 2.10e-6,  710.0),
-        ("20070812083450", 2.85e-6,  920.0),
-        ("20070813044452", 4.35e-6,  420.0),
+        ("20070519_082713", 6.45e-6,  830.0),
+        ("20070812_062117", 2.10e-6,  710.0),
+        ("20070812_083450", 2.85e-6,  920.0),
+        ("20070813_044452", 4.35e-6,  420.0),
 
-        ("20070813065047", 4.10e-6,  470.0),
-        ("20070813065828", 1.00e-5, 3150.0),
-        ("20070813073054", 2.15e-6,  380.0),
-        ("20070813075355", 5.20e-6,  670.0),
+        ("20070813_065047", 4.10e-6,  470.0),
+        ("20070813_065828", 1.00e-5, 3150.0),
+        ("20070813_073054", 2.15e-6,  380.0),
+        ("20070813_075355", 5.20e-6,  670.0),
 
-        ("20070813081229", 1.90e-5, 1550.0),
-        ("20070813084353", 1.40e-6, 1510.0),
-        ("20070813084901", 3.55e-6,  360.0),
-        ("20070813085448", 2.40e-6,  590.0),
+        ("20070813_081229", 1.90e-5, 1550.0),
+        ("20070813_084353", 1.40e-6, 1510.0),
+        ("20070813_084901", 3.55e-6,  360.0),
+        ("20070813_085448", 2.40e-6,  590.0),
 
-        ("20070813085457", 5.80e-6,  910.0),
-        ("20070813085548", 2.30e-6,  640.0),
+        ("20070813_085457", 5.80e-6,  910.0),
+        ("20070813_085548", 2.30e-6,  640.0),
 
         # 2008-09-10
-        ("20080910052352", 1.45e-5, 3500.0),
-        ("20080910053428", 1.95e-6, 4100.0),
-        ("20080910064102", 5.20e-6, 3550.0),
-        ("20080910075255", 3.75e-6,  990.0),
-        ("20080910075454", 3.40e-6,  730.0),
-        ("20080910091403", 4.15e-6,  820.0),
+        ("20080910_052352", 1.45e-5, 3500.0),
+        ("20080910_053428", 1.95e-6, 4100.0),
+        ("20080910_064102", 5.20e-6, 3550.0),
+        ("20080910_075255", 3.75e-6,  990.0),
+        ("20080910_075454", 3.40e-6,  730.0),
+        ("20080910_091403", 4.15e-6,  820.0),
 
         # 2008-09-11
-        ("20080911060638", 7.40e-6, 1095.0),
-        ("20080911065211", 5.10e-7,  945.0),
-        ("20080911071428", 1.10e-5, 4150.0),
+        ("20080911_060638", 7.40e-6, 1095.0),
+        ("20080911_065211", 5.10e-7,  945.0),
+        ("20080911_071428", 1.10e-5, 4150.0),
 
-        ("20080911075207", 7.20e-7,  980.0),
-        ("20080911075323", 2.60e-6, 1070.0),
-        ("20080911075846", 3.20e-6, 1070.0),
-        ("20080911081630", 3.15e-6,  865.0),
+        ("20080911_075207", 7.20e-7,  980.0),
+        ("20080911_075323", 2.60e-6, 1070.0),
+        ("20080911_075846", 3.20e-6, 1070.0),
+        ("20080911_081630", 3.15e-6,  865.0),
 
-        ("20080911084108", 3.80e-7,  650.0),
-        ("20080911084529", 2.15e-6, 3150.0),
-        ("20080911084739", 1.17e-6,  610.0),
-        ("20080911085605", 8.35e-7, 1065.0),
+        ("20080911_084108", 3.80e-7,  650.0),
+        ("20080911_084529", 2.15e-6, 3150.0),
+        ("20080911_084739", 1.17e-6,  610.0),
+        ("20080911_085605", 8.35e-7, 1065.0),
 
-        ("20080911090242", 1.85e-6,  760.0),
-        ("20080911090512", 2.05e-6,  915.0),
-        ("20080911093436", 4.90e-6, 1055.0),
-        ("20080911094752", 9.95e-7, 1015.0),
+        ("20080911_090242", 1.85e-6,  760.0),
+        ("20080911_090512", 2.05e-6,  915.0),
+        ("20080911_093436", 4.90e-6, 1055.0),
+        ("20080911_094752", 9.95e-7, 1015.0),
 
-        ("20080911094844", 1.70e-6, 3470.0),
+        ("20080911_094844", 1.70e-6, 3470.0),
 
         # 2009
-        ("20090624054307", 2.75e-6,  965.0),
-        ("20090625053313", 3.05e-6, 2950.0),
+        ("20090624_054307", 2.75e-6,  965.0),
+        ("20090625_053313", 3.05e-6, 2950.0),
 
-        ("20090820014058", 4.99e-6, 3150.0),
-        ("20090825032616", 4.30e-6, 4950.0),
-        ("20090825033603", 1.19e-6, 2825.0),
-        ("20090825034528", 1.02e-6, 4150.0),
-        ("20090825035145", 1.35e-6, 2815.0),
-        ("20090825035228", 2.89e-6, 3025.0),
-        ("20090825040603", 8.85e-7,  635.0),
-        ("20090825040835", 3.75e-6,  675.0),
-        ("20090825043435", 4.80e-6, 2780.0),
-        ("20090825050631", 1.25e-6, 3195.0),
-        ("20090825050904", 5.05e-6, 4820.0),
-        ("20090825053106", 1.95e-6, 3020.0),
-        ("20090825060500", 2.55e-6, 2860.0),
-        ("20090825061542", 1.70e-6,  925.0),
-        ("20090825063604", 2.35e-6,  715.0),
-        ("20090825063641", 1.25e-6,  965.0),
-        ("20090825064646", 1.80e-6,  660.0),
-        ("20090825065903", 3.90e-6, 2645.0),
-        ("20090825070044", 6.25e-7, 4895.0),
-        ("20090825081927", 7.95e-8, 5425.0),
-        ("20090825070933", 3.10e-6, 3215.0),
-        ("20090825085804", 1.80e-6,  620.0),
-        ("20090826020835", 1.10e-6, 4780.0),
-        ("20090902084143", 6.25e-6, 1230.0),
+        ("20090820_014058", 4.99e-6, 3150.0),
+        ("20090825_032616", 4.30e-6, 4950.0),
+        ("20090825_033603", 1.19e-6, 2825.0),
+        ("20090825_034528", 1.02e-6, 4150.0),
+        ("20090825_035145", 1.35e-6, 2815.0),
+        ("20090825_035228", 2.89e-6, 3025.0),
+        ("20090825_040603", 8.85e-7,  635.0),
+        ("20090825_040835", 3.75e-6,  675.0),
+        ("20090825_043435", 4.80e-6, 2780.0),
+        ("20090825_050631", 1.25e-6, 3195.0),
+        ("20090825_050904", 5.05e-6, 4820.0),
+        ("20090825_053106", 1.95e-6, 3020.0),
+        ("20090825_060500", 2.55e-6, 2860.0),
+        ("20090825_061542", 1.70e-6,  925.0),
+        ("20090825_063604", 2.35e-6,  715.0),
+        ("20090825_063641", 1.25e-6,  965.0),
+        ("20090825_064646", 1.80e-6,  660.0),
+        ("20090825_065903", 3.90e-6, 2645.0),
+        ("20090825_070044", 6.25e-7, 4895.0),
+        ("20090825_081927", 7.95e-8, 5425.0),
+        ("20090825_070933", 3.10e-6, 3215.0),
+        ("20090825_085804", 1.80e-6,  620.0),
+        ("20090826_020835", 1.10e-6, 4780.0),
+        ("20090902_084143", 6.25e-6, 1230.0),
 
-        ("20090902085534", 1.55e-6, 4495.0),
-        ("20090902085832", 1.55e-6, 1165.0),
-        ("20090902092028", 6.40e-7,  725.0),
+        ("20090902_085534", 1.55e-6, 4495.0),
+        ("20090902_085832", 1.55e-6, 1165.0),
+        ("20090902_092028", 6.40e-7,  725.0),
 
-        ("20090902093338", 2.25e-6,  605.0),
-        ("20090909010643", 2.50e-6, 4910.0),
-        ("20090909012810", 2.15e-6, 5010.0),
-        ("20090909013647", 4.85e-6, 5030.0),
+        ("20090902_093338", 2.25e-6,  605.0),
+        ("20090909_010643", 2.50e-6, 4910.0),
+        ("20090909_012810", 2.15e-6, 5010.0),
+        ("20090909_013647", 4.85e-6, 5030.0),
 
-        ("20090911021830", 1.45e-6, 5070.0),
-        ("20090911030523", 4.80e-6, 3130.0),
-        ("20090911034442", 1.65e-6, 4850.0),
-        ("20090911035942", 1.35e-6, 3515.0),
+        ("20090911_021830", 1.45e-6, 5070.0),
+        ("20090911_030523", 4.80e-6, 3130.0),
+        ("20090911_034442", 1.65e-6, 4850.0),
+        ("20090911_035942", 1.35e-6, 3515.0),
 
-        ("20090911040233", 6.75e-7, 1460.0),
-        ("20090911040433", 2.25e-5, 4010.0),
+        ("20090911_040233", 6.75e-7, 1460.0),
+        ("20090911_040433", 2.25e-5, 4010.0),
     ]
+
 
     mass_kg = np.array([row[1] for row in rows], dtype=float)
     rho_kgm3 = np.array([row[2] for row in rows], dtype=float)
-    
+
+
+    (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
+
+    name_ids = [row[0] for row in rows]
+    # Now do a tolerant match (±3 s) against your available names
+    foundJB = 0
+    for i, code in enumerate(name_ids):
+        # Try to find an exact-or-close match for this code inside all_names
+        matched_key = find_close_in_list(code, all_names_JB, tol_seconds=3)
+        if matched_key is not None and (matched_key in file_radiance_rho_dict_JB) and (matched_key in file_obs_data_dict_JB):
+            foundJB += 1
+            rho_JB = rho_kgm3[i]
+            rho_dynesty = file_radiance_rho_dict_JB[matched_key][2]
+            size_JB = from_mass2size(mass_kg[i], rho_JB)
+            size_dynesty = file_obs_data_dict_JB[matched_key][13]
+            ax.plot([size_JB, size_dynesty], [rho_JB, rho_dynesty],
+                    color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
+            ax.scatter(size_dynesty, rho_dynesty, color='red', marker='+', s=70, zorder=6) 
+
     ax.scatter(from_mass2size(mass_kg, rho_kgm3), rho_kgm3, color='sienna', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5) 
+
+    if foundJB > 0:
+        print(foundJB,"Found matching meteoroids from JB (±3 s tolerance).")
+        ax.plot([], [], color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8,
+                label="This work vs. Kikwaya et al. (2009)")    
 
     # Size [µm]
     size_um = np.array([
@@ -4317,7 +4398,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Best_iron-fit",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -4354,4 +4435,5 @@ if __name__ == "__main__":
         cml_args.name = cml_args.input_dir.split(os.sep)[-1]
         print(f"Setting name to {cml_args.name}")
 
-    shower_distrb_plot(cml_args.input_dir, cml_args.output_dir, cml_args.name, radiance_plot_flag=False, plot_correl_flag=False) # cml_args.radiance_plot cml_args.correl_plot
+    (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False) # cml_args.radiance_plot cml_args.correl_plot

@@ -207,7 +207,7 @@ def _HIST2D(x, y, **kwargs):
     raise RuntimeError("Could not locate dynesty.plotting._hist2d. "
                     "Ensure dynesty>=2.x is installed or import _hist2d yourself.")
 
-def _plot_2d_distribution(ax, x, y, w, span_frac=0.98, levels=[0.1, 0.4, 0.65, 0.85], pad_frac=0.05, smooth_frac=0.02, color='black'):
+def _plot_2d_distribution(ax, x, y, w, span_frac=0.98, levels=[0.025, 0.1, 0.4, 0.65, 0.85, 0.975], pad_frac=0.05, smooth_frac=0.02, color='black'):
 
     qlo = (1.0 - span_frac)/2.0
     qhi = 1.0 - qlo
@@ -2500,6 +2500,170 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     ax.scatter(from_mass2size(mass_g, rho_kgm3), rho_kgm3, color='peru', marker='x', s=70, label="Meteors - Vojáček et al. (2019)", zorder=5)
 
+    # Size [µm]
+    size_um = np.array([
+        320, 390, 170, 190, 330, 450,
+        630, 530, 850, 550, 590,
+        610, 670, 720, 670, 710,
+        630, 680, 550, 670, 600, 700, 630, 600, 230, 230
+    ], dtype=float) / 1000  # convert to mm
+
+    # Bulk density ρB [g/cm³]
+    rhoB_gcm3 = np.array([
+        3.5, 3.6, 3.4, 5.6, 3.3, 3.3,
+        3.0, 3.2, 2.9, 3.1, 3.0,
+        3.0, 3.1, 3.0, 3.2, 3.0,
+        3.3, 3.1, 3.0, 2.9, 3.1, 3.0, 2.9, 2.9, 3.0, 3.1
+    ], dtype=float) * 1000  # convert to kg/m³
+    
+    ax.scatter(size_um, rhoB_gcm3, color='darkorange', marker='o', s=50, label="Micrometeorites - Kohout et al. (2014)")
+
+
+    ###### Fulle et al. (2016) PAPERS density distribution
+
+    # Density binning (say 100 kg/m^3 bins across 1100–4200)
+    dens_min, dens_max = 1100.0, 4200.0
+    bin_width = 100.0
+    edges = np.arange(dens_min, dens_max + bin_width, bin_width)
+    bin_left = edges[:-1]
+    bin_right = edges[1:]
+    bin_center = 0.5 * (bin_left + bin_right)
+
+    # Target: mode ~2300, mean/median ~2700
+    # Do it as a 2-component mixture:
+    mu_mode   = 2300.0   # where the histogram clearly peaks
+    sigma_mode = 180.0   # narrowish peak
+
+    mu_tail    = 2900.0  # pushes mean/median toward 2700
+    sigma_tail = 450.0   # broad tail
+
+    # Relative weights: most in the modal component, some in tail
+    w_mode = 0.7
+    w_tail = 0.3
+
+    g_mode = np.exp(-0.5 * ((bin_center - mu_mode) / sigma_mode) ** 2)
+    g_tail = np.exp(-0.5 * ((bin_center - mu_tail) / sigma_tail) ** 2)
+
+    weights_raw = w_mode * g_mode + w_tail * g_tail
+    weights = weights_raw / weights_raw.sum()
+
+    # Size range: 375–210 µm = 0.375–0.210 mm
+    x_min_mm, x_max_mm = 0.210, 0.375
+    x_edges = np.array(sorted([x_min_mm, x_max_mm]))
+
+    y_edges = np.r_[bin_left, bin_right[-1]]
+    Z = weights[:, None]  # one vertical strip
+
+    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Oranges", zorder=0)    
+ 
+    # Micro Meteoroids - Fulle et al. (2016)moccasin
+    ax.fill_between([200/1000, 275/1000], 5000, 5800, color='#ff7f0e', alpha=0.2, zorder=0, edgecolor='none', label="G & S-type - Suttle and Folco (2020)") # , edgecolor='none'
+
+    ###### Feng et al. (2005) I-type micrometeorites
+
+    # r_optical in micrometres
+    r_optical_um = np.array([
+        140.0,  # KK298A-01
+        180.0,  # KK298A-03
+        145.0,  # KK298A-04
+        122.0,  # KK298A-06
+        180.0,  # KK298A-07
+        140.0,  # KK298A-08
+        140.0,  # KK298A-10
+        141.0,  # KK298A-11
+        145.0,  # KK298A-12
+        113.0,  # KK298A-13
+        113.0,  # KK298A-14
+        130.0,  # KK298A-15
+        125.0,  # KK298A-17
+        120.0,  # KK298A-18
+        105.0,  # KK298A-19
+        135.0,  # KK298A-20
+        150.0,  # KK298A-21
+        140.0,  # KK298A-22
+        100.0,  # KK298A-23
+        150.0,  # KK298A-25
+        178.0,  # KK298A-27
+        122.0,  # KK298A-30
+    ], dtype=float)
+
+    # bulk density in g/cm^3
+    bulk_density_gcm3 = np.array([
+        5.04,  # KK298A-01
+        5.03,  # KK298A-03
+        4.88,  # KK298A-04
+        4.63,  # KK298A-06
+        4.77,  # KK298A-07
+        5.26,  # KK298A-08
+        5.93,  # KK298A-10
+        5.77,  # KK298A-11
+        5.34,  # KK298A-12
+        4.76,  # KK298A-13
+        5.39,  # KK298A-14
+        5.75,  # KK298A-15
+        4.93,  # KK298A-17
+        4.43,  # KK298A-18
+        4.25,  # KK298A-19
+        4.95,  # KK298A-20
+        4.88,  # KK298A-21
+        4.24,  # KK298A-22
+        4.72,  # KK298A-23
+        4.57,  # KK298A-25
+        5.46,  # KK298A-27
+        5.14,  # KK298A-30
+    ], dtype=float)
+
+    ax.scatter(r_optical_um/1000, bulk_density_gcm3*1000, color='silver', marker='*', s=50, label="I-type - Feng et al. (2005)")
+
+    ###### Divine et al. (1986) density vs size function
+
+    def rho_particle_divine1986(a_um, rho0=3.0, delta=2.2, a2_um=2.0, out="g/cm^3"):
+        """
+        Particle bulk density as a function of grain radius a (in µm).
+
+        rho(a) = rho0 - delta * a / (a + a2_um)
+        rho0  : asymptotic small-grain density [g/cm^3]
+        delta : rho0 - rho(large) [g/cm^3]  (here 3.0 - 0.8 = 2.2)
+        a2_um : scale radius [µm]
+        out   : "g/cm^3" or "kg/m^3"
+        """
+        rho = rho0 - delta * (a_um / (a_um + a2_um))
+        if out == "kg/m^3":
+            return rho * 1000.0
+        return rho
+
+    a_um = np.logspace(-3, 4, 400)  # ~0.05 to 100 µm
+    rho_kgm3 = rho_particle_divine1986(a_um, out="kg/m^3")
+
+    ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)")    
+
+    ##########
+
+    ax.set_xlim([10**(-3), 10])
+    ax.set_ylim([-100, 8100])
+    # plt.colorbar(ax.collections[0], ax=ax, label='Probability Density')
+    # grid on dashed
+    plt.grid(True, linestyle='--', alpha=0.5)
+    # build legend only from artists with useful labels (exclude "_nolegend_")
+    handles, labels_plot_mm = ax.get_legend_handles_labels()
+    handles = [proxy_red, proxy_purple, proxy_blue] + handles
+    labels_plot_mm  = [proxy_red.get_label(), proxy_purple.get_label(), proxy_blue.get_label()] + labels_plot_mm
+    by_label = {l: h for h, l in zip(handles, labels_plot_mm)}  # de-duplicate by label
+    # put the legend at the right outside the plot after the y axis
+    ax.legend(by_label.values(), by_label.keys(), loc='upper right', bbox_to_anchor=(1.45, 1), fontsize=10)
+    ax.set_xscale("log")
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_density_size_rho_PAPERS.png"), bbox_inches='tight', dpi=300)
+    plt.close()
+
+
+    ##########
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    print("Creating 2D density against size plot Kikwaya only...")
+    _plot_2d_distribution(ax, mm_size_corrected, rho_corrected, w)
+    ax.set_xlabel("Size [mm]", fontsize=15)
+    ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
+
     # Meteors - Kikwaya et al. (2009) - Sporadic meteoroids
 
     # (code, mass_kg, rho_kgm3) 
@@ -2642,179 +2806,33 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     if foundJB > 0:
         print(foundJB,"Found matching meteoroids from JB (±3 s tolerance).")
         ax.plot([], [], color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8,
-                label="This work vs. Kikwaya et al. (2009)")    
+                label="This work vs. Kikwaya et al. (2009)")
 
-    # Size [µm]
-    size_um = np.array([
-        320, 390, 170, 190, 330, 450,
-        630, 530, 850, 550, 590,
-        610, 670, 720, 670, 710,
-        630, 680, 550, 670, 600, 700, 630, 600, 230, 230
-    ], dtype=float) / 1000  # convert to mm
-
-    # Bulk density ρB [g/cm³]
-    rhoB_gcm3 = np.array([
-        3.5, 3.6, 3.4, 5.6, 3.3, 3.3,
-        3.0, 3.2, 2.9, 3.1, 3.0,
-        3.0, 3.1, 3.0, 3.2, 3.0,
-        3.3, 3.1, 3.0, 2.9, 3.1, 3.0, 2.9, 2.9, 3.0, 3.1
-    ], dtype=float) * 1000  # convert to kg/m³
-    
-    ax.scatter(size_um, rhoB_gcm3, color='darkorange', marker='o', s=50, label="Micrometeorites - Kohout et al. (2014)")
-
-
-    ###### Fulle et al. (2016) PAPERS density distribution
-
-    # Density binning (say 100 kg/m^3 bins across 1100–4200)
-    dens_min, dens_max = 1100.0, 4200.0
-    bin_width = 100.0
-    edges = np.arange(dens_min, dens_max + bin_width, bin_width)
-    bin_left = edges[:-1]
-    bin_right = edges[1:]
-    bin_center = 0.5 * (bin_left + bin_right)
-
-    # Target: mode ~2300, mean/median ~2700
-    # Do it as a 2-component mixture:
-    mu_mode   = 2300.0   # where the histogram clearly peaks
-    sigma_mode = 180.0   # narrowish peak
-
-    mu_tail    = 2900.0  # pushes mean/median toward 2700
-    sigma_tail = 450.0   # broad tail
-
-    # Relative weights: most in the modal component, some in tail
-    w_mode = 0.7
-    w_tail = 0.3
-
-    g_mode = np.exp(-0.5 * ((bin_center - mu_mode) / sigma_mode) ** 2)
-    g_tail = np.exp(-0.5 * ((bin_center - mu_tail) / sigma_tail) ** 2)
-
-    weights_raw = w_mode * g_mode + w_tail * g_tail
-    weights = weights_raw / weights_raw.sum()
-
-    # Size range: 375–210 µm = 0.375–0.210 mm
-    x_min_mm, x_max_mm = 0.210, 0.375
-    x_edges = np.array(sorted([x_min_mm, x_max_mm]))
-
-    y_edges = np.r_[bin_left, bin_right[-1]]
-    Z = weights[:, None]  # one vertical strip
-
-    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Oranges", zorder=0)    
- 
-    # Micro Meteoroids - Fulle et al. (2016)moccasin
-    ax.fill_between([200/1000, 275/1000], 5000, 5800, color='#ff7f0e', alpha=0.2, zorder=0, edgecolor='none', label="G & S-type - Suttle and Folco (2020)") # , edgecolor='none'
-
-    ###### Feng et al. (2005) I-type micrometeorites
-
-    # r_optical in micrometres
-    r_optical_um = np.array([
-        140.0,  # KK298A-01
-        180.0,  # KK298A-03
-        145.0,  # KK298A-04
-        122.0,  # KK298A-06
-        180.0,  # KK298A-07
-        140.0,  # KK298A-08
-        140.0,  # KK298A-10
-        141.0,  # KK298A-11
-        145.0,  # KK298A-12
-        113.0,  # KK298A-13
-        113.0,  # KK298A-14
-        130.0,  # KK298A-15
-        125.0,  # KK298A-17
-        120.0,  # KK298A-18
-        105.0,  # KK298A-19
-        135.0,  # KK298A-20
-        150.0,  # KK298A-21
-        140.0,  # KK298A-22
-        100.0,  # KK298A-23
-        150.0,  # KK298A-25
-        178.0,  # KK298A-27
-        122.0,  # KK298A-30
-    ], dtype=float)
-
-    # bulk density in g/cm^3
-    bulk_density_gcm3 = np.array([
-        5.04,  # KK298A-01
-        5.03,  # KK298A-03
-        4.88,  # KK298A-04
-        4.63,  # KK298A-06
-        4.77,  # KK298A-07
-        5.26,  # KK298A-08
-        5.93,  # KK298A-10
-        5.77,  # KK298A-11
-        5.34,  # KK298A-12
-        4.76,  # KK298A-13
-        5.39,  # KK298A-14
-        5.75,  # KK298A-15
-        4.93,  # KK298A-17
-        4.43,  # KK298A-18
-        4.25,  # KK298A-19
-        4.95,  # KK298A-20
-        4.88,  # KK298A-21
-        4.24,  # KK298A-22
-        4.72,  # KK298A-23
-        4.57,  # KK298A-25
-        5.46,  # KK298A-27
-        5.14,  # KK298A-30
-    ], dtype=float)
-
-    ax.scatter(r_optical_um/1000, bulk_density_gcm3*1000, color='silver', marker='*', s=50, label="I-type - Feng et al. (2005)")
-
-    ###### Divine et al. (1986) density vs size function
-
-    def rho_particle_divine1986(a_um, rho0=3.0, delta=2.2, a2_um=2.0, out="g/cm^3"):
-        """
-        Particle bulk density as a function of grain radius a (in µm).
-
-        rho(a) = rho0 - delta * a / (a + a2_um)
-        rho0  : asymptotic small-grain density [g/cm^3]
-        delta : rho0 - rho(large) [g/cm^3]  (here 3.0 - 0.8 = 2.2)
-        a2_um : scale radius [µm]
-        out   : "g/cm^3" or "kg/m^3"
-        """
-        rho = rho0 - delta * (a_um / (a_um + a2_um))
-        if out == "kg/m^3":
-            return rho * 1000.0
-        return rho
-
-    a_um = np.logspace(-3, 4, 400)  # ~0.05 to 100 µm
-    rho_kgm3 = rho_particle_divine1986(a_um, out="kg/m^3")
-
-    ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)")
-
-    ##########
-
-    ax.set_xlim([10**(-3), 10])
-    ax.set_ylim([-100, 8100])
-    # plt.colorbar(ax.collections[0], ax=ax, label='Probability Density')
-    # grid on dashed
     plt.grid(True, linestyle='--', alpha=0.5)
-    # build legend only from artists with useful labels (exclude "_nolegend_")
-    handles, labels_plot_mm = ax.get_legend_handles_labels()
-    handles = [proxy_red, proxy_purple, proxy_blue] + handles
-    labels_plot_mm  = [proxy_red.get_label(), proxy_purple.get_label(), proxy_blue.get_label()] + labels_plot_mm
-    by_label = {l: h for h, l in zip(handles, labels_plot_mm)}  # de-duplicate by label
+    ax.set_ylim([-100, 8100])
+    ax.set_xlim([2*10**(-1), 20])
     # put the legend at the right outside the plot after the y axis
-    ax.legend(by_label.values(), by_label.keys(), loc='upper right', bbox_to_anchor=(1.45, 1), fontsize=10)
+    ax.legend(fontsize=10)
     ax.set_xscale("log")
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_density_size_rho_PAPERS.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_kikwaya.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
-    # plot 2D density of mass vs rho_corrected
+    # # plot 2D density of mass vs rho_corrected
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    print("Creating 2D density plot against mass...")
-    _plot_2d_distribution(ax, mass_distr, rho_corrected, w)
-    ax.set_xlabel("Initial Mass [kg]", fontsize=15)
-    ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
-    # set the x axis to log scale
-    ax.set_xscale("log")
-    ax.set_xlim([10**(-7.5), 10**(-3)])
-    ax.set_ylim([-100, 8100])
-    # plt.colorbar(ax.collections[0], ax=ax, label='Probability Density')
-    # grid on dashed
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_density_m_init_rho_PAPERS.png"), bbox_inches='tight', dpi=300)
-    plt.close()
+    # fig, ax = plt.subplots(figsize=(10, 6))
+    # print("Creating 2D density plot against mass...")
+    # _plot_2d_distribution(ax, mass_distr, rho_corrected, w)
+    # ax.set_xlabel("Initial Mass [kg]", fontsize=15)
+    # ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
+    # # set the x axis to log scale
+    # ax.set_xscale("log")
+    # ax.set_xlim([10**(-7.5), 10**(-3)])
+    # ax.set_ylim([-100, 8100])
+    # # plt.colorbar(ax.collections[0], ax=ax, label='Probability Density')
+    # # grid on dashed
+    # plt.grid(True, linestyle='--', alpha=0.5)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_density_m_init_rho_PAPERS.png"), bbox_inches='tight', dpi=300)
+    # plt.close()
 
 
     ### CREATE A TABLE of the Combination of all samples ###
@@ -3080,7 +3098,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # Save
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
-    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
             
@@ -3560,7 +3578,49 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     )
     print("Saved:", out_path)
     plt.close(fig)
-    
+
+    print("Creating rho plots...")
+
+    # ---------- Class masks at SAMPLE level ----------
+    ast_m5over = finite & (tj_samples >= 4.0)
+    ast_m45 = finite & (tj_samples >= 4.0) & (tj_samples < 5.0)
+    ast_m32 = finite & (tj_samples >= 3.0) & (tj_samples < 4.0)
+    jfc_m = finite & (tj_samples >= 2.0) & (tj_samples < 3.0)
+    htc_m21 = finite & (tj_samples >= 1.0) & (tj_samples < 2.0)
+    htc_m10 = finite & (tj_samples >= 0) & (tj_samples < 1)
+    htc_m0low = finite & (tj_samples < 0)
+
+    # find the number of tj above 5
+    num_tj_above_5 = tj[tj >= 5].shape[0]
+    num_tj_between_4_and_5 = tj[(tj >= 4) & (tj < 5)].shape[0]
+    num_tj_between_3_to_4 = tj[(tj >= 3) & (tj < 4)].shape[0]
+    num_tj_between_2_and_3 = tj[(tj >= 2) & (tj < 3)].shape[0]
+    num_tj_between_1_and_2 = tj[(tj >= 1) & (tj < 2)].shape[0]
+    num_tj_between_0_and_1 = tj[(tj >= 0) & (tj < 1)].shape[0]    
+    # find the number of tj below 2
+    num_tj_below_2 = tj[tj < 0].shape[0]
+
+    # ---------- Figure with three stacked panels ----------
+    fig, axes = plt.subplots(7, 1, figsize=(8, 20), sharex=True)
+
+    _panel_like_top(axes[0], rho_samp[ast_m5over], w_all[ast_m5over], "Tot N." + str(num_tj_above_5) + " AST (Tj>=5)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[1], rho_samp[ast_m45], w_all[ast_m45], "Tot N." + str(num_tj_between_4_and_5) + " AST (4<Tj<5)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[2], rho_samp[ast_m32], w_all[ast_m32], "Tot N." + str(num_tj_between_3_to_4) + " AST (3<Tj<4)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[3], rho_samp[jfc_m], w_all[jfc_m], "Tot N." + str(num_tj_between_2_and_3) + " JFC (2<Tj<3)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[4], rho_samp[htc_m21], w_all[htc_m21], "Tot N." + str(num_tj_between_1_and_2) + " HTC (1<Tj<2)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[5], rho_samp[htc_m10], w_all[htc_m10], "Tot N." + str(num_tj_between_0_and_1) + " HTC (0<Tj<1)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[6], rho_samp[htc_m0low], w_all[htc_m0low], "Tot N." + str(num_tj_below_2) + " HTC (Tj<0)", lo_all, hi_all, nbins, xlim) # "N° " + str(num_tj_below_2) + " HTC"
+
+    # Bottom labels/ticks to match your style
+    axes[6].tick_params(axis='x', labelbottom=True)
+    axes[6].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    axes[6].set_xticks(np.arange(0, 9000, 2000))
+    for ax in axes:
+        ax.tick_params(labelsize=20)
+    out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_Tj_cuts.png")
+    plt.savefig(out_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print("Saved:", out_path)
 
     ### mass change plots ###
 

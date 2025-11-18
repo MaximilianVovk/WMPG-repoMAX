@@ -1022,8 +1022,11 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
             ax[0].grid()
             ax[1].grid()
             # put the legend in the right lower corner
-            ax[1].legend(loc='lower left')
-            ax[0].legend(loc='lower right')
+            ax[1].legend(loc='lower left', fontsize=13)
+            ax[0].legend(loc='lower right', fontsize=13)
+            # in crease the size of the lables
+            ax[0].tick_params(axis='both', which='major', labelsize=15)
+            ax[1].tick_params(axis='both', which='major', labelsize=15)            
             # plt.show()
             # save in folder_name as base_name+"_erosion_energy_profile.png"
             fig.tight_layout()

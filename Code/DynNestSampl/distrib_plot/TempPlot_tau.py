@@ -316,7 +316,7 @@ def extract_other_prop(input_dirfile_all, output_dir_show, lambda_val=1):
             if len(melting_idx) > 0:
                 melting_height = h_used[melting_idx[0]] / 1000  # in km
                 # point out the height when the melting point is reached
-                ax.plot(melting_point_iron, melting_height, 'o', color=color_map[constjson_bestfit.lum_eff], label=f'1800 K Reached at {melting_height:.1f} km')
+                ax.plot(melting_point_iron, melting_height, 'o', color=color_map[constjson_bestfit.lum_eff], label=f'1811 K Reached at {melting_height:.1f} km')
             # grid on
             ax.grid()
             

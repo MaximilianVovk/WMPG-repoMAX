@@ -207,7 +207,7 @@ def _HIST2D(x, y, **kwargs):
     raise RuntimeError("Could not locate dynesty.plotting._hist2d. "
                     "Ensure dynesty>=2.x is installed or import _hist2d yourself.")
 
-def _plot_2d_distribution(ax, x, y, w, span_frac=0.98, levels=[0.025, 0.1, 0.4, 0.65, 0.85, 0.975], pad_frac=0.05, smooth_frac=0.02, color='black'):
+def _plot_2d_distribution(ax, x, y, w, span_frac=0.98, levels=[0.1, 0.4, 0.65, 0.85, 0.95], pad_frac=0.05, smooth_frac=0.02, color='black'): # 0.025, , 0.975
 
     qlo = (1.0 - span_frac)/2.0
     qhi = 1.0 - qlo
@@ -1611,7 +1611,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_kinetic_energy.png"), bbox_inches='tight', dpi=300)
 
     ### PLOT rho and error against dynamic pressure color by speed ###
-    thr = 3.1  # log10 Pa  (≈ 1.58 kPa)
+    thr = 2.9999  # log10 Pa  (≈ 1.58 kPa) 3.1 log10 Pa (≈ 1.26 kPa)
     fig = plt.figure(figsize=(6, 4), constrained_layout=True)
 
     

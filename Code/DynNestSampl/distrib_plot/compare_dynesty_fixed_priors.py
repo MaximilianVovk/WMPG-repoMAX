@@ -406,16 +406,18 @@ def compare_fixed_priors_with_flags(
     if figure_title:
         fig.suptitle(figure_title, fontsize=20, y=0.995)
 
+    legend_ax_idx = 2 # index of subplot to hold legend
+    fontsize_y = 12
     # Subplots
     any_points = False
     log_vars = {"m_init","erosion_coeff","erosion_coeff_change","erosion_mass_min","erosion_mass_max"}
     for ax_idx, v in enumerate(all_vars):
         ax = axes[ax_idx]
-        y_pos = np.arange(len(eids))[::-1]
+        y_pos = np.arange(len(eids))
         # Only first column shows y tick labels; others share y but hide labels
         if (ax_idx % ncols) == 0:
             ax.set_yticks(y_pos)
-            ax.set_yticklabels(eids[::-1], fontsize=9)
+            ax.set_yticklabels(eids, fontsize=fontsize_y)
             ax.set_ylim(-0.5, len(eids) - 0.5)  # keep full list of meteors visible
         else:
             ax.set_yticks(y_pos)
@@ -451,11 +453,11 @@ def compare_fixed_priors_with_flags(
                     meds[finite], y_plot[finite],
                     xerr=xerr[:, finite],
                     fmt="o", markersize=3, elinewidth=1.1, capsize=2,
-                    color=color, ecolor=color, label=label if ax_idx == 0 else None
+                    color=color, ecolor=color, label=label if ax_idx == legend_ax_idx else None
                 )
                 any_points = True
 
-        if ax_idx == 0 and len(labels) > 1:
+        if ax_idx == legend_ax_idx  and len(labels) > 1:
             # flip the legend order to match y-offsets
             handles, legend_labels = ax.get_legend_handles_labels()
             ax.legend(handles[::-1], legend_labels[::-1], loc="best", fontsize=12)
@@ -466,6 +468,149 @@ def compare_fixed_priors_with_flags(
         axes[j].axis("off")
 
     fig.tight_layout(rect=[0, 0, 1, 0.98])
+
+    if "v_init" in all_vars:
+        # # Adjust these numbers to your actual ranges if needed
+        # left_max  = 23.3   # upper end of the low-velocity cluster
+        # right_min = 68   # lower end of the high-velocity cluster
+        # margin    = 0.5    # small padding around the data in each pane
+        # Adjust these numbers to your actual ranges if needed
+        left_max  = 26.3   # upper end of the low-velocity cluster
+        right_min = 66.2   # lower end of the high-velocity cluster
+        margin    = 0.5    # small padding around the data in each pane
+
+        vidx = all_vars.index("v_init")
+        base_ax = axes[vidx]
+        fig = base_ax.figure
+
+        # Get the position of the original axis *after* tight_layout
+        bbox = base_ax.get_position()
+        # Hide the original axis (and its legend)
+        base_ax.set_visible(False)
+
+        width = bbox.width
+        gap_frac = 0.05   # fraction of width left as empty gap between the two panels
+        w1 = (width * (1 - gap_frac)) / 2.0
+        w2 = w1
+        gap = width - (w1 + w2)
+
+        # Create left and right axes in the same "slot"
+        ax_left = fig.add_axes([bbox.x0, bbox.y0, w1, bbox.height])
+        ax_right = fig.add_axes(
+            [bbox.x0 + w1 + gap, bbox.y0, w2, bbox.height],
+            sharey=ax_left
+        )
+
+        # Y ticks on the left only
+        y_pos = np.arange(len(eids))
+        ax_left.set_yticks(y_pos)
+        ax_left.set_yticklabels(eids, fontsize=fontsize_y)
+        ax_left.set_ylim(-0.5, len(eids) - 0.5)
+
+        ax_right.set_yticks(y_pos)
+        ax_right.tick_params(axis='y', which='both', labelleft=False)
+        ax_right.set_ylim(-0.5, len(eids) - 0.5)
+
+        # Common cosmetics (no per-axis xlabel here)
+        for ax_b in (ax_left, ax_right):
+            ax_b.grid(True, axis="x", alpha=0.3, linestyle="--")
+
+        # Figure out x-limits from the data
+        sub_all = df[df["variable"] == "v_init"]
+        all_meds = sub_all["median"].to_numpy(dtype=float)
+        finite_all = np.isfinite(all_meds)
+        if np.any(finite_all):
+            low_cluster = all_meds[(all_meds <= left_max) & finite_all]
+            high_cluster = all_meds[(all_meds >= right_min) & finite_all]
+
+            if len(low_cluster) > 0:
+                x1_lo = np.nanmin(low_cluster) - margin
+                x1_hi = left_max + margin
+            else:
+                x1_lo, x1_hi = left_max - 1, left_max + 1
+
+            if len(high_cluster) > 0:
+                x2_lo = right_min - margin
+                x2_hi = np.nanmax(high_cluster) + margin
+            else:
+                x2_lo, x2_hi = right_min - 1, right_min + 1
+
+            ax_left.set_xlim(x1_lo, x1_hi)
+            ax_right.set_xlim(x2_lo, x2_hi)
+
+        # Re-plot the v_init points and errorbars, split between the two panes
+        for fidx, (label, color) in enumerate(zip(labels, colors)):
+            sub = df[(df["variable"] == "v_init") & (df["run"] == label)]
+
+            meds, los, his = [], [], []
+            for eid in eids:
+                row = sub[sub["event"] == eid]
+                if row.empty:
+                    meds.append(np.nan); los.append(np.nan); his.append(np.nan)
+                else:
+                    r = row.iloc[0]
+                    meds.append(r["median"])
+                    los.append(r["lo"])
+                    his.append(r["hi"])
+
+            meds = np.asarray(meds, float)
+            los  = np.asarray(los, float)
+            his  = np.asarray(his, float)
+
+            finite = np.isfinite(meds) & np.isfinite(los) & np.isfinite(his)
+            if not np.any(finite):
+                continue
+
+            xerr = np.vstack([np.abs(meds - los), np.abs(his - meds)])
+            y_off = (fidx - (len(labels)-1)/2.0) * 0.2
+            y_plot = y_pos + y_off
+
+            left_mask  = finite & (meds <= left_max)
+            right_mask = finite & (meds >= right_min)
+
+            # No legend from v_init if you're putting legend on another subplot
+            if np.any(left_mask):
+                ax_left.errorbar(
+                    meds[left_mask], y_plot[left_mask],
+                    xerr=xerr[:, left_mask],
+                    fmt="o", markersize=3, elinewidth=1.1, capsize=2,
+                    color=color, ecolor=color,
+                    label=None,
+                )
+
+            if np.any(right_mask):
+                ax_right.errorbar(
+                    meds[right_mask], y_plot[right_mask],
+                    xerr=xerr[:, right_mask],
+                    fmt="o", markersize=3, elinewidth=1.1, capsize=2,
+                    color=color, ecolor=color,
+                    label=None,
+                )
+
+        x_center = bbox.x0 + width / 2.0
+        pad = 0.025  # shrink this to move the label up
+        y_label = bbox.y0 - pad
+
+        fig.text(
+            x_center, y_label,
+            var_labels.get("v_init", "v_init"),
+            ha="center", va="top", fontsize=15
+        )
+
+        # Optional: add diagonal "break" marks on the inside edges
+        d = .5  # proportion for the slanted line
+        kwargs = dict(marker=[(-d, -1), (d, 1)], markersize=12,
+                      linestyle="none", color='k', mec='k', mew=1, clip_on=False)
+        # Right side of left axis
+        ax_left.plot([1, 1], [0, 1], transform=ax_left.transAxes, **kwargs)
+        # visibility set to False for the y axis ticks on the right pane
+        ax_right.yaxis.set_visible(False)
+        # do not show the line between two plots
+        ax_right.spines['left'].set_visible(False)
+        ax_left.spines['right'].set_visible(False)
+        # Left side of right axis
+        ax_right.plot([0, 0], [0, 1], transform=ax_right.transAxes, **kwargs)
+    # ------------------------------------------------------------------
 
     if output_png is None:
         output_png = os.path.join(os.getcwd(), "compare_fixed_priors_flags.png")
@@ -627,14 +772,14 @@ def compare_fixed_priors_with_flags(
 
 # info = compare_fixed_priors_with_flags(
 #     input_folders=[
-#         r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau3",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau008",
+#         r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau3",
+#         r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03",
+#         r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau008",
 #     ],
 #     labels=[r"$\tau$=3%", r"$\tau$=0.3%", r"$\tau$=0.08%"],  # legend labels
 #     colors=["red", "blue", "green"],              # requested colors
 #     ci=0.95,
-#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Iron_compare_tau_runs.png",    # figure path
+#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Iron_compare_tau_runs_2025.png",    # figure path
 #     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
 #     verbose=True,              # << turn on once to see diagnostics
 #     align_mode="labels",  # << default; uses your flags order
@@ -649,7 +794,7 @@ info = compare_fixed_priors_with_flags(
         r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\CAMO+EMCCD",
         r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\EMCCD_only",
     ],
-    labels=[r"ASTRA", r"EMCCD+CAMO", r"EMCCD only"],  # legend labels
+    labels=[r"ASTRA", r"CAMO", r"EMCCD"],  # legend labels
     colors=["red", "blue", "green"],              # requested colors # 
     ci=0.95,
     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\LogUnif_runs.png",    # figure path

@@ -1798,7 +1798,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
     ###########################################################
 
-    print("\nPlotting the brightness distribution median against height...")
+    print("\nPlotting the brightness distribution MAX against height...")
 
     # for name in all_names:
     #     (abs_mags_obs, heights_obs,
@@ -1875,8 +1875,9 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
                 continue
 
             mag_bin = mags[in_bin]
-            mag_grid[m_idx, b] = np.median(mag_bin)   # "most likely" mag ~ median
-            count_grid[m_idx, b] = mag_bin.size       # just for information/QA
+            # 95th percentile in magnitude space
+            mag_grid[m_idx, b] = np.quantile(mag_bin, 0.05)
+            count_grid[m_idx, b] = mag_bin.size  # just for information/QA
 
 
     # ---- 3b. Remove low-altitude bins dominated by a tiny fraction of the data ----
@@ -1933,10 +1934,149 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     cb.set_label("Bright-tail Abs.Mag [-]")
 
     fig.tight_layout()
-    plt.savefig(output_dir_show + os.sep + "density_AbsMagHeight.png")
+    plt.savefig(output_dir_show + os.sep + "density_MAX_AbsMagHeight.png")
     plt.close()
 
+    #############################################################
 
+    print("\nPlotting the brightness distribution median against height...")
+
+    # ---- 3. Compute per-bin magnitudes:
+    #   - low/mid: mostly regular median
+    #   - high: mostly bright-tail median
+    #   with a smooth blend in between ----
+
+    n_methods = len(methods)
+    mag_grid        = np.full((n_methods, n_hbins), np.nan, dtype=float)
+    count_grid      = np.zeros((n_methods, n_hbins), dtype=int)
+    median_grid     = np.full((n_methods, n_hbins), np.nan, dtype=float)
+    bright_grid     = np.full((n_methods, n_hbins), np.nan, dtype=float)
+
+    # Height-bin centres
+    h_centers = 0.5 * (height_bins[:-1] + height_bins[1:])
+
+    # Define a BLEND REGION in height:
+    #  - below h0: pure median
+    #  - above h1: pure bright-tail
+    #  - between: linear blend
+    h0 = h_min + 0.55 * (h_max - h_min)   # start of blend
+    h1 = h_min + 0.80 * (h_max - h_min)   # end of blend
+
+    bright_frac = 0.3  # brightest 30% at high altitudes
+
+    for m_idx, (_, key) in enumerate(methods):
+        mags = data_dict[key]["mag"]
+        hs   = data_dict[key]["h"]
+
+        mask = np.isfinite(mags) & np.isfinite(hs)
+        mags = mags[mask]
+        hs   = hs[mask]
+
+        if mags.size == 0:
+            continue
+
+        # assign each point to a height bin
+        bin_idx = np.digitize(hs, height_bins) - 1
+        valid   = (bin_idx >= 0) & (bin_idx < n_hbins)
+
+        mags = mags[valid]
+        bin_idx = bin_idx[valid]
+
+        for b in range(n_hbins):
+            in_bin = (bin_idx == b)
+            if not np.any(in_bin):
+                continue
+
+            mag_bin = mags[in_bin]
+            count_grid[m_idx, b] = mag_bin.size
+
+            # Regular median
+            med = np.median(mag_bin)
+            median_grid[m_idx, b] = med
+
+            # Bright-tail median (if enough points)
+            mag_bin_sorted = np.sort(mag_bin)  # smaller = brighter
+            k = int(np.ceil(bright_frac * mag_bin_sorted.size))
+            k = max(1, k)
+            bright_tail = mag_bin_sorted[:k]
+            bright_med = np.median(bright_tail)
+            bright_grid[m_idx, b] = bright_med
+
+            # Blend weight based on height
+            h_c = h_centers[b]
+            if h_c <= h0:
+                w = 0.0              # pure median
+            elif h_c >= h1:
+                w = 1.0              # pure bright-tail
+            else:
+                w = (h_c - h0) / (h1 - h0)  # linear ramp 0→1
+
+            # Handle NaNs gracefully
+            if np.isnan(med) and np.isnan(bright_med):
+                mag_grid[m_idx, b] = np.nan
+            elif np.isnan(bright_med):
+                mag_grid[m_idx, b] = med
+            elif np.isnan(med):
+                mag_grid[m_idx, b] = bright_med
+            else:
+                mag_grid[m_idx, b] = (1.0 - w) * med + w * bright_med
+
+    # ---- 3b. Remove low-altitude bins dominated by a tiny fraction of the data ----
+
+    min_rel_count = 0.1  # 10% of the maximum bin population for that method
+
+    for m_idx in range(n_methods):
+        col_counts = count_grid[m_idx, :]
+        if np.all(col_counts == 0):
+            continue
+
+        max_cnt = col_counts.max()
+        if max_cnt == 0:
+            continue
+
+        dense_bins = np.where(col_counts >= min_rel_count * max_cnt)[0]
+        if dense_bins.size == 0:
+            continue
+
+        lowest_dense = dense_bins[0]
+        low_sparse_bins = np.arange(lowest_dense)
+        mag_grid[m_idx, low_sparse_bins] = np.nan
+        count_grid[m_idx, low_sparse_bins] = 0
+
+    if np.all(np.isnan(mag_grid)):
+        print("No median magnitude bins left after outlier filtering; skipping median plot.")
+        return
+
+    # ---- 4. Plot as 5 columns, colour = magnitude ----
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    x_edges = np.arange(n_methods + 1)
+    X, Y = np.meshgrid(x_edges, height_bins)
+
+    mag_min = np.nanmin(mag_grid)
+    mag_max = 8.0
+
+    c = ax.pcolormesh(
+        X, Y, mag_grid.T,
+        cmap="viridis_r",
+        shading="auto",
+        vmin=mag_min,
+        vmax=mag_max
+    )
+
+    ax.set_xticks(np.arange(n_methods) + 0.5)
+    ax.set_xticklabels([m[0] for m in methods], rotation=30, ha="right")
+
+    ax.set_ylabel("Height [km]")
+    ax.set_ylim(h_min, h_max)
+
+    cb = fig.colorbar(c, ax=ax)
+    cb.set_label("Median Abs.Mag [-]")
+
+    fig.tight_layout()
+    plt.savefig(output_dir_show + os.sep + "density_mean_AbsMagHeight.png")
+    plt.close()
 
 
 if __name__ == "__main__":
@@ -1948,6 +2088,8 @@ if __name__ == "__main__":
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform\Best_irons",
                             # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform\Fastsporad_CAMOnew+EMCCD_unif_density\fastsporad_EMCCD+CAMO_CAP"
+                            # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform"
+                            # "C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\CAMO-EMCCDonly"
         default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
         help="Path to walk and find .pickle files.")
     

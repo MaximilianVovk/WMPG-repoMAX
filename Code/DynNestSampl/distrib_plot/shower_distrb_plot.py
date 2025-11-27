@@ -1580,6 +1580,21 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # plt.tight_layout()
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_erosion_energy_vs_length.png"), bbox_inches='tight', dpi=300)
 
+    ################ GROUP of ABOVE AND BELOW  h_{beg} and V_{geo} ################
+
+    # Define the curve via the given points (v, h)
+    curve_v = np.array([10, 20, 30, 40, 50, 60, 70], dtype=float)
+    curve_h = np.array([84, 90, 96, 98, 102, 104, 107], dtype=float)
+
+    # Generate a smooth-ish line for plotting (linear interpolation is fine here)
+    v_dense = np.linspace(curve_v.min(), curve_v.max(), 200)
+    h_dense = np.interp(v_dense, curve_v, curve_h)
+
+    # For each meteor, compute the threshold height at its velocity
+    #    (np.interp returns NaN-like behaviour via left/right if we set them)
+    h_thr = np.interp(Vinf_val, curve_v, curve_h,
+                    left=np.nan, right=np.nan)
+
     ### PLOT rho and error against dynamic pressure color by speed ###
     print("Plotting rho vs kinetic energy...")
     fig = plt.figure(figsize=(6, 4), constrained_layout=True)
@@ -2040,14 +2055,38 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 mask_hi = logq >= thr
                 mask_lo = ~mask_hi
 
-                # Hollow markers so the rho colors still show underneath
-                plt.scatter(Vinf_val[mask_lo], beg_height[mask_lo],
-                            facecolors='none', edgecolors='tab:blue', s=60, linewidths=1.2,
-                            label=r'$\log_{10} q < 3.2$', zorder=3)
+                # # Hollow markers so the rho colors still show underneath
+                # plt.scatter(Vinf_val[mask_lo], beg_height[mask_lo],
+                #             facecolors='none', edgecolors='tab:blue', s=60, linewidths=1.2,
+                #             label=r'$\log_{10} q < 3.2$', zorder=3)
 
-                plt.scatter(Vinf_val[mask_hi], beg_height[mask_hi],
-                            facecolors='none', edgecolors='tab:red', s=60, linewidths=1.2,
-                            label=r'$\log_{10} q \ge 3.2$ (q ≥ 1.58 kPa)', zorder=4)
+                # plt.scatter(Vinf_val[mask_hi], beg_height[mask_hi],
+                #             facecolors='none', edgecolors='tab:red', s=60, linewidths=1.2,
+                #             label=r'$\log_{10} q \ge 3.2$ (q ≥ 1.58 kPa)', zorder=4)
+
+                # # Plot the threshold curve
+                # plt.plot(v_dense, h_dense, '--', linewidth=2,
+                #         label='threshold curve', zorder=5)
+                
+                valid_thr = np.isfinite(h_thr)
+                mask_below_curve = valid_thr & (beg_height < h_thr)
+
+                # Red hollow circles for points below the curve
+                plt.scatter(Vinf_val[mask_below_curve],
+                            beg_height[mask_below_curve],
+                            facecolors='none', edgecolors='tab:red',
+                            s=60, linewidths=1.2,
+                            label='below threshold curve',
+                            zorder=4)
+                
+                # Blue hollow circles for points above the curve
+                plt.scatter(Vinf_val[~mask_below_curve],
+                            beg_height[~mask_below_curve],
+                            facecolors='none', edgecolors='tab:blue',
+                            s=60, linewidths=1.2,
+                            label='above threshold curve',
+                            zorder=4)
+
                 all_names = np.array(all_names)
                 # add the names only to the mask_hi
                 # for i, txt in enumerate(all_names[mask_hi]):
@@ -3622,6 +3661,56 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.close()
     print("Saved:", out_path)
 
+    # ### rho distribution plot ###
+
+    # Build group masks (any number of groups works)
+    groups = {
+        "AST (Tj>=5)": ast_m5over,
+        "AST (4<Tj<5)": ast_m45,
+        "AST (3<Tj<4)": ast_m32,
+        "JFC (2<Tj<3)": jfc_m,
+        "HTC (1<Tj<2)": htc_m21,
+        "HTC (0<Tj<1)": htc_m10,
+        "HTC (Tj<0)": htc_m0low,
+    }
+
+    tex, results = weighted_tests_table(
+        values=rho_samp,
+        weights=w_all,
+        groups=groups,
+        resample_n=8000,                 # bump up for smoother p-values
+        random_seed=123,
+        caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
+        label="tab:rho_dynpres_weighted_tests",
+        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_all_Tj_cut.tex"),
+    )
+
+    # print(tex)  # also written to file if save_path was given
+
+    cuts = [
+        (ast_m5over, f"Tot N.{num_tj_above_5} AST (Tj>=5)"),
+        (ast_m45, f"Tot N.{num_tj_between_4_and_5} AST (4<Tj<5)"),
+        (ast_m32, f"Tot N.{num_tj_between_3_to_4} AST (3<Tj<4)"),
+        (jfc_m, f"Tot N.{num_tj_between_2_and_3} JFC (2<Tj<3)"),
+        (htc_m21, f"Tot N.{num_tj_between_1_and_2} HTC (1<Tj<2)"),
+        (htc_m10, f"Tot N.{num_tj_between_0_and_1} HTC (0<Tj<1)"),
+        (htc_m0low, f"Tot N.{num_tj_below_2} HTC (Tj<0)"),
+    ]
+
+    # --- Call the plotter ---
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_all_Tj_cut_grid.png")
+    fig, axes = plot_by_cuts_and_vars(
+        vars_list=vars_to_plot,
+        cuts_list=cuts,
+        weights_all=w_all,
+        nbins=int(round(10.0 / 0.02)),
+        smooth=0.02,
+        out_path=out_path
+    )
+    print("Saved:", out_path)
+    plt.close(fig)
+
+
     ### mass change plots ###
 
     print("Creating mass change plots for rho...")
@@ -3876,41 +3965,60 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.close(fig)
 
 
-    ### dyn press change plots ###
+    ### Above below begin height change plots ###
 
-    print("Dyn press change plots for rho...")
+    print("Above & below begin height plots for rho...")
 
-    # --- Dynamic pressure two-class overlay (NO gradient) ---
-    logq = np.log10(erosion_beg_dyn_press)
-    # thr = 3.2  # log10 Pa  (≈ 1.58 kPa)
+    valid_curve = np.isfinite(h_thr)
 
-    # mask_hi = logq >= thr
-    # mask_lo = ~mask_hi
+    # Event-level boolean masks
+    below_curve_event = valid_curve & (beg_height <  h_thr)
+    above_curve_event = valid_curve & (beg_height >= h_thr)
 
-    # same for meteoroid_diameter_mm
-    logq = np.asarray(logq, float) 
-    if logq.shape[0] != event_names_like.shape[0]:
-        raise RuntimeError("Length mismatch: event_names vs meteoroid_diameter_mm.")
+    # (Optional) sanity check
+    if event_names_like.shape[0] != Vinf_val.shape[0]:
+        raise RuntimeError("Length mismatch: event_names_like vs Vinf_val/beg_height")
 
-    # dict: base_name -> meteoroid_diameter_mm
-    logq_by_name = {str(n): float(v) for n, v in zip(event_names_like, logq)}
-    # Map each sample's base_name -> meteoroid_diameter_mm (NaN if missing)
-    logq_samples = np.array([logq_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+    # Count events in each class
+    num_below = np.count_nonzero(below_curve_event)
+    num_above = np.count_nonzero(above_curve_event)
+
+    print(f"Events below curve: {num_below}, above curve: {num_above}")
+
+    # =====================================================
+    # 2) Map event-level masks to SAMPLE level
+    # =====================================================
+    # names_per_sample: array of base names (one per posterior sample)
+    # rho_samp: rho samples
+    # w_all: weights for each sample
+
+    # Dict: event_name -> bool (below / above)
+    below_by_name = {str(n): bool(b) for n, b in zip(event_names_like, below_curve_event)}
+    above_by_name = {str(n): bool(b) for n, b in zip(event_names_like, above_curve_event)}
+
+    # Sample-level boolean flags based on event classification
+    below_curve_samples = np.array(
+        [below_by_name.get(n, False) for n in names_per_sample],
+        dtype=bool
+    )
+    above_curve_samples = np.array(
+        [above_by_name.get(n, False) for n in names_per_sample],
+        dtype=bool
+    )
+
+    # Base “finite” mask at sample level
+    finite = np.isfinite(rho_samp) & np.isfinite(w_all)
 
     # ---------- Class masks at SAMPLE level ----------
-    finite = np.isfinite(rho_samp) & np.isfinite(logq_samples) & np.isfinite(w_all)
-    sturdy = finite & (logq_samples >= thr)
-    fragile = finite & (logq_samples < thr)
-
-    # find the number of mass
-    num_sturdy = logq[logq >= thr].shape[0]
-    num_fragile = logq[logq < thr].shape[0]
+    # You can think of these like your old 'fragile' / 'sturdy'
+    sturdy = finite & below_curve_samples      # BELOW the v–h curve
+    fragile  = finite & above_curve_samples      # ABOVE (or on) the v–h curve
 
     # ---------- Figure with three stacked panels ----------
     fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
 
-    _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_fragile) + " below " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_sturdy) + " above " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_above) + " above", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_below) + " below", lo_all, hi_all, nbins, xlim)
 
     # Bottom labels/ticks to match your style
     axes[1].tick_params(axis='x', labelbottom=True)
@@ -3930,8 +4038,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # Build group masks (any number of groups works)
     groups = {
-        "below " + str(10**thr)+" Pa": fragile,
-        "above " + str(10**thr)+" Pa": sturdy
+        "above": fragile,
+        "below": sturdy
     }
 
     tex, results = weighted_tests_table(
@@ -3942,18 +4050,18 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         random_seed=123,
         caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
         label="tab:rho_dynpres_weighted_tests",
-        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_dynpres.tex"),
+        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_hbeg.tex"),
     )
 
     # print(tex)  # also written to file if save_path was given
 
     cuts = [
-        (fragile, f"Tot N.{num_fragile} below {np.round(10**thr)} Pa"),
-        (sturdy, f"Tot N.{num_sturdy} above {np.round(10**thr)} Pa"),
+        (fragile, f"Tot N.{num_above} above"),
+        (sturdy, f"Tot N.{num_below} below"),
     ]
 
     # --- Call the plotter ---
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_dynampres_grid.png")
+    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_hbeg_grid.png")
     fig, axes = plot_by_cuts_and_vars(
         vars_list=vars_to_plot,
         cuts_list=cuts,
@@ -3965,6 +4073,97 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     print("Saved:", out_path)
     plt.close(fig)
 
+
+    # ### dyn press change plots ###
+
+    # print("Dyn press change plots for rho...")
+
+    # # --- Dynamic pressure two-class overlay (NO gradient) ---
+    # logq = np.log10(erosion_beg_dyn_press)
+    # # thr = 3.2  # log10 Pa  (≈ 1.58 kPa)
+
+    # # mask_hi = logq >= thr
+    # # mask_lo = ~mask_hi
+
+    # # same for meteoroid_diameter_mm
+    # logq = np.asarray(logq, float) 
+    # if logq.shape[0] != event_names_like.shape[0]:
+    #     raise RuntimeError("Length mismatch: event_names vs meteoroid_diameter_mm.")
+
+    # # dict: base_name -> meteoroid_diameter_mm
+    # logq_by_name = {str(n): float(v) for n, v in zip(event_names_like, logq)}
+    # # Map each sample's base_name -> meteoroid_diameter_mm (NaN if missing)
+    # logq_samples = np.array([logq_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+
+    # # ---------- Class masks at SAMPLE level ----------
+    # finite = np.isfinite(rho_samp) & np.isfinite(logq_samples) & np.isfinite(w_all)
+    # sturdy = finite & (logq_samples >= thr)
+    # fragile = finite & (logq_samples < thr)
+
+    # # find the number of mass
+    # num_sturdy = logq[logq >= thr].shape[0]
+    # num_fragile = logq[logq < thr].shape[0]
+
+    # # ---------- Figure with three stacked panels ----------
+    # fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
+
+    # _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_fragile) + " below " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
+    # _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_sturdy) + " above " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
+
+    # # Bottom labels/ticks to match your style
+    # axes[1].tick_params(axis='x', labelbottom=True)
+    # axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    # axes[1].set_xticks(np.arange(0, 9000, 2000))
+    # for ax in axes:
+    #     ax.tick_params(labelsize=20)
+
+    # # Save
+    # out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_dynpres_threepanels_weighted.png")
+    # plt.savefig(out_path, bbox_inches='tight', dpi=300)
+    # plt.close()
+    # print("Saved:", out_path)
+
+
+    # # ### rho distribution plot ###
+
+    # # Build group masks (any number of groups works)
+    # groups = {
+    #     "below " + str(10**thr)+" Pa": fragile,
+    #     "above " + str(10**thr)+" Pa": sturdy
+    # }
+
+    # tex, results = weighted_tests_table(
+    #     values=rho_samp,
+    #     weights=w_all,
+    #     groups=groups,
+    #     resample_n=8000,                 # bump up for smoother p-values
+    #     random_seed=123,
+    #     caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
+    #     label="tab:rho_dynpres_weighted_tests",
+    #     save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_dynpres.tex"),
+    # )
+
+    # # print(tex)  # also written to file if save_path was given
+
+    # cuts = [
+    #     (fragile, f"Tot N.{num_fragile} below {np.round(10**thr)} Pa"),
+    #     (sturdy, f"Tot N.{num_sturdy} above {np.round(10**thr)} Pa"),
+    # ]
+
+    # # --- Call the plotter ---
+    # out_path = os.path.join(output_dir_rho, f"{shower_name}_by_dynampres_grid.png")
+    # fig, axes = plot_by_cuts_and_vars(
+    #     vars_list=vars_to_plot,
+    #     cuts_list=cuts,
+    #     weights_all=w_all,
+    #     nbins=int(round(10.0 / 0.02)),
+    #     smooth=0.02,
+    #     out_path=out_path
+    # )
+    # print("Saved:", out_path)
+    # plt.close(fig)
+
+    ##################### DISTRIBUTION PLOTS #####################
     # Plot grid settings
     ndim = samples.shape[1]
     # ncols = 5
@@ -4496,4 +4695,4 @@ if __name__ == "__main__":
         print(f"Setting name to {cml_args.name}")
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=True, plot_correl_flag=False) # cml_args.radiance_plot cml_args.correl_plot

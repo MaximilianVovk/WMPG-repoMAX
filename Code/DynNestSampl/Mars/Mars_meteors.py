@@ -2251,7 +2251,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     #############################################################
 
 
-    print("\nPlotting fully interpolated Abs.Mag field in V_inf-Height space...")
+    print("\nPlotting interpolated Abs.Mag field in V_inf-Height space...")
 
     # Use the same arrays you already built
     vel_arr = np.asarray(vel_brightest, float)
@@ -2264,7 +2264,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     h_arr   = h_arr[mask]
     mag_arr = mag_arr[mask]
 
-
+    # ---- 1) Coarse binning: median Abs.Mag per (V_inf, height) bin ----
+    # adjust these if you want coarser/finer resolution
     n_v_bins = 25
     n_h_bins = 25
 
@@ -2274,12 +2275,14 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     v_edges = np.linspace(v_min, v_max, n_v_bins + 1)
     h_edges = np.linspace(h_min, h_max, n_h_bins + 1)
 
+    # median magnitude per bin
     stat, v_edges_out, h_edges_out, _ = binned_statistic_2d(
         vel_arr, h_arr, mag_arr,
         statistic="median",
         bins=[v_edges, h_edges],
     )
 
+    # how many points per bin (to ignore very empty bins)
     count, _, _, _ = binned_statistic_2d(
         vel_arr, h_arr, mag_arr,
         statistic="count",
@@ -2290,24 +2293,31 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     stat = stat.T
     count = count.T
 
-    # bins with no data -> NaN
-    stat[count == 0] = np.nan
+    # ignore bins with too few points
+    min_pts_per_bin = 2
+    stat[count < min_pts_per_bin] = np.nan
 
-
+    # ---- 2) Nearest–neighbour infill + mild smoothing ----
     nan_mask = np.isnan(stat)
 
-    # nearest-neighbour fill: every empty bin takes value of closest non-empty bin
-    _, idx = ndimage.distance_transform_edt(
+    # nearest-neighbour fill inside data region
+    dist, idx = ndimage.distance_transform_edt(
         nan_mask,
         return_distances=True,
         return_indices=True,
     )
     stat_filled = stat[tuple(idx)]
 
-    # mild Gaussian blur so it doesn’t look too blocky
+    # don’t extrapolate too far from real data (in bin units)
+    max_pix_dist = 3.0  # tweak: smaller = less interpolation
+    stat_filled[dist > max_pix_dist] = np.nan
+
+    # mild Gaussian blur over bins to avoid blocky look
+    # (small sigma so it’s not too smooth)
     stat_smooth = ndimage.gaussian_filter(stat_filled, sigma=0.7)
+    stat_smooth = np.ma.masked_invalid(stat_smooth)
 
-
+    # ---- 3) Plot heatmap + original points ----
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 
     extent = (v_edges_out[0], v_edges_out[-1], h_edges_out[0], h_edges_out[-1])
@@ -2318,13 +2328,26 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         origin='lower',
         aspect='auto',
         cmap='plasma_r',
-        vmin=vmin,   # reuse vmin/vmax from your scatter
+        vmin=vmin,   # same vmin/vmax/norm as your scatter
         vmax=vmax,
+    )
+
+    # overlay your original points, semi-transparent
+    ax.scatter(
+        vel_arr,
+        h_arr,
+        c=mag_arr,
+        cmap='plasma_r',
+        norm=norm,
+        s=30,
+        edgecolors='k',
+        linewidths=0.3,
+        alpha=0.6,
     )
 
     cbar = fig.colorbar(im, ax=ax)
     cbar.set_label('Abs.Mag [-]', fontsize=12)
-    cbar.ax.invert_yaxis()       # brighter (more negative) at top
+    cbar.ax.invert_yaxis()
     cbar.ax.yaxis.set_tick_params(pad=10)
 
     ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=12)
@@ -2333,7 +2356,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     ax.grid()
 
     plt.tight_layout()
-    plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag_field_filled.png")
+    plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag_field.png")
     plt.close()
 
 

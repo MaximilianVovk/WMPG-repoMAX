@@ -1659,6 +1659,29 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_dynamic_pressure.png"), bbox_inches='tight', dpi=300)
 
+    ### PLOT rho and error against eta pressure color by speed ###
+
+    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+    scatter = plt.scatter(rho, e_val, c=tj, cmap='viridis', s=30, norm=Normalize(vmin=tj.min(), vmax=tj.max()), zorder=2)
+    plt.errorbar(rho, e_val,
+                xerr=[abs(rho_lo), abs(rho_hi)],
+                elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
+    plt.colorbar(scatter, label='Tisserand parameter (T$_j$)')
+    plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$
+    plt.ylabel("e", fontsize=15)
+    # plt.yscale("log")
+    # grid on
+    plt.grid(True)
+
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_e_with_Tj.png"), bbox_inches='tight', dpi=300)
+
 
     ### PLOT rho and error against eta pressure color by speed ###
 
@@ -1710,6 +1733,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax1.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
     ax1.set_ylabel("Perihelion [AU]", fontsize=15)
     ax1.set_yscale("log")
+    # add the grid
+    ax1.grid(True)
 
     # second plot
     ax2.errorbar(rho, Q_val,
@@ -1728,6 +1753,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax2.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
     ax2.set_ylabel("Aphelion [AU]", fontsize=15)
     ax2.set_yscale("log")
+    ax2.grid(True)
 
     # shared colorbar
     cbar = fig.colorbar(sc, cax=cax)
@@ -3129,7 +3155,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # Axis labels
     ax_scatter.set_xlim(-100, 8300)
     ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    ax_scatter.set_ylabel(r'Tisserand parameter (T$_{j}$)', fontsize=20)
+    ax_scatter.set_ylabel(r'Tisserand parameter (T$_j$)', fontsize=20)
     ax_scatter.tick_params(labelsize=20)
     # display the values on the x and y axes at 0 2000 4000 6000 8000
     ax_scatter.set_xticks(np.arange(0, 9000, 2000))
@@ -3623,8 +3649,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # ---------- Class masks at SAMPLE level ----------
     ast_m5over = finite & (tj_samples >= 4.0)
     ast_m45 = finite & (tj_samples >= 4.0) & (tj_samples < 5.0)
-    ast_m32 = finite & (tj_samples >= 3.0) & (tj_samples < 4.0)
-    jfc_m = finite & (tj_samples >= 2.0) & (tj_samples < 3.0)
+    ast_m32 = finite & (tj_samples >= 3.05) & (tj_samples < 4.0)
+    ast_jfc_mix = finite & (tj_samples >= 2.8) & (tj_samples < 3.05)
+    jfc_m = finite & (tj_samples >= 2.0) & (tj_samples < 2.8)
     htc_m21 = finite & (tj_samples >= 1.0) & (tj_samples < 2.0)
     htc_m10 = finite & (tj_samples >= 0) & (tj_samples < 1)
     htc_m0low = finite & (tj_samples < 0)
@@ -3632,28 +3659,29 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # find the number of tj above 5
     num_tj_above_5 = tj[tj >= 5].shape[0]
     num_tj_between_4_and_5 = tj[(tj >= 4) & (tj < 5)].shape[0]
-    num_tj_between_3_to_4 = tj[(tj >= 3) & (tj < 4)].shape[0]
-    num_tj_between_2_and_3 = tj[(tj >= 2) & (tj < 3)].shape[0]
+    num_tj_between_3_to_4 = tj[(tj >= 3.05) & (tj < 4)].shape[0]
+    num_tj_between_mix = tj[(tj >= 2.8) & (tj < 3.05)].shape[0]
+    num_tj_between_2_and_3 = tj[(tj >= 2) & (tj < 2.8)].shape[0]
     num_tj_between_1_and_2 = tj[(tj >= 1) & (tj < 2)].shape[0]
     num_tj_between_0_and_1 = tj[(tj >= 0) & (tj < 1)].shape[0]    
     # find the number of tj below 2
     num_tj_below_2 = tj[tj < 0].shape[0]
 
     # ---------- Figure with three stacked panels ----------
-    fig, axes = plt.subplots(7, 1, figsize=(8, 20), sharex=True)
+    fig, axes = plt.subplots(8, 1, figsize=(8, 22), sharex=True)
 
     _panel_like_top(axes[0], rho_samp[ast_m5over], w_all[ast_m5over], "Tot N." + str(num_tj_above_5) + " AST (Tj>=5)", lo_all, hi_all, nbins, xlim)
     _panel_like_top(axes[1], rho_samp[ast_m45], w_all[ast_m45], "Tot N." + str(num_tj_between_4_and_5) + " AST (4<Tj<5)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[2], rho_samp[ast_m32], w_all[ast_m32], "Tot N." + str(num_tj_between_3_to_4) + " AST (3<Tj<4)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[3], rho_samp[jfc_m], w_all[jfc_m], "Tot N." + str(num_tj_between_2_and_3) + " JFC (2<Tj<3)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[4], rho_samp[htc_m21], w_all[htc_m21], "Tot N." + str(num_tj_between_1_and_2) + " HTC (1<Tj<2)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[5], rho_samp[htc_m10], w_all[htc_m10], "Tot N." + str(num_tj_between_0_and_1) + " HTC (0<Tj<1)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[6], rho_samp[htc_m0low], w_all[htc_m0low], "Tot N." + str(num_tj_below_2) + " HTC (Tj<0)", lo_all, hi_all, nbins, xlim) # "N° " + str(num_tj_below_2) + " HTC"
-
+    _panel_like_top(axes[2], rho_samp[ast_m32], w_all[ast_m32], "Tot N." + str(num_tj_between_3_to_4) + " AST (3.05<Tj<4)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[3], rho_samp[ast_jfc_mix], w_all[ast_jfc_mix], "Tot N." + str(num_tj_between_mix) + " mix (2.8<Tj<3.05)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[4], rho_samp[jfc_m], w_all[jfc_m], "Tot N." + str(num_tj_between_2_and_3) + " JFC (2<Tj<2.8)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[5], rho_samp[htc_m21], w_all[htc_m21], "Tot N." + str(num_tj_between_1_and_2) + " HTC (1<Tj<2)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[6], rho_samp[htc_m10], w_all[htc_m10], "Tot N." + str(num_tj_between_0_and_1) + " HTC (0<Tj<1)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[7], rho_samp[htc_m0low], w_all[htc_m0low], "Tot N." + str(num_tj_below_2) + " HTC (Tj<0)", lo_all, hi_all, nbins, xlim) # "N° " + str(num_tj_below_2) + " HTC"
     # Bottom labels/ticks to match your style
-    axes[6].tick_params(axis='x', labelbottom=True)
-    axes[6].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    axes[6].set_xticks(np.arange(0, 9000, 2000))
+    axes[7].tick_params(axis='x', labelbottom=True)
+    axes[7].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    axes[7].set_xticks(np.arange(0, 9000, 2000))
     for ax in axes:
         ax.tick_params(labelsize=20)
     out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_Tj_cuts.png")
@@ -3667,8 +3695,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     groups = {
         "AST (Tj>=5)": ast_m5over,
         "AST (4<Tj<5)": ast_m45,
-        "AST (3<Tj<4)": ast_m32,
-        "JFC (2<Tj<3)": jfc_m,
+        "AST (3.05<Tj<4)": ast_m32,
+        "mix (2.8<Tj<3.05)": ast_jfc_mix,
+        "JFC (2<Tj<2.8)": jfc_m,
         "HTC (1<Tj<2)": htc_m21,
         "HTC (0<Tj<1)": htc_m10,
         "HTC (Tj<0)": htc_m0low,
@@ -3690,8 +3719,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     cuts = [
         (ast_m5over, f"Tot N.{num_tj_above_5} AST (Tj>=5)"),
         (ast_m45, f"Tot N.{num_tj_between_4_and_5} AST (4<Tj<5)"),
-        (ast_m32, f"Tot N.{num_tj_between_3_to_4} AST (3<Tj<4)"),
-        (jfc_m, f"Tot N.{num_tj_between_2_and_3} JFC (2<Tj<3)"),
+        (ast_m32, f"Tot N.{num_tj_between_3_to_4} AST (3.05<Tj<4)"),
+        (ast_jfc_mix, f"Tot N.{num_tj_between_mix} mix (2.8<Tj<3.05)"),
+        (jfc_m, f"Tot N.{num_tj_between_2_and_3} JFC (2<Tj<2.8)"),
         (htc_m21, f"Tot N.{num_tj_between_1_and_2} HTC (1<Tj<2)"),
         (htc_m10, f"Tot N.{num_tj_between_0_and_1} HTC (0<Tj<1)"),
         (htc_m0low, f"Tot N.{num_tj_below_2} HTC (Tj<0)"),
@@ -3983,7 +4013,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     num_below = np.count_nonzero(below_curve_event)
     num_above = np.count_nonzero(above_curve_event)
 
-    print(f"Events below curve: {num_below}, above curve: {num_above}")
+    # print(f"Events below curve: {num_below}, above curve: {num_above}")
 
     # =====================================================
     # 2) Map event-level masks to SAMPLE level
@@ -4017,8 +4047,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # ---------- Figure with three stacked panels ----------
     fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
 
-    _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_above) + " above", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_below) + " below", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_above) + " group A", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_below) + " group C", lo_all, hi_all, nbins, xlim)
 
     # Bottom labels/ticks to match your style
     axes[1].tick_params(axis='x', labelbottom=True)
@@ -4038,8 +4068,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # Build group masks (any number of groups works)
     groups = {
-        "above": fragile,
-        "below": sturdy
+        "group A": fragile,
+        "group C": sturdy
     }
 
     tex, results = weighted_tests_table(
@@ -4056,8 +4086,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # print(tex)  # also written to file if save_path was given
 
     cuts = [
-        (fragile, f"Tot N.{num_above} above"),
-        (sturdy, f"Tot N.{num_below} below"),
+        (fragile, f"Tot N.{num_above} group A"),
+        (sturdy, f"Tot N.{num_below} group C"),
     ]
 
     # --- Call the plotter ---

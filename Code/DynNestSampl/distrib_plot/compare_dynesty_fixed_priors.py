@@ -790,12 +790,12 @@ def compare_fixed_priors_with_flags(
 
 info = compare_fixed_priors_with_flags(
     input_folders=[
-        r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\ASTRA",
         r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\CAMO+EMCCD",
+        r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\ASTRA",
         r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\EMCCD_only",
     ],
-    labels=[r"ASTRA", r"CAMO", r"EMCCD"],  # legend labels
-    colors=["red", "blue", "green"],              # requested colors # 
+    labels=[r"CAMO", r"ASTRA", r"Manual"],  # legend labels
+    colors=["blue", "red", "green"],              # requested colors # 
     ci=0.95,
     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\ASTRA\LogUnif\LogUnif_runs.png",    # figure path
     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title

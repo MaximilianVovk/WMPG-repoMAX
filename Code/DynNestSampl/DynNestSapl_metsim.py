@@ -1115,6 +1115,7 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     for station in np.unique(obs_data.stations_lag):
         mask = obs_data.stations_lag == station
         color = get_color(station)
+        # obs_data.lag[mask] = (obs_data.length[mask]) - ((24610)*(obs_data.time_lag[mask]))
         h, = ax_lag.plot(obs_data.lag[mask], obs_data.height_lag[mask] / 1000, 'x--', color=color, label=station)
         station_handles.append(h); station_labels.append(str(station))
     ax_lag.set_xlabel("Lag [m]")
@@ -1134,6 +1135,13 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
         ax_main.set_xlim(xlim)
         ax_main.set_ylim(ylim)
         ax_res.set_ylim(ylim)
+    
+    # # only for lag plot use the same y limits as mag plot
+    # ax_lag.set_ylim(ax_mag.get_ylim())
+    # ax_lag_res.set_ylim(ax_mag.get_ylim())
+    # # for the max value of the x axis of te lag plot is 100 and keep the min value the same
+    # ax_lag.set_xlim(ax_lag.get_xlim()[0], 100)
+
 
     #### SIMULATED DATA (Interpolated) ####
     if sim_data is not None:
@@ -1153,7 +1161,7 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
         # plot lag_arr vs leading_frag_time_arr withouth nan values
         sim_lag = (sim_data.leading_frag_length_arr-sim_data.leading_frag_length_arr[index])\
               - ((obs_data.v_init)*(sim_data.time_arr-sim_data.time_arr[index]))
-        
+            #   - ((24710)*(sim_data.time_arr-sim_data.time_arr[index]))        
         sim_lag -= sim_lag[index]
 
         best_line, = ax_lag.plot(sim_lag, sim_data.leading_frag_height_arr / 1000, color=color_sim, label=label_sim)
@@ -1192,7 +1200,7 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     # take the index of the unique station_handles and station_labels
     unique_stations = {}
     for h, l in zip(station_handles, station_labels):
-        if l not in unique_stations:
+        if l not in unique_stations:  # exclude stations 01G and 02G from the legend  and l != '01G' and l != '02G'
             unique_stations[l] = h
     station_handles = list(unique_stations.values())
     station_labels  = list(unique_stations.keys())

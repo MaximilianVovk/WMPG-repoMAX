@@ -26,9 +26,16 @@ if parent_dir not in sys.path:
 from DynNestSapl_metsim import *
 
 
+from scipy.interpolate import griddata
+from scipy import ndimage
+from scipy.interpolate import UnivariateSpline
+from matplotlib.collections import LineCollection
 from itertools import combinations
 from scipy.stats import ks_2samp, mannwhitneyu, anderson_ksamp
 from scipy.stats import gaussian_kde
+from scipy.stats import binned_statistic_2d
+from scipy import ndimage
+from scipy.ndimage import gaussian_filter
 from dynesty import utils as dyfunc
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.gridspec import GridSpec
@@ -1335,21 +1342,30 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
                         guess_single[i] = 10**guess_single[i]
                         samples_single[:, i] = 10**samples_single[:, i]
                 best_guess_obj_plot_single_Earth = run_simulation(guess_single, obs_data, variables_single, fixed_values_single)
+                
                 # run for mars
-                best_guess_cost_single_mars = copy.deepcopy(best_guess_obj_plot_single_Earth.const)
-                best_guess_cost_single_mars.h_init = start_height_mars
-                best_guess_cost_single_mars.v_init = Vinf_val_mars * 1000  # convert to m/s
-                # PLANET PARAMETERS
-                best_guess_cost_single_mars.G0 = G0_mars  # m/s^
-                best_guess_cost_single_mars.r_earth = R_MARS * 1000  # in m
-                best_guess_cost_single_mars.dens_co = np.array(dens_co_mars)
-                best_guess_cost_single_mars.zenith_angle = best_guess_cost_mars.zenith_angle
-                best_guess_cost_mars.v_kill = Vinf_val_mars * 1000 - 10000  # convert to m/s
-                if best_guess_cost_mars.v_kill < 0:
-                    best_guess_cost_mars.v_kill = 1
+                best_guess_cost_single_mars = copy.deepcopy(best_guess_cost_mars)#copy.deepcopy(best_guess_obj_plot_single_Earth.const)
+                
+                best_guess_cost_single_mars.erosion_height_start = 2
+                best_guess_cost_single_mars.erosion_height_change = 1
+                best_guess_cost_single_mars.rho = best_guess_obj_plot_single_Earth.const.rho
+                # best_guess_cost_single_mars.erosion_coeff = best_guess_obj_plot_single_Earth.const.erosion_coeff
+                best_guess_cost_single_mars.sigma = best_guess_obj_plot_single_Earth.const.sigma
+                best_guess_cost_single_mars.m_init = best_guess_obj_plot_single_Earth.const.m_init
+                
+                # best_guess_cost_single_mars.h_init = start_height_mars
+                # best_guess_cost_single_mars.v_init = Vinf_val_mars * 1000  # convert to m/s
+                # # PLANET PARAMETERS
+                # best_guess_cost_single_mars.G0 = G0_mars  # m/s^
+                # best_guess_cost_single_mars.r_earth = R_MARS * 1000  # in m
+                # best_guess_cost_single_mars.dens_co = np.array(dens_co_mars)
+                # best_guess_cost_single_mars.zenith_angle = best_guess_cost_mars.zenith_angle
+                # best_guess_cost_mars.v_kill = Vinf_val_mars * 1000 - 10000  # convert to m/s
+                # if best_guess_cost_mars.v_kill < 0:
+                #     best_guess_cost_mars.v_kill = 1
 
-                # Minimum height (m) for simulation termination
-                best_guess_cost_single_mars.h_kill = 6000
+                # # Minimum height (m) for simulation termination
+                # best_guess_cost_single_mars.h_kill = 6000
                 frag_main_single, results_list_single, wake_results_single = runSimulation(best_guess_cost_single_mars, compute_wake=False)
                 best_guess_obj_plot_single_mars = SimulationResults(best_guess_cost_single_mars, frag_main_single, results_list_single, wake_results_single)
                 # check if best_guess_obj_plot_single_mars.leading_frag_dyn_press_arr[:-1] is empty
@@ -2077,6 +2093,468 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     fig.tight_layout()
     plt.savefig(output_dir_show + os.sep + "density_mean_AbsMagHeight.png")
     plt.close()
+
+    ############ PLOTTING SUMMARY ##############
+    print("\nPlotting Velocity height with brightness colorbar...")
+    # plot the distribution of speed and Vg_val and Vg_val_mars in a single plot one in blue for earth and one in red for mars 
+    
+    brightest_mags = []
+    height_brightest = []
+    Earth_height = []
+    Earth_single_height = []
+    # Earth_brightest = []
+    vel_brightest = []
+    height_type = []
+    vel_brightest_single = []
+    height_brightest_single = []
+    brightest_mags_single = []
+    for name in all_names:
+        rho, rho_lo, rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Vg_val, Q_val, q_val, a_val, e_val, V_val_earth, V_val_mars, Vg_val_mars, Vinf_val_mars, Vg_val_mars_min_max, Vinf_val_mars_min_max, Vg_val_denis, Vinf_val_denis = file_rho_jd_dict[name]
+        
+        vel_brightest.append(Vinf_val_mars)
+        vel_brightest.append(Vinf_val_mars)
+        vel_brightest.append(Vinf_val_mars)
+
+        (abs_mags_obs, heights_obs,
+        abs_mags_single_mars, heights_single_mars,
+        abs_mags_mars, heights_mars,
+        abs_mags_mars_dyn_press, heights_mars_dyn_press,
+        abs_mags_mars_energy, heights_mars_energy, 
+        const_obs, const_single_mars, const_mars, const_mars_dyn_press, const_mars_energy) = file_bright_dict[name]
+
+        min_mag_index_earth = np.argmin(abs_mags_obs)
+        Earth_height.append(heights_obs[min_mag_index_earth])
+        Earth_height.append(heights_obs[min_mag_index_earth])
+        Earth_height.append(heights_obs[min_mag_index_earth])
+
+        Earth_single_height.append(heights_obs[min_mag_index_earth])
+
+        # Earth_brightest.append(abs_mags_obs[min_mag_index_earth])
+        # take the brightest abs_mags_mars heights_mars an plot with a colorbar
+        min_mag_index = np.argmin(abs_mags_mars)
+        brightest_mags.append(abs_mags_mars[min_mag_index])
+        height_brightest.append(heights_mars[min_mag_index])
+        height_type.append('Mars $\\rho$')
+
+        min_mag_index_dyn = np.argmin(abs_mags_mars_dyn_press)
+        brightest_mags.append(abs_mags_mars_dyn_press[min_mag_index_dyn])
+        height_brightest.append(heights_mars_dyn_press[min_mag_index_dyn])
+        height_type.append('Mars $p_{dyn}$')
+        
+        min_mag_index_energy = np.argmin(abs_mags_mars_energy)
+        brightest_mags.append(abs_mags_mars_energy[min_mag_index_energy])
+        height_brightest.append(heights_mars_energy[min_mag_index_energy])
+        height_type.append('Mars $E_{e}$')
+
+        vel_brightest_single.append(Vinf_val_mars)
+        # clear nan values from heights_single_mars and delete the corresponding abs_mags_single_mars
+        # valid_indices = ~np.isnan(heights_single_mars)
+        # heights_single_mars = heights_single_mars[valid_indices]
+        # abs_mags_single_mars = abs_mags_single_mars[valid_indices]
+        min_mag_index_single = np.argmin(abs_mags_single_mars)
+        brightest_mags_single.append(abs_mags_single_mars[min_mag_index_single])
+        height_brightest_single.append(heights_single_mars[min_mag_index_single])
+        # print the single body results
+        # print(f"{name} Single body: Vinf: {Vinf_val_mars:.3f} km/s, Height: {heights_single_mars[min_mag_index_single]:.2f} km, Abs.Mag: {abs_mags_single_mars[min_mag_index_single]:.2f} ")
+        if np.isnan(heights_single_mars[min_mag_index_single]):
+            print(f"{name} Warning: Single body result is NaN, skipping...")
+            # # plot abs_mags_single_mars and heights_single_mars just to show they are nan
+            # fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+            # ax.scatter(abs_mags_single_mars, heights_single_mars, c='black', label='Mars Single Body', s=60)
+            # ax.scatter(abs_mags_single_mars[min_mag_index_single], heights_single_mars[min_mag_index_single], c='red', label='Brightest Point', s=100, edgecolors='black')
+            # ax.legend(fontsize=12)
+            # ax.set_xlabel('$V_{\infty}$ [km/s]', fontsize=12)
+            # ax.set_ylabel('Height [km]', fontsize=12)
+            # ax.tick_params(axis='both', which='major', labelsize=12)
+            # ax.grid()
+            # plt.tight_layout()
+            # plt.show()
+
+    fig, axs = plt.subplots(1, 1, figsize=(8, 6))
+    brightest_mags_arr = np.asarray(brightest_mags, float)
+
+    # Option A: linear scale
+    vmin = np.nanpercentile(brightest_mags_arr, 2.5)
+    vmax = np.nanpercentile(brightest_mags_arr, 97.5)
+
+    norm = plt.Normalize(vmin=vmin, vmax=vmax)
+
+    sc = None  # to keep a handle for the colorbar
+        
+    for ht in set(height_type):
+        indices = [i for i, x in enumerate(height_type) if x == ht]
+
+        # the color values for these points
+        cvals = brightest_mags_arr[indices]         # or log_vals[indices] if using log
+
+        if ht == 'Mars $\\rho$':
+            sc = axs.scatter(
+                np.array(vel_brightest)[indices],
+                np.array(height_brightest)[indices],
+                c=cvals,
+                cmap='plasma_r',
+                norm=norm,
+                edgecolors='blue',
+                s=60,
+                linewidth=1.5,
+                label='Mars $\\rho$',
+            )
+
+        elif ht == 'Mars $p_{dyn}$':
+            sc = axs.scatter(
+                np.array(vel_brightest)[indices],
+                np.array(height_brightest)[indices],
+                c=cvals,
+                cmap='plasma_r',
+                norm=norm,
+                edgecolors='green',
+                s=60,
+                linewidth=1.5,
+                label='Mars $p_{dyn}$',
+            )
+
+        elif ht == 'Mars $E_{e}$':
+            sc = axs.scatter(
+                np.array(vel_brightest)[indices],
+                np.array(height_brightest)[indices],
+                c=cvals,
+                cmap='plasma_r',
+                norm=norm,
+                edgecolors='red',
+                s=60,
+                linewidth=1.5,
+                label='Mars $E_{e}$',
+            )
+
+    # Legend (deduplicate labels)
+    handles, labels = axs.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    axs.legend(by_label.values(), by_label.keys(), fontsize=15)
+
+    # Single shared colorbar: uses the same norm and cmap as all scatters
+    cbar = fig.colorbar(sc, ax=axs)
+    cbar.set_label('Abs.Mag [-]', fontsize=12)
+    cbar.ax.invert_yaxis()
+    cbar.ax.yaxis.set_tick_params(pad=10)
+    
+    # add the labels and legend for a red and blue points
+    axs.set_xlabel('$V_{\infty}$ [km/s]', fontsize=12)
+    axs.set_ylabel('Height [km]', fontsize=12) 
+    # mak the thiks bigger
+    axs.tick_params(axis='both', which='major', labelsize=12)
+    # grid on
+    axs.grid()
+    plt.tight_layout()
+    plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag.png")
+    plt.close()
+
+    #############################################################
+
+
+    print("\nPlotting fully interpolated Abs.Mag field in V_inf-Height space...")
+
+    # Use the same arrays you already built
+    vel_arr = np.asarray(vel_brightest, float)
+    h_arr   = np.asarray(height_brightest, float)
+    mag_arr = np.asarray(brightest_mags_arr, float)
+
+    # Clean NaNs
+    mask = np.isfinite(vel_arr) & np.isfinite(h_arr) & np.isfinite(mag_arr)
+    vel_arr = vel_arr[mask]
+    h_arr   = h_arr[mask]
+    mag_arr = mag_arr[mask]
+
+
+    n_v_bins = 25
+    n_h_bins = 25
+
+    v_min, v_max = vel_arr.min(), vel_arr.max()
+    h_min, h_max = h_arr.min(),  h_arr.max()
+
+    v_edges = np.linspace(v_min, v_max, n_v_bins + 1)
+    h_edges = np.linspace(h_min, h_max, n_h_bins + 1)
+
+    stat, v_edges_out, h_edges_out, _ = binned_statistic_2d(
+        vel_arr, h_arr, mag_arr,
+        statistic="median",
+        bins=[v_edges, h_edges],
+    )
+
+    count, _, _, _ = binned_statistic_2d(
+        vel_arr, h_arr, mag_arr,
+        statistic="count",
+        bins=[v_edges, h_edges],
+    )
+
+    # transpose to [y, x] for imshow
+    stat = stat.T
+    count = count.T
+
+    # bins with no data -> NaN
+    stat[count == 0] = np.nan
+
+
+    nan_mask = np.isnan(stat)
+
+    # nearest-neighbour fill: every empty bin takes value of closest non-empty bin
+    _, idx = ndimage.distance_transform_edt(
+        nan_mask,
+        return_distances=True,
+        return_indices=True,
+    )
+    stat_filled = stat[tuple(idx)]
+
+    # mild Gaussian blur so it doesn’t look too blocky
+    stat_smooth = ndimage.gaussian_filter(stat_filled, sigma=0.7)
+
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+
+    extent = (v_edges_out[0], v_edges_out[-1], h_edges_out[0], h_edges_out[-1])
+
+    im = ax.imshow(
+        stat_smooth,
+        extent=extent,
+        origin='lower',
+        aspect='auto',
+        cmap='plasma_r',
+        vmin=vmin,   # reuse vmin/vmax from your scatter
+        vmax=vmax,
+    )
+
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label('Abs.Mag [-]', fontsize=12)
+    cbar.ax.invert_yaxis()       # brighter (more negative) at top
+    cbar.ax.yaxis.set_tick_params(pad=10)
+
+    ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=12)
+    ax.set_ylabel('Height [km]', fontsize=12)
+    ax.tick_params(axis='both', which='major', labelsize=12)
+    ax.grid()
+
+    plt.tight_layout()
+    plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag_field_filled.png")
+    plt.close()
+
+
+
+    #############################################################
+
+    print("\nPlotting Velocity delta height with brightness colorbar...")
+    # compute the difference in height between earth and mars for the brightest point in mars for each method
+    fig, axs = plt.subplots(1, 1, figsize=(8, 6))
+    # do the difference in height between earth and mars for the brightest point in mars for each method
+    delta_height_brightest = []
+    for i in range(len(height_brightest)):
+        delta_height_brightest.append(height_brightest[i] - Earth_height[i])
+        delta_height_single = np.array(height_brightest_single) - np.array(Earth_single_height)
+
+    # make circles around the points based on the height_type so we have s=60 and a different color for each type
+    for ht in set(height_type):
+        indices = [i for i, x in enumerate(height_type) if x == ht]
+        if ht == 'Mars $\\rho$':
+            axs.scatter(
+                np.array(vel_brightest)[indices],
+                np.array(delta_height_brightest)[indices],
+                c=np.array(brightest_mags)[indices],
+                cmap='plasma_r',
+                s=60,
+                edgecolors='blue',
+                linewidth=1.5,
+                label='Mars $\\rho$',
+            )
+        elif ht == 'Mars $p_{dyn}$':
+            axs.scatter(
+                np.array(vel_brightest)[indices],
+                np.array(delta_height_brightest)[indices],
+                c=np.array(brightest_mags)[indices],
+                cmap='plasma_r',
+                s=60,
+                edgecolors='green',
+                linewidth=1.5,
+                label='Mars $p_{dyn}$',
+            )
+        elif ht == 'Mars $E_{e}$':
+            axs.scatter(
+                np.array(vel_brightest)[indices],
+                np.array(delta_height_brightest)[indices],
+                c=np.array(brightest_mags)[indices],
+                cmap='plasma_r',
+                s=60,
+                edgecolors='red',
+                linewidth=1.5,
+                label='Mars $E_{e}$',
+            )
+            
+    # show legend only once for each type
+    handles, labels = axs.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    axs.legend(by_label.values(), by_label.keys(), fontsize=15)
+    cbar = plt.colorbar(sc, ax=axs)
+    cbar.set_label('Abs.Mag [-]', fontsize=12)
+    cbar.ax.invert_yaxis()
+    cbar.ax.yaxis.set_tick_params(pad=10)
+    # add the labels and legend for a red and blue points
+    axs.set_xlabel('$V_{\infty}$ [km/s]', fontsize=12)
+    axs.set_ylabel('$\Delta$ Height [km]', fontsize=12)
+    # mak the thiks bigger
+    axs.tick_params(axis='both', which='major', labelsize=12)
+    # put a thik horizontal line at y=0
+    axs.axhline(y=0, color='darkgray', linestyle='-', linewidth=2)
+    # put a text at the top of this line saying "Brigtest height on Earth" y =0 and x = min vel_brightest
+    axs.text(min(vel_brightest), -1.5, "Brightest height on Earth", color='darkgray', fontsize=12, verticalalignment='bottom', horizontalalignment='left')
+    # grid on
+    axs.grid()
+    plt.tight_layout()
+    plt.savefig(output_dir_show + os.sep + "Vinf_DeltaHeight_AbsMag.png")
+    plt.close()
+
+    ############## 3 plots showing the distribution Velocity height with brightness with a shared colorbar ##############
+
+    print("\nPlotting Velocity height with brightness colorbar - separate plots...")
+    fig, axs = plt.subplots(1, 4, figsize=(16, 6), sharex=True, sharey=True)
+    axs = axs.ravel()
+
+    for ht in set(height_type):
+        indices = [i for i, x in enumerate(height_type) if x == ht]
+
+        if ht == 'Mars $\\rho$':
+            sc = axs[0].scatter(
+                np.array(vel_brightest)[indices],
+                np.array(height_brightest)[indices],
+                c=np.array(brightest_mags)[indices],
+                cmap='plasma_r',
+                s=40,
+                edgecolors='black'#'blue'
+            )
+            axs[0].set_title('Mars $\\rho$', fontsize=15)
+
+        elif ht == 'Mars $p_{dyn}$':
+            sc = axs[1].scatter(
+                np.array(vel_brightest)[indices],
+                np.array(height_brightest)[indices],
+                c=np.array(brightest_mags)[indices],
+                cmap='plasma_r',
+                s=40,
+                edgecolors='black'#'green'
+            )
+            axs[1].set_title('Mars $p_{dyn}$', fontsize=15)
+
+        elif ht == 'Mars $E_{e}$':
+            sc = axs[2].scatter(
+                np.array(vel_brightest)[indices],
+                np.array(height_brightest)[indices],
+                c=np.array(brightest_mags)[indices],
+                cmap='plasma_r',
+                s=40,
+                edgecolors='black'#'red'
+            )
+            axs[2].set_title('Mars $E_{e}$', fontsize=15)
+
+    # add the single body plot as the last subplot
+    sc = axs[3].scatter(
+        np.array(vel_brightest_single),
+        np.array(height_brightest_single),
+        c=np.array(brightest_mags_single),
+        cmap='plasma_r',
+        s=40,
+        edgecolors='black'#'red'
+    )
+    axs[3].set_title('Mars Single Body', fontsize=15)
+
+    # First tighten only the subplots
+    fig.subplots_adjust(right=0.86)  # leave room on the right
+
+    # Create a dedicated axis for the colorbar
+    cbar_ax = fig.add_axes([0.88, 0.15, 0.02, 0.7])  # [left, bottom, width, height] in figure coords
+    cbar = fig.colorbar(sc, cax=cbar_ax)
+    cbar.set_label('Abs.Mag [-]', fontsize=12)
+    cbar.ax.invert_yaxis()
+    cbar.ax.yaxis.set_tick_params(pad=10)
+
+    for ax in axs:
+        ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=12)
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        ax.grid()
+
+    axs[0].set_ylabel('Height [km]', fontsize=12)
+
+    plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag_separate.png")
+    plt.close()
+
+    ################################################
+    # same plots but for delta height
+    print("\nPlotting Velocity delta height with brightness colorbar - separate plots...")
+    fig, axs = plt.subplots(1, 4, figsize=(16, 6), sharex=True, sharey=True)
+    axs = axs.ravel()
+    for ht in set(height_type):
+        indices = [i for i, x in enumerate(height_type) if x == ht]
+
+        if ht == 'Mars $\\rho$':
+            sc = axs[0].scatter(
+                np.array(vel_brightest)[indices],
+                np.array(delta_height_brightest)[indices],
+                c=np.array(brightest_mags)[indices],
+                cmap='plasma_r',
+                s=40,
+                edgecolors='black'#'blue'
+            )
+            axs[0].set_title('Mars $\\rho$', fontsize=15)
+
+        elif ht == 'Mars $p_{dyn}$':
+            sc = axs[1].scatter(
+                np.array(vel_brightest)[indices],
+                np.array(delta_height_brightest)[indices],
+                c=np.array(brightest_mags)[indices],
+                cmap='plasma_r',
+                s=40,
+                edgecolors='black'#'green'
+            )
+            axs[1].set_title('Mars $p_{dyn}$', fontsize=15)
+
+        elif ht == 'Mars $E_{e}$':
+            sc = axs[2].scatter(
+                np.array(vel_brightest)[indices],
+                np.array(delta_height_brightest)[indices],
+                c=np.array(brightest_mags)[indices],
+                cmap='plasma_r',
+                s=40,
+                edgecolors='black'#'red'
+            )
+            axs[2].set_title('Mars $E_{e}$', fontsize=15)
+    
+    # add the single body plot as the last subplot
+    sc = axs[3].scatter(
+        np.array(vel_brightest_single),
+        np.array(delta_height_single),
+        c=np.array(brightest_mags_single),
+        cmap='plasma_r',
+        s=40,
+        edgecolors='black'#'red'
+    )
+    axs[3].set_title('Mars Single Body', fontsize=15)
+
+    # First tighten only the subplots
+    fig.subplots_adjust(right=0.86)  # leave room on the right
+    # Create a dedicated axis for the colorbar
+    cbar_ax = fig.add_axes([0.88, 0.15, 0.02, 0.7])  # [left, bottom, width, height] in figure coords
+    cbar = fig.colorbar(sc, cax=cbar_ax)
+    cbar.set_label('Abs.Mag [-]', fontsize=12)
+    cbar.ax.invert_yaxis()
+    cbar.ax.yaxis.set_tick_params(pad=10)
+    # put the horizontal line at y=0 in each subplot
+    for ax in axs:
+        ax.axhline(0, color='darkgray', linestyle='-', linewidth=2)
+        ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=12)
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        ax.grid()
+    # only on the first subplot add the ylabel
+    axs[0].set_ylabel('$\Delta$ Height [km]', fontsize=12)
+    # only on the first sublopt wite that that is the brightest height put it below the
+    axs[0].text(min(vel_brightest), -1.5, "Brightest height on Earth", color='gray', fontsize=12, verticalalignment='bottom', horizontalalignment='left')
+    plt.savefig(output_dir_show + os.sep + "Vinf_DeltaHeight_AbsMag_separate.png")
+    plt.close()
+
 
 
 if __name__ == "__main__":

@@ -2074,65 +2074,58 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 # scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(erosion_beg_dyn_press), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(erosion_beg_dyn_press), 0.025), vmax=_quantile(np.log10(erosion_beg_dyn_press), 0.975)), zorder=2)
                 # plt.colorbar(scatter_d, label='log$_{10}$ Dynamic Pressure [Pa]')
 
-                # --- Dynamic pressure two-class overlay (NO gradient) ---
-                logq = np.log10(erosion_beg_dyn_press)
-                
 
-                mask_hi = logq >= thr
-                mask_lo = ~mask_hi
-
-                # # Hollow markers so the rho colors still show underneath
-                # plt.scatter(Vinf_val[mask_lo], beg_height[mask_lo],
-                #             facecolors='none', edgecolors='tab:blue', s=60, linewidths=1.2,
-                #             label=r'$\log_{10} q < 3.2$', zorder=3)
-
-                # plt.scatter(Vinf_val[mask_hi], beg_height[mask_hi],
-                #             facecolors='none', edgecolors='tab:red', s=60, linewidths=1.2,
-                #             label=r'$\log_{10} q \ge 3.2$ (q ≥ 1.58 kPa)', zorder=4)
-
-                # # Plot the threshold curve
-                # plt.plot(v_dense, h_dense, '--', linewidth=2,
-                #         label='threshold curve', zorder=5)
-                
                 valid_thr = np.isfinite(h_thr)
                 mask_below_curve = valid_thr & (beg_height < h_thr)
 
-                # Red hollow circles for points below the curve
-                plt.scatter(Vinf_val[mask_below_curve],
-                            beg_height[mask_below_curve],
-                            facecolors='none', edgecolors='tab:red',
-                            s=60, linewidths=1.2,
-                            label='below threshold curve',
-                            zorder=4)
-                
-                # Blue hollow circles for points above the curve
-                plt.scatter(Vinf_val[~mask_below_curve],
-                            beg_height[~mask_below_curve],
-                            facecolors='none', edgecolors='tab:blue',
-                            s=60, linewidths=1.2,
-                            label='above threshold curve',
-                            zorder=4)
+                # # Optional: plot the threshold curve itself
+                # plt.plot(v_dense, h_dense, '--', linewidth=2,
+                #         label='threshold curve', zorder=2)
 
-                all_names = np.array(all_names)
-                # add the names only to the mask_hi
-                # for i, txt in enumerate(all_names[mask_hi]):
-                #     plt.annotate(txt, (Vinf_val[mask_hi][i], beg_height[mask_hi][i]), fontsize=8, color='black')
+                # ----- Single scatter: facecolor from rho, edgecolor from group -----
 
-                scatter = plt.scatter(Vinf_val, beg_height, c=np.log10(rho), cmap='viridis', s=20, norm=Normalize(vmin=np.log10(rho).min(), vmax=np.log10(rho).max()), zorder=3)
-                plt.colorbar(scatter, label='log$_{10}$ $\\rho$ [kg/m³]')
+                logrho = np.log10(rho)
+
+                # mask to avoid NaNs in rho / coords
+                finite = np.isfinite(rho) & np.isfinite(Vinf_val) & np.isfinite(beg_height)
+
+                # normalization for the colormap
+                norm = Normalize(vmin=np.nanmin(rho[finite]),
+                                vmax=np.nanmax(rho[finite]))
+
+                # edge colors for each point (same length as Vinf_val)
+                edge_colors = np.empty(Vinf_val.shape, dtype=object)
+                edge_colors[mask_below_curve] = 'tab:red'   # below threshold curve
+                edge_colors[~mask_below_curve] = 'tab:blue' # above threshold curve
+
+                # single scatter: filled markers + colored edges
+                scatter = plt.scatter(
+                    Vinf_val[finite],
+                    beg_height[finite],
+                    c=rho[finite],          # facecolor from rho
+                    cmap='viridis',
+                    norm=norm,
+                    edgecolors=edge_colors[finite],  # edges from groups
+                    s=60,
+                    linewidths=1.2,
+                    zorder=3
+                )
+
+                # one colorbar tied to rho
+                plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
 
                 plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
                 plt.ylabel('$h_{beg}$ [km]', fontsize=15)
                 plt.grid(True)
 
-                # # x axes from 10 to 22
-                # plt.xlim(11, 22)
-                # # y axes from 70 to 110
-                # plt.ylim(70, 110)
-
                 plt.tight_layout()
-                plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height_rho-eta.png"), bbox_inches='tight', dpi=300)
+                plt.savefig(os.path.join(output_dir_show,
+                                        f"{shower_name}_velocity_vs_beg_height_rho-eta.png"),
+                            bbox_inches='tight', dpi=300)
                 plt.close()
+
+                ### AITOFF PLOT ###
+                print("Creating Aitoff plot with GMN data...")
 
                 for plot_type in ['helio', 'geo']:
                     print(f"Plotting ecliptic {plot_type}centric data with GMN...")
@@ -2430,9 +2423,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     y_edges = np.r_[bin_left, bin_right[-1]]
     Z = weights[:, None]
 
-    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Blues")
+    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Blues", alpha=0.5)
 
-    proxy_blue = Patch(facecolor=plt.cm.Blues(0.7), edgecolor='none', label="GIADA - Fulle et al. (2017)")
+    proxy_blue = Patch(facecolor=plt.cm.Blues(0.7), edgecolor='none', alpha=0.5, label="GIADA - Fulle et al. (2017)")
 
     #### Misc papers overlays ####
 
@@ -2443,11 +2436,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         size_mm = 2 * radius_m * 1000  # convert to mm
         return size_mm
     
-    # add a line with two dot at the edges of 4000 between 0.15 and 0.5 mm put a circle marker the edges
-    ax.plot([0.15, 0.5], [4000, 4000], marker='o', color='blue', linewidth=1, label="GIADA - Güttler et al. (2019)", markersize=6)
+    # # add a line with two dot at the edges of 4000 between 0.15 and 0.5 mm put a circle marker the edges
+    # ax.plot([0.15, 0.5], [4000, 4000], marker='o', color='blue', linewidth=1, label="GIADA - Güttler et al. (2019)", markersize=6)
 
-    # add a line with two dot at the edges of 4000 between 0.15 and 0.5 mm put a circle marker the edges
-    ax.plot([10, 0.1], [1, 1], marker='d', color='blue', linewidth=1, linestyle='--', label="GIADA - Fulle et al. (2015)", markersize=6)
+    # add a line with two dot at the edges of 4000 between 0.15 and 0.5 mm put a circle marker the edges & GDS 
+    ax.plot([2.5, 0.2], [1, 1], marker='d', color='blue', linewidth=1, linestyle='--', label="GIADA - Fulle et al. (2015)", markersize=6)
 
     # make a shadeded green area between 0.3 and 10 between 100 and 1000 with alpha of 0.1 and a z order of 0
     ax.fill_between([0.3, 100], 100, 1000, color='teal', alpha=0.1,  label="OSIRIS - Güttler et al. (2017)") # , edgecolor='none'

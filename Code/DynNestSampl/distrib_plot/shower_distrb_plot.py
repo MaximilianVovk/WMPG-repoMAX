@@ -962,7 +962,10 @@ def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
 
 
 def weighted_var_eros_height_change(var_start, var_heightchange, mass_before, m_init, w):
+    # # mass weighted mean (arithmetical mean of the variable weighted by mass fraction before erosion)
     x = var_start*(abs(m_init-mass_before) / m_init) + var_heightchange * (mass_before / m_init)
+    # # volume mean (harmonic mean of the variable weighted by mass fraction before erosion m_0 / ( m_1/rho_1 + m_2/rho_2 ))
+    # x = m_init / ((abs(m_init-mass_before) / var_start) + (mass_before / var_heightchange))
     mask = ~np.isnan(x)
     x_valid = x[mask]
     w_valid = w[mask]
@@ -1455,7 +1458,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
     return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
-def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
     # check if there are variables in the flags_dict that are not in the variable_map
@@ -2448,6 +2451,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # add a dot as a DIM point at (0.9, 250) coor dark green
     ax.scatter(0.9, 250, color='navy', marker='s', s=30, label="DIM - Flanders et al. (2018)")
 
+    ### bad
     # Halley 10~12 \ m \ 10~3 kg for 50 \ o \ 500 kg m~3
     ax.plot([from_mass2size(10**(-13), 300), from_mass2size(10**(-9), 300)], [300, 300], marker='p', color='cyan', linestyle=':', linewidth=1, label="Vega-2 - Krasnopolsky et al. (1988)", markersize=6)
 
@@ -2493,14 +2497,18 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     ax.scatter(impactor_diam_um, rho_gcm3, color='magenta', marker='^', s=50, label="Stardust - Kearsley et al. (2008)**")
 
+    ### bad
     ax.fill_between([0.0001, 0.1], 3000, 8000, color='lime', alpha=0.1, zorder=0, label="Lunar Microcraters - Nagel et al. (1980)")
 
+    ### bad
     # LDEF ranges from 2.0 to 5 g cm3 for masses of 10^-15 - 10^-9 kg
     ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 5000, color='yellow', alpha=0.1, zorder=0, label="LDEF - Love et al. (1995)***") # , edgecolor='none'
 
+    ### bad
     # LDEF ranges from 2.0 to 2.4 g cm3 for masses of 10^-15 - 10^-9 kg
     ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 2400, color='gold', alpha=0.5, zorder=0, label="LDEF - McDonnell and Gardner (1998)") # , edgecolor='none'
 
+    ### bad
     # put a line between min 50, max is 296 / 1000 mm
     ax.plot([50/1000, 296/1000], [2700, 2700], color='gold', linestyle='-.', marker='p', label="Hubble - Kearsley et al. (2024)")
 
@@ -2692,7 +2700,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     a_um = np.logspace(-3, 4, 400)  # ~0.05 to 100 µm
     rho_kgm3 = rho_particle_divine1986(a_um, out="kg/m^3")
-
+    
+    ### bad
     ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)")    
 
     ##########
@@ -2714,166 +2723,167 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.close()
 
 
-    ##########
+    ########## plot_Kikwaya only ##########
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    print("Creating 2D density against size plot Kikwaya only...")
-    _plot_2d_distribution(ax, mm_size_corrected, rho_corrected, w)
-    ax.set_xlabel("Size [mm]", fontsize=15)
-    ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
+    if plot_Kikwaya:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        print("Creating 2D density against size plot Kikwaya only...")
+        _plot_2d_distribution(ax, mm_size_corrected, rho_corrected, w)
+        ax.set_xlabel("Size [mm]", fontsize=15)
+        ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
 
-    # Meteors - Kikwaya et al. (2009) - Sporadic meteoroids
+        # Meteors - Kikwaya et al. (2009) - Sporadic meteoroids
 
-    # (code, mass_kg, rho_kgm3) 
-    rows = [
-        # 2006
-        ("20060430_084301", 7.10e-6, 1450.0),
-        ("20060430_103000", 6.15e-6,  950.0),
-        ("20060430_104845", 6.85e-6,  690.0),
-        ("20060502_100335", 6.75e-6,  780.0),
-        ("20060503_091349", 7.65e-6,  970.0),
-        ("20060504_093103", 7.95e-6, 3550.0),
-        ("20060505_102944", 1.95e-5, 4550.0),
+        # (code, mass_kg, rho_kgm3) 
+        rows = [
+            # 2006
+            ("20060430_084301", 7.10e-6, 1450.0),
+            ("20060430_103000", 6.15e-6,  950.0),
+            ("20060430_104845", 6.85e-6,  690.0),
+            ("20060502_100335", 6.75e-6,  780.0),
+            ("20060503_091349", 7.65e-6,  970.0),
+            ("20060504_093103", 7.95e-6, 3550.0),
+            ("20060505_102944", 1.95e-5, 4550.0),
 
-        # 2007
-        ("20070420_082356", 4.05e-6,  630.0),
-        ("20070422_061849", 2.20e-6,  730.0),
-        ("20070519_040843", 6.15e-6,  975.0),
-        ("20070519_075753", 2.80e-5, 1240.0),
+            # 2007
+            ("20070420_082356", 4.05e-6,  630.0),
+            ("20070422_061849", 2.20e-6,  730.0),
+            ("20070519_040843", 6.15e-6,  975.0),
+            ("20070519_075753", 2.80e-5, 1240.0),
 
-        ("20070519_082713", 6.45e-6,  830.0),
-        ("20070812_062117", 2.10e-6,  710.0),
-        ("20070812_083450", 2.85e-6,  920.0),
-        ("20070813_044452", 4.35e-6,  420.0),
+            ("20070519_082713", 6.45e-6,  830.0),
+            ("20070812_062117", 2.10e-6,  710.0),
+            ("20070812_083450", 2.85e-6,  920.0),
+            ("20070813_044452", 4.35e-6,  420.0),
 
-        ("20070813_065047", 4.10e-6,  470.0),
-        ("20070813_065828", 1.00e-5, 3150.0),
-        ("20070813_073054", 2.15e-6,  380.0),
-        ("20070813_075355", 5.20e-6,  670.0),
+            ("20070813_065047", 4.10e-6,  470.0),
+            ("20070813_065828", 1.00e-5, 3150.0),
+            ("20070813_073054", 2.15e-6,  380.0),
+            ("20070813_075355", 5.20e-6,  670.0),
 
-        ("20070813_081229", 1.90e-5, 1550.0),
-        ("20070813_084353", 1.40e-6, 1510.0),
-        ("20070813_084901", 3.55e-6,  360.0),
-        ("20070813_085448", 2.40e-6,  590.0),
+            ("20070813_081229", 1.90e-5, 1550.0),
+            ("20070813_084353", 1.40e-6, 1510.0),
+            ("20070813_084901", 3.55e-6,  360.0),
+            ("20070813_085448", 2.40e-6,  590.0),
 
-        ("20070813_085457", 5.80e-6,  910.0),
-        ("20070813_085548", 2.30e-6,  640.0),
+            ("20070813_085457", 5.80e-6,  910.0),
+            ("20070813_085548", 2.30e-6,  640.0),
 
-        # 2008-09-10
-        ("20080910_052352", 1.45e-5, 3500.0),
-        ("20080910_053428", 1.95e-6, 4100.0),
-        ("20080910_064102", 5.20e-6, 3550.0),
-        ("20080910_075255", 3.75e-6,  990.0),
-        ("20080910_075454", 3.40e-6,  730.0),
-        ("20080910_091403", 4.15e-6,  820.0),
+            # 2008-09-10
+            ("20080910_052352", 1.45e-5, 3500.0),
+            ("20080910_053428", 1.95e-6, 4100.0),
+            ("20080910_064102", 5.20e-6, 3550.0),
+            ("20080910_075255", 3.75e-6,  990.0),
+            ("20080910_075454", 3.40e-6,  730.0),
+            ("20080910_091403", 4.15e-6,  820.0),
 
-        # 2008-09-11
-        ("20080911_060638", 7.40e-6, 1095.0),
-        ("20080911_065211", 5.10e-7,  945.0),
-        ("20080911_071428", 1.10e-5, 4150.0),
+            # 2008-09-11
+            ("20080911_060638", 7.40e-6, 1095.0),
+            ("20080911_065211", 5.10e-7,  945.0),
+            ("20080911_071428", 1.10e-5, 4150.0),
 
-        ("20080911_075207", 7.20e-7,  980.0),
-        ("20080911_075323", 2.60e-6, 1070.0),
-        ("20080911_075846", 3.20e-6, 1070.0),
-        ("20080911_081630", 3.15e-6,  865.0),
+            ("20080911_075207", 7.20e-7,  980.0),
+            ("20080911_075323", 2.60e-6, 1070.0),
+            ("20080911_075846", 3.20e-6, 1070.0),
+            ("20080911_081630", 3.15e-6,  865.0),
 
-        ("20080911_084108", 3.80e-7,  650.0),
-        ("20080911_084529", 2.15e-6, 3150.0),
-        ("20080911_084739", 1.17e-6,  610.0),
-        ("20080911_085605", 8.35e-7, 1065.0),
+            ("20080911_084108", 3.80e-7,  650.0),
+            ("20080911_084529", 2.15e-6, 3150.0),
+            ("20080911_084739", 1.17e-6,  610.0),
+            ("20080911_085605", 8.35e-7, 1065.0),
 
-        ("20080911_090242", 1.85e-6,  760.0),
-        ("20080911_090512", 2.05e-6,  915.0),
-        ("20080911_093436", 4.90e-6, 1055.0),
-        ("20080911_094752", 9.95e-7, 1015.0),
+            ("20080911_090242", 1.85e-6,  760.0),
+            ("20080911_090512", 2.05e-6,  915.0),
+            ("20080911_093436", 4.90e-6, 1055.0),
+            ("20080911_094752", 9.95e-7, 1015.0),
 
-        ("20080911_094844", 1.70e-6, 3470.0),
+            ("20080911_094844", 1.70e-6, 3470.0),
 
-        # 2009
-        ("20090624_054307", 2.75e-6,  965.0),
-        ("20090625_053313", 3.05e-6, 2950.0),
+            # 2009
+            ("20090624_054307", 2.75e-6,  965.0),
+            ("20090625_053313", 3.05e-6, 2950.0),
 
-        ("20090820_014058", 4.99e-6, 3150.0),
-        ("20090825_032616", 4.30e-6, 4950.0),
-        ("20090825_033603", 1.19e-6, 2825.0),
-        ("20090825_034528", 1.02e-6, 4150.0),
-        ("20090825_035145", 1.35e-6, 2815.0),
-        ("20090825_035228", 2.89e-6, 3025.0),
-        ("20090825_040603", 8.85e-7,  635.0),
-        ("20090825_040835", 3.75e-6,  675.0),
-        ("20090825_043435", 4.80e-6, 2780.0),
-        ("20090825_050631", 1.25e-6, 3195.0),
-        ("20090825_050904", 5.05e-6, 4820.0),
-        ("20090825_053106", 1.95e-6, 3020.0),
-        ("20090825_060500", 2.55e-6, 2860.0),
-        ("20090825_061542", 1.70e-6,  925.0),
-        ("20090825_063604", 2.35e-6,  715.0),
-        ("20090825_063641", 1.25e-6,  965.0),
-        ("20090825_064646", 1.80e-6,  660.0),
-        ("20090825_065903", 3.90e-6, 2645.0),
-        ("20090825_070044", 6.25e-7, 4895.0),
-        ("20090825_081927", 7.95e-8, 5425.0),
-        ("20090825_070933", 3.10e-6, 3215.0),
-        ("20090825_085804", 1.80e-6,  620.0),
-        ("20090826_020835", 1.10e-6, 4780.0),
-        ("20090902_084143", 6.25e-6, 1230.0),
+            ("20090820_014058", 4.99e-6, 3150.0),
+            ("20090825_032616", 4.30e-6, 4950.0),
+            ("20090825_033603", 1.19e-6, 2825.0),
+            ("20090825_034528", 1.02e-6, 4150.0),
+            ("20090825_035145", 1.35e-6, 2815.0),
+            ("20090825_035228", 2.89e-6, 3025.0),
+            ("20090825_040603", 8.85e-7,  635.0),
+            ("20090825_040835", 3.75e-6,  675.0),
+            ("20090825_043435", 4.80e-6, 2780.0),
+            ("20090825_050631", 1.25e-6, 3195.0),
+            ("20090825_050904", 5.05e-6, 4820.0),
+            ("20090825_053106", 1.95e-6, 3020.0),
+            ("20090825_060500", 2.55e-6, 2860.0),
+            ("20090825_061542", 1.70e-6,  925.0),
+            ("20090825_063604", 2.35e-6,  715.0),
+            ("20090825_063641", 1.25e-6,  965.0),
+            ("20090825_064646", 1.80e-6,  660.0),
+            ("20090825_065903", 3.90e-6, 2645.0),
+            ("20090825_070044", 6.25e-7, 4895.0),
+            ("20090825_081927", 7.95e-8, 5425.0),
+            ("20090825_070933", 3.10e-6, 3215.0),
+            ("20090825_085804", 1.80e-6,  620.0),
+            ("20090826_020835", 1.10e-6, 4780.0),
+            ("20090902_084143", 6.25e-6, 1230.0),
 
-        ("20090902_085534", 1.55e-6, 4495.0),
-        ("20090902_085832", 1.55e-6, 1165.0),
-        ("20090902_092028", 6.40e-7,  725.0),
+            ("20090902_085534", 1.55e-6, 4495.0),
+            ("20090902_085832", 1.55e-6, 1165.0),
+            ("20090902_092028", 6.40e-7,  725.0),
 
-        ("20090902_093338", 2.25e-6,  605.0),
-        ("20090909_010643", 2.50e-6, 4910.0),
-        ("20090909_012810", 2.15e-6, 5010.0),
-        ("20090909_013647", 4.85e-6, 5030.0),
+            ("20090902_093338", 2.25e-6,  605.0),
+            ("20090909_010643", 2.50e-6, 4910.0),
+            ("20090909_012810", 2.15e-6, 5010.0),
+            ("20090909_013647", 4.85e-6, 5030.0),
 
-        ("20090911_021830", 1.45e-6, 5070.0),
-        ("20090911_030523", 4.80e-6, 3130.0),
-        ("20090911_034442", 1.65e-6, 4850.0),
-        ("20090911_035942", 1.35e-6, 3515.0),
+            ("20090911_021830", 1.45e-6, 5070.0),
+            ("20090911_030523", 4.80e-6, 3130.0),
+            ("20090911_034442", 1.65e-6, 4850.0),
+            ("20090911_035942", 1.35e-6, 3515.0),
 
-        ("20090911_040233", 6.75e-7, 1460.0),
-        ("20090911_040433", 2.25e-5, 4010.0),
-    ]
-
-
-    mass_kg = np.array([row[1] for row in rows], dtype=float)
-    rho_kgm3 = np.array([row[2] for row in rows], dtype=float)
+            ("20090911_040233", 6.75e-7, 1460.0),
+            ("20090911_040433", 2.25e-5, 4010.0),
+        ]
 
 
-    (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
+        mass_kg = np.array([row[1] for row in rows], dtype=float)
+        rho_kgm3 = np.array([row[2] for row in rows], dtype=float)
 
-    name_ids = [row[0] for row in rows]
-    # Now do a tolerant match (±3 s) against your available names
-    foundJB = 0
-    for i, code in enumerate(name_ids):
-        # Try to find an exact-or-close match for this code inside all_names
-        matched_key = find_close_in_list(code, all_names_JB, tol_seconds=3)
-        if matched_key is not None and (matched_key in file_radiance_rho_dict_JB) and (matched_key in file_obs_data_dict_JB):
-            foundJB += 1
-            rho_JB = rho_kgm3[i]
-            rho_dynesty = file_radiance_rho_dict_JB[matched_key][2]
-            size_JB = from_mass2size(mass_kg[i], rho_JB)
-            size_dynesty = file_obs_data_dict_JB[matched_key][13]
-            ax.plot([size_JB, size_dynesty], [rho_JB, rho_dynesty],
-                    color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
-            ax.scatter(size_dynesty, rho_dynesty, color='red', marker='+', s=70, zorder=6) 
 
-    ax.scatter(from_mass2size(mass_kg, rho_kgm3), rho_kgm3, color='sienna', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5) 
+        (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
 
-    if foundJB > 0:
-        print(foundJB,"Found matching meteoroids from JB (±3 s tolerance).")
-        ax.plot([], [], color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8,
-                label="This work vs. Kikwaya et al. (2009)")
+        name_ids = [row[0] for row in rows]
+        # Now do a tolerant match (±3 s) against your available names
+        foundJB = 0
+        for i, code in enumerate(name_ids):
+            # Try to find an exact-or-close match for this code inside all_names
+            matched_key = find_close_in_list(code, all_names_JB, tol_seconds=3)
+            if matched_key is not None and (matched_key in file_radiance_rho_dict_JB) and (matched_key in file_obs_data_dict_JB):
+                foundJB += 1
+                rho_JB = rho_kgm3[i]
+                rho_dynesty = file_radiance_rho_dict_JB[matched_key][2]
+                size_JB = from_mass2size(mass_kg[i], rho_JB)
+                size_dynesty = file_obs_data_dict_JB[matched_key][13]
+                ax.plot([size_JB, size_dynesty], [rho_JB, rho_dynesty],
+                        color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
+                ax.scatter(size_dynesty, rho_dynesty, color='red', marker='+', s=70, zorder=6) 
 
-    plt.grid(True, linestyle='--', alpha=0.5)
-    ax.set_ylim([-100, 8100])
-    ax.set_xlim([2*10**(-1), 20])
-    # put the legend at the right outside the plot after the y axis
-    ax.legend(fontsize=10)
-    ax.set_xscale("log")
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_kikwaya.png"), bbox_inches='tight', dpi=300)
-    plt.close()
+        ax.scatter(from_mass2size(mass_kg, rho_kgm3), rho_kgm3, color='sienna', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5) 
+
+        if foundJB > 0:
+            print(foundJB,"Found matching meteoroids from JB (±3 s tolerance).")
+            ax.plot([], [], color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8,
+                    label="This work vs. Kikwaya et al. (2009)")
+
+        plt.grid(True, linestyle='--', alpha=0.5)
+        ax.set_ylim([-100, 8100])
+        ax.set_xlim([2*10**(-1), 20])
+        # put the legend at the right outside the plot after the y axis
+        ax.legend(fontsize=10)
+        ax.set_xscale("log")
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_kikwaya.png"), bbox_inches='tight', dpi=300)
+        plt.close()
 
     # # plot 2D density of mass vs rho_corrected
 
@@ -4718,4 +4728,4 @@ if __name__ == "__main__":
         print(f"Setting name to {cml_args.name}")
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=True, plot_correl_flag=False) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot

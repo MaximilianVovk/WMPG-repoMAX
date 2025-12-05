@@ -1271,6 +1271,11 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         'erosion_coeff_change': r"$\eta_{2}$ [kg/MJ]",
         'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
         'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
+        'compressive_strength': r"$P_{compress}$ [Pa]",
+        'disruption_mass_index': r"$s$",
+        'disruption_mass_min_ratio': r"$m_{min}/m_{disr}$",
+        'disruption_mass_max_ratio': r"$m_{max}/m_{disr}$",
+        'disruption_mass_grain_ratio': r"$m_{gr}/m_{disr}$",
         'height': r"$h$ [km]",
         'mass_percent': r"$m_{percent}$ [\%]",
         'number': r"$N$",
@@ -1299,6 +1304,11 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         'erosion_coeff_change': r"$\eta_{2}$ [kg/J]",
         'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
         'erosion_sigma_change': r"$\sigma_{2}$ [kg/J]",
+        'compressive_strength': r"$P_{compress}$ [Pa]",
+        'disruption_mass_index': r"$s$",
+        'disruption_mass_min_ratio': r"$m_{min}/m_{disr}$",
+        'disruption_mass_max_ratio': r"$m_{max}/m_{disr}$",
+        'disruption_mass_grain_ratio': r"$m_{gr}/m_{disr}$",
         'height': r"$h$ [m]",
         'mass_percent': r"$m_{percent}$ [\%]",
         'number': r"$N$",
@@ -4878,6 +4888,12 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     if 'erosion_mass_max' in var_names and 'erosion_mass_min' in var_names:
         # check if the guess_var of the erosion_mass_max is smaller than the guess_var of the erosion_mass_min
         if guess_var[var_names.index('erosion_mass_max')] < guess_var[var_names.index('erosion_mass_min')]:
+            return -np.inf  # immediately return -np.inf if times out
+
+    # check if among the var_names there is a "erosion_mass_max" and if there is a "erosion_mass_min"
+    if 'disruption_mass_max_ratio' in var_names and 'disruption_mass_min_ratio' in var_names:
+        # check if the guess_var of the erosion_mass_max is smaller than the guess_var of the erosion_mass_min
+        if guess_var[var_names.index('disruption_mass_max_ratio')] < guess_var[var_names.index('disruption_mass_min_ratio')]:
             return -np.inf  # immediately return -np.inf if times out
     
     if 'erosion_mass_max' in var_names and 'm_init' in var_names:

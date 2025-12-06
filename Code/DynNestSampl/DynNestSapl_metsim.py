@@ -235,9 +235,11 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         # Assign a unique color if not already used
         if station not in station_colors:
             station_colors[station] = cmap(len(station_colors) % 10)  # Use modulo to cycle colors
+        vel_plot= obs_data.velocities[np.where(obs_data.stations_lag == station)]/1000
+        time_plot = obs_data.time_lag[np.where(obs_data.stations_lag == station)]
         # plot the height vs. absolute_magnitudes
-        ax2.plot(obs_data.time_lag[np.where(obs_data.stations_lag == station)], \
-                 obs_data.velocities[np.where(obs_data.stations_lag == station)]/1000, '.', \
+        ax2.plot(time_plot[1:], \
+                 vel_plot[1:], '.', \
                  color=station_colors[station], label=station)
     ax2.set_ylabel('Velocity [km/s]')
     ax2.legend()
@@ -435,9 +437,11 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
         # for each station in obs_data_plot
         for station in np.unique(obs_data.stations_lag):
+            time_plot= obs_data.time_lag[np.where(obs_data.stations_lag == station)]
+            vel_plot = sim_diff_vel[np.where(obs_data.stations_lag == station)]/1000
             # plot the height vs. absolute_magnitudes
-            ax6.plot(obs_data.time_lag[np.where(obs_data.stations_lag == station)], \
-                    sim_diff_vel[np.where(obs_data.stations_lag == station)]/1000, '.', \
+            ax6.plot(time_plot[1:], \
+                    vel_plot[1:], '.', \
                         color=station_colors[station], label=station)
 
         # plot lag_arr vs leading_frag_time_arr withouth nan values
@@ -1100,7 +1104,9 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     for station in np.unique(obs_data.stations_lag):
         mask = obs_data.stations_lag == station
         color = get_color(station)
-        ax_vel.plot(obs_data.velocities[mask] / 1000, obs_data.height_lag[mask] / 1000, 'x--', color=color)
+        height_plot = obs_data.height_lag[mask] / 1000
+        vel_plot = obs_data.velocities[mask] / 1000
+        ax_vel.plot(vel_plot[1:], height_plot[1:], 'x--', color=color)
     ax_vel.set_xlabel("Velocity [km/s]")
     ax_vel.grid(True, linestyle='--', color='lightgray')
 
@@ -1190,7 +1196,9 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
         # VELOCITY residuals (station-based)
         for station in np.unique(obs_data.stations_lag):
             mask = np.where(obs_data.stations_lag == station)
-            ax_vel_res.plot(vel_res[mask], obs_data.height_lag[mask] / 1000, '.', color=station_colors[station])
+            height_plot = obs_data.height_lag[mask] / 1000
+            vel_plot = vel_res[mask]
+            ax_vel_res.plot(vel_plot[1:], height_plot[1:], '.', color=station_colors[station])
 
         # LAG residuals (station-based)
         for station in np.unique(obs_data.stations_lag):
@@ -1856,9 +1864,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     if hasattr(obs_data, 'const'):
         truth_values_plot_distr = truths.copy()
     for j, var in enumerate(variables):
-        if 'log' in flags_dict.get(var, '') and not ('mass_min' in var or 'mass_max' in var or 'm_init' in var):
+        if 'log' in flags_dict.get(var, '') and not ('mass_min' in var or 'mass_max' in var or 'm_init' in var or 'compressive_strength' in var):
             combined_samples_copy_plot[:, j] = 10 ** combined_samples_copy_plot[:, j]
-        if 'log' in flags_dict.get(var, '') and ('mass_min' in var or 'mass_max' in var or 'm_init' in var):
+        if 'log' in flags_dict.get(var, '') and ('mass_min' in var or 'mass_max' in var or 'm_init' in var or 'compressive_strength' in var):
             labels_plot_copy_plot[j] =r"$\log_{10}$(" +labels_plot_copy_plot[j]+")"
         if 'v_init' in var or 'height' in var:
             combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] / 1000.0
@@ -1925,7 +1933,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         minus = median - low
         plus = high - median
 
-        if 'log' in flags_dict.get(variables[i], '') and ('mass_min' in variables[i] or 'mass_max' in variables[i] or 'm_init' in variables[i]):
+        if 'log' in flags_dict.get(variables[i], '') and ('mass_min' in variables[i] or 'mass_max' in variables[i] or 'm_init' in variables[i] or 'compressive_strength' in variables[i]):
             # put a dashed blue line at the median
             ax.axvline(np.log10(median), color='blue', linestyle='--', linewidth=1.5)
             # put a dashed Blue line at the 2.5 and 97.5 percentiles

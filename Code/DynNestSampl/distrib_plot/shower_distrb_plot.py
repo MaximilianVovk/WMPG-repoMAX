@@ -747,15 +747,15 @@ def extract_radiant_and_la_sun(report_path):
 
 def extract_tj_from_report(report_path):
     Tj = Tj_low = Tj_high = None
-    inclin_val = Q_val = q_val = a_val = e_val = Vinf_val = None
+    inclin_val = Q_val = q_val = a_val = e_val = Vg_val = None
     
     re_i_val = re.compile(
         r'^\s*i\s*=\s*'                           
         r'([+-]?\d+\.\d+)'                         
     )
 
-    re_Vinf_val = re.compile(
-        r'^\s*Vinf\s*=\s*'                           
+    re_Vg_val = re.compile(
+        r'^\s*Vg\s*=\s*'                           
         r'([+-]?\d+\.\d+)'                         
     )
 
@@ -776,11 +776,6 @@ def extract_tj_from_report(report_path):
 
     re_Q_val = re.compile(
         r'^\s*Q\s*=\s*'                           
-        r'([+-]?\d+\.\d+)'                         
-    )
-
-    re_Vinf_val = re.compile(
-        r'^\s*Vinf\s*=\s*'                           
         r'([+-]?\d+\.\d+)'                         
     )
 
@@ -837,10 +832,10 @@ def extract_tj_from_report(report_path):
                 m = re_i_val.match(line)
                 if m:
                     inclin_val = float(m.group(1))
-            if Vinf_val is None:
-                m = re_Vinf_val.match(line)
+            if Vg_val is None:
+                m = re_Vg_val.match(line)
                 if m:
-                    Vinf_val = float(m.group(1))
+                    Vg_val = float(m.group(1))
             if Q_val is None:
                 m = re_Q_val.match(line)
                 if m:
@@ -859,7 +854,7 @@ def extract_tj_from_report(report_path):
                     e_val = float(m.group(1))
                     
 
-            if Tj is not None and inclin_val is not None and Vinf_val is not None and Q_val is not None and q_val is not None and a_val is not None and e_val is not None:
+            if Tj is not None and inclin_val is not None and Vg_val is not None and Q_val is not None and q_val is not None and a_val is not None and e_val is not None:
                 break
 
 
@@ -867,20 +862,20 @@ def extract_tj_from_report(report_path):
         raise RuntimeError(f"Couldn’t find any Tj line in {report_path!r}")
     if inclin_val is None:
         raise RuntimeError(f"Couldn’t find inclination (i) in {report_path!r}")
-    if Vinf_val is None:
+    if Vg_val is None:
         raise RuntimeError(f"Couldn’t find Vinf in {report_path!r}")
 
     print(f"Tj = {Tj:.6f} 95% CI = [{Tj_low:.6f}, {Tj_high:.6f}]")
     Tj_low = (Tj - Tj_low)#/1.96
     Tj_high = (Tj_high - Tj)#/1.96
-    print(f"Vinf = {Vinf_val:.6f} km/s")
+    print(f"Vinf = {Vg_val:.6f} km/s")
     print(f"a = {a_val:.6f} AU")
     print(f"e = {e_val:.6f}")
     print(f"i = {inclin_val:.6f} deg")
     print(f"Q = {Q_val:.6f} AU")
     print(f"q = {q_val:.6f} AU")
 
-    return Tj, Tj_low, Tj_high, inclin_val, Vinf_val, Q_val, q_val, a_val, e_val
+    return Tj, Tj_low, Tj_high, inclin_val, Vg_val, Q_val, q_val, a_val, e_val
 
 
 def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
@@ -1426,9 +1421,9 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
         file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, rho, lg_lo, lg_hi, bg_lo, bg_hi)
         file_radiance_rho_dict_helio[base_name] = (lg_min_la_sun_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi)
 
-        tj, tj_lo, tj_hi, inclin_val, Vinf_val, Q_val, q_val, a_val, e_val = extract_tj_from_report(report_path)
+        tj, tj_lo, tj_hi, inclin_val, Vg_val, Q_val, q_val, a_val, e_val = extract_tj_from_report(report_path)
 
-        file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Q_val, q_val, a_val, e_val)
+        file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vg_val, Q_val, q_val, a_val, e_val)
         # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
         file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, kinetic_energy_median, kinetic_energy_lo, kinetic_energy_hi, tau_median, tau_low95, tau_high95)
         file_phys_data_dict[base_name] = (eta_meteor_begin, eta, eta_lo, eta_hi, sigma_meteor_begin, sigma, sigma_lo, sigma_hi, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi)
@@ -1492,7 +1487,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     tj_lo = np.array([v[4] for v in file_rho_jd_dict.values()])
     tj_hi = np.array([v[5] for v in file_rho_jd_dict.values()])
     inclin_val = np.array([v[6] for v in file_rho_jd_dict.values()])
-    Vinf_val = np.array([v[7] for v in file_rho_jd_dict.values()])
+    Vg_val = np.array([v[7] for v in file_rho_jd_dict.values()])
     Q_val = np.array([v[8] for v in file_rho_jd_dict.values()])
     q_val = np.array([v[9] for v in file_rho_jd_dict.values()])
     a_val = np.array([v[10] for v in file_rho_jd_dict.values()])
@@ -1595,7 +1590,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # For each meteor, compute the threshold height at its velocity
     #    (np.interp returns NaN-like behaviour via left/right if we set them)
-    h_thr = np.interp(Vinf_val, curve_v, curve_h,
+    h_thr = np.interp(Vg_val, curve_v, curve_h,
                     left=np.nan, right=np.nan)
 
     ### PLOT rho and error against dynamic pressure color by speed ###
@@ -1854,6 +1849,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 # extend the in csv_file
                 stream_data = pd.concat([csv_file_1, csv_file_2], ignore_index=True)
                 shower_iau_no = 1#"00001"
+            elif "GEM" in shower_name:
+                stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202412.txt","traj_summary_monthly_202412.pickle")
+                # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
+                stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202412.csv", index=False)
+                shower_iau_no = 4#"00007"
             elif "PER" in shower_name:
                 stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202408.txt","traj_summary_monthly_202408.pickle")
                 # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
@@ -1925,10 +1925,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 scatter_GMN_stream = plt.scatter(stream_vgeo, stream_htbeg, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
                 # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
                 ## mass or mm diameter
-                # scatter_d = plt.scatter(Vinf_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
+                # scatter_d = plt.scatter(Vg_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
                 # plt.colorbar(scatter_d, label='mass [kg]')
-                scatter = plt.scatter(Vinf_val, beg_height, c=np.log10(rho), cmap='viridis', s=20, norm=Normalize(vmin=np.log10(rho.min()), vmax=np.log10(rho.max())), zorder=3)
-                plt.colorbar(scatter, label='log$_{10}$ $\\rho$ [kg/m³]')
+                scatter = plt.scatter(Vg_val, beg_height, c=rho, cmap='viridis', s=20, norm=Normalize(vmin=(rho.min()), vmax=(rho.max())), zorder=3)
+                plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
 
                 plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
                 plt.ylabel('$h_{beg}$ [km]', fontsize=15)
@@ -1985,6 +1985,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     print("Plotting CAP shower data...")
                     plt.xlim(xlim[0], 182)
                     plt.ylim(8, 11.5)
+                elif "GEM" in shower_name:
+                    print("Plotting GEM shower data...")
+                    # plt.xlim(xlim[0], 331)
+                    # plt.ylim(32, 36)
                 elif "PER" in shower_name:
                     print("Plotting PER shower data...")
                     # plt.xlim(xlim[0], 65)
@@ -2028,18 +2032,18 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         zorder=1
                     )
                 
-                # # annotate each point with its base_name in tiny text
-                # for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
-                #     plt.annotate(
-                #         base_name,
-                #         xy=(x, y),
-                #         xytext=(30, 5),             # 5 points vertical offset
-                #         textcoords='offset points',
-                #         ha='center',
-                #         va='bottom',
-                #         fontsize=6,
-                #         alpha=0.8
-                #     )
+                # annotate each point with its base_name in tiny text
+                for base_name, (x, y, z, x_lo, x_hi, y_lo, y_hi) in file_radiance_rho_dict.items():
+                    plt.annotate(
+                        base_name,
+                        xy=(x, y),
+                        xytext=(30, 5),             # 5 points vertical offset
+                        textcoords='offset points',
+                        ha='center',
+                        va='bottom',
+                        fontsize=6,
+                        alpha=0.8
+                    )
 
                 # increase the size of the tick labels
                 plt.gca().tick_params(labelsize=15)
@@ -2070,11 +2074,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 scatter_GMN = plt.scatter(stream_vgeo, stream_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
                 # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
                 # mass or mm diameter
-                # scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(eta_meteor_begin), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(eta_meteor_begin), 0.025), vmax=_quantile(np.log10(eta_meteor_begin), 0.975)), zorder=2)
+                # scatter_d = plt.scatter(Vg_val, beg_height, c=np.log10(eta_meteor_begin), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(eta_meteor_begin), 0.025), vmax=_quantile(np.log10(eta_meteor_begin), 0.975)), zorder=2)
                 # plt.colorbar(scatter_d, label='log$_{10}$ $\\eta$ [kg/MJ]')
-                # scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+                # scatter_d = plt.scatter(Vg_val, beg_height, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
                 # plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
-                # scatter_d = plt.scatter(Vinf_val, beg_height, c=np.log10(erosion_beg_dyn_press), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(erosion_beg_dyn_press), 0.025), vmax=_quantile(np.log10(erosion_beg_dyn_press), 0.975)), zorder=2)
+                # scatter_d = plt.scatter(Vg_val, beg_height, c=np.log10(erosion_beg_dyn_press), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(erosion_beg_dyn_press), 0.025), vmax=_quantile(np.log10(erosion_beg_dyn_press), 0.975)), zorder=2)
                 # plt.colorbar(scatter_d, label='log$_{10}$ Dynamic Pressure [Pa]')
 
 
@@ -2090,20 +2094,20 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 logrho = np.log10(rho)
 
                 # mask to avoid NaNs in rho / coords
-                finite = np.isfinite(rho) & np.isfinite(Vinf_val) & np.isfinite(beg_height)
+                finite = np.isfinite(rho) & np.isfinite(Vg_val) & np.isfinite(beg_height)
 
                 # normalization for the colormap
                 norm = Normalize(vmin=np.nanmin(rho[finite]),
                                 vmax=np.nanmax(rho[finite]))
 
-                # edge colors for each point (same length as Vinf_val)
-                edge_colors = np.empty(Vinf_val.shape, dtype=object)
+                # edge colors for each point (same length as Vg_val)
+                edge_colors = np.empty(Vg_val.shape, dtype=object)
                 edge_colors[mask_below_curve] = 'tab:red'   # below threshold curve
                 edge_colors[~mask_below_curve] = 'tab:blue' # above threshold curve
 
                 # single scatter: filled markers + colored edges
                 scatter = plt.scatter(
-                    Vinf_val[finite],
+                    Vg_val[finite],
                     beg_height[finite],
                     c=rho[finite],          # facecolor from rho
                     cmap='viridis',
@@ -4009,8 +4013,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     above_curve_event = valid_curve & (beg_height >= h_thr)
 
     # (Optional) sanity check
-    if event_names_like.shape[0] != Vinf_val.shape[0]:
-        raise RuntimeError("Length mismatch: event_names_like vs Vinf_val/beg_height")
+    if event_names_like.shape[0] != Vg_val.shape[0]:
+        raise RuntimeError("Length mismatch: event_names_like vs Vg_val/beg_height")
 
     # Count events in each class
     num_below = np.count_nonzero(below_curve_event)
@@ -4305,6 +4309,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         if "ORI" in shower_name: # special case for ORI to avoid overly long names
             shower_name_short = "ORI"
+        if "GEM" in shower_name: # special case for GEM+CAP to avoid overly long names
+            shower_name_short = "GEM"
         elif "CAP" in shower_name: # special case for GEM to avoid overly long names
             shower_name_short = "CAP"
         elif "DRA" in shower_name: # special case for DRA to avoid overly long names
@@ -4690,7 +4696,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -4728,4 +4734,4 @@ if __name__ == "__main__":
         print(f"Setting name to {cml_args.name}")
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot

@@ -48,6 +48,7 @@ from wmpl.Utils.Physics import calcMass, dynamicPressure, calcRadiatedEnergy
 from wmpl.Utils.TrajConversions import J2000_JD, date2JD
 from wmpl.Utils.AtmosphereDensity import fitAtmPoly
 from wmpl.Utils.Pickling import loadPickle
+from wmpl.MetSim.MetSimErosionCyTools import luminousEfficiency
 
 # Import the correct scipy.integrate.simpson function
 try:
@@ -1532,12 +1533,15 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
             break
 
 
-
-    # find the index of m_init in variables
-    tau_real = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))/(simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val) * 100
-    print(f"first heigth obs: {obs_data.height_lum[0]:.2f} m, last height obs: {obs_data.height_lum[-1]:.2f} m, first height sim: {best_guess_obj_plot.leading_frag_height_arr[index_up]:.2f} m, last height sim: {best_guess_obj_plot.leading_frag_height_arr[index_down]:.2f} m")
-    print(f"total radiated energy:", calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m), "J and total simulated radiated energy:",simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val,"J")
-    print(f"Tau real best fit: {tau_real:.4f} %")
+    try:
+        # find the index of m_init in variables
+        tau_real = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))/(simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val) * 100
+        print(f"first heigth obs: {obs_data.height_lum[0]:.2f} m, last height obs: {obs_data.height_lum[-1]:.2f} m, first height sim: {best_guess_obj_plot.leading_frag_height_arr[index_up]:.2f} m, last height sim: {best_guess_obj_plot.leading_frag_height_arr[index_down]:.2f} m")
+        print(f"total radiated energy:", calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m), "J and total simulated radiated energy:",simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val,"J")
+        print(f"Tau real best fit: {tau_real:.4f} %")
+    except Exception as e:
+        print("Error calculating tau real:", e)
+        tau_real = None
 
     # Plot the data with residuals and the best fit
     plot_data_with_residuals_and_real(obs_data, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
@@ -3120,11 +3124,10 @@ class observation_data:
 
             # # Calculate the radiated energy
             # radiated_energy = calcRadiatedEnergy(np.array(time_arr), np.array(mag_arr), P_0m=self.P_0m)
-
+            lum_eff_type_val = None
+            lum_eff_type_fixed = False
+            luminous_efficiency = None
             if prior_file_path != "":
-                lum_eff_type_val = None
-                lum_eff_type_fixed = False
-                luminous_efficiency = None
 
                 with open(prior_file_path, 'r') as file:
                     for line in file:
@@ -3170,10 +3173,17 @@ class observation_data:
 
 
 
-            print("NOTE: The mass was computing using a constant luminous efficiency ",luminous_efficiency)
+            print("NOTE: The mass was computing using a constant luminous efficiency",luminous_efficiency,"%")
 
             # Compute the photometric mass
             photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=luminous_efficiency/100, P_0m=self.P_0m)
+
+            # run in case we have a diffrent lum_eff_type than constant luminous efficiency to better estimate the correct mass range
+            if lum_eff_type_val is not None and not (lum_eff_type_val == 0 and lum_eff_type_fixed):
+                # Get the luminous efficiency
+                tau_lum_eff_type = luminousEfficiency(lum_eff_type_val, luminous_efficiency, self.v_init, photom_mass)
+                print("NOTE: Adjusting luminous efficiency for the given lum_eff_type =", tau_lum_eff_type)
+                photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=tau_lum_eff_type, P_0m=self.P_0m)
 
             m_init_list.append(photom_mass)
 

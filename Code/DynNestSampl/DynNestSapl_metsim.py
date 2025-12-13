@@ -170,9 +170,9 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     ax0.set_ylim(ylim_abs_mag)
     
 
-    ax1.fill_betweenx(obs_data.height_lum/1000, -obs_data.noise_mag, obs_data.noise_mag, color='darkgray', alpha=0.2)
-    ax1.fill_betweenx(obs_data.height_lum/1000, -obs_data.noise_mag * 2, obs_data.noise_mag * 2, color='lightgray', alpha=0.2)
-    ax1.plot([0, 0], [obs_data.height_lum[0]/1000, obs_data.height_lum[-1]/1000],color='lightgray')
+    ax1.fill_betweenx([np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000], -obs_data.noise_mag, obs_data.noise_mag, color='darkgray', alpha=0.2)
+    ax1.fill_betweenx([np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000], -obs_data.noise_mag * 2, obs_data.noise_mag * 2, color='lightgray', alpha=0.2)
+    ax1.plot([0, 0], [np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000],color='lightgray')
     ax1.set_xlabel('Res.Mag')
     # flip the x-axis
     # ax1.invert_xaxis()
@@ -216,9 +216,9 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # fix the y-axis limits to ylim_lum
     ax4.set_ylim(ylim_lum)
 
-    ax5.fill_betweenx(obs_data.height_lum/1000, -obs_data.noise_lum, obs_data.noise_lum, color='darkgray', alpha=0.2)
-    ax5.fill_betweenx(obs_data.height_lum/1000, -obs_data.noise_lum * 2, obs_data.noise_lum * 2, color='lightgray', alpha=0.2)
-    ax5.plot([0, 0], [obs_data.height_lum[0]/1000, obs_data.height_lum[-1]/1000],color='lightgray')
+    ax5.fill_betweenx([np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000], -obs_data.noise_lum, obs_data.noise_lum, color='darkgray', alpha=0.2)
+    ax5.fill_betweenx([np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000], -obs_data.noise_lum * 2, obs_data.noise_lum * 2, color='lightgray', alpha=0.2)
+    ax5.plot([0, 0], [np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000],color='lightgray')
     ax5.set_xlabel('Res.Lum [J/s]')
     # ax5.tick_params(axis='x', rotation=45)
     ax5.tick_params(labelleft=False)  # Hide y-axis tick labels
@@ -255,10 +255,18 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     # fix the y-axis limits to ylim_vel
     ax2.set_ylim(ylim_vel)
 
+    
+    # pick the second to first tat is the samllest between the all the stations
+    for station in np.unique(obs_data.stations_lag):
+        station_time = obs_data.time_lag[np.where(obs_data.stations_lag == station)]
+        if 'second_last_index' not in locals():
+            second_last_index = np.argsort(station_time)[1]
+        else:
+            second_last_index = min(second_last_index, np.argsort(station_time)[1])
     # Plot 6: Res.Vel vs. Time
-    ax6.fill_between(obs_data.time_lag, -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
-    ax6.fill_between(obs_data.time_lag, -obs_data.noise_vel * 2/1000, obs_data.noise_vel * 2/1000, color='lightgray', alpha=0.2)
-    ax6.plot([obs_data.time_lag[0], obs_data.time_lag[-1]], [0, 0], color='lightgray')
+    ax6.fill_between([obs_data.time_lag[second_last_index], np.max(obs_data.time_lag)], -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
+    ax6.fill_between([obs_data.time_lag[second_last_index], np.max(obs_data.time_lag)], -obs_data.noise_vel * 2/1000, obs_data.noise_vel * 2/1000, color='lightgray', alpha=0.2)
+    ax6.plot([obs_data.time_lag[second_last_index], np.max(obs_data.time_lag)], [0, 0], color='lightgray')
     ax6.set_xlabel('Time [s]')
     ax6.set_ylabel('Res.Vel [km/s]')
     ax6.grid(True, linestyle='--', color='lightgray')
@@ -292,9 +300,9 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
     ax3.set_ylim(ylim_lag)
 
     # Plot 7: Res.Vel vs. Time
-    ax7.fill_between(obs_data.time_lag, -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
-    ax7.fill_between(obs_data.time_lag, -obs_data.noise_lag * 2, obs_data.noise_lag * 2, color='lightgray', alpha=0.2)
-    ax7.plot([obs_data.time_lag[0], obs_data.time_lag[-1]], [0, 0], color='lightgray')
+    ax7.fill_between([np.min(obs_data.time_lag), np.max(obs_data.time_lag)], -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
+    ax7.fill_between([np.min(obs_data.time_lag), np.max(obs_data.time_lag)], -obs_data.noise_lag * 2, obs_data.noise_lag * 2, color='lightgray', alpha=0.2)
+    ax7.plot([np.min(obs_data.time_lag), np.max(obs_data.time_lag)], [0, 0], color='lightgray')
     ax7.set_xlabel('Time [s]')
     ax7.set_ylabel('Res.Lag [m]')
     ax7.grid(True, linestyle='--', color='lightgray')

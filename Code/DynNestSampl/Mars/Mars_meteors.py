@@ -1812,147 +1812,6 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     plt.savefig(output_dir_show + os.sep + "density_AbsMag_density.png")
     plt.close()
 
-    ###########################################################
-
-    print("\nPlotting the brightness distribution MAX against height...")
-
-    # for name in all_names:
-    #     (abs_mags_obs, heights_obs,
-    #     abs_mags_single_mars, heights_single_mars,
-    #     abs_mags_mars, heights_mars,
-    #     abs_mags_mars_dyn_press, heights_mars_dyn_press,
-    #     abs_mags_mars_energy, heights_mars_energy) = file_bright_dict[name]
-
-    #     data_dict["obs"]["mag"].append(abs_mags_obs)
-    #     data_dict["obs"]["h"].append(heights_obs)
-
-    #     data_dict["single_mars"]["mag"].append(abs_mags_single_mars)
-    #     data_dict["single_mars"]["h"].append(heights_single_mars)
-
-    #     data_dict["mars_rho"]["mag"].append(abs_mags_mars)
-    #     data_dict["mars_rho"]["h"].append(heights_mars)
-
-    #     data_dict["mars_dyn_press"]["mag"].append(abs_mags_mars_dyn_press)
-    #     data_dict["mars_dyn_press"]["h"].append(heights_mars_dyn_press)
-
-    #     data_dict["mars_energy"]["mag"].append(abs_mags_mars_energy)
-    #     data_dict["mars_energy"]["h"].append(heights_mars_energy)
-
-    # # Concatenate lists into arrays
-    # for key in data_dict:
-    #     if data_dict[key]["mag"]:
-    #         data_dict[key]["mag"] = np.concatenate(data_dict[key]["mag"])
-    #         data_dict[key]["h"]   = np.concatenate(data_dict[key]["h"])
-    #     else:
-    #         data_dict[key]["mag"] = np.array([])
-    #         data_dict[key]["h"]   = np.array([])
-
-    # # ---- 2. Define common height bins ----
-
-    # all_heights = np.concatenate(
-    #     [data_dict[k]["h"] for k in data_dict if data_dict[k]["h"].size > 0]
-    # )
-
-    # h_min = np.nanmin(all_heights)
-    # # h_max = np.nanmax(all_heights)
-    # h_max = 120.0  # limit to 120 km for better visualisation
-
-    # n_hbins = 40  # tune as you like
-    # height_bins = np.linspace(h_min, h_max, n_hbins + 1)
-
-    # ---- 3. Compute "most likely" magnitude in each bin: median mag ----
-
-    n_methods = len(methods)
-    mag_grid = np.full((n_methods, n_hbins), np.nan, dtype=float)  # store median mags
-    count_grid = np.zeros((n_methods, n_hbins), dtype=int)         # how many samples per bin (optional)
-
-    for m_idx, (_, key) in enumerate(methods):
-        mags = data_dict[key]["mag"]
-        hs   = data_dict[key]["h"]
-
-        mask = np.isfinite(mags) & np.isfinite(hs)
-        mags = mags[mask]
-        hs   = hs[mask]
-
-        if mags.size == 0:
-            continue
-
-        # assign each point to a height bin
-        bin_idx = np.digitize(hs, height_bins) - 1
-        valid   = (bin_idx >= 0) & (bin_idx < n_hbins)
-
-        mags = mags[valid]
-        bin_idx = bin_idx[valid]
-
-        # For each height bin, compute median magnitude
-        for b in range(n_hbins):
-            in_bin = (bin_idx == b)
-            if not np.any(in_bin):
-                continue
-
-            mag_bin = mags[in_bin]
-            # 95th percentile in magnitude space
-            mag_grid[m_idx, b] = np.quantile(mag_bin, 0.05)
-            count_grid[m_idx, b] = mag_bin.size  # just for information/QA
-
-
-    # ---- 3b. Remove low-altitude bins dominated by a tiny fraction of the data ----
-
-    min_rel_count = 0.1  # 10% of the maximum bin population for that method
-
-    for m_idx in range(n_methods):
-        col_counts = count_grid[m_idx, :]
-        if np.all(col_counts == 0):
-            continue
-
-        max_cnt = col_counts.max()
-        if max_cnt == 0:
-            continue
-
-        dense_bins = np.where(col_counts >= min_rel_count * max_cnt)[0]
-        if dense_bins.size == 0:
-            continue
-
-        lowest_dense = dense_bins[0]
-        low_sparse_bins = np.arange(lowest_dense)
-        mag_grid[m_idx, low_sparse_bins] = np.nan
-        count_grid[m_idx, low_sparse_bins] = 0
-
-    if np.all(np.isnan(mag_grid)):
-        print("No magnitude bins left after outlier filtering; skipping median plot.")
-        return
-
-    # ---- 4. Plot as 5 columns, colour = "bright-tail" magnitude ----
-
-    fig, ax = plt.subplots(figsize=(8, 8))
-
-    x_edges = np.arange(n_methods + 1)
-    X, Y = np.meshgrid(x_edges, height_bins)
-
-    mag_min = np.nanmin(mag_grid)
-    mag_max = 8.0
-
-    c = ax.pcolormesh(
-        X, Y, mag_grid.T,
-        cmap="viridis_r",
-        shading="auto",
-        vmin=mag_min,
-        vmax=mag_max
-    )
-
-    ax.set_xticks(np.arange(n_methods) + 0.5)
-    ax.set_xticklabels([m[0] for m in methods], rotation=30, ha="right")
-
-    ax.set_ylabel("Height [km]")
-    ax.set_ylim(h_min, h_max)
-
-    cb = fig.colorbar(c, ax=ax)
-    cb.set_label("Bright-tail Abs.Mag [-]")
-
-    fig.tight_layout()
-    plt.savefig(output_dir_show + os.sep + "density_MAX_AbsMagHeight.png")
-    plt.close()
-
     #############################################################
 
     print("\nPlotting the brightness distribution median against height...")
@@ -2597,16 +2456,16 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     # Create a dedicated axis for the colorbar
     cbar_ax = fig.add_axes([0.88, 0.15, 0.02, 0.7])  # [left, bottom, width, height] in figure coords
     cbar = fig.colorbar(sc, cax=cbar_ax)
-    cbar.set_label('Abs.Mag [-]', fontsize=12)
+    cbar.set_label('Abs.Mag [-]', fontsize=14)
     cbar.ax.invert_yaxis()
-    cbar.ax.yaxis.set_tick_params(pad=10)
+    cbar.ax.yaxis.set_tick_params(pad=14, labelsize=14)
 
     for ax in axs:
-        ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=12)
-        ax.tick_params(axis='both', which='major', labelsize=12)
+        ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=14)
+        ax.tick_params(axis='both', which='major', labelsize=14)
         ax.grid()
 
-    axs[0].set_ylabel('Height [km]', fontsize=12)
+    axs[0].set_ylabel('Height [km]', fontsize=14)
 
     plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag_separate.png")
     plt.close()
@@ -2668,17 +2527,17 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     # Create a dedicated axis for the colorbar
     cbar_ax = fig.add_axes([0.88, 0.15, 0.02, 0.7])  # [left, bottom, width, height] in figure coords
     cbar = fig.colorbar(sc, cax=cbar_ax)
-    cbar.set_label('Abs.Mag [-]', fontsize=12)
+    cbar.set_label('Abs.Mag [-]', fontsize=14)
     cbar.ax.invert_yaxis()
-    cbar.ax.yaxis.set_tick_params(pad=10)
+    cbar.ax.yaxis.set_tick_params(pad=14, labelsize=14)
     # put the horizontal line at y=0 in each subplot
     for ax in axs:
         ax.axhline(0, color='darkgray', linestyle='-', linewidth=2)
-        ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=12)
-        ax.tick_params(axis='both', which='major', labelsize=12)
+        ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=14)
+        ax.tick_params(axis='both', which='major', labelsize=14)
         ax.grid()
     # only on the first subplot add the ylabel
-    axs[0].set_ylabel('$\Delta$ Height [km]', fontsize=12)
+    axs[0].set_ylabel('$\Delta$ Height [km]', fontsize=14)
     # only on the first sublopt wite that that is the brightest height put it below the
     axs[0].text(min(vel_brightest), -1.5, "Brightest height on Earth", color='gray', fontsize=12, verticalalignment='bottom', horizontalalignment='left')
     plt.savefig(output_dir_show + os.sep + "Vinf_DeltaHeight_AbsMag_separate.png")
@@ -2750,8 +2609,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     Mars_heights = Mars_heights[mask_m]
     Mars_mags    = Mars_mags[mask_m]
 
-    # --- Bin by height and compute median Abs.Mag in each bin for Earth and Mars ---
-    n_h_bins = 20  # tweak if you want more/less vertical resolution
+    # --- Bin by height and compute median + 1σ/2σ bands in each bin for Earth and Mars ---
+    n_h_bins = 20
 
     h_min = min(Earth_heights.min(), Mars_heights.min())
     h_max = max(Earth_heights.max(), Mars_heights.max())
@@ -2759,8 +2618,22 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     h_edges   = np.linspace(h_min, h_max, n_h_bins + 1)
     h_centers = 0.5 * (h_edges[:-1] + h_edges[1:])
 
-    Earth_med_mag = np.full(n_h_bins, np.nan, dtype=float)
-    Mars_med_mag  = np.full(n_h_bins, np.nan, dtype=float)
+    # Gaussian-equivalent quantiles
+    q_med = 0.50
+    q_1lo, q_1hi = 0.158655, 0.841345   # ~ ±1σ
+    q_2lo, q_2hi = 0.022750, 0.977250   # ~ ±2σ
+
+    Earth_q50 = np.full(n_h_bins, np.nan, dtype=float)
+    Earth_q1L = np.full(n_h_bins, np.nan, dtype=float)
+    Earth_q1H = np.full(n_h_bins, np.nan, dtype=float)
+    Earth_q2L = np.full(n_h_bins, np.nan, dtype=float)
+    Earth_q2H = np.full(n_h_bins, np.nan, dtype=float)
+
+    Mars_q50  = np.full(n_h_bins, np.nan, dtype=float)
+    Mars_q1L  = np.full(n_h_bins, np.nan, dtype=float)
+    Mars_q1H  = np.full(n_h_bins, np.nan, dtype=float)
+    Mars_q2L  = np.full(n_h_bins, np.nan, dtype=float)
+    Mars_q2H  = np.full(n_h_bins, np.nan, dtype=float)
 
     for i in range(n_h_bins):
         lo, hi = h_edges[i], h_edges[i+1]
@@ -2768,50 +2641,87 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # Earth bin
         m_e = (Earth_heights >= lo) & (Earth_heights < hi)
         if np.any(m_e):
-            Earth_med_mag[i] = np.median(Earth_mags[m_e])
+            vals = Earth_mags[m_e]
+            Earth_q50[i] = np.quantile(vals, q_med)
+            Earth_q1L[i] = np.quantile(vals, q_1lo)  # brighter side (lower mag)
+            Earth_q1H[i] = np.quantile(vals, q_1hi)  # dimmer side (higher mag)
+            Earth_q2L[i] = np.quantile(vals, q_2lo)
+            Earth_q2H[i] = np.quantile(vals, q_2hi)
 
         # Mars bin
         m_m = (Mars_heights >= lo) & (Mars_heights < hi)
         if np.any(m_m):
-            Mars_med_mag[i] = np.median(Mars_mags[m_m])
+            vals = Mars_mags[m_m]
+            Mars_q50[i] = np.quantile(vals, q_med)
+            Mars_q1L[i] = np.quantile(vals, q_1lo)
+            Mars_q1H[i] = np.quantile(vals, q_1hi)
+            Mars_q2L[i] = np.quantile(vals, q_2lo)
+            Mars_q2H[i] = np.quantile(vals, q_2hi)
 
-    # --- Plot: median Abs.Mag vs height for Earth and Mars together ---
+    # --- Plot: median + 1σ/2σ shaded bands ---
     fig, ax = plt.subplots(1, 1, figsize=(7, 6))
 
-    # Plot only bins that actually have data
-    valid_e = np.isfinite(Earth_med_mag)
-    valid_m = np.isfinite(Mars_med_mag)
-    # delete the one with the lowest height
-    valid_m[np.argmin(h_centers[valid_m])] = False
+    valid_e = np.isfinite(Earth_q50) & np.isfinite(Earth_q1L) & np.isfinite(Earth_q1H) & np.isfinite(Earth_q2L) & np.isfinite(Earth_q2H)
+    valid_m = np.isfinite(Mars_q50)  & np.isfinite(Mars_q1L)  & np.isfinite(Mars_q1H)  & np.isfinite(Mars_q2L)  & np.isfinite(Mars_q2H)
 
+    # delete the one with the lowest height (your existing logic)
+    if np.any(valid_m):
+        valid_m[np.argmin(h_centers[valid_m])] = False
+
+    # Colors + alpha (tune these)
+    earth_col = "tab:blue"
+    mars_col  = "tab:orange"
+    alpha_2s = 0.18   # lighter band
+    alpha_1s = 0.35   # darker band
+
+    # Earth bands (x = magnitude range, y = height)
+    ax.fill_betweenx(
+        h_centers[valid_e], Earth_q2L[valid_e], Earth_q2H[valid_e],
+        color=earth_col, alpha=alpha_2s, linewidth=0, label="Earth ±2σ"
+    )
+    ax.fill_betweenx(
+        h_centers[valid_e], Earth_q1L[valid_e], Earth_q1H[valid_e],
+        color=earth_col, alpha=alpha_1s, linewidth=0, label="Earth ±1σ"
+    )
     ax.plot(
-        Earth_med_mag[valid_e],
-        h_centers[valid_e],
-        marker='o',
-        linestyle='-',
-        label='Earth (median brightest per meteor)',
+        Earth_q50[valid_e], h_centers[valid_e],
+        marker="o", linestyle="-", color=earth_col,
+        label="Earth median"
     )
 
+    # Mars bands
+    ax.fill_betweenx(
+        h_centers[valid_m], Mars_q2L[valid_m], Mars_q2H[valid_m],
+        color=mars_col, alpha=alpha_2s, linewidth=0, label="Mars ±2σ"
+    )
+    ax.fill_betweenx(
+        h_centers[valid_m], Mars_q1L[valid_m], Mars_q1H[valid_m],
+        color=mars_col, alpha=alpha_1s, linewidth=0, label="Mars ±1σ"
+    )
     ax.plot(
-        Mars_med_mag[valid_m],
-        h_centers[valid_m],
-        marker='s',
-        linestyle='-',
-        label='Mars (median brightest erosion cases)',
+        Mars_q50[valid_m], h_centers[valid_m],
+        marker="s", linestyle="-", color=mars_col,
+        label="Mars median"
     )
 
-    # Magnitude: brighter = more negative; you may want to invert x-axis
-    ax.invert_xaxis()  # so brighter (more negative) is to the right, optional
+    # Magnitude: brighter = more negative; invert so brighter appears to the right
+    ax.invert_xaxis()
 
-    ax.set_xlabel('Median Abs.Mag [-]', fontsize=12)
-    ax.set_ylabel('Height [km]', fontsize=12)
-    ax.tick_params(axis='both', which='major', labelsize=12)
-    ax.grid()
-    ax.legend(fontsize=11)
+    ax.set_xlabel("Abs.Mag [-]", fontsize=12)
+    ax.set_ylabel("Height [km]", fontsize=12)
+    ax.tick_params(axis="both", which="major", labelsize=12)
+    ax.grid(True)
+
+    # Optional: reduce legend clutter by keeping only median labels
+    # (comment out if you want all band labels)
+    handles, labels = ax.get_legend_handles_labels()
+    keep = [i for i, lab in enumerate(labels) if ("median" in lab)]
+    ax.legend([handles[i] for i in keep], [labels[i] for i in keep], fontsize=11)
 
     plt.tight_layout()
-    plt.savefig(output_dir_show + os.sep + "Median_AbsMag_vs_Height_Earth_Mars.png")
+    plt.savefig(output_dir_show + os.sep + "Median_AbsMag_vs_Height_Earth_Mars_uncert.png", dpi=200)
     plt.close()
+
 
     #############################################################
 
@@ -2905,7 +2815,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     h_max = max(Earth_heights.max(), Mars_heights.max())
 
     n_methods = len(methods)
-    n_hbins   = 20  # tweak as you like
+    n_hbins   = 30  # tweak as you like
 
     height_bins = np.linspace(h_min, h_max, n_hbins + 1)
     h_centers   = 0.5 * (height_bins[:-1] + height_bins[1:])
@@ -2992,6 +2902,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
         cb = fig.colorbar(c, ax=ax)
         cb.set_label("Median Abs.Mag [-]")
+        # invert the colorbar so that brighter (more negative) is at the top
+        cb.ax.invert_yaxis()
 
         fig.tight_layout()
         plt.savefig(output_dir_show + os.sep + "Median_AbsMagHeight_Earth_Mars.png")
@@ -3000,6 +2912,344 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
 
 
+    ###########################################################
+
+    print("\nPlotting the brightness distribution MAX against height...")
+
+    # Use combined min/max so both series share the same vertical range
+    h_min = 50
+    h_max = 120
+
+    n_methods = len(methods)
+    n_hbins   = 40  # tweak as you like
+
+    height_bins = np.linspace(h_min, h_max, n_hbins + 1)
+
+    def _to_1d_float(x):
+        """Deep-flatten any nested list/array structure into a 1D float array."""
+        if x is None:
+            return np.empty(0, dtype=float)
+
+        arr = np.asarray(x)
+
+        if arr.size == 0:
+            return np.empty(0, dtype=float)
+
+        if arr.dtype == object:
+            parts = []
+            for item in arr.ravel():
+                p = _to_1d_float(item)
+                if p.size:
+                    parts.append(p)
+            return np.concatenate(parts) if parts else np.empty(0, dtype=float)
+
+        return arr.astype(float, copy=False).ravel()
+
+
+    def _flatten_pairs(mag_list, h_list):
+        mags_all, hs_all = [], []
+        for m, h in zip(mag_list, h_list):
+            m = _to_1d_float(m)
+            h = _to_1d_float(h)
+
+            n = min(m.size, h.size)
+            if n == 0:
+                continue
+
+            mags_all.append(m[:n])
+            hs_all.append(h[:n])
+
+        if mags_all:
+            return np.concatenate(mags_all).astype(float, copy=False), np.concatenate(hs_all).astype(float, copy=False)
+
+        return np.empty(0, dtype=float), np.empty(0, dtype=float)
+    
+
+    methods = [
+        ("Earth", "obs"),
+        ("Mars", "mars"),
+    ]
+
+    # Storage for each method
+    data_dict = {
+        "obs":            {"mag": [], "h": []},
+        "mars":    {"mag": [], "h": []},
+    }
+
+    for name in all_names:
+        (abs_mags_obs, heights_obs,
+        abs_mags_single_mars, heights_single_mars,
+        abs_mags_mars, heights_mars,
+        abs_mags_mars_dyn_press, heights_mars_dyn_press,
+        abs_mags_mars_energy, heights_mars_energy,
+        const_obs, const_single_mars, const_mars, const_mars_dyn_press, const_mars_energy) = file_bright_dict[name]
+
+        # Earth (deep-flatten + align)
+        m_obs = _to_1d_float(abs_mags_obs)
+        h_obs = _to_1d_float(heights_obs)
+        n = min(m_obs.size, h_obs.size)
+        data_dict["obs"]["mag"].append(m_obs[:n])
+        data_dict["obs"]["h"].append(h_obs[:n])
+
+        # Mars (deep-flatten each component, then concatenate)
+        m1 = _to_1d_float(abs_mags_mars)
+        m2 = _to_1d_float(abs_mags_mars_dyn_press)
+        m3 = _to_1d_float(abs_mags_mars_energy)
+
+        h1 = _to_1d_float(heights_mars)
+        h2 = _to_1d_float(heights_mars_dyn_press)
+        h3 = _to_1d_float(heights_mars_energy)
+
+        mars_mags    = np.concatenate([m1, m2, m3])
+        mars_heights = np.concatenate([h1, h2, h3])
+
+        n = min(mars_mags.size, mars_heights.size)
+        data_dict["mars"]["mag"].append(mars_mags[:n])
+        data_dict["mars"]["h"].append(mars_heights[:n])
+
+
+    # ---- 3. Compute "most likely" magnitude in each bin: median mag ----
+
+    n_methods = len(methods)
+    mag_grid = np.full((n_methods, n_hbins), np.nan, dtype=float)  # store median mags
+    count_grid = np.zeros((n_methods, n_hbins), dtype=int)         # how many samples per bin (optional)
+
+    for m_idx, (_, key) in enumerate(methods):
+        mags, hs = _flatten_pairs(data_dict[key]["mag"], data_dict[key]["h"])
+
+        mask = np.isfinite(mags) & np.isfinite(hs)
+        mags = mags[mask]
+        hs   = hs[mask]
+
+        if mags.size == 0:
+            continue
+
+        bin_idx = np.digitize(hs, height_bins) - 1
+        valid   = (bin_idx >= 0) & (bin_idx < n_hbins)
+
+        mags    = mags[valid]
+        bin_idx = bin_idx[valid]
+
+        for b in range(n_hbins):
+            in_bin = (bin_idx == b)
+            if not np.any(in_bin):
+                continue
+
+            mag_bin = mags[in_bin]
+            mag_grid[m_idx, b] = np.quantile(mag_bin, 0.05)
+            count_grid[m_idx, b] = mag_bin.size
+
+
+    # ---- 3b. Remove low-altitude bins dominated by a tiny fraction of the data ----
+
+    min_rel_count = 0.1  # 10% of the maximum bin population for that method
+
+    for m_idx in range(n_methods):
+        col_counts = count_grid[m_idx, :]
+        if np.all(col_counts == 0):
+            continue
+
+        max_cnt = col_counts.max()
+        if max_cnt == 0:
+            continue
+
+        dense_bins = np.where(col_counts >= min_rel_count * max_cnt)[0]
+        if dense_bins.size == 0:
+            continue
+
+        lowest_dense = dense_bins[0]
+        low_sparse_bins = np.arange(lowest_dense)
+        mag_grid[m_idx, low_sparse_bins] = np.nan
+        count_grid[m_idx, low_sparse_bins] = 0
+
+    if np.all(np.isnan(mag_grid)):
+        print("No magnitude bins left after outlier filtering; skipping median plot.")
+        return
+
+    # ---- 4. Plot as 5 columns, colour = "bright-tail" magnitude ----
+
+    fig, ax = plt.subplots(figsize=(5, 8))
+
+    x_edges = np.arange(n_methods + 1)
+    X, Y = np.meshgrid(x_edges, height_bins)
+
+    mag_min = 1 # np.nanmin(mag_grid)
+    mag_max = 8.0
+
+    c = ax.pcolormesh(
+        X, Y, mag_grid.T,
+        cmap="plasma_r",
+        shading="auto",
+        vmin=mag_min,
+        vmax=mag_max
+    )
+
+    ax.set_xticks(np.arange(n_methods) + 0.5)
+    ax.set_xticklabels([m[0] for m in methods], rotation=30, ha="right")
+
+    ax.set_ylabel("Height [km]", fontsize=14)
+    ax.set_ylim(h_min, h_max)
+
+    cb = fig.colorbar(c, ax=ax)
+    cb.set_label("Bright-tail Abs.Mag [-]", fontsize=16)
+    # invet the color bar so that brighter (more negative) is at the top
+    cb.ax.invert_yaxis()
+
+    # inrse the size of the ticks
+    cb.ax.tick_params(labelsize=14)
+    # inease te label size x
+    ax.tick_params(axis='x', which='major', labelsize=14)
+    ax.tick_params(axis='y', which='major', labelsize=14)
+
+    fig.tight_layout()
+    plt.savefig(output_dir_show + os.sep + "density_MAX_AbsMagHeight_Earth_Mars.png")
+    plt.close()
+
+    ################################################
+
+    print("\nPlotting median Abs.Mag vs height for Earth and Mars (all data)...")
+        
+    # Flatten list-of-arrays into 1D arrays (and keep mag/height paired per event)
+    Earth_mags,  Earth_heights = _flatten_pairs(data_dict["obs"]["mag"],  data_dict["obs"]["h"])
+    Mars_mags,   Mars_heights  = _flatten_pairs(data_dict["mars"]["mag"], data_dict["mars"]["h"])
+
+    # Mask NaNs just in case
+    mask_e = np.isfinite(Earth_heights) & np.isfinite(Earth_mags)
+    Earth_heights = Earth_heights[mask_e]
+    Earth_mags    = Earth_mags[mask_e]
+    # delete anything that is above 8
+    mask_e = Earth_mags <= 5
+    Earth_heights = Earth_heights[mask_e]
+    Earth_mags    = Earth_mags[mask_e]
+
+    mask_m = np.isfinite(Mars_heights) & np.isfinite(Mars_mags)
+    Mars_heights = Mars_heights[mask_m]
+    Mars_mags    = Mars_mags[mask_m]
+    mask_m = Mars_mags <= 5
+    Mars_heights = Mars_heights[mask_m]
+    Mars_mags    = Mars_mags[mask_m]
+
+    # --- Bin by height and compute median + 1σ/2σ bands in each bin for Earth and Mars ---
+    n_h_bins = 50
+
+    h_min = 60
+    h_max = max(Earth_heights.max(), Mars_heights.max())
+
+    h_edges   = np.linspace(h_min, h_max, n_h_bins + 1)
+    h_centers = 0.5 * (h_edges[:-1] + h_edges[1:])
+
+    # Gaussian-equivalent quantiles
+    q_med = 0.50
+    q_1lo, q_1hi = 0.158655, 0.841345   # ~ ±1σ
+    q_2lo, q_2hi = 0.022750, 0.977250   # ~ ±2σ
+
+    Earth_q50 = np.full(n_h_bins, np.nan, dtype=float)
+    Earth_q1L = np.full(n_h_bins, np.nan, dtype=float)
+    Earth_q1H = np.full(n_h_bins, np.nan, dtype=float)
+    Earth_q2L = np.full(n_h_bins, np.nan, dtype=float)
+    Earth_q2H = np.full(n_h_bins, np.nan, dtype=float)
+
+    Mars_q50  = np.full(n_h_bins, np.nan, dtype=float)
+    Mars_q1L  = np.full(n_h_bins, np.nan, dtype=float)
+    Mars_q1H  = np.full(n_h_bins, np.nan, dtype=float)
+    Mars_q2L  = np.full(n_h_bins, np.nan, dtype=float)
+    Mars_q2H  = np.full(n_h_bins, np.nan, dtype=float)
+
+    for i in range(n_h_bins):
+        lo, hi = h_edges[i], h_edges[i+1]
+
+        # Earth bin
+        m_e = (Earth_heights >= lo) & (Earth_heights < hi)
+        if np.any(m_e):
+            vals = Earth_mags[m_e]
+            Earth_q50[i] = np.quantile(vals, q_med)
+            Earth_q1L[i] = np.quantile(vals, q_1lo)  # brighter side (lower mag)
+            Earth_q1H[i] = np.quantile(vals, q_1hi)  # dimmer side (higher mag)
+            Earth_q2L[i] = np.quantile(vals, q_2lo)
+            Earth_q2H[i] = np.quantile(vals, q_2hi)
+
+        # Mars bin
+        m_m = (Mars_heights >= lo) & (Mars_heights < hi)
+        if np.any(m_m):
+            vals = Mars_mags[m_m]
+            Mars_q50[i] = np.quantile(vals, q_med)
+            Mars_q1L[i] = np.quantile(vals, q_1lo)
+            Mars_q1H[i] = np.quantile(vals, q_1hi)
+            Mars_q2L[i] = np.quantile(vals, q_2lo)
+            Mars_q2H[i] = np.quantile(vals, q_2hi)
+
+    # --- Plot: median + 1σ/2σ shaded bands ---
+    fig, ax = plt.subplots(1, 1, figsize=(7, 6))
+
+    valid_e = np.isfinite(Earth_q50) & np.isfinite(Earth_q1L) & np.isfinite(Earth_q1H) & np.isfinite(Earth_q2L) & np.isfinite(Earth_q2H)
+    valid_m = np.isfinite(Mars_q50)  & np.isfinite(Mars_q1L)  & np.isfinite(Mars_q1H)  & np.isfinite(Mars_q2L)  & np.isfinite(Mars_q2H)
+
+    # delete the one with the lowest height (your existing logic)
+    if np.any(valid_m):
+        valid_e[np.argmin(h_centers[valid_e])] = False
+        valid_m[np.argmin(h_centers[valid_m])] = False
+    
+    # put to false all the onest below 75 km for valid_e
+    if np.any(valid_e):
+        valid_e[h_centers < 75] = False
+
+    # Colors + alpha (tune these)
+    earth_col = "blue" # "tab:blue"
+    mars_col  = "red" # "tab:orange"
+    alpha_2s = 0.18   # lighter band
+    alpha_1s = 0.35   # darker band
+
+    # # Earth bands (x = magnitude range, y = height)
+    # ax.fill_betweenx(
+    #     h_centers[valid_e], Earth_q2L[valid_e], Earth_q2H[valid_e],
+    #     color=earth_col, alpha=alpha_2s, linewidth=0, label="Earth ±2σ"
+    # )
+    # ax.fill_betweenx(
+    #     h_centers[valid_e], Earth_q1L[valid_e], Earth_q1H[valid_e],
+    #     color=earth_col, alpha=alpha_1s, linewidth=0, label="Earth ±1σ"
+    # )
+    ax.plot(
+        Earth_q50[valid_e], h_centers[valid_e], # marker="o",
+         linestyle="-", color=earth_col, linewidth=2,
+        label="Earth median"
+    )
+
+    # # Mars bands
+    # ax.fill_betweenx(
+    #     h_centers[valid_m], Mars_q2L[valid_m], Mars_q2H[valid_m],
+    #     color=mars_col, alpha=alpha_2s, linewidth=0, label="Mars ±2σ"
+    # )
+    # ax.fill_betweenx(
+    #     h_centers[valid_m], Mars_q1L[valid_m], Mars_q1H[valid_m],
+    #     color=mars_col, alpha=alpha_1s, linewidth=0, label="Mars ±1σ"
+    # )
+    ax.plot(
+        Mars_q50[valid_m], h_centers[valid_m], # marker="d", 
+        linestyle="-", color=mars_col, linewidth=2,
+        label="Mars median"
+    )
+    
+    # I need a cover letter where I express strong interest for this position mention that I am an Aerospce engineer and I have a Master where for my thesis  work extesivelly with MASTER and DRAMA and even the mre preise rentry mel SCARAB. I now work on this researc funded by  both NASA and ESA to chearterize the reis of impcat wit meteroid in order to better. mention that I work extesivlly with Python thought my studies andesearch.
+    
+    # Magnitude: brighter = more negative; invert so brighter appears to the right
+    ax.invert_xaxis()
+
+    ax.set_xlabel("Abs.Mag [-]", fontsize=14)
+    ax.set_ylabel("Height [km]", fontsize=14)
+    ax.tick_params(axis="both", which="major", labelsize=14)
+    ax.grid(True)
+
+    # Optional: reduce legend clutter by keeping only median labels
+    # (comment out if you want all band labels)
+    handles, labels = ax.get_legend_handles_labels()
+    keep = [i for i, lab in enumerate(labels) if ("median" in lab)]
+    ax.legend([handles[i] for i in keep], [labels[i] for i in keep], fontsize=14)
+    # put the ticks to 14
+    ax.tick_params(axis="both", which="major", labelsize=14)
+
+    plt.tight_layout()
+    plt.savefig(output_dir_show + os.sep + "Median_AbsMag_vs_Height_Earth_Mars_uncert_all.png", dpi=200)
+    plt.close()
 
 
 if __name__ == "__main__":
@@ -3017,7 +3267,7 @@ if __name__ == "__main__":
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\Sporaics_Mars",
         help="Output directory, if not given is the same as input_dir.")
     
     arg_parser.add_argument('--name', metavar='NAME', type=str,

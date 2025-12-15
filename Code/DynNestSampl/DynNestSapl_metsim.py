@@ -2236,8 +2236,8 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "rho": (100, 4000),  # log transformation applied later
         "sigma": (0.001 / 1e6, 0.05 / 1e6),
         "erosion_height_start": (\
-            object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
-            object_meteor.height_lum[0] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
+            object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)]),\
+            object_meteor.height_lum[0] +100+ abs(object_meteor.height_lum[0]-object_meteor.height_lum[-1])),
         "erosion_coeff": (1 / 1e12, 2 / 1e6),  # log transformation applied later
         "erosion_mass_index": (1, 3),
         "erosion_mass_min": (5e-12, 1e-9),  # log transformation applied later
@@ -2250,7 +2250,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "erosion_sigma_change": (0.001 / 1e6, 0.05 / 1e6),
         "erosion_coeff_change": (1 / 1e12, 2 / 1e6),  # log transformation applied later
         "noise_lag": (10, object_meteor.noise_lag), # more of a peak around the real value
-        "noise_lum": (3, object_meteor.noise_lum) # look for more values at higher uncertainty can be because of the noise
+        "noise_lum": (5, object_meteor.noise_lum) # look for more values at higher uncertainty can be because of the noise
     }
 
     # object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\

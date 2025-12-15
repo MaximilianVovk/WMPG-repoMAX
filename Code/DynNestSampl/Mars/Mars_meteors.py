@@ -1961,7 +1961,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     height_brightest = []
     Earth_height = []
     Earth_single_height = []
-    # Earth_brightest = []
+    Earth_brightest = []
     vel_brightest = []
     height_type = []
     vel_brightest_single = []
@@ -1985,6 +1985,9 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         Earth_height.append(heights_obs[min_mag_index_earth])
         Earth_height.append(heights_obs[min_mag_index_earth])
         Earth_height.append(heights_obs[min_mag_index_earth])
+        Earth_brightest.append(abs_mags_obs[min_mag_index_earth])
+        Earth_brightest.append(abs_mags_obs[min_mag_index_earth])
+        Earth_brightest.append(abs_mags_obs[min_mag_index_earth])
 
         Earth_single_height.append(heights_obs[min_mag_index_earth])
 
@@ -2106,6 +2109,43 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     plt.tight_layout()
     plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag.png")
     plt.close()
+
+    #############################################################
+
+    # create a new figure tat shows the drop in brightness with height for the three eorion types respect to earth
+    fig, axs = plt.subplots(1, 1, figsize=(8, 6))
+    # find fro each speed the difference between earth and mars brightness in magnitude
+    brightness_diff = np.array(Earth_brightest) - np.array(brightest_mags)
+    # between max Mars and min Mars speed create a 10 km/s bin and find the mendian and 95 percentile of brightness difference in each bin
+    v_bin = 10.0
+    v_min = np.min([V_ESC_MARS180, np.min(vel_brightest)])
+    v_max = np.max([V_ORBIT_MARS+V_PARAB_MARSORBIT, np.max(vel_brightest)])
+    v_bins = np.arange(v_min, v_max + v_bin, v_bin)
+    v_bin_centers = 0.5 * (v_bins[:-1] + v_bins[1:])
+    median_brightness_diff = []
+    p95_brightness_diff = []
+    p5_brightness_diff = []
+    for i in range(len(v_bins) - 1):
+        bin_indices = np.where((np.array(vel_brightest) >= v_bins[i]) & (np.array(vel_brightest) < v_bins[i+1]))[0]
+        if len(bin_indices) > 0:
+            median_brightness_diff.append(np.median(brightness_diff[bin_indices]))
+            p95_brightness_diff.append(np.percentile(brightness_diff[bin_indices], 68))
+            p5_brightness_diff.append(np.percentile(brightness_diff[bin_indices], 34))
+        else:
+            median_brightness_diff.append(np.nan)
+            p95_brightness_diff.append(np.nan)
+            p5_brightness_diff.append(np.nan)
+    axs.plot(v_bin_centers, median_brightness_diff, color='black', label='Median Abs.Mag Difference', linewidth=2)
+    axs.fill_between(v_bin_centers, p5_brightness_diff, p95_brightness_diff, color='gray', alpha=0.2, label='1-sigma range') 
+    axs.set_xlabel('$V_{\infty}$ [km/s]', fontsize=12)
+    axs.set_ylabel('$\Delta$ Abs.Mag', fontsize=12) 
+    axs.tick_params(axis='both', which='major', labelsize=12)
+    axs.grid()
+    axs.legend(fontsize=12)
+    plt.tight_layout()
+    plt.savefig(output_dir_show + os.sep + "Vinf_BrightnessDifference_Earth_Mars.png")
+    plt.close()
+
 
     #############################################################
 

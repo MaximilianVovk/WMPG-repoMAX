@@ -2238,6 +2238,8 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "erosion_height_start": (\
             object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)]),\
             object_meteor.height_lum[0] +100+ abs(object_meteor.height_lum[0]-object_meteor.height_lum[-1])),
+            # object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
+            # object_meteor.height_lum[0] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
         "erosion_coeff": (1 / 1e12, 2 / 1e6),  # log transformation applied later
         "erosion_mass_index": (1, 3),
         "erosion_mass_min": (5e-12, 1e-9),  # log transformation applied later

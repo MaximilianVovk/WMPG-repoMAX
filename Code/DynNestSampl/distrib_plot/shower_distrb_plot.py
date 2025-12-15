@@ -3173,7 +3173,16 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
-            
+    # save as a csv the first column is all base_name then the Tj and then density
+    summary_df_rho_tj = pd.DataFrame({
+        "Name": all_names,
+        "T_j": tj,
+        "Density_kgm3": rho,
+        # "Density_2.5CI_kgm3": rho_lo+rho,
+        # "Density_97.5CI_kgm3": rho_hi+rho
+    })
+
+    summary_df_rho_tj.to_csv(os.path.join(output_dir_show, shower_name+"_rho_tj_summary.csv"), index=False)
 
 
     ### plot of JFC HTC AST ###
@@ -4696,7 +4705,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM-CAMO+EMCCD-lumeff+",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

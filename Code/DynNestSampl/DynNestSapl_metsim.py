@@ -2236,10 +2236,10 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "rho": (100, 4000),  # log transformation applied later
         "sigma": (0.001 / 1e6, 0.05 / 1e6),
         "erosion_height_start": (\
-            np.max(object_meteor.height_lum) -100- (np.max(object_meteor.height_lum)-object_meteor.height_lum[np.argmax(object_meteor.luminosity)]),\
-            np.max(object_meteor.height_lum) +100+ abs(np.max(object_meteor.height_lum)-np.min(object_meteor.height_lum))), 
-            # np.max(object_meteor.height_lum) -100- (np.max(object_meteor.height_lum)-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
-            # np.max(object_meteor.height_lum) +100+ (np.max(object_meteor.height_lum)-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
+            # np.max(object_meteor.height_lum) -100- (np.max(object_meteor.height_lum)-object_meteor.height_lum[np.argmax(object_meteor.luminosity)]),\
+            # np.max(object_meteor.height_lum) +100+ abs(np.max(object_meteor.height_lum)-np.min(object_meteor.height_lum))), 
+            np.max(object_meteor.height_lum) -100- (np.max(object_meteor.height_lum)-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
+            np.max(object_meteor.height_lum) +100+ (np.max(object_meteor.height_lum)-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
         "erosion_coeff": (1 / 1e12, 2 / 1e6),  # log transformation applied later
         "erosion_mass_index": (1, 3),
         "erosion_mass_min": (5e-12, 1e-9),  # log transformation applied later

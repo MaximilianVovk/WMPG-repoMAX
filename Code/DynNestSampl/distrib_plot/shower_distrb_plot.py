@@ -1165,7 +1165,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
         obs_data.lum_eff_type = 5
 
-        obs_data.h_kill = np.min([obs_data.height_lum[-1],obs_data.height_lag[-1]])-1000
+        obs_data.h_kill = np.min([np.min(obs_data.height_lum),np.min(obs_data.height_lag)])-1000
         # check if the h_kill is smaller than 0
         if obs_data.h_kill < 0:
             obs_data.h_kill = 1
@@ -1185,6 +1185,17 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
         erosion_beg_dyn_press = best_guess_obj_plot.const.erosion_beg_dyn_press
         print(f"Dynamic pressure at erosion onset: {erosion_beg_dyn_press} Pa")
 
+        # check if a file that ends in _posterior_backup.pkl.gz is in the folder
+        output_dir = os.path.dirname(dynesty_file)
+        backup_file = None
+        for name in os.listdir(output_dir):
+            if name.endswith("_posterior_backup.pkl.gz"):
+                backup_file = name
+                print(f"Using backup file: {backup_file}")
+                with gzip.open(os.path.join(output_dir, backup_file), "rb") as f:
+                    backup_small = pickle.load(f)
+                break
+
         if flag_total_rho:
             
             # find erosion change height
@@ -1201,7 +1212,13 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 print("Using old mass before erosion change, the new one is none!")
                 mass_before = old_mass_before
 
-            x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
+            if backup_file is not None:
+                x_valid_rho = backup_small['dynesty']['rho_array']
+                rho, rho_lo, rho_hi = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
+
+            else:
+
+                x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
 
             rho_corrected.append(x_valid_rho)
 
@@ -1452,6 +1469,16 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
     sys.stdout = sys.__stdout__
 
     return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+
+
+
+
+
+
+
+
+
+
 
 def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
@@ -4705,7 +4732,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM-CAMO+EMCCD-lumeff+",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM-CAMO+EMCCD-lumeff+\20211214_075322_combined",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -4743,4 +4770,4 @@ if __name__ == "__main__":
         print(f"Setting name to {cml_args.name}")
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot

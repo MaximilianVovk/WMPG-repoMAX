@@ -580,7 +580,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
 
         obs_data.lum_eff_type = 5
 
-        obs_data.h_kill = np.min([obs_data.height_lum[-1],obs_data.height_lag[-1]])-1000
+        obs_data.h_kill = np.min([np.min(obs_data.height_lum),np.min(obs_data.height_lag)])-1000
         # check if the h_kill is smaller than 0
         if obs_data.h_kill < 0:
             obs_data.h_kill = 1

@@ -10,6 +10,7 @@ Date: 2025-02-25
 import numpy as np
 import pandas as pd
 import pickle
+import gzip
 import sys
 import json, base64
 import os
@@ -348,8 +349,8 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
         ax5.plot(diff_lum, obs_data.height_lum/1000, '.', markersize=3, color='black', label='No Noise')
 
 
-        # find the obs_data.leading_frag_height_arr index is close to obs_data.height_lum[0] wihouth nan
-        index = np.argmin(np.abs(obs_data.leading_frag_height_arr[~np.isnan(obs_data.leading_frag_height_arr)]-obs_data.height_lag[0]))
+        # find the obs_data.leading_frag_height_arr index is close to np.max(obs_data.height_lum) wihouth nan
+        index = np.argmin(np.abs(obs_data.leading_frag_height_arr[~np.isnan(obs_data.leading_frag_height_arr)]-np.max(obs_data.height_lag)))
         # plot velocity_arr vs leading_frag_time_arr
         ax2.plot(obs_data.time_arr-obs_data.time_arr[index], \
                  obs_data.leading_frag_vel_arr/1000, '--', color='black', linewidth=0.5, label='No Noise', zorder=2)
@@ -430,8 +431,8 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                     obs_data.height_lum[np.where(obs_data.stations_lum == station)]/1000, '.', \
                     color=station_colors[station], label=station)
 
-        # find the obs_data.leading_frag_height_arr index is close to obs_data.height_lum[0] wihouth nan
-        index = np.argmin(np.abs(sim_data.leading_frag_height_arr[~np.isnan(sim_data.leading_frag_height_arr)]-obs_data.height_lag[0]))
+        # find the obs_data.leading_frag_height_arr index is close to np.max(obs_data.height_lum) wihouth nan
+        index = np.argmin(np.abs(sim_data.leading_frag_height_arr[~np.isnan(sim_data.leading_frag_height_arr)]-np.max(obs_data.height_lag)))
         # plot velocity_arr vs leading_frag_time_arr
         ax2.plot(sim_data.time_arr-sim_data.time_arr[index], sim_data.leading_frag_vel_arr/1000, color=color_sim, label=label_sim)
         ax2.legend()
@@ -558,7 +559,7 @@ def _apply_log_flags_to_sample(sample, variables, flags_dict):
 def _compute_sim_lag(sim, obs_data):
     """
     Compute lag exactly as in your snippet:
-        index = argmin |h - obs_data.height_lag[0]|
+        index = argmin |h - np.max(obs_data.height_lag)|
         lag = (L - L[index]) - obs_data.v_init*(t - t[index])
         lag -= lag[index]
     Uses the closest *valid* height index (maps back to full array index).
@@ -605,6 +606,8 @@ def _worker_simulate_and_interp(sample_equal_row):
         pars = _apply_log_flags_to_sample(sample_equal_row, variables, flags_dict)
         sim  = run_simulation(pars, obs_data, variables, fixed_values)
 
+        const_saved = sim.const  # save original const
+
         # NEW: integrate per your condition
         _maybe_integrate_luminosity(sim, obs_data)
 
@@ -633,7 +636,39 @@ def _worker_simulate_and_interp(sample_equal_row):
         vel_hv = np.interp(hv, h, vel, left=np.nan, right=np.nan)
         lag_hv = np.interp(hv, h, lag, left=np.nan, right=np.nan)
 
-        return lum_hl, mag_hl, vel_hv, lag_hv
+        # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+
+        # check if erosion_height_change is in variables
+        if 'erosion_height_change' in variables:
+            mass_at_erosion_change = const_saved.mass_at_erosion_change
+            erosion_height_change = const_saved.erosion_height_change
+            mass = np.asarray(sim.mass_total_active_arr)[:-1]
+            # if mass_before is None use the old method
+            if mass_at_erosion_change is None:
+                mass_at_erosion_change = mass[np.argmin(np.abs(h[:-1] - erosion_height_change))]
+            # compute rho_mass_weighted
+            erosion_rho_change = const_saved.erosion_rho_change
+            rho_mass_weighted = const_saved.rho*(abs(const_saved.m_init-mass_at_erosion_change) / const_saved.m_init) + erosion_rho_change * (mass_at_erosion_change / const_saved.m_init)
+            rho_volume_weighted = const_saved.m_init / ((abs(const_saved.m_init-mass_at_erosion_change) / const_saved.rho) + (mass_at_erosion_change / erosion_rho_change))
+            # print(f"rho_mass_weighted: {rho_mass_weighted} rho_volume_weighted: {rho_volume_weighted} and rho: {const_saved.rho}")
+        else:
+            rho_mass_weighted = const_saved.rho
+            rho_volume_weighted = const_saved.rho
+
+        const_backup = {
+        "rho_mass_weighted": rho_mass_weighted,
+        "rho_volume_weighted": rho_volume_weighted,
+        "erosion_beg_vel": const_saved.erosion_beg_vel if hasattr(const_saved, 'erosion_beg_vel') else None,
+        "erosion_beg_mas": const_saved.erosion_beg_mas if hasattr(const_saved, 'erosion_beg_mas') else None,
+        "erosion_beg_dyn_press": const_saved.erosion_beg_dyn_press if hasattr(const_saved, 'erosion_beg_dyn_press') else None,
+        "mass_at_erosion_change": const_saved.mass_at_erosion_change if hasattr(const_saved, 'mass_at_erosion_change') else None,
+        "energy_per_cs_before_erosion": const_saved.energy_per_cs_before_erosion if hasattr(const_saved, 'energy_per_cs_before_erosion') else None,
+        "energy_per_mass_before_erosion": const_saved.energy_per_mass_before_erosion if hasattr(const_saved, 'energy_per_mass_before_erosion') else None,
+        "main_mass_exhaustion_ht": const_saved.main_mass_exhaustion_ht if hasattr(const_saved, 'main_mass_exhaustion_ht') else None,
+        "main_bottom_ht": const_saved.main_bottom_ht if hasattr(const_saved, 'main_bottom_ht') else None
+        }
+
+        return lum_hl, mag_hl, vel_hv, lag_hv, const_backup
     except Exception:
         return None
 
@@ -676,6 +711,44 @@ def _maybe_integrate_luminosity(sim, obs_data):
         # be silent and keep raw arrays if integration fails for any reason
         pass
 
+def _plot_distrib_weighted(rho_mass_weighted_list, weights, output_folder="", file_name="name",var_name="var", label="var"):
+    print("Creating distribution plot...")
+    var_corrected_lo, var_corrected_median, var_corrected_hi = _quantile(rho_mass_weighted_list, [0.025, 0.5, 0.975], weights=weights)
+    # Create figure tau
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
+    smooth = 0.02
+    lo, hi = np.min(rho_mass_weighted_list), np.max(rho_mass_weighted_list)
+    nbins = int(round(10. / smooth))
+    hist, edges = np.histogram(rho_mass_weighted_list, bins=nbins, weights=weights, range=(lo, hi))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+    ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
+
+    # Percentile lines
+    ax_dist.axvline(var_corrected_median, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(var_corrected_lo, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(var_corrected_hi, color='black', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = var_corrected_hi - var_corrected_median
+    minus = var_corrected_median - var_corrected_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N. Runs {len(rho_mass_weighted_list)} — {label} = {fmt(var_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    # ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.set_xlabel(f'{label}', fontsize=20)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    # x axis from 0 to tau_corrected*2
+    # ax_dist.set_xlim(0, var_corrected_hi+var_corrected_median)
+    plt.savefig(os.path.join(output_folder, f"{file_name}_{var_name}_distribution.png"), bbox_inches='tight')
+    return var_corrected_median, var_corrected_lo, var_corrected_hi
 
 def posterior_bands_vs_height_parallel(
     dynesty_results,
@@ -689,8 +762,7 @@ def posterior_bands_vs_height_parallel(
     n_workers=None,          # default: os.cpu_count()-1
     chunksize=8,             # tune for your machine
     color_best='black',
-    label_best='Best Fit'
-):
+    label_best='Best Fit'):
     """
     Parallel version: computes posterior bands at obs_data.height_lum using a
     process pool. Returns the same structure as before; plotting code unchanged.
@@ -715,9 +787,10 @@ def posterior_bands_vs_height_parallel(
     mag_samples = np.full((S, H_l), np.nan)
     vel_samples = np.full((S, H_v), np.nan)
     lag_samples = np.full((S, H_v), np.nan)
+    const_backups = [None] * S  # to store const backups if needed
 
-    align_height = obs_data.height_lag[0] if hasattr(obs_data, 'height_lag') and len(obs_data.height_lag) > 0 \
-                   else obs_data.height_lum[0]
+    align_height = np.max(obs_data.height_lag) if hasattr(obs_data, 'height_lag') and len(obs_data.height_lag) > 0 \
+                   else np.max(obs_data.height_lum)
 
     if n_workers is None:
         n_workers = max(1, (os.cpu_count() or 2) - 1)
@@ -745,11 +818,12 @@ def posterior_bands_vs_height_parallel(
                 sidx = future_to_idx[fut]
                 res = fut.result()
                 if res is not None:
-                    lum_hl, mag_hl, vel_hl, lag_hl = res
+                    lum_hl, mag_hl, vel_hl, lag_hl, const_backup = res
                     lum_samples[sidx] = lum_hl
                     mag_samples[sidx] = mag_hl
                     vel_samples[sidx] = vel_hl
                     lag_samples[sidx] = lag_hl
+                    const_backups[sidx] = const_backup
                 done += 1
                 # progress print
                 print(f"[{file_name}] {done}/{S} simulations done", flush=True)
@@ -765,11 +839,12 @@ def posterior_bands_vs_height_parallel(
         for sidx in range(S):
             res = _worker_simulate_and_interp(samples_eq[sidx])
             if res is not None:
-                lum_hl, mag_hl, vel_hl, lag_hl = res
+                lum_hl, mag_hl, vel_hl, lag_hl, const_backup = res
                 lum_samples[sidx] = lum_hl
                 mag_samples[sidx] = mag_hl
                 vel_samples[sidx] = vel_hl
                 lag_samples[sidx] = lag_hl
+                const_backups[sidx] = const_backup
             done += 1
             print(f"[{file_name}] {done}/{S} simulations done", flush=True)
 
@@ -818,10 +893,27 @@ def posterior_bands_vs_height_parallel(
         color_best=color_best,
         label_best=label_best
     )
-    # ---- RETURN DATA ----
+
+    # ---- PLOT & SAVE ----
+    
+    # extract the rho_mass_weighted from const_backups
+    rho_mass_weighted_list = []
+    rho_volume_weighted_list = []
+    for const in const_backups:
+        if const is not None:
+            rho_mass_weighted_list.append(const["rho_mass_weighted"])
+            rho_volume_weighted_list.append(const["rho_volume_weighted"])
+        else:
+            rho_mass_weighted_list.append(np.nan)
+            rho_volume_weighted_list.append(np.nan)
+    
+    # from list to numpy array
+    rho_mass_weighted_list = np.array(rho_mass_weighted_list)
+    rho_low95_real, rho_median_real, rho_high95_real = _quantile(rho_mass_weighted_list, [0.025, 0.5, 0.975], weights=w)
 
     return {
-        'heights_m': hl.copy(),
+        'samples_eq': samples_eq,
+        'weights': w,
         'lum_samples': lum_samples,
         'mag_samples': mag_samples,
         'vel_samples': vel_samples,
@@ -838,7 +930,14 @@ def posterior_bands_vs_height_parallel(
             'velocity': best_vel,
             'lag': best_lag,
         },
-        'sim_best': sim_best
+        'sim_best': sim_best,
+        'const_backups': const_backups,
+        'rho_array': rho_mass_weighted_list,
+        'rho_mass_weighted_estimate': {
+            'median': rho_median_real,
+            'low95': rho_low95_real,
+            'high95': rho_high95_real,
+        }
     }
 
 
@@ -847,8 +946,7 @@ def _plot_bands_obs_best(
     hl, hv,                                  # heights (m) used for interpolation
     bands_lum, bands_mag, bands_vel, bands_lag,
     best_lum, best_mag, best_vel, best_lag,
-    output_folder='', file_name='', color_best='black', label_best='Best Fit'
-):
+    output_folder='', file_name='', color_best='black', label_best='Best Fit'):
     if output_folder:
         os.makedirs(output_folder, exist_ok=True)
 
@@ -924,9 +1022,10 @@ def _plot_bands_obs_best(
     for st in np.unique(getattr(obs_data, 'stations_lag', [])):
         if st not in station_colors:
             station_colors[st] = cmap(len(station_colors) % 10)
-        m = obs_data.stations_lag == st
+        vel_plot_st= obs_data.velocities[np.where(obs_data.stations_lag == st)]/1000
+        height_plot_st = obs_data.height_lag[np.where(obs_data.stations_lag == st)]/1000.0
         ax_vel.plot(
-            obs_data.velocities[m]/1000.0, obs_data.height_lag[m]/1000.0,
+           vel_plot_st[1:], height_plot_st[1:],
             linestyle='--', marker='x', markersize=4, linewidth=1,
             color=station_colors.get(st, 'C0'),
         )
@@ -1172,7 +1271,7 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
         ax_mag.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr / 1000, color=color_sim)
         ax_vel.plot(sim_data.leading_frag_vel_arr / 1000, sim_data.leading_frag_height_arr / 1000, color=color_sim)
 
-        index = np.argmin(np.abs(sim_data.leading_frag_height_arr[~np.isnan(sim_data.leading_frag_height_arr)]-obs_data.height_lag[0]))
+        index = np.argmin(np.abs(sim_data.leading_frag_height_arr[~np.isnan(sim_data.leading_frag_height_arr)]-np.max(obs_data.height_lag)))
         # plot lag_arr vs leading_frag_time_arr withouth nan values
         sim_lag = (sim_data.leading_frag_length_arr-sim_data.leading_frag_length_arr[index])\
               - ((obs_data.v_init)*(sim_data.time_arr-sim_data.time_arr[index]))
@@ -1233,7 +1332,7 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
 
 
 # Plotting function dynesty
-def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name='', log_file='', cores=None):
+def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name='', log_file='', cores=None, save_backup=False):
     ''' Plot the dynesty results '''
 
     if log_file == '':
@@ -1487,49 +1586,143 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples_equal[:, i_m_init]*obs_data.velocities[0]**2) * 100
     # calculate the weights calculate the weighted median and the 95 CI for tau
     tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=weights)
-    print(f"Tau: {tau_median:.4f} % 95CI ({tau_low95:.4f} - {tau_high95:.4f} %)")
+    print(f"Tau: {tau_median:.4f} 95CI ({tau_low95:.4f} - {tau_high95:.4f}) %")
 
+    # find erosion change height
+    if 'erosion_height_change' in variables and 'm_init' in variables:
+        erosion_height_change = best_guess[variables.index('erosion_height_change')]
+        m_init = best_guess[variables.index('m_init')]
 
-    # find the closest index to obs_data.height_lum[0] in best_guess_obj_plot.leading_frag_height_arr[:-1] 
-    index_up = np.argmin(np.abs(best_guess_obj_plot.leading_frag_height_arr[:-1]-obs_data.height_lum[0]))
-    index_down = np.argmin(np.abs(best_guess_obj_plot.leading_frag_height_arr[:-1]-obs_data.height_lum[-1]))
+        heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+        mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
 
-    # # too high frame rate, just interpolate the luminosity
-    # simulated_lc_intensity = np.interp(obs_data.height_lum, 
-    #                                     np.flip(best_guess_obj_plot.leading_frag_height_arr), 
-    #                                     np.flip(best_guess_obj_plot.luminosity_arr))
-    # simulated_lc_time = np.interp(obs_data.height_lum, 
-    #                                 np.flip(best_guess_obj_plot.leading_frag_height_arr),
-    #                                 np.flip(best_guess_obj_plot.time_arr))
-                                    
-
-    # # print(f"first heigth obs: {obs_data.height_lum[0]:.2f} m, last height obs: {obs_data.height_lum[-1]:.2f} m, first height sim: {best_guess_obj_plot.leading_frag_height_arr[index_up]:.2f} m, last height sim: {best_guess_obj_plot.leading_frag_height_arr[index_down]:.2f} m")
-    # print(f"total radiated energy:", calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m), "J and total simulated radiated energy same timestep:",simpson(np.array(simulated_lc_intensity),x=np.array(simulated_lc_time)),"J")
-
-    # res_top10 = posterior_bands_topk_check(
-    #     dynesty_run_results, obs_data, flags_dict, fixed_values,
-    #     top_k=10, output_folder=output_folder +os.sep+ 'fit_plots', file_name=f'{file_name}_top1000_check',
-    # )
-
-
-    if cores is None:
-        cores = multiprocessing.cpu_count()
-    ## TAKES A LOT OF TIME Only use on Node7 or Node8 where there are 96 cores ###
-    if os.name == 'posix' and cores > 50:
-        ## TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
-        print(f"Running all the simulations to have the uncertaty regions with {cores} cores")
-        posterior_bands_vs_height_parallel(
-            dynesty_results=dynesty_run_results,
-            obs_data=obs_data,
-            flags_dict=flags_dict,
-            fixed_values=fixed_values,
-            output_folder=output_folder +os.sep+ 'fit_plots',
-            file_name=f'{file_name}',
-            nsamples=None,  # use all samples
-            n_workers=cores,
-        )
+        # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+        mass_before = best_guess_obj_plot.const.mass_at_erosion_change
+        # if mass_before is None use the old method
+        if mass_before is None:
+            mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+        
+        # # precise erosion tal energy calculation ########################
+        rho_total_arr = samples_equal[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples_equal[:, variables.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
     else:
-        print(f"Skipping the meteor plot with the uncertaty regions, too long with {cores} cores")
+        rho_total_arr = samples_equal[:, variables.index('rho')].astype(float)
+
+    rho_median_approx, rho_low95_approx, rho_high95_approx = _plot_distrib_weighted(
+        rho_total_arr,
+        weights=weights,
+        output_folder=output_folder,
+        file_name=file_name,
+        var_name='rho_mass_weighted',
+        label='$\\rho$ [kg/m$^3$]'
+    )
+    # rho_low95_approx, rho_median_approx, rho_high95_approx = _quantile(rho_total_arr, [0.025, 0.5, 0.975], weights=weights)
+    print(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3")
+
+
+    if save_backup:
+        
+        # check if there is a _posterior_backup.pkl.gz file in the output_folder
+        backup_file_check = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
+        if os.path.exists(backup_file_check):
+            print(f"Loading existing backup file: {backup_file_check}")
+             # to load the backup file later
+            with gzip.open(backup_file_check, "rb") as f:
+                backup_small = pickle.load(f)
+
+            bands_lum = backup_small['bands']['lum']
+            bands_mag = backup_small['bands']['mag']
+            bands_vel = backup_small['bands']['vel']
+            bands_lag = backup_small['bands']['lag']
+
+            best_lum = backup_small['best_guess']['luminosity']
+            best_mag = backup_small['best_guess']['abs_magnitude']
+            best_vel = backup_small['best_guess']['velocity']
+            best_lag = backup_small['best_guess']['lag']
+
+            hl = np.asarray(obs_data.height_lum)
+            hv = np.asarray(obs_data.height_lag)
+
+            _plot_bands_obs_best(
+                obs_data,
+                hl, hv,
+                bands_lum, bands_mag, bands_vel, bands_lag,
+                best_lum, best_mag, best_vel, best_lag,
+                output_folder=output_folder,
+                file_name=f'{file_name}',
+                color_best='black',
+                label_best='Best Fit'
+            )
+
+        else:
+            ## TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
+            print(f"Running all the simulations to have the uncertaty regions with {cores} cores")        
+
+            # # ONLY FOR TESTING PURPOSES
+            # backup_data = posterior_bands_topk_check(
+            #     dynesty_run_results, obs_data, flags_dict, fixed_values,
+            #     top_k=10, output_folder=output_folder, file_name=f'{file_name}_top1000_check',
+            # )
+
+            backup_data = posterior_bands_vs_height_parallel(
+                dynesty_results=dynesty_run_results,
+                obs_data=obs_data,
+                flags_dict=flags_dict,
+                fixed_values=fixed_values,
+                output_folder=output_folder,
+                file_name=f'{file_name}',
+                nsamples=None,  # use all samples
+                n_workers=cores,
+            )
+
+            # save the backup_data to a json file
+            backup_small = {
+                "dynesty": {
+                    "file_name": file_name,
+                    "samples_eq": backup_data["samples_eq"].tolist(),
+                    "weights": backup_data["weights"].tolist(),
+                    "variables": variables,
+                    "flags_dict": flags_dict,
+                    "fixed_values": fixed_values,
+                    "const_backups": backup_data["const_backups"],
+                    "rho_array": backup_data["rho_array"],
+                    "rho_mass_weighted_estimate": {k: float(v) for k, v in backup_data["rho_mass_weighted_estimate"].items()}
+                },
+
+                "best_guess": {
+                    k: np.asarray(v, dtype=np.float32)
+                    for k, v in backup_data["best_guess"].items()
+                },
+
+                "bands": {
+                    k: {q: v.astype(np.float32) for q, v in backup_data["bands"][k].items()}
+                    for k in ("lum", "mag", "vel", "lag")
+                },
+            }
+
+            backup_file = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
+            with gzip.open(backup_file, "wb", compresslevel=4) as f:
+                pickle.dump(backup_small, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+            # # to load the backup file later
+            # backup_file = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
+            # with gzip.open(backup_file, "rb") as f:
+            #     backup_small = pickle.load(f)
+
+        rho_median_real, rho_lo_real, rho_hi_real = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
+        rho_total_arr = backup_small['dynesty']['rho_array']
+        _plot_distrib_weighted(
+            rho_total_arr,
+            weights=weights,
+            output_folder=output_folder,
+            file_name=file_name,
+            var_name='rho_mass_weighted',
+            label='$\\rho$ [kg/m$^3$]'
+        )
+        print(
+            f"Real mass weighted $\\rho$ : {rho_median_real:.2f} 95CI ({rho_lo_real:.2f} - {rho_hi_real:.2f}) kg/m^3"
+        )
+
+
 
     lum_eff_val = tau_median
     # fid the fixed_values that have the lum_eff
@@ -1544,7 +1737,7 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     # try:
     #     # find the index of m_init in variables
     #     tau_real = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))/(simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val) * 100
-    #     print(f"first heigth obs: {obs_data.height_lum[0]:.2f} m, last height obs: {obs_data.height_lum[-1]:.2f} m, first height sim: {best_guess_obj_plot.leading_frag_height_arr[index_up]:.2f} m, last height sim: {best_guess_obj_plot.leading_frag_height_arr[index_down]:.2f} m")
+    #     print(f"first heigth obs: {np.max(obs_data.height_lum):.2f} m, last height obs: {obs_data.height_lum[-1]:.2f} m, first height sim: {best_guess_obj_plot.leading_frag_height_arr[index_up]:.2f} m, last height sim: {best_guess_obj_plot.leading_frag_height_arr[index_down]:.2f} m")
     #     print(f"total radiated energy:", calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m), "J and total simulated radiated energy:",simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val,"J")
     #     print(f"Tau real best fit: {tau_real:.4f} %")
     # except Exception as e:
@@ -1853,7 +2046,10 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         f.write("eff(%) i.e. (niter/ncall)*100 eff. of the logL call \n")
         f.write("logz i.e. final estimated evidence\n")
         f.write("H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need for a lot of live points\n")
-        f.write(f"\nTau: {tau_median:.2f} % 95CI ({tau_low95:.2f} - {tau_high95:.2f} %)\n")
+        f.write(f"\nTau: {tau_median:.2f} 95CI ({tau_low95:.2f} - {tau_high95:.2f}) %\n")
+        f.write(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3\n")
+        if save_backup:
+            f.write(f"Real mass weighted $\\rho$ : {rho_median_real:.2f} 95CI ({rho_lo_real:.2f} - {rho_hi_real:.2f}) kg/m^3\n")
         f.write("\nBest fit:\n")
         for i in range(len(best_guess)):
             f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
@@ -2367,7 +2563,7 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                         if name in object_meteor.__dict__:
                             fixed_values[name] = object_meteor.__dict__[name]
                         elif name == "erosion_height_start":
-                            fixed_values[name] = object_meteor.height_lum[0]
+                            fixed_values[name] = np.max(object_meteor.height_lum)
                         else:
                             fixed_values[name] = np.mean(default_bounds[name])
                     continue
@@ -2672,7 +2868,7 @@ def find_strongest_flare(height, magnitude, preflare_points=-1, sigma_threshold=
         preflare_points = int(np.argmin(magnitude)/2)
         if preflare_points <= 1:
             print("No flares detected.")
-            return height_real[0]-100, height_real[-1]+100
+            return np.max(height_real)+100, np.min(height_real)-100
 
     lower_bounds = [0, -np.inf, -np.inf]
     upper_bounds = [np.inf, np.inf, np.inf]
@@ -2718,7 +2914,7 @@ def find_strongest_flare(height, magnitude, preflare_points=-1, sigma_threshold=
 
     if not flares:
         print("No flares detected.")
-        return height_real[0]-100, height_real[-1]+100
+        return np.max(height_real)+100, np.min(height_real)-100
 
     # Select flare with largest envelope length
     flare_lengths = [abs(height[start] - height[end]) for start, end in flares]
@@ -3041,8 +3237,8 @@ class observation_data:
 
         # for lag measurements start from 0 for length and time
         self.length = self.length-self.length[0]
-        self.time_lag = self.time_lag-self.time_lag[0]
-        self.time_lum = self.time_lum-self.time_lum[0]
+        self.time_lag = self.time_lag-np.min(self.time_lag)
+        self.time_lum = self.time_lum-np.min(self.time_lum)
 
         v_init_list = []
         for curr_lag_file in lag_files:
@@ -3807,7 +4003,7 @@ class observation_data:
 # find dynestyfile and priors
 ###############################################################################
 
-def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, only_plot=True, cores=None, pool_MPI=None, pick_position=0, extraprior_file=''):
+def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, only_plot=True, cores=None, pool_MPI=None, pick_position=0, extraprior_file='', save_backup=True):
     """
     Create the output folder if it doesn't exist.
     """
@@ -3894,7 +4090,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
 
             obs_data.lum_eff_type = 5
 
-            obs_data.h_kill = np.min([obs_data.height_lum[-1],obs_data.height_lag[-1]])-1000
+            obs_data.h_kill = np.min([np.min(obs_data.height_lum),np.min(obs_data.height_lag)])-1000
             # check if the h_kill is smaller than 0
             if obs_data.h_kill < 0:
                 obs_data.h_kill = 1
@@ -3908,6 +4104,8 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                 obs_data.v_kill = 1
 
             ##################################################################################################
+            if save_backup:
+                print("NOTE: Saving backup of dynesty files restuls.")
 
             if not cml_args.only_plot: 
 
@@ -3916,6 +4114,8 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                 # Run dynesty
                 try:
                     main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, file_name=base_name, log_file_path=log_file_path, pool_MPI=pool_MPI)
+                    dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+                    plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path,cml_args.cores,save_backup=save_backup)
                 except Exception as e:
                     # Open the file in append mode and write the error message
                     with open(log_file_path, "a") as log_file:
@@ -3924,7 +4124,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                     # now try and plot the dynesty file results
                     try:
                         dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-                        plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path,cml_args.cores)
+                        plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path,cml_args.cores,save_backup=save_backup)
                     except Exception as e:
                         with open(log_file_path, "a") as log_file:
                             log_file.write(f"Error encountered in dynestsy plot: {e}")
@@ -3954,7 +4154,7 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                 print("Only plotting requested. Skipping dynesty run.")
                 dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
                 # dsampler = dynesty oad DynamicNestedSampler by restore(dynesty_file)
-                plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path,cml_args.cores)
+                plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path,cml_args.cores,save_backup=save_backup)
 
             else:
                 print("Fail to generate dynesty plots, dynasty file not found:",dynesty_file)
@@ -4968,7 +5168,7 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
         return -np.inf
 
     # all simulated time is the time_arr subtract the first time of the simulation
-    all_simulated_time = simulation_results.time_arr-simulated_time[0]
+    all_simulated_time = simulation_results.time_arr-np.min(simulated_time)
 
     # find the integral of the luminosity in time in between FPS but not valid for CAMO narrowfield cameras as there is no smearing becuse it follows the meteor
     if (1/obs_metsim_obj.fps_lum > simulation_results.const.dt): # and (not any('1T' in station for station in obs_metsim_obj.stations_lum) or not any('2T' in station for station in obs_metsim_obj.stations_lum)): # FPS is lower than the simulation time step need to integrate the luminosity
@@ -5128,9 +5328,6 @@ def main_dynestsy(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_co
         print("Copying dynesty file to output folder...")
         shutil.copy(dynesty_file, output_folder)
         print("dynesty file copied to:", output_folder)
-    
-    # dsampler use to plot dynesty DynamicNestedSampler
-    plot_dynesty(dsampler.results, obs_data, flags_dict, fixed_values, output_folder, file_name, log_file_path, n_core)
 
 
 
@@ -5165,13 +5362,19 @@ if __name__ == "__main__":
         "If blank, no extraprior file will be used so will only use the prior file.")
 
     arg_parser.add_argument('-all','--all_cameras',
-        help="If active use all data, if not only CAMO data for lag if present in pickle file. If False, use CAMO data only for deceleration (by default is False). " \
+        help="If active use all data, if not only CAMO data for lag if present in pickle file. " \
+        "If False, use CAMO data only for deceleration (by default is False). " \
         "When gnerating json simulations filr if False create a combination EMCCD CAMO data and if True EMCCD only",
         action="store_true")
 
     arg_parser.add_argument('-new','--new_dynesty',
         help="If active restart a new dynesty run if not resume from existing .dynesty if found. " \
         "If False, create a new dynesty version.",
+        action="store_false")
+    
+    arg_parser.add_argument('-NoBackup','--save_backup',
+        help="Run all the simulation agin at th end saves the weighted mass bulk density and save a back with all the data" \
+        "and creates the distribution plot takes, in general 10 more minute or more base on the number of cores available.",
         action="store_false")
     
     arg_parser.add_argument('-plot','--only_plot',
@@ -5195,6 +5398,6 @@ if __name__ == "__main__":
     if cml_args.pick_pos < 0 or cml_args.pick_pos > 1:
         raise ValueError("pick_position must be between 0 and 1, 0 leading edge, 0.5 centroid full meteor, 1 trailing edge.")
 
-    setup_folder_and_run_dynesty(cml_args.input_dir, output_dir=cml_args.output_dir, prior=cml_args.prior, resume=cml_args.new_dynesty, use_all_cameras=cml_args.all_cameras, only_plot=cml_args.only_plot, cores=cml_args.cores, pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior)
+    setup_folder_and_run_dynesty(cml_args.input_dir, output_dir=cml_args.output_dir, prior=cml_args.prior, resume=cml_args.new_dynesty, use_all_cameras=cml_args.all_cameras, only_plot=cml_args.only_plot, cores=cml_args.cores, pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior, save_backup=cml_args.save_backup)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

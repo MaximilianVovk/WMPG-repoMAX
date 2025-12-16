@@ -4107,6 +4107,27 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             if save_backup:
                 print("NOTE: Saving backup of dynesty files restuls.")
 
+            # check if there are json files in the output folder that could be plotted
+            json_files = [f for f in os.listdir(out_folder) if f.endswith('.json')]
+            for const_json_name in json_files:
+                print(f"Plotting simulation from json file: {const_json_name}")
+                # create the full path to the json file
+                const_json_file = os.path.join(out_folder, const_json_name)
+                try:
+                    # Load the constants from the JSON files
+                    const_manual, _ = loadConstants(const_json_file)
+                    const_manual.dens_co = np.array(const_manual.dens_co)
+                    # Run the simulation
+                    frag_main, results_list, wake_results = runSimulation(const_manual, compute_wake=False)
+                    simulation_manual_MetSim_object = SimulationResults(const_manual, frag_main, results_list, wake_results)
+                    # delete the .json from the name:
+                    json_name = const_json_name[:-5]
+                    # Plot the data with residuals and the best fit
+                    # plot_data_with_residuals_and_real(obs_data, simulation_manual_MetSim_object, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit", color_sim='darkgreen', label_sim='Median')
+                    plot_all_vs_height(obs_data, simulation_manual_MetSim_object, out_folder, json_name, color_sim='slategray', label_sim='Manual')
+                except Exception as e:
+                    print(f"Error encountered loading json file {const_json_file}: {e}")
+
             if not cml_args.only_plot: 
 
                 # start a timer to check how long it takes to run dynesty

@@ -90,6 +90,31 @@ class Logger(object):
         self.log.close()
 
 
+def json_default(o):
+    # numpy arrays -> lists
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+
+    # numpy scalars -> python scalars
+    if isinstance(o, (np.integer, np.floating, np.bool_)):
+        return o.item()
+
+    # datetimes -> ISO strings
+    if isinstance(o, (dt.datetime, dt.date)):
+        return o.isoformat()
+
+    # sets -> lists
+    if isinstance(o, set):
+        return list(o)
+
+    # custom objects -> dict (best effort)
+    if hasattr(o, "__dict__"):
+        return vars(o)
+
+    # last resort (keeps the dump from crashing)
+    return str(o)
+
+
 # 100^((m-6.96)/5) =(114007.25/100000)^2
 # math.log((114007.25/100000)^2, 100)*5+6.96
 def meteor_abs_magnitude_to_apparent(abs_mag, distance):
@@ -477,49 +502,6 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
                     sim_diff_lag[np.where(obs_data.stations_lag == station)], '.', \
                         color=station_colors[station], label=station)
         
-    # ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise, abs_mag_sim_err + mag_noise, color='darkgray', alpha=0.2)
-    # ax0.fill_betweenx(height_km_err, abs_mag_sim_err - mag_noise * real_original['z_score'], abs_mag_sim_err + mag_noise * real_original['z_score'], color='lightgray', alpha=0.2)
-
-    # ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise, vel_kms_err + vel_noise, color='darkgray', alpha=0.2)
-    # ax2.fill_between(residual_time_pos, vel_kms_err - vel_noise * real_original['z_score'], vel_kms_err + vel_noise * real_original['z_score'], color='lightgray', alpha=0.2)
-    
-    #### avoid overlapping of the x-axis labels ####
-
-    # # After plotting, get the current ticks that matplotlib chose
-    # current_ticks = ax1.get_xticks()
-    # # Suppose you want to ensure 3 ticks, keep the two rightmost plus zero,
-    # # i.e., if 0 is not among the rightmost two, force it in.
-    # # A simple approach (though not always perfect):
-    # rightmost_two = current_ticks[1:]       # the last 2 ticks
-    # if 0 not in rightmost_two:
-    #     new_ticks = [0] + list(rightmost_two)
-    # else:
-    #     # 0 is already there, so just keep the last 3:
-    #     new_ticks = current_ticks[1:]
-    # # Now set them
-    # ax1.set_xticks(new_ticks)
-    # # If you want them labeled as-is:
-    # ax1.set_xticklabels([str(tk) for tk in new_ticks])
-
-    # # After plotting, get the current ticks that matplotlib chose
-    # current_ticks = ax5.get_xticks()
-    # # Suppose you want to ensure 3 ticks, keep the two rightmost plus zero,
-    # # i.e., if 0 is not among the rightmost two, force it in.
-    # # A simple approach (though not always perfect):
-    # rightmost_two = current_ticks[-2:]       # the last 2 ticks
-    # if 0 not in rightmost_two:
-    #     new_ticks = [0] + list(rightmost_two)
-    # else:
-    #     # 0 is already there, so just keep the last 3:
-    #     new_ticks = current_ticks[-3:]
-    # # Now set them
-    # ax5.set_xticks(new_ticks)
-    # # If you want them labeled as-is:
-    # ax5.set_xticklabels([str(tk) for tk in new_ticks])
-
-    # # Save the plot
-    # print('file saved: '+output_folder +os.sep+ file_name+'_best_fit_plot.png')
-    # fig.savefig(output_folder +os.sep+ file_name +'_best_fit_plot.png', dpi=300)
 
     # Save the plot
     print('file saved: '+output_folder +os.sep+ file_name+'_LumLag_plot.png')
@@ -1093,8 +1075,7 @@ def posterior_bands_topk_check(
     file_name='topk_check',
     n_workers=None,
     color_best='black',
-    label_best='Best Fit',
-):
+    label_best='Best Fit',):
     """
     Quick-check version: run only the best `top_k` samples (highest logl).
     Returns the same structure as the full function.
@@ -1184,8 +1165,8 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     ax_lum.set_ylabel("Height [km]")
     ax_lum.grid(True, linestyle='--', color='lightgray')
 
-    ax_lum_res.fill_betweenx(obs_data.height_lum / 1000, -obs_data.noise_lum, obs_data.noise_lum, color='darkgray', alpha=0.2)
-    ax_lum_res.fill_betweenx(obs_data.height_lum / 1000, -2*obs_data.noise_lum, 2*obs_data.noise_lum, color='lightgray', alpha=0.2)
+    ax_lum_res.fill_betweenx([np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000], -obs_data.noise_lum, obs_data.noise_lum, color='darkgray', alpha=0.2)
+    ax_lum_res.fill_betweenx([np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000], -2*obs_data.noise_lum, 2*obs_data.noise_lum, color='lightgray', alpha=0.2)
     ax_lum_res.plot([0, 0], ax_lum.get_ylim(), color='lightgray')
     ax_lum_res.set_xlabel("Res. Lum")
     ax_lum_res.grid(True, linestyle='--', color='lightgray')
@@ -1201,8 +1182,8 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     ax_mag.invert_xaxis()
     ax_mag.grid(True, linestyle='--', color='lightgray')
 
-    ax_mag_res.fill_betweenx(obs_data.height_lum / 1000, -obs_data.noise_mag, obs_data.noise_mag, color='darkgray', alpha=0.2)
-    ax_mag_res.fill_betweenx(obs_data.height_lum / 1000, -2*obs_data.noise_mag, 2*obs_data.noise_mag, color='lightgray', alpha=0.2)
+    ax_mag_res.fill_betweenx([np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000], -obs_data.noise_mag, obs_data.noise_mag, color='darkgray', alpha=0.2)
+    ax_mag_res.fill_betweenx([np.min(obs_data.height_lum)/1000,np.max(obs_data.height_lum)/1000], -2*obs_data.noise_mag, 2*obs_data.noise_mag, color='lightgray', alpha=0.2)
     ax_mag_res.plot([0, 0], ax_mag.get_ylim(), color='lightgray')
     ax_mag_res.set_xlabel("Res. Mag")
     ax_mag_res.grid(True, linestyle='--', color='lightgray')
@@ -1218,8 +1199,8 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     ax_vel.set_xlabel("Velocity [km/s]")
     ax_vel.grid(True, linestyle='--', color='lightgray')
 
-    ax_vel_res.fill_betweenx(obs_data.height_lag / 1000, -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
-    ax_vel_res.fill_betweenx(obs_data.height_lag / 1000, -2*obs_data.noise_vel/1000, 2*obs_data.noise_vel/1000, color='lightgray', alpha=0.2)
+    ax_vel_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
+    ax_vel_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -2*obs_data.noise_vel/1000, 2*obs_data.noise_vel/1000, color='lightgray', alpha=0.2)
     ax_vel_res.plot([0, 0], ax_vel.get_ylim(), color='lightgray')
     ax_vel_res.set_xlabel("Res. Vel")
     ax_vel_res.grid(True, linestyle='--', color='lightgray')
@@ -1235,8 +1216,8 @@ def plot_all_vs_height(obs_data, sim_data=None, output_folder='', file_name='', 
     ax_lag.set_xlabel("Lag [m]")
     ax_lag.grid(True, linestyle='--', color='lightgray')
 
-    ax_lag_res.fill_betweenx(obs_data.height_lag / 1000, -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
-    ax_lag_res.fill_betweenx(obs_data.height_lag / 1000, -2*obs_data.noise_lag, 2*obs_data.noise_lag, color='lightgray', alpha=0.2)
+    ax_lag_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
+    ax_lag_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -2*obs_data.noise_lag, 2*obs_data.noise_lag, color='lightgray', alpha=0.2)
     ax_lag_res.plot([0, 0], ax_lag.get_ylim(), color='lightgray')
     ax_lag_res.set_xlabel("Res. Lag")
     ax_lag_res.grid(True, linestyle='--', color='lightgray')
@@ -1619,110 +1600,6 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     print(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3")
 
 
-    if save_backup:
-        
-        # check if there is a _posterior_backup.pkl.gz file in the output_folder
-        backup_file_check = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
-        if os.path.exists(backup_file_check):
-            print(f"Loading existing backup file: {backup_file_check}")
-             # to load the backup file later
-            with gzip.open(backup_file_check, "rb") as f:
-                backup_small = pickle.load(f)
-
-            bands_lum = backup_small['bands']['lum']
-            bands_mag = backup_small['bands']['mag']
-            bands_vel = backup_small['bands']['vel']
-            bands_lag = backup_small['bands']['lag']
-
-            best_lum = backup_small['best_guess']['luminosity']
-            best_mag = backup_small['best_guess']['abs_magnitude']
-            best_vel = backup_small['best_guess']['velocity']
-            best_lag = backup_small['best_guess']['lag']
-
-            hl = np.asarray(obs_data.height_lum)
-            hv = np.asarray(obs_data.height_lag)
-
-            _plot_bands_obs_best(
-                obs_data,
-                hl, hv,
-                bands_lum, bands_mag, bands_vel, bands_lag,
-                best_lum, best_mag, best_vel, best_lag,
-                output_folder=output_folder,
-                file_name=f'{file_name}',
-                color_best='black',
-                label_best='Best Fit'
-            )
-
-        else:
-            ## TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
-            print(f"Running all the simulations to have the uncertaty regions with {cores} cores")        
-
-            # # ONLY FOR TESTING PURPOSES
-            # backup_data = posterior_bands_topk_check(
-            #     dynesty_run_results, obs_data, flags_dict, fixed_values,
-            #     top_k=10, output_folder=output_folder, file_name=f'{file_name}_top1000_check',
-            # )
-
-            backup_data = posterior_bands_vs_height_parallel(
-                dynesty_results=dynesty_run_results,
-                obs_data=obs_data,
-                flags_dict=flags_dict,
-                fixed_values=fixed_values,
-                output_folder=output_folder,
-                file_name=f'{file_name}',
-                nsamples=None,  # use all samples
-                n_workers=cores,
-            )
-
-            # save the backup_data to a json file
-            backup_small = {
-                "dynesty": {
-                    "file_name": file_name,
-                    "samples_eq": backup_data["samples_eq"].tolist(),
-                    "weights": backup_data["weights"].tolist(),
-                    "variables": variables,
-                    "flags_dict": flags_dict,
-                    "fixed_values": fixed_values,
-                    "const_backups": backup_data["const_backups"],
-                    "rho_array": backup_data["rho_array"],
-                    "rho_mass_weighted_estimate": {k: float(v) for k, v in backup_data["rho_mass_weighted_estimate"].items()}
-                },
-
-                "best_guess": {
-                    k: np.asarray(v, dtype=np.float32)
-                    for k, v in backup_data["best_guess"].items()
-                },
-
-                "bands": {
-                    k: {q: v.astype(np.float32) for q, v in backup_data["bands"][k].items()}
-                    for k in ("lum", "mag", "vel", "lag")
-                },
-            }
-
-            backup_file = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
-            with gzip.open(backup_file, "wb", compresslevel=4) as f:
-                pickle.dump(backup_small, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-            # # to load the backup file later
-            # backup_file = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
-            # with gzip.open(backup_file, "rb") as f:
-            #     backup_small = pickle.load(f)
-
-        rho_median_real, rho_lo_real, rho_hi_real = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
-        rho_total_arr = backup_small['dynesty']['rho_array']
-        _plot_distrib_weighted(
-            rho_total_arr,
-            weights=weights,
-            output_folder=output_folder,
-            file_name=file_name,
-            var_name='rho_mass_weighted',
-            label='$\\rho$ [kg/m$^3$]'
-        )
-        print(
-            f"Real mass weighted $\\rho$ : {rho_median_real:.2f} 95CI ({rho_lo_real:.2f} - {rho_hi_real:.2f}) kg/m^3"
-        )
-
-
 
     lum_eff_val = tau_median
     # fid the fixed_values that have the lum_eff
@@ -1919,6 +1796,114 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     _ = build_const(all_samples_median, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_median.json')
 
+
+    ### PLOT posterior bands vs height and save to backup ###
+
+    if save_backup:
+        
+        # check if there is a _posterior_backup.pkl.gz file in the output_folder
+        backup_file_check = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
+        if os.path.exists(backup_file_check):
+            print(f"Loading existing backup file: {backup_file_check}")
+             # to load the backup file later
+            with gzip.open(backup_file_check, "rb") as f:
+                backup_small = pickle.load(f)
+
+            bands_lum = backup_small['bands']['lum']
+            bands_mag = backup_small['bands']['mag']
+            bands_vel = backup_small['bands']['vel']
+            bands_lag = backup_small['bands']['lag']
+
+            best_lum = backup_small['best_guess']['luminosity']
+            best_mag = backup_small['best_guess']['abs_magnitude']
+            best_vel = backup_small['best_guess']['velocity']
+            best_lag = backup_small['best_guess']['lag']
+
+            hl = np.asarray(obs_data.height_lum)
+            hv = np.asarray(obs_data.height_lag)
+
+            _plot_bands_obs_best(
+                obs_data,
+                hl, hv,
+                bands_lum, bands_mag, bands_vel, bands_lag,
+                best_lum, best_mag, best_vel, best_lag,
+                output_folder=output_folder,
+                file_name=f'{file_name}',
+                color_best='black',
+                label_best='Best Fit'
+            )
+
+        else:
+            ## TAKES A LOT OF TIME IF NSAMPLES IS NONE ###
+            print(f"Running all the simulations to have the uncertaty regions with {cores} cores")        
+
+            # # ONLY FOR TESTING PURPOSES
+            # backup_data = posterior_bands_topk_check(
+            #     dynesty_run_results, obs_data, flags_dict, fixed_values,
+            #     top_k=10, output_folder=output_folder, file_name=f'{file_name}_top1000_check',
+            # )
+
+            backup_data = posterior_bands_vs_height_parallel(
+                dynesty_results=dynesty_run_results,
+                obs_data=obs_data,
+                flags_dict=flags_dict,
+                fixed_values=fixed_values,
+                output_folder=output_folder,
+                file_name=f'{file_name}',
+                nsamples=None,  # use all samples
+                n_workers=cores,
+            )
+
+            # save the backup_data to a json file
+            backup_small = {
+                "dynesty": {
+                    "file_name": file_name,
+                    "samples_eq": backup_data["samples_eq"].tolist(),
+                    "weights": backup_data["weights"].tolist(),
+                    "variables": variables,
+                    "flags_dict": flags_dict,
+                    "fixed_values": fixed_values,
+                    "const_backups": backup_data["const_backups"],
+                    "rho_array": backup_data["rho_array"],
+                    "rho_mass_weighted_estimate": {k: float(v) for k, v in backup_data["rho_mass_weighted_estimate"].items()}
+                },
+
+                "best_guess": {
+                    k: np.asarray(v, dtype=np.float32)
+                    for k, v in backup_data["best_guess"].items()
+                },
+
+                "bands": {
+                    k: {q: v.astype(np.float32) for q, v in backup_data["bands"][k].items()}
+                    for k in ("lum", "mag", "vel", "lag")
+                },
+            }
+
+            backup_file = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
+            with gzip.open(backup_file, "wb", compresslevel=4) as f:
+                pickle.dump(backup_small, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+            # # to load the backup file later
+            # backup_file = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
+            # with gzip.open(backup_file, "rb") as f:
+            #     backup_small = pickle.load(f)
+
+        rho_median_real, rho_lo_real, rho_hi_real = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
+        rho_total_arr = backup_small['dynesty']['rho_array']
+        _plot_distrib_weighted(
+            rho_total_arr,
+            weights=weights,
+            output_folder=output_folder,
+            file_name=file_name,
+            var_name='rho_mass_weighted',
+            label='$\\rho$ [kg/m$^3$]'
+        )
+        print(
+            f"Real mass weighted $\\rho$ : {rho_median_real:.2f} 95CI ({rho_lo_real:.2f} - {rho_hi_real:.2f}) kg/m^3"
+        )
+
+
+    ### GENERATE LATEX TABLE ###
 
     truth_values_plot = {}
     # if 'dynesty_run_results has const
@@ -3204,6 +3189,14 @@ class observation_data:
         self.lum_files = lum_files
         self.lag_files = lag_files
 
+        # sort base on the lag_data['height'] from the biggest to the smallest
+        sorted_indices_lag = np.argsort(lag_data['height'])[::-1]
+        lag_data = {key: lag_data[key][sorted_indices_lag] for key in lag_data.keys()}
+
+        # sort base on the lum_data['height'] from the biggest to the smallest
+        sorted_indices_lum = np.argsort(lum_data['height'])[::-1]
+        lum_data = {key: lum_data[key][sorted_indices_lum] for key in lum_data.keys()}
+
         # put all the lag_data in the object
         self.velocities = lag_data['velocities']
         self.lag = lag_data['lag']
@@ -4065,8 +4058,8 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             finder.input_folder_file,
             finder.priors,
             finder.output_folders,
-            finder.report_txt
-        )):
+            finder.report_txt)):
+
             dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
             obs_data = finder.observation_instance(base_name)
             obs_data.file_name = pickle_file # update teh file name in the observation data object
@@ -4109,6 +4102,10 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
 
             # check if there are json files in the output folder that could be plotted
             json_files = [f for f in os.listdir(out_folder) if f.endswith('.json')]
+            # delete any json file that start with obs_data_
+            json_files = [f for f in json_files if not f.startswith('obs_data_')]
+            # delete any json file that ends with _with_noise.json
+            json_files = [f for f in json_files if not f.endswith('_with_noise.json')]
             for const_json_name in json_files:
                 print(f"Plotting simulation from json file: {const_json_name}")
                 # create the full path to the json file
@@ -4122,11 +4119,21 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
                     simulation_manual_MetSim_object = SimulationResults(const_manual, frag_main, results_list, wake_results)
                     # delete the .json from the name:
                     json_name = const_json_name[:-5]
+                    # reate a folder to save the plots from the json files
+                    json_plots_folder = os.path.join(out_folder, "json_plots")
+                    if not os.path.exists(json_plots_folder):
+                        os.makedirs(json_plots_folder)
                     # Plot the data with residuals and the best fit
-                    # plot_data_with_residuals_and_real(obs_data, simulation_manual_MetSim_object, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit", color_sim='darkgreen', label_sim='Median')
-                    plot_all_vs_height(obs_data, simulation_manual_MetSim_object, out_folder, json_name, color_sim='slategray', label_sim='Manual')
+                    plot_data_with_residuals_and_real(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim='Manual')
+                    plot_all_vs_height(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim='Manual')
                 except Exception as e:
                     print(f"Error encountered loading json file {const_json_file}: {e}")
+
+
+            obs_data_json_file = os.path.join(out_folder, f"obs_data_{base_name}.json")
+            with open(obs_data_json_file, "w") as f:
+                json.dump(vars(obs_data), f, indent=4, default=json_default)
+
 
             if not cml_args.only_plot: 
 

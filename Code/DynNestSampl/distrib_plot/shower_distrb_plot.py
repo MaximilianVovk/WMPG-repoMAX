@@ -3077,12 +3077,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     hist = norm_kde(hist, 10.0)
     bin_centers = 0.5 * (edges[:-1] + edges[1:])
 
-    ax_dist.fill_between(bin_centers, hist, color='blue', alpha=0.6)
+    ax_dist.fill_between(bin_centers, hist, color='olive', alpha=0.6)
 
     # Percentile lines
-    ax_dist.axvline(tau_corrected_median, color='blue', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(tau_corrected_lo, color='blue', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(tau_corrected_hi, color='blue', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(tau_corrected_median, color='olive', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(tau_corrected_lo, color='olive', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(tau_corrected_hi, color='olive', linestyle='--', linewidth=1.5)
 
     # Title and formatting
     plus = tau_corrected_hi - tau_corrected_median

@@ -99,10 +99,6 @@ def json_default(o):
     if isinstance(o, (np.integer, np.floating, np.bool_)):
         return o.item()
 
-    # datetimes -> ISO strings
-    if isinstance(o, (dt.datetime, dt.date)):
-        return o.isoformat()
-
     # sets -> lists
     if isinstance(o, set):
         return list(o)
@@ -693,7 +689,7 @@ def _maybe_integrate_luminosity(sim, obs_data):
         # be silent and keep raw arrays if integration fails for any reason
         pass
 
-def _plot_distrib_weighted(rho_mass_weighted_list, weights, output_folder="", file_name="name",var_name="var", label="var"):
+def _plot_distrib_weighted(rho_mass_weighted_list, weights, output_folder="", file_name="name",var_name="var", label="var", colors='black'):
     print("Creating distribution plot...")
     var_corrected_lo, var_corrected_median, var_corrected_hi = _quantile(rho_mass_weighted_list, [0.025, 0.5, 0.975], weights=weights)
     # Create figure tau
@@ -707,12 +703,12 @@ def _plot_distrib_weighted(rho_mass_weighted_list, weights, output_folder="", fi
     hist = norm_kde(hist, 10.0)
     bin_centers = 0.5 * (edges[:-1] + edges[1:])
 
-    ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
+    ax_dist.fill_between(bin_centers, hist, color=colors, alpha=0.6)
 
     # Percentile lines
-    ax_dist.axvline(var_corrected_median, color='black', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(var_corrected_lo, color='black', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(var_corrected_hi, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(var_corrected_median, color=colors, linestyle='--', linewidth=1.5)
+    ax_dist.axvline(var_corrected_lo, color=colors, linestyle='--', linewidth=1.5)
+    ax_dist.axvline(var_corrected_hi, color=colors, linestyle='--', linewidth=1.5)
 
     # Title and formatting
     plus = var_corrected_hi - var_corrected_median
@@ -1566,7 +1562,15 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     i_m_init = variables.index('m_init')
     tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples_equal[:, i_m_init]*obs_data.velocities[0]**2) * 100
     # calculate the weights calculate the weighted median and the 95 CI for tau
-    tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=weights)
+    # tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=weights)
+    tau_median, tau_low95, tau_high95 = _plot_distrib_weighted(
+        tau,
+        weights=weights,
+        output_folder=output_folder,
+        file_name=file_name,
+        var_name='tau',
+        label='$\\tau$ [%]',
+        colors='olive')
     print(f"Tau: {tau_median:.4f} 95CI ({tau_low95:.4f} - {tau_high95:.4f}) %")
 
     # find erosion change height
@@ -1594,12 +1598,19 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         output_folder=output_folder,
         file_name=file_name,
         var_name='rho_mass_weighted',
-        label='$\\rho$ [kg/m$^3$]'
-    )
+        label='$\\rho$ [kg/m$^3$]')
     # rho_low95_approx, rho_median_approx, rho_high95_approx = _quantile(rho_total_arr, [0.025, 0.5, 0.975], weights=weights)
     print(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3")
 
+    # inerpoate the abs_magnitude_arr to the leading_frag_height_arr
+    sim_mag = np.interp(obs_data.height_lum, 
+                                    np.flip(best_guess_obj_plot.leading_frag_height_arr), 
+                                    np.flip(best_guess_obj_plot.abs_magnitude))
+    
+    # make the difference between the no_noise_mag and the obs_data.abs_magnitude
+    sim_diff_mag = sim_mag - obs_data.absolute_magnitudes
 
+    obs_data.noise_mag = np.std(sim_diff_mag)
 
     lum_eff_val = tau_median
     # fid the fixed_values that have the lum_eff
@@ -2031,6 +2042,10 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         f.write("eff(%) i.e. (niter/ncall)*100 eff. of the logL call \n")
         f.write("logz i.e. final estimated evidence\n")
         f.write("H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need for a lot of live points\n")
+        f.write("\n{:<8}{:>12}{:>12}{:>12}{:>12}\n".format(
+            "Noise:", "Abs.Mag [-]", "Lum [W]", "Vel [km/s]", "Lag [m]"))
+        f.write("{:<8}{:>12.2f}{:>12.2f}{:>12.2f}{:>12.2f}\n".format(
+            "Value:", obs_data.noise_mag, obs_data.noise_lum, obs_data.noise_vel/1000, obs_data.noise_lag))
         f.write(f"\nTau: {tau_median:.2f} 95CI ({tau_low95:.2f} - {tau_high95:.2f}) %\n")
         f.write(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3\n")
         if save_backup:

@@ -2042,9 +2042,9 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
         f.write("eff(%) i.e. (niter/ncall)*100 eff. of the logL call \n")
         f.write("logz i.e. final estimated evidence\n")
         f.write("H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need for a lot of live points\n")
-        f.write("\n{:<8}{:>12}{:>12}{:>12}{:>12}\n".format(
+        f.write("\n{:<8}|{:>12}|{:>12}|{:>12}|{:>12}|\n".format(
             "Noise:", "Abs.Mag [-]", "Lum [W]", "Vel [km/s]", "Lag [m]"))
-        f.write("{:<8}{:>12.2f}{:>12.2f}{:>12.2f}{:>12.2f}\n".format(
+        f.write("{:<8}|{:>12.2f}|{:>12.2f}|{:>12.2f}|{:>12.2f}|\n".format(
             "Value:", obs_data.noise_mag, obs_data.noise_lum, obs_data.noise_vel/1000, obs_data.noise_lag))
         f.write(f"\nTau: {tau_median:.2f} 95CI ({tau_low95:.2f} - {tau_high95:.2f}) %\n")
         f.write(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3\n")

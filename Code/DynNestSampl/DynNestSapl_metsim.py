@@ -123,9 +123,215 @@ def meteor_abs_magnitude_to_apparent(abs_mag, distance):
         apparent_mag = math.log((distance/100000)**2, 100)*5+abs_mag
     return apparent_mag
 
+
+def _prep_unique_sorted(x, y):
+    o = np.argsort(x)
+    x = np.asarray(x)[o]
+    y = np.asarray(y)[o]
+    _, ui = np.unique(x, return_index=True)
+    return x[ui], y[ui]
+
+def build_global_time_axis(
+    data,
+    height_key="height",
+    time_key="time",
+    station_key="flag_station",
+    length_key="length",     # optional in data
+    lag_key="lag",           # optional in data
+    v_init=None,             # if given, recompute lag = length - v_init*time
+    min_overlap_pts=8,
+    offset_tol=2e-3,):
+    """
+    Align station clocks to the station that starts at the highest altitude.
+    If length exists, also align length and re-zero it at the same global start.
+    If v_init is provided and length exists, recompute lag from (length,time).
+    Returns (out, did_align).
+    """
+    out = {k: np.asarray(v) for k, v in data.items()}
+    h = out[height_key].astype(float)
+    t = out[time_key].astype(float)
+    s = out[station_key]
+
+    stations = np.unique(s)
+    if stations.size <= 1:
+        # sort by time + set t0 at first finite
+        idx = np.argsort(t)
+        out = {k: np.asarray(v)[idx] for k, v in out.items()}
+        # finite = np.isfinite(out[time_key])
+        # if np.any(finite):
+        #     out[time_key] = out[time_key] - out[time_key][np.flatnonzero(finite)[0]]
+        # # also re-zero length/lag at same first point if present
+        # if length_key in out:
+        #     out[length_key] = out[length_key] - out[length_key][np.flatnonzero(finite)[0]]
+        # if lag_key in out:
+        #     out[lag_key] = out[lag_key] - out[lag_key][np.flatnonzero(finite)[0]]
+        return out, False
+
+    # Reference station = highest max height
+    maxh = {st: np.nanmax(h[s == st]) for st in stations}
+    ref = max(maxh, key=maxh.get)
+
+    # ref t(h)
+    href, tref = _prep_unique_sorted(h[s == ref], t[s == ref])
+    href_min, href_max = np.nanmin(href), np.nanmax(href)
+    def ref_of_h(hq): return np.interp(hq, href, tref)
+
+    # need alignment?
+    need_align = False
+    for st in stations:
+        if st == ref:
+            continue
+        hs, ts = _prep_unique_sorted(h[s == st], t[s == st])
+        h_lo = max(href_min, np.nanmin(hs))
+        h_hi = min(href_max, np.nanmax(hs))
+        if h_hi <= h_lo:
+            continue
+        h_match = hs[(hs >= h_lo) & (hs <= h_hi)]
+        if h_match.size < min_overlap_pts:
+            continue
+        dt = ref_of_h(h_match) - np.interp(h_match, hs, ts)
+        if np.abs(np.nanmedian(dt)) > offset_tol:
+            need_align = True
+            break
+
+    # Align time (and optionally length/lag)
+    if need_align:
+        t_new = t.copy()
+
+        # If we have length, we will align it too
+        has_length = (length_key in out)
+        L_new = out[length_key].astype(float).copy() if has_length else None
+
+        for st in stations:
+            if st == ref:
+                continue
+            ms = (s == st)
+            hs, ts = _prep_unique_sorted(h[ms], t[ms])
+
+            h_lo = max(href_min, np.nanmin(hs))
+            h_hi = min(href_max, np.nanmax(hs))
+            if h_hi <= h_lo:
+                continue
+
+            h_match = hs[(hs >= h_lo) & (hs <= h_hi)]
+            if h_match.size < min_overlap_pts:
+                h_match = np.array([h_lo, h_hi], dtype=float)
+
+            # time offset
+            offset_t = np.nanmedian(ref_of_h(h_match) - np.interp(h_match, hs, ts))
+            t_new[ms] = t[ms] + offset_t
+
+            # length offset (match length(h) on overlap)
+            if has_length:
+                href2, Lref = _prep_unique_sorted(h[s == ref], out[length_key][s == ref])
+                def Lref_of_h(hq): return np.interp(hq, href2, Lref)
+
+                hs2, Ls = _prep_unique_sorted(h[ms], out[length_key][ms])
+                offset_L = np.nanmedian(Lref_of_h(h_match) - np.interp(h_match, hs2, Ls))
+                L_new[ms] = out[length_key][ms] + offset_L
+
+        out[time_key] = t_new
+        if has_length:
+            out[length_key] = L_new
+
+        # Global start = reference station top point (highest height)
+        ref_mask = (s == ref)
+        idx_ref_top = np.nanargmax(h[ref_mask])
+
+        t0 = out[time_key][ref_mask][idx_ref_top]
+        out[time_key] = out[time_key] - t0
+
+        if has_length:
+            L0 = out[length_key][ref_mask][idx_ref_top]
+            out[length_key] = out[length_key] - L0
+
+        # Recompute lag consistently if possible
+        if has_length and (v_init is not None):
+            out[lag_key] = out[length_key] - (float(v_init) * out[time_key])
+        elif lag_key in out:
+            # at least re-zero lag at the same global start
+            lag0 = out[lag_key][ref_mask][idx_ref_top]
+            out[lag_key] = out[lag_key] - lag0
+
+    # Finally sort by time (required for integration)
+    idx = np.argsort(out[time_key])
+    out = {k: np.asarray(v)[idx] for k, v in out.items()}
+
+    # Drop duplicate times
+    tt = out[time_key]
+    _, keep = np.unique(tt, return_index=True)
+    keep = np.sort(keep)
+    out = {k: np.asarray(v)[keep] for k, v in out.items()}
+
+    return out, need_align
+
+
+
 ###############################################################################
 # Function: plotting function
 ###############################################################################
+
+def plot_json_data_vs_obs(obs_data,out_folder,best_noise_lum=0,best_noise_lag=0):
+    ''' Plot data from json files in the output folder 
+    the real LogL is computed with the best noise levels if provided
+    Initially is defined as guess'''
+    # check if there are json files in the output folder that could be plotted
+    json_files = [f for f in os.listdir(out_folder) if f.endswith('.json')]
+    # delete any json file that start with obs_data_
+    json_files = [f for f in json_files if not f.startswith('obs_data_')]
+    # delete any json file that ends with _with_noise.json
+    json_files = [f for f in json_files if not f.endswith('_with_noise.json')]
+    for const_json_name in json_files:
+        print(f"Plotting simulation from json file: {const_json_name}")
+        # create the full path to the json file
+        const_json_file = os.path.join(out_folder, const_json_name)
+        try:
+            # Load the constants from the JSON files
+            const_manual, _ = loadConstants(const_json_file)
+            const_manual.dens_co = np.array(const_manual.dens_co)
+            # # Run the simulation
+            # frag_main, results_list, wake_results = runSimulation(const_manual, compute_wake=False)
+            # simulation_manual_MetSim_object = SimulationResults(const_manual, frag_main, results_list, wake_results)
+            # delete the .json from the name:
+            json_name = const_json_name[:-5]
+
+            # create a fake guess_real dictionary to run log_likelihood_dynesty
+            fixed_values_manual = {}   
+            for key in const_manual.__dict__.keys():
+                # put all the keys in fixed_values_manual
+                fixed_values_manual[key] = const_manual.__dict__[key]
+            flags_dict_manual = {"v_init": ["norm"],
+                                    "zenith_angle": ["norm"]}
+            guess_manual = [const_manual.v_init, const_manual.zenith_angle]
+            # reate a folder to save the plots from the json files
+            json_plots_folder = os.path.join(out_folder, "json_plots")
+            if not os.path.exists(json_plots_folder):
+                os.makedirs(json_plots_folder)
+            if best_noise_lum!=0 and best_noise_lag!=0:
+                guess_manual.extend([best_noise_lum, best_noise_lag])
+                flags_dict_manual["noise_lum"] = ["invgamma"]
+                flags_dict_manual["noise_lag"] = ["invgamma"]
+            
+            # compute log likelihood between obs_data and simulation_manual_MetSim_object
+            manual_logL = log_likelihood_dynesty(guess_manual, obs_data, flags_dict_manual, fixed_values_manual, timeout=20)
+            # run the simulation with the same parameters and same proecess as in run_simulation
+            var_names_manual = list(flags_dict_manual.keys())
+            simulation_manual_MetSim_object = run_simulation(guess_manual, obs_data, var_names_manual, fixed_values_manual)
+            if best_noise_lum!=0 and best_noise_lag!=0:
+                print(f"{json_name} real LogL = {manual_logL:.1f}")
+                # Plot the data with residuals and the best fit
+                plot_data_with_residuals_and_real(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL={manual_logL:.1f}')
+                plot_all_vs_height(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL={manual_logL:.1f}')
+
+            else:
+                print(f"{json_name} intial guess LogL ~ {manual_logL:.1f}")
+                # Plot the data with residuals and the best fit
+                plot_data_with_residuals_and_real(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL$\\approx${manual_logL:.1f}')
+                plot_all_vs_height(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL$\\approx${manual_logL:.1f}')
+
+        except Exception as e:
+            print(f"Error encountered loading json file {const_json_file}: {e}")
+
 
 # Plotting function
 def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',file_name='', color_sim='black', label_sim='Best Fit'):
@@ -511,8 +717,6 @@ def plot_data_with_residuals_and_real(obs_data, sim_data=None, output_folder='',
 
     # Display the plot
     plt.close(fig)
-
-
 
 
 # ---- globals for worker processes ----
@@ -1448,8 +1652,6 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     ndim = len(variables)
     sim_num = np.argmax(dynesty_run_results.logl)
-    # print the Best Fit index and the last index
-    print('Best Fit index:', sim_num, 'Last index:', len(dynesty_run_results.logl)-1)
     # print('Best Fit index:', sim_num)
     # copy the Best Fit values
     best_guess = copy.deepcopy(dynesty_run_results.samples[sim_num])
@@ -1518,7 +1720,24 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     # copy the dynesty_run_results results to a variable avoid overwriting the original one
     dynesty_run_results_new = copy.deepcopy(dynesty_run_results)
     best_guess_logL = log_likelihood_dynesty(dynesty_run_results_new.samples[sim_num], obs_data, flags_dict, fixed_values, timeout=20)
-    print('logL:', best_guess_logL)
+    print('logL:', best_guess_logL, ' dynesty logL:', dynesty_run_results.logl[sim_num])
+    # check if dynesty_run_results_new.samples[sim_num] or fixed_values have noise_lag or noise_lum
+    if 'noise_lag' in variables:
+        best_noise_lag = dynesty_run_results_new.samples[sim_num][variables.index('noise_lag')]
+    elif 'noise_lag' in fixed_values.keys():
+        best_noise_lag = fixed_values['noise_lag']
+    else:
+        print('No noise_lag found in variables or fixed_values')
+    if 'noise_lum' in variables:
+        best_noise_lum = dynesty_run_results_new.samples[sim_num][variables.index('noise_lum')]
+    elif 'noise_lum' in fixed_values.keys():
+        best_noise_lum = fixed_values['noise_lum']
+    else:
+        print('No noise_lum found in variables or fixed_values')
+    
+    print('Correct the LogL with the best noise values for the json files (if any):')
+    plot_json_data_vs_obs(obs_data,output_folder,best_noise_lum=best_noise_lum,best_noise_lag=best_noise_lag)
+
     real_logL = None
     diff_logL = None
     if hasattr(obs_data, 'const'):
@@ -3207,6 +3426,16 @@ class observation_data:
         self.lum_files = lum_files
         self.lag_files = lag_files
 
+        v_init_list = []
+        for curr_lag_file in lag_files:
+            # take the v_init from the trajectory file
+            traj=loadPickle(*os.path.split(curr_lag_file))
+            # get the trajectory
+            # v_avg = traj.v_avg
+            v_init_list.append(traj.orbit.v_init+100)
+        # do the mean of the v_init_list
+        self.v_init = np.mean(v_init_list)
+
         # sort base on the lag_data['height'] from the biggest to the smallest
         sorted_indices_lag = np.argsort(lag_data['height'])[::-1]
         lag_data = {key: lag_data[key][sorted_indices_lag] for key in lag_data.keys()}
@@ -3214,6 +3443,31 @@ class observation_data:
         # sort base on the lum_data['height'] from the biggest to the smallest
         sorted_indices_lum = np.argsort(lum_data['height'])[::-1]
         lum_data = {key: lum_data[key][sorted_indices_lum] for key in lum_data.keys()}
+
+        if self.fps_lum > 80:
+            offset_tol_use=0.2*(1/self.fps_lum)
+        else:
+            offset_tol_use=0.2*(1/80.0)
+        lum_data, lum_aligned = build_global_time_axis(lum_data,offset_tol=offset_tol_use)
+        if lum_aligned:
+            print('Luminosity data aligned to global time axis.')
+
+        if self.fps_lag > 80:
+            offset_tol_use=0.2*(1/self.fps_lag)
+        else:
+            offset_tol_use=0.2*(1/80.0)
+        lag_data, lag_aligned = build_global_time_axis(
+            lag_data,
+            offset_tol=offset_tol_use,
+            v_init=self.v_init,          # important: recompute lag from length & time
+            length_key="length",
+            lag_key="lag",)
+        if lag_aligned:
+            print('Lag data aligned to global time axis.')
+
+        # # Now these are safe for your integration windows:
+        # assert np.all(np.diff(lum_data["time"]) >= 0)
+        # assert np.all(np.diff(lag_data["time"]) >= 0)
 
         # put all the lag_data in the object
         self.velocities = lag_data['velocities']
@@ -3250,16 +3504,6 @@ class observation_data:
         self.length = self.length-self.length[0]
         self.time_lag = self.time_lag-np.min(self.time_lag)
         self.time_lum = self.time_lum-np.min(self.time_lum)
-
-        v_init_list = []
-        for curr_lag_file in lag_files:
-            # take the v_init from the trajectory file
-            traj=loadPickle(*os.path.split(curr_lag_file))
-            # get the trajectory
-            # v_avg = traj.v_avg
-            v_init_list.append(traj.orbit.v_init+100)
-        # do the mean of the v_init_list
-        self.v_init = np.mean(v_init_list)
 
         # usually noise_lum = 2.5
         if np.isnan(self.noise_lum):
@@ -4118,35 +4362,8 @@ def setup_folder_and_run_dynesty(input_dir, output_dir='', prior='', resume=True
             if save_backup:
                 print("NOTE: Saving backup of dynesty files restuls.")
 
-            # check if there are json files in the output folder that could be plotted
-            json_files = [f for f in os.listdir(out_folder) if f.endswith('.json')]
-            # delete any json file that start with obs_data_
-            json_files = [f for f in json_files if not f.startswith('obs_data_')]
-            # delete any json file that ends with _with_noise.json
-            json_files = [f for f in json_files if not f.endswith('_with_noise.json')]
-            for const_json_name in json_files:
-                print(f"Plotting simulation from json file: {const_json_name}")
-                # create the full path to the json file
-                const_json_file = os.path.join(out_folder, const_json_name)
-                try:
-                    # Load the constants from the JSON files
-                    const_manual, _ = loadConstants(const_json_file)
-                    const_manual.dens_co = np.array(const_manual.dens_co)
-                    # Run the simulation
-                    frag_main, results_list, wake_results = runSimulation(const_manual, compute_wake=False)
-                    simulation_manual_MetSim_object = SimulationResults(const_manual, frag_main, results_list, wake_results)
-                    # delete the .json from the name:
-                    json_name = const_json_name[:-5]
-                    # reate a folder to save the plots from the json files
-                    json_plots_folder = os.path.join(out_folder, "json_plots")
-                    if not os.path.exists(json_plots_folder):
-                        os.makedirs(json_plots_folder)
-                    # Plot the data with residuals and the best fit
-                    plot_data_with_residuals_and_real(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim='Manual')
-                    plot_all_vs_height(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim='Manual')
-                except Exception as e:
-                    print(f"Error encountered loading json file {const_json_file}: {e}")
-
+            # Plot obs data vs json file if present
+            plot_json_data_vs_obs(obs_data, out_folder)
 
             obs_data_json_file = os.path.join(out_folder, f"obs_data_{base_name}.json")
             with open(obs_data_json_file, "w") as f:
@@ -5214,8 +5431,7 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
         return -np.inf
 
     # all simulated time is the time_arr subtract the first time of the simulation
-    all_simulated_time = simulation_results.time_arr-np.min(simulated_time)
-
+    all_simulated_time = simulation_results.time_arr- simulated_time[0]#
     # find the integral of the luminosity in time in between FPS but not valid for CAMO narrowfield cameras as there is no smearing becuse it follows the meteor
     if (1/obs_metsim_obj.fps_lum > simulation_results.const.dt): # and (not any('1T' in station for station in obs_metsim_obj.stations_lum) or not any('2T' in station for station in obs_metsim_obj.stations_lum)): # FPS is lower than the simulation time step need to integrate the luminosity
         simulated_lc_intensity, _ = luminosity_integration(all_simulated_time,obs_metsim_obj.time_lum,simulation_results.luminosity_arr,simulation_results.const.dt,obs_metsim_obj.fps_lum,obs_metsim_obj.P_0m)
@@ -5242,10 +5458,32 @@ def log_likelihood_dynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeo
     if np.sum(~np.isnan(lag_sim)) != np.sum(~np.isnan(obs_metsim_obj.lag)):
         return -np.inf
 
+    # # create a plot with the obs_metsim_obj.luminosity and simulated_lc_intensity
+    # plt.figure(figsize=(12,5))
+    # plt.subplot(1,2,1)
+    # plt.title("Luminosity")
+    # plt.plot(obs_metsim_obj.height_lum, obs_metsim_obj.luminosity, 'o', label='Observed', markersize=4)
+    # plt.plot(obs_metsim_obj.height_lum, simulated_lc_intensity, '-', label='Interpolated')
+    # plt.plot(obs_metsim_obj.height_lum, np.interp(obs_metsim_obj.height_lum,np.flip(simulation_results.leading_frag_height_arr),np.flip(simulation_results.luminosity_arr)), 'r--', label='Not Integrated', markersize=4)
+    # plt.xlabel("Height (m)")
+    # plt.ylabel("Luminosity (J/s)")
+    # plt.legend()
+    # plt.subplot(1,2,2)
+    # plt.title("Lag")
+    # plt.plot(obs_metsim_obj.height_lag, obs_metsim_obj.lag, 'o', label='Observed', markersize=4)
+    # plt.plot(obs_metsim_obj.height_lag, lag_sim, '-', label='Interpolated')
+    # plt.xlabel("Height (m)")
+    # plt.ylabel("Lag (m)")
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
+
     ### Log Likelihood ###
 
     log_likelihood_lum = np.nansum(-0.5 * np.log(2*np.pi*obs_metsim_obj.noise_lum**2) - 0.5 / (obs_metsim_obj.noise_lum**2) * (obs_metsim_obj.luminosity - simulated_lc_intensity) ** 2)
+    # print("log_likelihood_lum:", log_likelihood_lum)
     log_likelihood_lag = np.nansum(-0.5 * np.log(2*np.pi*obs_metsim_obj.noise_lag**2) - 0.5 / (obs_metsim_obj.noise_lag**2) * (obs_metsim_obj.lag - lag_sim) ** 2)
+    # print("log_likelihood_lag:", log_likelihood_lag)
 
     log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
 

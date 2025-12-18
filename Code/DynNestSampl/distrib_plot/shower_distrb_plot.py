@@ -148,6 +148,63 @@ def iron_percent(v_km_s):
     z = np.maximum(np.asarray(v_km_s) - v0, 0.0)
     return A * (z**(k-1.0)) * np.exp(- (z/theta)**m)
 
+def luminous_efficiency_tauI_Hill2005(v_kms: float) -> float:
+    """
+    Luminous efficiency τ_I(v) from Hill et al. (2005):
+    - ζ(v) piecewise from Eqs. (11)-(14)
+    - τ_I from Eq. (10) using epsilon/mu = 7.668e6 J/kg
+
+    Input:
+        v_kms : scalar speed in km/s
+
+    Returns:
+        tau_I : luminous efficiency (dimensionless, visual band)
+    """
+    v = float(v_kms)
+    if v < 0:
+        raise ValueError("Velocity must be non-negative (km/s).")
+
+    # ---- ζ(v) using v in km/s (coefficients converted where needed) ----
+    if v <= 20.0:
+        # Eq. (11) originally written with v in m/s; converted to km/s form
+        zeta = (
+            -0.0021887 * v**2
+            + 0.00042903 * v**3
+            - 1.2447e-05 * v**4
+        )
+
+    elif v <= 60.0:
+        # Eq. (12) as printed
+        zeta = 0.01333 * v**1.25
+
+    elif v <= 100.0:
+        # Eq. (13) originally written with v in m/s; converted to km/s form
+        zeta = (
+            -12.835
+            + 0.67672 * v
+            - 0.01163076 * v**2
+            + 9.191681e-05 * v**3
+            - 2.7465805e-07 * v**4
+        )
+
+    else:
+        # Eq. (14) originally written with v in m/s; converted to km/s form
+        zeta = 1.615 + 0.013725 * v
+
+    # Clamp: paper notes ζ→0 around 6.2 km/s; no negative light production
+    if zeta < 0.0:
+        zeta = 0.0
+
+    # ---- τ_I from Eq. (10): use v in m/s here ----
+    eps_over_mu = 7.668e6  # J/kg (mean value used in the paper)
+    v_mps = v * 1000.0
+
+    if v_mps == 0.0:
+        return 0.0
+
+    tau_I = 2.0 * eps_over_mu * zeta / (v_mps**2)
+    return tau_I * 100.0  # convert to percent
+
 
 def _normalize_code_to_dt(code: str) -> datetime:
     """Return a datetime from a code like 'YYYYMMDD_hhmmss' or 'YYYYMMDDhhmm', 
@@ -2765,128 +2822,137 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         # Meteors - Kikwaya et al. (2009) - Sporadic meteoroids
 
-        # (code, mass_kg, rho_kgm3) 
+        # (code, mass_kg, rho_kgm3, Vinf_kms)
         rows = [
             # 2006
-            ("20060430_084301", 7.10e-6, 1450.0),
-            ("20060430_103000", 6.15e-6,  950.0),
-            ("20060430_104845", 6.85e-6,  690.0),
-            ("20060502_100335", 6.75e-6,  780.0),
-            ("20060503_091349", 7.65e-6,  970.0),
-            ("20060504_093103", 7.95e-6, 3550.0),
-            ("20060505_102944", 1.95e-5, 4550.0),
+            ("20060430_084301", 7.10e-6, 1450.0, 36.10),
+            ("20060430_103000", 6.15e-6,  950.0, 65.20),
+            ("20060430_104845", 6.85e-6,  690.0, 67.00),
+            ("20060502_100335", 6.75e-6,  780.0, 63.50),
+            ("20060503_091349", 7.65e-6,  970.0, 61.30),
+            ("20060504_093103", 7.95e-6, 3550.0, 41.20),
+            ("20060505_102944", 1.95e-5, 4550.0, 20.60),
 
             # 2007
-            ("20070420_082356", 4.05e-6,  630.0),
-            ("20070422_061849", 2.20e-6,  730.0),
-            ("20070519_040843", 6.15e-6,  975.0),
-            ("20070519_075753", 2.80e-5, 1240.0),
+            ("20070420_082356", 4.05e-6,  630.0, 60.80),
+            ("20070422_061849", 2.20e-6,  730.0, 65.50),
+            ("20070519_040843", 6.15e-6,  975.0, 54.80),
+            ("20070519_075753", 2.80e-5, 1240.0, 69.10),
 
-            ("20070519_082713", 6.45e-6,  830.0),
-            ("20070812_062117", 2.10e-6,  710.0),
-            ("20070812_083450", 2.85e-6,  920.0),
-            ("20070813_044452", 4.35e-6,  420.0),
+            ("20070519_082713", 6.45e-6,  830.0, 66.90),
+            ("20070812_062117", 2.10e-6,  710.0, 60.10),
+            ("20070812_083450", 2.85e-6,  920.0, 60.10),
+            ("20070813_044452", 4.35e-6,  420.0, 59.90),
 
-            ("20070813_065047", 4.10e-6,  470.0),
-            ("20070813_065828", 1.00e-5, 3150.0),
-            ("20070813_073054", 2.15e-6,  380.0),
-            ("20070813_075355", 5.20e-6,  670.0),
+            ("20070813_065047", 4.10e-6,  470.0, 59.60),
+            ("20070813_065828", 1.00e-5, 3150.0, 38.80),
+            ("20070813_073054", 2.15e-6,  380.0, 59.60),
+            ("20070813_075355", 5.20e-6,  670.0, 59.10),
 
-            ("20070813_081229", 1.90e-5, 1550.0),
-            ("20070813_084353", 1.40e-6, 1510.0),
-            ("20070813_084901", 3.55e-6,  360.0),
-            ("20070813_085448", 2.40e-6,  590.0),
+            ("20070813_081229", 1.90e-5, 1550.0, 63.10),
+            ("20070813_084353", 1.40e-6, 1510.0, 55.60),
+            ("20070813_084901", 3.55e-6,  360.0, 59.90),
+            ("20070813_085448", 2.40e-6,  590.0, 59.10),
 
-            ("20070813_085457", 5.80e-6,  910.0),
-            ("20070813_085548", 2.30e-6,  640.0),
+            ("20070813_085457", 5.80e-6,  910.0, 59.90),
+            ("20070813_085548", 2.30e-6,  640.0, 63.60),
 
             # 2008-09-10
-            ("20080910_052352", 1.45e-5, 3500.0),
-            ("20080910_053428", 1.95e-6, 4100.0),
-            ("20080910_064102", 5.20e-6, 3550.0),
-            ("20080910_075255", 3.75e-6,  990.0),
-            ("20080910_075454", 3.40e-6,  730.0),
-            ("20080910_091403", 4.15e-6,  820.0),
+            ("20080910_052352", 1.45e-5, 3500.0, 40.70),
+            ("20080910_053428", 1.95e-6, 4100.0, 37.60),
+            ("20080910_064102", 5.20e-6, 3550.0, 28.20),
+            ("20080910_075255", 3.75e-6,  990.0, 62.40),
+            ("20080910_075454", 3.40e-6,  730.0, 68.80),
+            ("20080910_091403", 4.15e-6,  820.0, 66.30),
 
             # 2008-09-11
-            ("20080911_060638", 7.40e-6, 1095.0),
-            ("20080911_065211", 5.10e-7,  945.0),
-            ("20080911_071428", 1.10e-5, 4150.0),
+            ("20080911_060638", 7.40e-6, 1095.0, 68.20),
+            ("20080911_065211", 5.10e-7,  945.0, 62.50),
+            ("20080911_071428", 1.10e-5, 4150.0, 22.80),
 
-            ("20080911_075207", 7.20e-7,  980.0),
-            ("20080911_075323", 2.60e-6, 1070.0),
-            ("20080911_075846", 3.20e-6, 1070.0),
-            ("20080911_081630", 3.15e-6,  865.0),
+            ("20080911_075207", 7.20e-7,  980.0, 67.50),
+            ("20080911_075323", 2.60e-6, 1070.0, 61.20),
+            ("20080911_075846", 3.20e-6, 1070.0, 66.30),
+            ("20080911_081630", 3.15e-6,  865.0, 69.90),
 
-            ("20080911_084108", 3.80e-7,  650.0),
-            ("20080911_084529", 2.15e-6, 3150.0),
-            ("20080911_084739", 1.17e-6,  610.0),
-            ("20080911_085605", 8.35e-7, 1065.0),
+            ("20080911_084108", 3.80e-7,  650.0, 64.37),
+            ("20080911_084529", 2.15e-6, 3150.0, 33.50),
+            ("20080911_084739", 1.17e-6,  610.0, 60.50),
+            ("20080911_085605", 8.35e-7, 1065.0, 67.40),
 
-            ("20080911_090242", 1.85e-6,  760.0),
-            ("20080911_090512", 2.05e-6,  915.0),
-            ("20080911_093436", 4.90e-6, 1055.0),
-            ("20080911_094752", 9.95e-7, 1015.0),
+            ("20080911_090242", 1.85e-6,  760.0, 65.30),
+            ("20080911_090512", 2.05e-6,  915.0, 65.80),
+            ("20080911_093436", 4.90e-6, 1055.0, 59.10),
+            ("20080911_094752", 9.95e-7, 1015.0, 58.50),
 
-            ("20080911_094844", 1.70e-6, 3470.0),
+            ("20080911_094844", 1.70e-6, 3470.0, 38.00),
 
             # 2009
-            ("20090624_054307", 2.75e-6,  965.0),
-            ("20090625_053313", 3.05e-6, 2950.0),
+            ("20090624_054307", 2.75e-6,  965.0, 54.30),
+            ("20090625_053313", 3.05e-6, 2950.0, 40.30),
 
-            ("20090820_014058", 4.99e-6, 3150.0),
-            ("20090825_032616", 4.30e-6, 4950.0),
-            ("20090825_033603", 1.19e-6, 2825.0),
-            ("20090825_034528", 1.02e-6, 4150.0),
-            ("20090825_035145", 1.35e-6, 2815.0),
-            ("20090825_035228", 2.89e-6, 3025.0),
-            ("20090825_040603", 8.85e-7,  635.0),
-            ("20090825_040835", 3.75e-6,  675.0),
-            ("20090825_043435", 4.80e-6, 2780.0),
-            ("20090825_050631", 1.25e-6, 3195.0),
-            ("20090825_050904", 5.05e-6, 4820.0),
-            ("20090825_053106", 1.95e-6, 3020.0),
-            ("20090825_060500", 2.55e-6, 2860.0),
-            ("20090825_061542", 1.70e-6,  925.0),
-            ("20090825_063604", 2.35e-6,  715.0),
-            ("20090825_063641", 1.25e-6,  965.0),
-            ("20090825_064646", 1.80e-6,  660.0),
-            ("20090825_065903", 3.90e-6, 2645.0),
-            ("20090825_070044", 6.25e-7, 4895.0),
-            ("20090825_081927", 7.95e-8, 5425.0),
-            ("20090825_070933", 3.10e-6, 3215.0),
-            ("20090825_085804", 1.80e-6,  620.0),
-            ("20090826_020835", 1.10e-6, 4780.0),
-            ("20090902_084143", 6.25e-6, 1230.0),
+            ("20090820_014058", 4.99e-6, 3150.0, 26.20),
+            ("20090825_032616", 4.30e-6, 4950.0, 14.80),
+            ("20090825_033603", 1.19e-6, 2825.0, 30.90),
+            ("20090825_034528", 1.02e-6, 4150.0, 15.75),
+            ("20090825_035145", 1.35e-6, 2815.0, 27.70),
+            ("20090825_035228", 2.89e-6, 3025.0, 29.20),
+            ("20090825_040603", 8.85e-7,  635.0, 38.20),
+            ("20090825_040835", 3.75e-6,  675.0, 62.80),
+            ("20090825_043435", 4.80e-6, 2780.0, 34.20),
+            ("20090825_050631", 1.25e-6, 3195.0, 27.10),
+            ("20090825_050904", 5.05e-6, 4820.0, 13.80),
+            ("20090825_053106", 1.95e-6, 3020.0, 40.20),
+            ("20090825_060500", 2.55e-6, 2860.0, 30.50),
+            ("20090825_061542", 1.70e-6,  925.0, 38.90),
+            ("20090825_063604", 2.35e-6,  715.0, 63.70),
+            ("20090825_063641", 1.25e-6,  965.0, 59.50),
+            ("20090825_064646", 1.80e-6,  660.0, 68.90),
+            ("20090825_065903", 3.90e-6, 2645.0, 38.60),
+            ("20090825_070044", 6.25e-7, 4895.0, 28.10),
+            ("20090825_081927", 7.95e-8, 5425.0, 22.40),
+            ("20090825_070933", 3.10e-6, 3215.0, 19.60),
+            ("20090825_085804", 1.80e-6,  620.0, 68.60),
+            ("20090826_020835", 1.10e-6, 4780.0, 19.20),
+            ("20090902_084143", 6.25e-6, 1230.0, 26.70),
 
-            ("20090902_085534", 1.55e-6, 4495.0),
-            ("20090902_085832", 1.55e-6, 1165.0),
-            ("20090902_092028", 6.40e-7,  725.0),
+            ("20090902_085534", 1.55e-6, 4495.0, 50.90),
+            ("20090902_085832", 1.55e-6, 1165.0, 39.80),
+            ("20090902_092028", 6.40e-7,  725.0, 60.40),
 
-            ("20090902_093338", 2.25e-6,  605.0),
-            ("20090909_010643", 2.50e-6, 4910.0),
-            ("20090909_012810", 2.15e-6, 5010.0),
-            ("20090909_013647", 4.85e-6, 5030.0),
+            ("20090902_093338", 2.25e-6,  605.0, 71.30),
+            ("20090909_010643", 2.50e-6, 4910.0, 20.60),
+            ("20090909_012810", 2.15e-6, 5010.0, 21.40),
+            ("20090909_013647", 4.85e-6, 5030.0, 16.10),
 
-            ("20090911_021830", 1.45e-6, 5070.0),
-            ("20090911_030523", 4.80e-6, 3130.0),
-            ("20090911_034442", 1.65e-6, 4850.0),
-            ("20090911_035942", 1.35e-6, 3515.0),
+            ("20090911_021830", 1.45e-6, 5070.0, 20.15),
+            ("20090911_030523", 4.80e-6, 3130.0, 38.20),
+            ("20090911_034442", 1.65e-6, 4850.0, 23.40),
+            ("20090911_035942", 1.35e-6, 3515.0, 20.60),
 
-            ("20090911_040233", 6.75e-7, 1460.0),
-            ("20090911_040433", 2.25e-5, 4010.0),
+            ("20090911_040233", 6.75e-7, 1460.0, 37.30),
+            ("20090911_040433", 2.25e-5, 4010.0, 17.40),
         ]
+
 
 
         mass_kg = np.array([row[1] for row in rows], dtype=float)
         rho_kgm3 = np.array([row[2] for row in rows], dtype=float)
-
+        vel_kms = np.array([row[3] for row in rows], dtype=float)
+        # luminous_efficiency_tauI_Hill2005
+        tau_Hill2005 = []
+        for vel in vel_kms:
+            tau_Hill2005.append(luminous_efficiency_tauI_Hill2005(vel))
+        tau_Hill2005 = np.array(tau_Hill2005, dtype=float)
 
         (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
 
         name_ids = [row[0] for row in rows]
         # Now do a tolerant match (±3 s) against your available names
         foundJB = 0
+        size_dynesty_JB = []
+        rho_dynesty_JB = []
+        tau_dynesty_JB = []
         for i, code in enumerate(name_ids):
             # Try to find an exact-or-close match for this code inside all_names
             matched_key = find_close_in_list(code, all_names_JB, tol_seconds=3)
@@ -2894,12 +2960,15 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 foundJB += 1
                 rho_JB = rho_kgm3[i]
                 rho_dynesty = file_radiance_rho_dict_JB[matched_key][2]
+                rho_dynesty_JB.append(rho_dynesty)
                 size_JB = from_mass2size(mass_kg[i], rho_JB)
                 size_dynesty = file_obs_data_dict_JB[matched_key][13]
+                size_dynesty_JB.append(size_dynesty)
+                tau_dynesty_JB.append(file_obs_data_dict_JB[matched_key][19])
                 ax.plot([size_JB, size_dynesty], [rho_JB, rho_dynesty],
                         color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
-                ax.scatter(size_dynesty, rho_dynesty, color='red', marker='+', s=70, zorder=6) 
-
+                
+        ax.scatter(size_dynesty_JB, rho_dynesty_JB, color='red', marker='+', s=70, zorder=6) 
         ax.scatter(from_mass2size(mass_kg, rho_kgm3), rho_kgm3, color='sienna', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5) 
 
         if foundJB > 0:
@@ -2911,9 +2980,30 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ax.set_ylim([-100, 8100])
         ax.set_xlim([2*10**(-1), 20])
         # put the legend at the right outside the plot after the y axis
-        ax.legend(fontsize=10)
+        ax.legend(fontsize=14)
+        ax.tick_params(axis='both', which='major', labelsize=12)
         ax.set_xscale("log")
         plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_kikwaya.png"), bbox_inches='tight', dpi=300)
+        plt.close()
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        print("Creating 2D density against tau plot Kikwaya only...")
+        ax.scatter(tau_dynesty_JB, rho_dynesty_JB, color='red', marker='+', s=70, label="Meteors - This work", zorder=6) 
+        ax.scatter(tau_Hill2005, rho_kgm3, color='sienna', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
+
+        # plt.grid(True, linestyle='--', alpha=0.5)
+        ax.set_xlabel("$\\tau$ [%]", fontsize=15)
+        ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
+        ax.set_ylim([-100, 8100])
+        # increase label size
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        # activate grid
+        plt.grid(True, linestyle='--', alpha=0.5)
+        # set x axis from 0 to 3
+        ax.set_xlim([0, 3])
+        # put the legend at the right outside the plot after the y axis
+        ax.legend(fontsize=14)
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_kikwaya_tau.png"), bbox_inches='tight', dpi=300)
         plt.close()
 
     # # plot 2D density of mass vs rho_corrected
@@ -4770,4 +4860,4 @@ if __name__ == "__main__":
         print(f"Setting name to {cml_args.name}")
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=True) # cml_args.radiance_plot cml_args.correl_plot

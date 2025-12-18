@@ -629,9 +629,11 @@ def _worker_simulate_and_interp(sample_equal_row):
             rho_mass_weighted = const_saved.rho*(abs(const_saved.m_init-mass_at_erosion_change) / const_saved.m_init) + erosion_rho_change * (mass_at_erosion_change / const_saved.m_init)
             rho_volume_weighted = const_saved.m_init / ((abs(const_saved.m_init-mass_at_erosion_change) / const_saved.rho) + (mass_at_erosion_change / erosion_rho_change))
             # print(f"rho_mass_weighted: {rho_mass_weighted} rho_volume_weighted: {rho_volume_weighted} and rho: {const_saved.rho}")
+            erosion_dyn_press_change = sim.leading_frag_dyn_press_arr[np.argmin(np.abs(sim.leading_frag_height_arr[:-1] - erosion_height_change))]
         else:
             rho_mass_weighted = const_saved.rho
             rho_volume_weighted = const_saved.rho
+            erosion_dyn_press_change = None
 
         const_backup = {
         "rho_mass_weighted": rho_mass_weighted,
@@ -640,6 +642,7 @@ def _worker_simulate_and_interp(sample_equal_row):
         "erosion_beg_mas": const_saved.erosion_beg_mas if hasattr(const_saved, 'erosion_beg_mas') else None,
         "erosion_beg_dyn_press": const_saved.erosion_beg_dyn_press if hasattr(const_saved, 'erosion_beg_dyn_press') else None,
         "mass_at_erosion_change": const_saved.mass_at_erosion_change if hasattr(const_saved, 'mass_at_erosion_change') else None,
+        "dyn_press_at_erosion_change": erosion_dyn_press_change,
         "energy_per_cs_before_erosion": const_saved.energy_per_cs_before_erosion if hasattr(const_saved, 'energy_per_cs_before_erosion') else None,
         "energy_per_mass_before_erosion": const_saved.energy_per_mass_before_erosion if hasattr(const_saved, 'energy_per_mass_before_erosion') else None,
         "main_mass_exhaustion_ht": const_saved.main_mass_exhaustion_ht if hasattr(const_saved, 'main_mass_exhaustion_ht') else None,

@@ -1721,22 +1721,6 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
     dynesty_run_results_new = copy.deepcopy(dynesty_run_results)
     best_guess_logL = log_likelihood_dynesty(dynesty_run_results_new.samples[sim_num], obs_data, flags_dict, fixed_values, timeout=20)
     print('logL:', best_guess_logL, ' dynesty logL:', dynesty_run_results.logl[sim_num])
-    # check if dynesty_run_results_new.samples[sim_num] or fixed_values have noise_lag or noise_lum
-    if 'noise_lag' in variables:
-        best_noise_lag = dynesty_run_results_new.samples[sim_num][variables.index('noise_lag')]
-    elif 'noise_lag' in fixed_values.keys():
-        best_noise_lag = fixed_values['noise_lag']
-    else:
-        print('No noise_lag found in variables or fixed_values')
-    if 'noise_lum' in variables:
-        best_noise_lum = dynesty_run_results_new.samples[sim_num][variables.index('noise_lum')]
-    elif 'noise_lum' in fixed_values.keys():
-        best_noise_lum = fixed_values['noise_lum']
-    else:
-        print('No noise_lum found in variables or fixed_values')
-    
-    print('Correct the LogL with the best noise values for the json files (if any):')
-    plot_json_data_vs_obs(obs_data,output_folder,best_noise_lum=best_noise_lum,best_noise_lag=best_noise_lag)
 
     real_logL = None
     diff_logL = None
@@ -2029,6 +2013,24 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 
     _ = build_const(all_samples_median, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_median.json')
 
+    ### PLOT JSON DATA VS OBS ###
+
+    # check if dynesty_run_results_new.samples[sim_num] or fixed_values have noise_lag or noise_lum
+    if 'noise_lag' in variables:
+        best_noise_lag = dynesty_run_results_new.samples[sim_num][variables.index('noise_lag')]
+    elif 'noise_lag' in fixed_values.keys():
+        best_noise_lag = fixed_values['noise_lag']
+    else:
+        print('No noise_lag found in variables or fixed_values')
+    if 'noise_lum' in variables:
+        best_noise_lum = dynesty_run_results_new.samples[sim_num][variables.index('noise_lum')]
+    elif 'noise_lum' in fixed_values.keys():
+        best_noise_lum = fixed_values['noise_lum']
+    else:
+        print('No noise_lum found in variables or fixed_values')
+
+    print('Correct the LogL with the best noise values for the json files (if any):')
+    plot_json_data_vs_obs(obs_data,output_folder,best_noise_lum=best_noise_lum,best_noise_lag=best_noise_lag)
 
     ### PLOT posterior bands vs height and save to backup ###
 

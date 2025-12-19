@@ -103,7 +103,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--reports_root",
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Reduction-GEM\CAMO",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Base_GEM",
         help="Root folder containing CAMO subfolders with YYYYMMDD_hhmmss_report.txt"
     )
     parser.add_argument(
@@ -151,7 +151,7 @@ if __name__ == "__main__":
         print(f"Processed {i+1} out of {len(finder.base_names)}")
         obs_data = finder.observation_instance(base_name)
         obs_data.file_name = pickle_file  # update the file name in the observation data object
-        output_dir = os.path.dirname(dynesty_file)
+        output_dir = os.path.dirname(pickle_file[0])
         report_file = None
         for name in os.listdir(output_dir):
             if name.endswith("report.txt"):

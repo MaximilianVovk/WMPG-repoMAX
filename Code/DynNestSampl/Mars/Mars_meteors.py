@@ -1657,7 +1657,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     # plot as a dashed blue line the maximum speed of earth at 180 km
     axs.axvline(x=V_ORBIT_EARTH+V_PARAB_EARTHORBIT, color='blue', linestyle=':', label='MAX meteoroid speed on Earth')
     axs.axvline(x=V_ORBIT_MARS+V_PARAB_MARSORBIT, color='red', linestyle=':', label='MAX meteoroid speed on Mars')
-    axs.set_xlabel('$V_{\infty}$ [km/s]', fontsize=12)
+    axs.set_xlabel('$V_i$ [km/s]', fontsize=12)
     axs.set_ylabel('$T_j$', fontsize=12) 
     axs.legend(fontsize=10)
     # grid on
@@ -1967,9 +1967,13 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     vel_brightest_single = []
     height_brightest_single = []
     brightest_mags_single = []
+    zenith_angles = []
     for name in all_names:
         rho, rho_lo, rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Vg_val, Q_val, q_val, a_val, e_val, V_val_earth, V_val_mars, Vg_val_mars, Vinf_val_mars, Vg_val_mars_min_max, Vinf_val_mars_min_max, Vg_val_denis, Vinf_val_denis = file_rho_jd_dict[name]
-        
+        kc_par, F_par, lenght_par, beg_height, end_height, max_lum_height, avg_vel, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, tau_median, tau_low95, tau_high95= file_obs_data_dict[name] 
+        zenith_angles.append(zenith_angle)
+        zenith_angles.append(zenith_angle)
+        zenith_angles.append(zenith_angle)
         vel_brightest.append(Vinf_val_mars)
         vel_brightest.append(Vinf_val_mars)
         vel_brightest.append(Vinf_val_mars)
@@ -2025,7 +2029,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
             # ax.scatter(abs_mags_single_mars, heights_single_mars, c='black', label='Mars Single Body', s=60)
             # ax.scatter(abs_mags_single_mars[min_mag_index_single], heights_single_mars[min_mag_index_single], c='red', label='Brightest Point', s=100, edgecolors='black')
             # ax.legend(fontsize=12)
-            # ax.set_xlabel('$V_{\infty}$ [km/s]', fontsize=12)
+            # ax.set_xlabel('$V_i$ [km/s]', fontsize=12)
             # ax.set_ylabel('Height [km]', fontsize=12)
             # ax.tick_params(axis='both', which='major', labelsize=12)
             # ax.grid()
@@ -2100,7 +2104,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     cbar.ax.yaxis.set_tick_params(pad=10)
     
     # add the labels and legend for a red and blue points
-    axs.set_xlabel('$V_{\infty}$ [km/s]', fontsize=12)
+    axs.set_xlabel('$V_i$ [km/s]', fontsize=12)
     axs.set_ylabel('Height [km]', fontsize=12) 
     # mak the thiks bigger
     axs.tick_params(axis='both', which='major', labelsize=12)
@@ -2108,6 +2112,29 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     axs.grid()
     plt.tight_layout()
     plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag.png")
+    plt.close()
+
+    #############################################################
+
+    print("\nPlotting speed vs zenith angle color by absolute magnitude...")
+
+    fig, axs = plt.subplots(1, 1, figsize=(8, 6))
+    cvals = brightest_mags_arr[indices]
+    sc = axs.scatter(
+    np.array(vel_brightest)[indices],
+    np.array(zenith_angles)[indices],
+    c=cvals)
+    # put the x and y labels
+    axs.set_xlabel('$V_i$ [km/s]', fontsize=12)
+    axs.set_ylabel('Zenith Angle [deg]', fontsize=12)
+    cbar = fig.colorbar(sc, ax=axs)
+    cbar.set_label('Abs.Mag [-]', fontsize=12)
+    cbar.ax.invert_yaxis()
+    cbar.ax.yaxis.set_tick_params(pad=10)
+    axs.tick_params(axis='both', which='major', labelsize=12)
+    axs.grid()
+    plt.tight_layout()
+    plt.savefig(output_dir_show + os.sep + "Vinf_ZenithAngle_AbsMag.png")
     plt.close()
 
     #############################################################
@@ -2137,7 +2164,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
             p5_brightness_diff.append(np.nan)
     axs.plot(v_bin_centers, median_brightness_diff, color='black', label='Median Abs.Mag Difference', linewidth=2)
     axs.fill_between(v_bin_centers, p5_brightness_diff, p95_brightness_diff, color='gray', alpha=0.2, label='1-sigma range') 
-    axs.set_xlabel('$V_{\infty}$ [km/s]', fontsize=12)
+    axs.set_xlabel('$V_i$ [km/s]', fontsize=12)
     axs.set_ylabel('$\Delta$ Abs.Mag', fontsize=12) 
     axs.tick_params(axis='both', which='major', labelsize=12)
     axs.grid()
@@ -2249,7 +2276,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     cbar.ax.invert_yaxis()                # brighter (more negative) at top
     cbar.ax.yaxis.set_tick_params(pad=10)
 
-    ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=12)
+    ax.set_xlabel('$V_i$ [km/s]', fontsize=12)
     ax.set_ylabel('Height [km]', fontsize=12)
     ax.tick_params(axis='both', which='major', labelsize=12)
     ax.grid()
@@ -2356,7 +2383,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     cbar.ax.invert_yaxis()        # brighter (more negative) at the top
     cbar.ax.yaxis.set_tick_params(pad=10)
 
-    ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=12)
+    ax.set_xlabel('$V_i$ [km/s]', fontsize=12)
     ax.set_ylabel('Height [km]', fontsize=12)
     ax.tick_params(axis='both', which='major', labelsize=12)
     ax.grid()
@@ -2423,7 +2450,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     cbar.ax.invert_yaxis()
     cbar.ax.yaxis.set_tick_params(pad=10)
     # add the labels and legend for a red and blue points
-    axs.set_xlabel('$V_{\infty}$ [km/s]', fontsize=12)
+    axs.set_xlabel('$V_i$ [km/s]', fontsize=12)
     axs.set_ylabel('$\Delta$ Height [km]', fontsize=12)
     # mak the thiks bigger
     axs.tick_params(axis='both', which='major', labelsize=12)
@@ -2501,7 +2528,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     cbar.ax.yaxis.set_tick_params(pad=14, labelsize=14)
 
     for ax in axs:
-        ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=14)
+        ax.set_xlabel('$V_i$ [km/s]', fontsize=14)
         ax.tick_params(axis='both', which='major', labelsize=14)
         ax.grid()
 
@@ -2573,7 +2600,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     # put the horizontal line at y=0 in each subplot
     for ax in axs:
         ax.axhline(0, color='darkgray', linestyle='-', linewidth=2)
-        ax.set_xlabel('$V_{\\infty}$ [km/s]', fontsize=14)
+        ax.set_xlabel('$V_i$ [km/s]', fontsize=14)
         ax.tick_params(axis='both', which='major', labelsize=14)
         ax.grid()
     # only on the first subplot add the ylabel

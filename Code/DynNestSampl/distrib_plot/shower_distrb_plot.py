@@ -56,6 +56,7 @@ from datetime import datetime, timedelta
 import re
 
 
+# Mapping of original variable names to LaTeX-style labels
 variable_map = {
     'v_init': r"$v_0$ [km/s]",
     'zenith_angle': r"$z_c$ [rad]",
@@ -71,12 +72,21 @@ variable_map = {
     'erosion_coeff_change': r"$\eta_{2}$ [kg/MJ]",
     'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
     'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
+    'compressive_strength': r"$P_{compress}$ [Pa]",
+    'disruption_mass_index': r"$s$",
+    'disruption_mass_min_ratio': r"$m_{min}/m_{disr}$",
+    'disruption_mass_max_ratio': r"$m_{max}/m_{disr}$",
+    'disruption_mass_grain_ratio': r"$m_{gr}/m_{disr}$",
+    'height': r"$h$ [km]",
+    'mass_percent': r"$m_{percent}$ [\%]",
+    'number': r"$N$",
+    'sigma': r"$\sigma$ [kg/MJ]",
+    'erosion_coeff': r"$\eta$ [kg/MJ]",
+    'grain_mass_min': r"$m_{l}$ [kg]",
+    'grain_mass_max': r"$m_{u}$ [kg]",
+    'mass_index': r"$s$",
     'noise_lag': r"$\sigma_{lag}$ [m]",
-    'noise_lum': r"$\sigma_{lum}$ [W]",
-    'eeucs': r"$E_s$ [MJ/m$^2$]",
-    'eeum': r"$E_m$ [MJ/kg]",
-    'eeucs_end': r"$E_{s\,end}$ [MJ/m$^2$]",
-    'eeum_end': r"$E_{m\,end}$ [MJ/kg]"
+    'noise_lum': r"$\sigma_{lum}$ [W]"
 }
 
 # Mapping of original variable names to LaTeX-style labels
@@ -95,13 +105,23 @@ variable_map_plot = {
     'erosion_coeff_change': r"$\eta_{2}$ [kg/J]",
     'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
     'erosion_sigma_change': r"$\sigma_{2}$ [kg/J]",
+    'compressive_strength': r"$P_{compress}$ [Pa]",
+    'disruption_mass_index': r"$s$",
+    'disruption_mass_min_ratio': r"$m_{min}/m_{disr}$",
+    'disruption_mass_max_ratio': r"$m_{max}/m_{disr}$",
+    'disruption_mass_grain_ratio': r"$m_{gr}/m_{disr}$",
+    'height': r"$h$ [m]",
+    'mass_percent': r"$m_{percent}$ [\%]",
+    'number': r"$N$",
+    'sigma': r"$\sigma$ [kg/J]",
+    'erosion_coeff': r"$\eta$ [kg/J]",
+    'grain_mass_min': r"$m_{l}$ [kg]",
+    'grain_mass_max': r"$m_{u}$ [kg]",
+    'mass_index': r"$s$",
     'noise_lag': r"$\sigma_{lag}$ [m]",
-    'noise_lum': r"$\sigma_{lum}$ [W]",
-    'eeucs': r"$E_s$ [J/m$^2$]",
-    'eeum': r"$E_m$ [J/kg]",
-    'eeucs_end': r"$E_{s\,end}$ [J/m$^2$]",
-    'eeum_end': r"$E_{m\,end}$ [J/kg]"
+    'noise_lum': r"$\sigma_{lum}$ [W]"
 }
+
 
 # create a txt file where you save averithing that has been printed
 class Logger(object):
@@ -2814,7 +2834,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ########## plot_Kikwaya only ##########
 
     if plot_Kikwaya:
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(8, 6))
         print("Creating 2D density against size plot Kikwaya only...")
         _plot_2d_distribution(ax, mm_size_corrected, rho_corrected, w)
         ax.set_xlabel("Size [mm]", fontsize=15)
@@ -2953,6 +2973,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         size_dynesty_JB = []
         rho_dynesty_JB = []
         tau_dynesty_JB = []
+        avg_speed_JB = []
         for i, code in enumerate(name_ids):
             # Try to find an exact-or-close match for this code inside all_names
             matched_key = find_close_in_list(code, all_names_JB, tol_seconds=3)
@@ -2965,6 +2986,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 size_dynesty = file_obs_data_dict_JB[matched_key][13]
                 size_dynesty_JB.append(size_dynesty)
                 tau_dynesty_JB.append(file_obs_data_dict_JB[matched_key][19])
+                avg_speed_JB.append(file_obs_data_dict_JB[matched_key][6])
                 ax.plot([size_JB, size_dynesty], [rho_JB, rho_dynesty],
                         color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
                 
@@ -2986,10 +3008,27 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_kikwaya.png"), bbox_inches='tight', dpi=300)
         plt.close()
         
-        fig, ax = plt.subplots(figsize=(10, 6))
         print("Creating 2D density against tau plot Kikwaya only...")
-        ax.scatter(tau_dynesty_JB, rho_dynesty_JB, color='red', marker='+', s=70, label="Meteors - This work", zorder=6) 
-        ax.scatter(tau_Hill2005, rho_kgm3, color='sienna', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        # color the points by vel_brightest # variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+
+        vmin = np.nanpercentile(avg_speed_JB, 2.5)
+        vmax = np.nanpercentile(avg_speed_JB, 97.5)
+
+        norm = plt.Normalize(vmin=vmin, vmax=vmax)
+        # for i, code in enumerate(name_ids):
+        #     print(i, "Processing meteoroid:", code)
+        #     # Try to find an exact-or-close match for this code inside all_names
+        #     matched_key = find_close_in_list(code, all_names_JB, tol_seconds=3)
+        #     if matched_key is not None and (matched_key in file_radiance_rho_dict_JB) and (matched_key in file_obs_data_dict_JB):
+        #         ax.plot([tau_Hill2005[i], file_obs_data_dict_JB[matched_key][19]], 
+        #                 [rho_kgm3[i], file_radiance_rho_dict_JB[matched_key][2]],
+        #                 color='red', linestyle='--', linewidth=0.5)
+
+        # the color values for these points
+        ax.scatter(tau_dynesty_JB, rho_dynesty_JB, c=avg_speed_JB, cmap='viridis', norm=norm, edgecolors='red', s=70, linewidth=2, label="Meteors - This work", zorder=6) # label="Meteors - This work"
+        ax.scatter(tau_Hill2005, rho_kgm3, c=vel_kms, cmap='viridis', norm=norm, edgecolors='sienna', linewidth=2, s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
 
         # plt.grid(True, linestyle='--', alpha=0.5)
         ax.set_xlabel("$\\tau$ [%]", fontsize=15)
@@ -2997,14 +3036,33 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ax.set_ylim([-100, 8100])
         # increase label size
         ax.tick_params(axis='both', which='major', labelsize=12)
+        # add colorbar
+        cbar = plt.colorbar(ax.collections[0], ax=ax)
+        cbar.set_label('Velocity [km/s]', fontsize=14)
         # activate grid
         plt.grid(True, linestyle='--', alpha=0.5)
-        # set x axis from 0 to 3
-        ax.set_xlim([0, 3])
+        # set x axis from 0 to 2.5
+        ax.set_xlim([0, 2.5])
         # put the legend at the right outside the plot after the y axis
         ax.legend(fontsize=14)
         plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_kikwaya_tau.png"), bbox_inches='tight', dpi=300)
         plt.close()
+
+        # # plot vel x axis and y axi the lum
+        # print("Creating 2D density against vel plot Kikwaya only...")
+        # fig, ax = plt.subplots(figsize=(10, 6))
+        # ax.plot(vel_kms, tau_Hill2005, 'o', color='sienna', markersize=8, label="Hill (2005)", zorder=5)
+        # ax.set_xlabel("Velocity [km/s]", fontsize=15)
+        # ax.set_ylabel("$\\tau$ [%]", fontsize=15)
+        # ax.set_xlim([10, 70])
+        # # increase label size
+        # ax.tick_params(axis='both', which='major', labelsize=12)
+        # # activate grid
+        # plt.grid(True, linestyle='--', alpha=0.5)
+        # # put the legend at the right outside the plot after the y axis
+        # ax.legend(fontsize=14)
+        # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_vel_tau_kikwaya.png"), bbox_inches='tight', dpi=300)
+        # plt.close()
 
     # # plot 2D density of mass vs rho_corrected
 
@@ -3083,7 +3141,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     for j, var in enumerate(variables):
         if np.all(np.isnan(combined_samples_copy_plot[:, j])):
             continue
-        if var in ['m_init','erosion_mass_min', 'erosion_mass_max']:
+        if 'mass_min' in var or 'mass_max' in var or 'm_init' in var or 'compressive_strength' in var:
             combined_samples_copy_plot[:, j] = np.log10(combined_samples_copy_plot[:, j])
             labels_plot_copy_plot[j] =r"$\log_{10}$(" +labels_plot_copy_plot[j]+")"
         if var in ['erosion_coeff', 'erosion_coeff_change']:
@@ -3093,6 +3151,16 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] / 1000.0
         if var in ['sigma', 'erosion_sigma_change']:
             combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
+
+        # if 'log' in flags_dict.get(var, '') and not ('mass_min' in var or 'mass_max' in var or 'm_init' in var or 'compressive_strength' in var):
+        #     combined_samples_copy_plot[:, j] = 10 ** combined_samples_copy_plot[:, j]
+        # if 'log' in flags_dict.get(var, '') and ('mass_min' in var or 'mass_max' in var or 'm_init' in var or 'compressive_strength' in var):
+        #     labels_plot_copy_plot[j] =r"$\log_{10}$(" +labels_plot_copy_plot[j]+")"
+        # if 'v_init' in var or 'height' in var:
+        #     combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] / 1000.0
+        # if 'sigma' in var or 'erosion_coeff' in var:
+        #     combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
+
 
     ### create new directory for rho plots ###
 
@@ -4378,7 +4446,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         minus = median - low
         plus = high - median
 
-        if variables[i] in ['erosion_mass_min', 'erosion_mass_max','m_init','erosion_coeff', 'erosion_coeff_change']: # 'log' in flags_dict_total.get(variables[i], '') and 
+        if variables[i] in ['erosion_mass_min', 'erosion_mass_max','m_init','erosion_coeff', 'erosion_coeff_change','compressive_strength','disruption_mass_min_ratio','disruption_mass_max_ratio']: # 'log' in flags_dict_total.get(variables[i], '') and 
             # put a dashed blue line at the median
             ax.axvline(np.log10(median), color='blue', linestyle='--', linewidth=1.5)
             # put a dashed Blue line at the 2.5 and 97.5 percentiles
@@ -4822,7 +4890,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM-CAMO+EMCCD-lumeff+\20211214_075322_combined",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM-CAMO+EMCCD-lumeff+\20211214_083020_combined",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -4860,4 +4928,5 @@ if __name__ == "__main__":
         print(f"Setting name to {cml_args.name}")
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=True) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, 
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=True) # cml_args.radiance_plot cml_args.correl_plot

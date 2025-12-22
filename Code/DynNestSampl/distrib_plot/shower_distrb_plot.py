@@ -19,6 +19,7 @@ if parent_dir not in sys.path:
 
 from DynNestSapl_metsim import *
 
+import matplotlib.colors as mcolors
 from itertools import combinations
 from scipy.stats import ks_2samp, mannwhitneyu, anderson_ksamp
 from scipy.stats import gaussian_kde
@@ -2448,7 +2449,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # arr_w_love1994   = np.array([0.00, 0.02, 0.12, 0.20, 0.18, 0.12, 0.07, 0.05, 0.03, 0, 0.02, 0.02, 0.01, 0.01])  # must sum to 1
 
     # density bins (g/cm^3 × 1000)
-    arr_dens_love1994_left  = np.arange(375, 6376, 250)   # 375, 625, ..., 6875
+    arr_dens_love1994_left  = np.arange(375, 4376, 250)   # 375, 625, ..., 6875
     arr_dens_love1994_right = arr_dens_love1994_left + 250         # 625, 875, ..., 7125
 
     # # bin centers, just in case you need them (in kg/m^3)
@@ -2471,44 +2472,68 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         32,   # 3.875–4.125
         17,   # 4.125–4.375
         9,   # 4.375–4.625
-        0,   # 4.625–4.875  (0 valley)
-        0,   # 4.875–5.125  (0 valley)
+    ], dtype=int)
+
+
+    # density bins (g/cm^3 × 1000)
+    arr_dens_love1994_island_left  = np.arange(5124, 6376, 250)   # 375, 625, ..., 6875
+    arr_dens_love1994_island_right = arr_dens_love1994_island_left + 250         # 625, 875, ..., 7125
+    arr_w_love1994_island = np.array([
         16,   # 5.125–5.375  (little high "island")
         17,   # 5.375–5.625
         18,   # 5.625–5.875
         6,   # 5.875–6.125
         7,   # 6.125–6.375
         8,   # 6.375–6.625
-    ], dtype=int)
-    arr_w_love1994 = arr_w_love1994/ arr_w_love1994.sum()  # normalize to sum to 1
+    ])
+
+    arr_w_love1994_TOT = np.concatenate([arr_w_love1994, arr_w_love1994_island])
+
+    arr_w_love1994 = arr_w_love1994/ arr_w_love1994_TOT.sum()  # normalize to sum to 1
+    arr_w_love1994_island = arr_w_love1994_island / arr_w_love1994_TOT.sum()  # normalize to sum to 1
     # --- x extent for the block strip ---
     size_min_love1994, size_max_love1994 = 0.005, 0.015
+    norm_love = mcolors.Normalize(
+        vmin=0.0,
+        vmax=max(arr_w_love1994.max(), arr_w_love1994_island.max())
+    )
     # Z must have shape (len(y_edges)-1, len(x_edges)-1). Repeat across x.
     Z = arr_w_love1994[:, None]
-
-    plt.pcolormesh(np.array(sorted([size_min_love1994, size_max_love1994])), np.r_[arr_dens_love1994_left, arr_dens_love1994_right[-1]], Z, shading="flat", cmap="Reds")  # default cmap
+    plt.pcolormesh(np.array(sorted([size_min_love1994, size_max_love1994])), np.r_[arr_dens_love1994_left, arr_dens_love1994_right[-1]], Z, shading="flat", cmap="Reds", norm=norm_love)  # default cmap
+    Z = arr_w_love1994_island[:, None]
+    plt.pcolormesh(np.array(sorted([size_min_love1994, size_max_love1994])), np.r_[arr_dens_love1994_island_left, arr_dens_love1994_island_right[-1]], Z, shading="flat", cmap="Reds", norm=norm_love)  # default cmap
     # Legend (so it plays nicely with other overlays)
     proxy_red = Patch(facecolor=plt.cm.Reds(0.7), edgecolor='none', label="Stratospheric - Love et al. (1994)") # edgecolor='none',
 
-
-
     # Density bins [kg/m^3] (g/cm^3 × 1000)
-    arr_dens_left  = np.array([ 375,  625,  875,  1125, 1375, 1625, 1875, 2125, 2375, 2625, 3125, 3375], dtype=float)
-    arr_dens_right = np.array([ 625,  875,  1125, 1375, 1625, 1875, 2125, 2375, 2625, 3125, 3375, 3625], dtype=float)
+    # arr_dens_left  = np.array([ 375,  625,  875,  1125, 1375, 1625, 1875, 2125, 2375, 2625, 3125, 3375], dtype=float)
+    # arr_dens_right = np.array([ 625,  875,  1125, 1375, 1625, 1875, 2125, 2375, 2625, 3125, 3375, 3625], dtype=float)
+    # Density bins [kg/m^3] (g/cm^3 × 1000)
+    arr_dens_left  = np.array([ 375,  625,  875,  1125, 1375, 1625, 1875, 2125], dtype=float)
+    arr_dens_right = np.array([ 625,  875,  1125, 1375, 1625, 1875, 2125, 2375], dtype=float)
 
     # Weights (sum to 1)
-    arr_w_Flynn = np.array([7, 4, 2, 1, 2, 3, 1, 3, 0, 0, 0, 1], dtype=float)
+    arr_w_Flynn = np.array([7, 4, 2, 1, 2, 3, 1, 3], dtype=float)
 
-    arr_w_Flynn /= arr_w_Flynn.sum()  # normalize weights
+    arr_w_Flynn_1 = np.array([1], dtype=float)
 
+    arr_w_Flynn_tot = np.concatenate([arr_w_Flynn, arr_w_Flynn_1])
+
+    arr_w_Flynn =  arr_w_Flynn / arr_w_Flynn_tot.sum()  # normalize weights
+    arr_w_Flynn_1 = arr_w_Flynn_1 / arr_w_Flynn_tot.sum()  # normalize weights
+    norm_Flynn = mcolors.Normalize(
+        vmin=0.0,
+        vmax=max(arr_w_Flynn.max(), arr_w_Flynn_1.max())
+    )
     # Size extent in mm for the strip
     size_min_mm_Flynn, size_max_mm_Flynn = 0.006, 0.030  # 6–30 µm
     Z = arr_w_Flynn[:, None]  # repeat weights across the x-range
-
-    plt.pcolormesh(np.array([size_min_mm_Flynn, size_max_mm_Flynn]), np.r_[arr_dens_left, arr_dens_right[-1]], Z, shading="flat", cmap="Purples", alpha=0.5)  # choose any cmap
+    plt.pcolormesh(np.array([size_min_mm_Flynn, size_max_mm_Flynn]), np.r_[arr_dens_left, arr_dens_right[-1]], Z, shading="flat", cmap="Purples", norm=norm_Flynn, alpha=0.8)  # choose any cmap
+    Z = arr_w_Flynn_1[:, None]  # repeat weights across the x-range
+    plt.pcolormesh(np.array([size_min_mm_Flynn, size_max_mm_Flynn]), np.r_[3375, 3625], Z, shading="flat", cmap="Purples", norm=norm_Flynn, alpha=0.8)  # choose any cmap
 
     # Optional legend proxy
-    proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none', alpha=0.5, label="Stratospheric - Flynn and Sutton (1990)*")
+    proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none', label="Stratospheric - Flynn and Sutton (1990)*", alpha=0.8)
 
     ###### Fulle et al. (2017)
 
@@ -2534,9 +2559,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     y_edges = np.r_[bin_left, bin_right[-1]]
     Z = weights[:, None]
 
-    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Blues", alpha=0.5)
+    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Blues", zorder=0) # , alpha=0.5
 
-    proxy_blue = Patch(facecolor=plt.cm.Blues(0.7), edgecolor='none', alpha=0.5, label="GIADA - Fulle et al. (2017)")
+    proxy_blue = Patch(facecolor=plt.cm.Blues(0.7), edgecolor='none', label="GIADA - Fulle et al. (2017)") # alpha=0.5, 
 
     #### Misc papers overlays ####
 
@@ -2557,7 +2582,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax.fill_between([0.3, 100], 100, 1000, color='teal', alpha=0.1,  label="OSIRIS - Güttler et al. (2017)") # , edgecolor='none'
 
     # add a dot as a DIM point at (0.9, 250) coor dark green
-    ax.scatter(0.9, 250, color='navy', marker='s', s=30, label="DIM - Flanders et al. (2018)")
+    ax.scatter(0.9, 250, color='navy', marker='s', s=30, label="DIM - Flanders et al. (2018)", zorder=7)
 
     ### bad
     # Halley 10~12 \ m \ 10~3 kg for 50 \ o \ 500 kg m~3
@@ -2572,7 +2597,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # Whole particle density qp [g/cm^3]
     qp_gcm3 = np.array([ 5.73, 4.28, 3.66, 3.30, 3.11, 2.84, 2.39, 1.14, 1.02, 0.92, 0.89, 2.92, 3.20 ], dtype=float)*1000
 
-    ax.scatter(dp_um, qp_gcm3, color='hotpink', marker='v', s=50, label="Stardust - Iida et al. (2010)")
+    ax.scatter(dp_um, qp_gcm3, color='aquamarine', marker='v', s=50, label="Stardust - Iida et al. (2010)")
 
     # # Diameters [μm]
     # diam_um = np.array([74, 63, 45, 42, 36, 34, 32, 24, 19, 19, 17], dtype=float)/1000
@@ -2603,7 +2628,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ]) * 1000
 
 
-    ax.scatter(impactor_diam_um, rho_gcm3, color='magenta', marker='^', s=50, label="Stardust - Kearsley et al. (2008)**")
+    ax.scatter(impactor_diam_um, rho_gcm3, color='mediumaquamarine', marker='^', s=50, label="Stardust - Kearsley et al. (2008)**")
 
     ### bad
     ax.fill_between([0.0001, 0.1], 3000, 8000, color='lime', alpha=0.1, zorder=0, label="Lunar Microcraters - Nagel et al. (1980)")
@@ -2618,7 +2643,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     ### bad
     # put a line between min 50, max is 296 / 1000 mm
-    ax.plot([50/1000, 296/1000], [2700, 2700], color='gold', linestyle='-.', marker='p', label="Hubble - Kearsley et al. (2024)")
+    ax.plot([50/1000, 296/1000], [2700, 2700], color='gold', linestyle='-.', marker='h', label="Hubble - Kearsley et al. (2024)")
 
     mass_g = np.array([
         0.50,   # 06C13136
@@ -2672,7 +2697,22 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     mass_g = np.concatenate((mass_g, mass_kg))
     rho_kgm3 = np.concatenate((rho_kgm3, delta_kgm3))
 
-    ax.scatter(from_mass2size(mass_g, rho_kgm3), rho_kgm3, color='peru', marker='x', s=70, label="Meteors - Vojáček et al. (2019)", zorder=5)
+    ax.scatter(from_mass2size(mass_g, rho_kgm3), rho_kgm3, color='sienna', marker='x', s=70, label="Meteors - Vojáček et al. (2019)", zorder=5)
+    
+    ### Radar Meteor Data
+
+    # open csv file "c:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\3DVHF2553-true-used.csv"
+    radar_meteors = pd.read_csv(r"c:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\3DVHF2553-true-used.csv")
+    # radar_meteors = pd.read_csv(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\OvrDVHF2798-true.csv")
+
+    # read the colum "Density - 3D (kgm-3)" "Initial mass - 3D (kg)" "sigma_density_kgm3"
+    rho_meteor_radar   = radar_meteors["Density - 3D (kgm-3)"]
+    # srho_meteor_radar  = radar_meteors["St. dev (3D density)"]
+    m0_meteor_radar    = radar_meteors["Initial mass - 3D (kg)"]
+
+    ax.scatter(from_mass2size(m0_meteor_radar, rho_meteor_radar), rho_meteor_radar, color='peru', marker='1', s=50, label="Radar Meteors - Close et al. (2012)", zorder=5, alpha=0.5)
+
+    ### Micro meteoroites
 
     # Size [µm]
     size_um = np.array([
@@ -2690,7 +2730,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         3.3, 3.1, 3.0, 2.9, 3.1, 3.0, 2.9, 2.9, 3.0, 3.1
     ], dtype=float) * 1000  # convert to kg/m³
     
-    ax.scatter(size_um, rhoB_gcm3, color='darkorange', marker='o', s=50, label="Micrometeorites - Kohout et al. (2014)")
+    ax.scatter(size_um, rhoB_gcm3, color='darkorange', marker='o', s=50, label="Micrometeorites - Kohout et al. (2014)", alpha=0.7, zorder=5)
 
 
     ###### Fulle et al. (2016) PAPERS density distribution
@@ -2810,7 +2850,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     rho_kgm3 = rho_particle_divine1986(a_um, out="kg/m^3")
     
     ### bad
-    ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)")    
+    ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)", zorder=10)    
 
     ##########
 
@@ -2991,7 +3031,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
                 
         ax.scatter(size_dynesty_JB, rho_dynesty_JB, color='red', marker='+', s=70, zorder=6) 
-        ax.scatter(from_mass2size(mass_kg, rho_kgm3), rho_kgm3, color='sienna', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5) 
+        ax.scatter(from_mass2size(mass_kg, rho_kgm3), rho_kgm3, color='dodgerblue', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5) 
 
         if foundJB > 0:
             print(foundJB,"Found matching meteoroids from JB (±3 s tolerance).")
@@ -3028,7 +3068,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         # the color values for these points
         ax.scatter(tau_dynesty_JB, rho_dynesty_JB, c=avg_speed_JB, cmap='viridis', norm=norm, edgecolors='red', s=70, linewidth=2, label="Meteors - This work", zorder=6) # label="Meteors - This work"
-        ax.scatter(tau_Hill2005, rho_kgm3, c=vel_kms, cmap='viridis', norm=norm, edgecolors='sienna', linewidth=2, s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
+        ax.scatter(tau_Hill2005, rho_kgm3, c=vel_kms, cmap='viridis', norm=norm, edgecolors='dodgerblue', linewidth=2, s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
 
         # plt.grid(True, linestyle='--', alpha=0.5)
         ax.set_xlabel("$\\tau$ [%]", fontsize=15)
@@ -3051,7 +3091,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # # plot vel x axis and y axi the lum
         # print("Creating 2D density against vel plot Kikwaya only...")
         # fig, ax = plt.subplots(figsize=(10, 6))
-        # ax.plot(vel_kms, tau_Hill2005, 'o', color='sienna', markersize=8, label="Hill (2005)", zorder=5)
+        # ax.plot(vel_kms, tau_Hill2005, 'o', color='dodgerblue', markersize=8, label="Hill (2005)", zorder=5)
         # ax.set_xlabel("Velocity [km/s]", fontsize=15)
         # ax.set_ylabel("$\\tau$ [%]", fontsize=15)
         # ax.set_xlim([10, 70])
@@ -4890,7 +4930,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM-CAMO+EMCCD-lumeff+\20211214_083020_combined",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -4929,4 +4969,4 @@ if __name__ == "__main__":
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
     shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, 
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=True) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot

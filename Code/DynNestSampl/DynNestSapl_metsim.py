@@ -38,6 +38,7 @@ import multiprocessing
 import math
 import matplotlib.cm as cm
 import multiprocessing as mp
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from matplotlib.ticker import MaxNLocator
 from matplotlib.colors import Normalize
@@ -2646,46 +2647,67 @@ def plot_dynesty(dynesty_run_results, obs_data, flags_dict, fixed_values, output
 # Function: read prior to generate bounds
 ###############################################################################
 
-def read_prior_to_bounds(object_meteor,file_path=""):
+
+def read_prior_to_bounds(object_meteor, file_path="", user_inputs=None):
     ''' Read the prior file and generate the bounds for the dynesty sampler '''
+
+    user_inputs = {} if user_inputs is None else dict(user_inputs)
+
+    # Heights (compute defaults from object if not provided)
+    # for typical meteors: begin ~ max(height), end ~ min(height)
+    h_beg_default  = float(np.max(object_meteor.height_lum))
+    h_end_default  = float(np.min(object_meteor.height_lum))
+    h_peak_default = float(object_meteor.height_lum[np.argmax(object_meteor.luminosity)])
+
+    h_beg  = float(user_inputs.get("h_beg",  h_beg_default))
+    h_end  = float(user_inputs.get("h_end",  h_end_default))
+    h_peak = float(user_inputs.get("h_peak", h_peak_default))
+    v_0 = user_inputs.get("v_0", user_inputs.get("v_init", getattr(object_meteor, "v_init", np.nan)))
+    m_0 = user_inputs.get("m_0", user_inputs.get("m_init", getattr(object_meteor, "m_init", np.nan)))
+    zc_0 = user_inputs.get("zc_0", user_inputs.get("zenith_angle", getattr(object_meteor, "zenith_angle", np.nan)))
+    n_lag0 = user_inputs.get("n_lag0", getattr(object_meteor, "noise_lag", np.nan))
+    n_lum0 = user_inputs.get("n_lum0", getattr(object_meteor, "noise_lum", np.nan))
+
+    # Helper: prefer user override, else object_meteor attr/dict
+    def get_estimate(name):
+        if name in user_inputs and user_inputs[name] is not None and not (isinstance(user_inputs[name], float) and np.isnan(user_inputs[name])):
+            return user_inputs[name]
+        if hasattr(object_meteor, name):
+            return getattr(object_meteor, name)
+        if name in getattr(object_meteor, "__dict__", {}):
+            return object_meteor.__dict__[name]
+        return None
+
     # Default bounds
     default_bounds = {
         "v_init": (500, np.nan),
         "zenith_angle": (0.01, np.nan),
         "m_init": (np.nan, np.nan),
-        "rho": (100, 4000),  # log transformation applied later
+        "rho": (100, 4000),
         "sigma": (0.001 / 1e6, 0.05 / 1e6),
-        "erosion_height_start": (\
-            # np.max(object_meteor.height_lum) -100- (np.max(object_meteor.height_lum)-object_meteor.height_lum[np.argmax(object_meteor.luminosity)]),\
-            # np.max(object_meteor.height_lum) +100+ abs(np.max(object_meteor.height_lum)-np.min(object_meteor.height_lum))), 
-            np.max(object_meteor.height_lum) -100- (np.max(object_meteor.height_lum)-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
-            np.max(object_meteor.height_lum) +100+ (np.max(object_meteor.height_lum)-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
+        "erosion_height_start": (
+            h_beg - 100 - (h_beg - h_peak) / 2,
+            h_beg + 100 + (h_beg - h_peak) / 2),
+        # h_beg -100- (h_beg - h_peak),\
+        # h_beg +100+ abs(h_beg - h_end)), 
         "erosion_coeff": (1 / 1e12, 2 / 1e6),  # log transformation applied later
         "erosion_mass_index": (1, 3),
         "erosion_mass_min": (5e-12, 1e-9),  # log transformation applied later
         "erosion_mass_max": (1e-10, 1e-7),  # log transformation applied later
         "rho_grain": (3000, 3500),
-        "erosion_height_change": (\
-            np.min(object_meteor.height_lum) -100,\
-            np.max(object_meteor.height_lum) +100),
-        "erosion_rho_change": (100, 4000),  # log transformation applied later
+        "erosion_height_change": (h_end - 100, h_beg + 100),
+        "erosion_rho_change": (100, 4000),
         "erosion_sigma_change": (0.001 / 1e6, 0.05 / 1e6),
         "erosion_coeff_change": (1 / 1e12, 2 / 1e6),  # log transformation applied later
         "noise_lag": (10, object_meteor.noise_lag), # more of a peak around the real value
         "noise_lum": (5, object_meteor.noise_lum) # look for more values at higher uncertainty can be because of the noise
     }
 
-    # object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
-    # object_meteor.height_lum[0] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
-
-    # object_meteor.height_lum[-1] +100+ (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2,\
-    # object_meteor.height_lum[0] -100- (object_meteor.height_lum[0]-object_meteor.height_lum[np.argmax(object_meteor.luminosity)])/2),
-
     default_flags = {
         "v_init": ["norm"],
         "zenith_angle": ["norm"],
         "m_init": [],
-        "rho": ["log"],
+        "rho": [],
         "sigma": [],
         "erosion_height_start": [],
         "erosion_coeff": ["log"],
@@ -2695,64 +2717,61 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         "rho_grain": [],
         "erosion_height_change": [],
         "erosion_coeff_change": ["log"],
-        "erosion_rho_change": ["log"],
+        "erosion_rho_change": [],
         "erosion_sigma_change": [],
         "noise_lag": ["invgamma"],
         "noise_lum": ["invgamma"]
-        }
+    }
 
     rho_grain_real = 3000
-    # check if object_meteor.const.rho_grain exist
     if hasattr(object_meteor, 'const'):
-        # check if object_meteor.const.rho_grain exist
         if hasattr(object_meteor.const, 'rho_grain'):
             rho_grain_real = object_meteor.const.rho_grain
         else:
-            if "rho_grain" in object_meteor.const:
-                rho_grain_real = object_meteor.const["rho_grain"]
-            # chack if object_meteor.const.rho_grain exist as key
-            if "rho_grain" in object_meteor.const.keys():
-                rho_grain_real = object_meteor.const["rho_grain"]
+            if isinstance(object_meteor.const, dict):
+                if "rho_grain" in object_meteor.const:
+                    rho_grain_real = object_meteor.const["rho_grain"]
+                # check if object_meteor.const.rho_grain exist as key
+                if "rho_grain" in object_meteor.const.keys():
+                    rho_grain_real = object_meteor.const["rho_grain"]
 
-    # Default values if no file path is provided
     if file_path == "":
         print("No prior file provided. Using default bounds.")
-        # delete from the default_bounds the "zenith_angle","rho_grain","erosion_height_change","erosion_coeff_change","erosion_rho_change","erosion_sigma_change"
         default_bounds.pop("zenith_angle")
         default_bounds.pop("rho_grain")
         default_bounds.pop("erosion_height_change")
         default_bounds.pop("erosion_coeff_change")
         default_bounds.pop("erosion_rho_change")
         default_bounds.pop("erosion_sigma_change")
-        
+
         bounds = [default_bounds[key] for key in default_bounds]
         flags_dict = {key: default_flags.get(key, []) for key in default_bounds}
         # for the one that have log transformation, apply it
         for i, key in enumerate(default_bounds):
             if "log" in flags_dict[key]:
                 bounds[i] = np.log10(bounds[i][0]), np.log10(bounds[i][1])
-
         # check if any of the values are np.nan and replace them with the object_meteor values
         for i, key in enumerate(default_bounds):
-            bounds[i] = list(bounds[i])  # Convert tuple to list
+            bounds[i] = list(bounds[i])
+            est = get_estimate(key)
             # now check if the values are np.nan and if the flag key is 'norm' then divide by 10
-            if np.isnan(bounds[i][0]) and key in object_meteor.__dict__:
-                bounds[i][0] = object_meteor.__dict__[key] - 10**int(np.floor(np.log10(abs(object_meteor.__dict__[key])))) #object_meteor.__dict__[key]/10/2
-
-            if np.isnan(bounds[i][1]) and key in object_meteor.__dict__ and "norm" in flags_dict[key]:
-                bounds[i][1] = object_meteor.__dict__[key]
-            elif np.isnan(bounds[i][1]) and key in object_meteor.__dict__:
-                bounds[i][1] = object_meteor.__dict__[key] + 10**int(np.floor(np.log10(abs(object_meteor.__dict__[key])))) #object_meteor.__dict__[key]/10/2
-            bounds[i] = tuple(bounds[i])  # Convert back to tuple if needed
+            if np.isnan(bounds[i][0]) and est is not None:
+                bounds[i][0] = est - 10**int(np.floor(np.log10(abs(est))))
+            if np.isnan(bounds[i][1]) and est is not None and "norm" in flags_dict[key]:
+                bounds[i][1] = est
+            elif np.isnan(bounds[i][1]) and est is not None:
+                bounds[i][1] = est + 10**int(np.floor(np.log10(abs(est))))
+            bounds[i] = tuple(bounds[i])
+            
         # checck if stil any bounds are np.nan and raise an error
         for i, key in enumerate(default_bounds):
             if np.isnan(bounds[i][0]) or np.isnan(bounds[i][1]):
                 raise ValueError(f"The value for {key} is np.nan and it is not in the dictionary")
 
         fixed_values = {
-            "zenith_angle": object_meteor.zenith_angle,
+            "zenith_angle": float(get_estimate("zenith_angle") if get_estimate("zenith_angle") is not None else object_meteor.zenith_angle),
             "rho_grain": rho_grain_real,
-            "erosion_height_change": 1, # deactivate the erosion height change
+            "erosion_height_change": 1,
             "erosion_coeff_change": 1 / 1e7,
             "erosion_rho_change": rho_grain_real,
             "erosion_sigma_change": 0.001 / 1e6
@@ -2763,31 +2782,38 @@ def read_prior_to_bounds(object_meteor,file_path=""):
         flags_dict = {}
         fixed_values = {}
 
+        eval_ctx = {
+            "h_beg": h_beg, "h_end": h_end, "h_peak": h_peak,
+            "v_0": v_0, "m_0": m_0, "zc_0": zc_0, "n_lag0": n_lag0, "n_lum0": n_lum0,
+            "np": np
+        }
+
         def safe_eval(value):
-            try:    
-                return eval(value, {"__builtins__": {"np": np}}, {})
+            try:
+                return eval(value, {"__builtins__": {}, "np": np, **eval_ctx}, {})
             except Exception:
-                return value  # Return as string if evaluation fails
-            
-        # Read .prior file, ignoring comment lines
+                return value
+
         with open(file_path, 'r') as file:
             for line in file:
                 line = line.strip()
                 if line.startswith('#') or not line:
                     continue
-                parts = line.split('#')[0].strip().split(',')  # Remove inline comments
+                parts = line.split('#')[0].strip().split(',')
                 name = parts[0].strip()
-                # Handle fixed values
+
                 if "fix" in parts:
                     val = parts[1].strip() if len(parts) > 1 else "nan"
                     evaluated_val = safe_eval(val)
+                    # print(f"Fixing parameter '{name}' to value: {evaluated_val}")
                     fixed_values[name] = np.nan if str(val).lower() == "nan" else evaluated_val
                     # Only proceed with fallback logic if it's numeric and NaN
                     if isinstance(fixed_values[name], (int, float)) and np.isnan(fixed_values[name]):
-                        if name in object_meteor.__dict__:
-                            fixed_values[name] = object_meteor.__dict__[name]
+                        est = get_estimate(name)
+                        if est is not None:
+                            fixed_values[name] = est
                         elif name == "erosion_height_start":
-                            fixed_values[name] = np.max(object_meteor.height_lum)
+                            fixed_values[name] = h_beg
                         else:
                             fixed_values[name] = np.mean(default_bounds[name])
                     continue
@@ -2795,52 +2821,71 @@ def read_prior_to_bounds(object_meteor,file_path=""):
                 min_val = parts[1].strip() if len(parts) > 1 else "nan"
                 max_val = parts[2].strip() if len(parts) > 2 else "nan"
                 flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
-                
                 # Handle NaN values and default replacement
                 min_val = safe_eval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
                 max_val = safe_eval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
+                # print(f"Setting bounds for '{name}': min={min_val}, max={max_val}, flags={flags}")
 
-                min_val, max_val, flags = bounds_min_max_flags(name, object_meteor, min_val, max_val, flags, default_bounds, default_flags)
-
+                min_val, max_val, flags = bounds_min_max_flags(
+                    name, object_meteor, min_val, max_val, flags, default_bounds, default_flags
+                )
                 # Store flags
                 flags_dict[name] = flags
                 bounds.append((min_val, max_val))
-    
-    # take the key of the fixed_values and append flags_dict
+
     variable_loaded = list(fixed_values.keys()) + list(flags_dict.keys())
-    # check if among the variable_loaded if there is 'v_init' or 'zenith_angle' or 'm_init' in case are not in the variable_loaded put it in to fixed_values
+
     if 'v_init' not in variable_loaded:
-        fixed_values['v_init'] = object_meteor.v_init
+        fixed_values['v_init'] = float(get_estimate("v_init") if get_estimate("v_init") is not None else object_meteor.v_init)
     if 'zenith_angle' not in variable_loaded:
-        fixed_values['zenith_angle'] = object_meteor.zenith_angle
+        fixed_values['zenith_angle'] = float(get_estimate("zenith_angle") if get_estimate("zenith_angle") is not None else object_meteor.zenith_angle)
     if 'm_init' not in variable_loaded:
-        fixed_values['m_init'] = object_meteor.m_init
+        fixed_values['m_init'] = float(get_estimate("m_init") if get_estimate("m_init") is not None else object_meteor.m_init)
     if 'rho_grain' not in variable_loaded:
         fixed_values['rho_grain'] = rho_grain_real
     if 'erosion_height_change' not in variable_loaded:
         fixed_values['erosion_height_change'] = 1
 
-    # check if the bounds the len(bounds) + len(fixed_values) =>10
     if len(bounds) + len(fixed_values) < 10:
         raise ValueError("The number of bounds and fixed values should 10 or above")
 
     return bounds, flags_dict, fixed_values
 
 
-def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values, file_path):
+def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values, file_path, user_inputs=None):
     """
     Append extra priors from a .extraprior file to existing bounds, flags, and fixed values.
     Adds numbering to identical fragment types (e.g., M0, M1).
     Ensures all required fragmentation parameters are present per block context.
     """
+    
+    # optional user overrides
+    user_inputs = {} if user_inputs is None else dict(user_inputs)
+
+    # Heights (begin ~ max(height), end ~ min(height), peak ~ max luminosity)
+    h_beg_default  = float(np.max(object_meteor.height_lum))
+    h_end_default  = float(np.min(object_meteor.height_lum))
+    h_peak_default = float(object_meteor.height_lum[np.argmax(object_meteor.luminosity)])
+
+    h_beg  = float(user_inputs.get("h_beg",  h_beg_default))
+    h_end  = float(user_inputs.get("h_end",  h_end_default))
+    h_peak = float(user_inputs.get("h_peak", h_peak_default))
+
+    # Also allow v_0/m_0/zc_0 naming if you want to reference them in expressions
+    v_0 = user_inputs.get("v_0", user_inputs.get("v_init", getattr(object_meteor, "v_init", np.nan)))
+    m_0 = user_inputs.get("m_0", user_inputs.get("m_init", getattr(object_meteor, "m_init", np.nan)))
+    zc_0 = user_inputs.get("zc_0", user_inputs.get("zenith_angle", getattr(object_meteor, "zenith_angle", np.nan)))
+    n_lag0 = user_inputs.get("n_lag0", getattr(object_meteor, "noise_lag", np.nan))
+    n_lum0 = user_inputs.get("n_lum0", getattr(object_meteor, "noise_lum", np.nan))
+
     if not file_path.endswith(".extraprior"):
         print("WARNING: Provided file is not an .extraprior file, return bounds, flags and fixed parameters")
         return bounds, flags_dict, fixed_values
 
-    flare_start_init, flare_start_end = find_strongest_flare(object_meteor.height_lum, object_meteor.absolute_magnitudes)
+    flare_start_end, flare_start_init = find_strongest_flare(object_meteor.height_lum, object_meteor.absolute_magnitudes)
 
     default_bounds = {
-        "height": (flare_start_init, flare_start_end),
+        "height": (flare_start_end, flare_start_init),
         "sigma": (0.001 / 1e6, 0.05 / 1e6),
         "erosion_coeff": (1 / 1e12, 2 / 1e6),
         "grain_mass_min": (5e-12, 1e-9),
@@ -2861,27 +2906,28 @@ def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values,
         "gamma": [],
         "mass_percent": [],
         "number": []
-        }
+    }
 
     # copy to the default_bounds the one from bounds that are already defined
     for i, bound in enumerate(bounds):
-        # in key make a copy of the bounds
-        key = list(flags_dict.keys())[i]
-        # change the key[i] that have the name erosion_mass_index to mass_index
+        orig_key = list(flags_dict.keys())[i]
+        key = orig_key
+
         if key == "erosion_mass_index":
             key = "mass_index"
         elif key == "erosion_mass_min":
             key = "grain_mass_min"
         elif key == "erosion_mass_max":
             key = "grain_mass_max"
-        # substitute the key in the default_bounds
+
         if key in default_bounds:
             default_bounds[key] = bound
-            print(f"Updated default_bounds[{key}] = {bound}")
-            default_flags[key] = flags_dict.get(key, [])
-            print(f"Updated default_flags[{key}] = {flags_dict.get(key, [])}")
+            # print(f"Updated default_bounds[{key}] = {bound}")
 
-    # Initialize lists and dictionaries
+            # small fix: if we remapped the name, fetch flags from the original key
+            default_flags[key] = flags_dict.get(orig_key, [])
+            # print(f"Updated default_flags[{key}] = {flags_dict.get(orig_key, [])}")
+
     extraprior_bounds = []
     extraprior_flags = {}
     extraprior_fixed = {}
@@ -2890,68 +2936,94 @@ def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values,
     current_index = -1
     current_defined_vars = []
 
+    # safe_eval can use user-friendly symbols
+    eval_ctx = {
+        "h_beg": h_beg, "h_end": h_end, "h_peak": h_peak,
+        "flare_start_init": flare_start_init, "flare_start_end": flare_start_end,
+        "v_0": v_0, "m_0": m_0, "zc_0": zc_0, "n_lag0": n_lag0, "n_lum0": n_lum0,
+        "np": np
+    }
+
     def safe_eval(value):
-        try:    
-            return eval(value, {"__builtins__": {"np": np}}, {})
+        try:
+            return eval(value, {"__builtins__": {}, "np": np, **eval_ctx}, {})
         except Exception:
-            return value  # Return as string if evaluation fails
-        
+            return value
+
+    # make indexing per-fragment-type (M0, M1, F0, ...)
+    type_counts = defaultdict(int)
+
     def finalize_fragment_block():
         nonlocal current_type, current_index, current_defined_vars, extraprior_fixed
         if current_type is None:
-            return  # Nothing to finalize
+            return
+
         suffix = f"{current_type}{current_index}"
-        # Determine required vars per fragment type
+
         if current_type == "M":
-            required_vars = ["height","erosion_coeff"]
+            required_vars = ["height", "erosion_coeff"]
         elif current_type == "A":
-            required_vars = ["height","sigma", "gamma"]
+            required_vars = ["height", "sigma", "gamma"]
         elif current_type == "F":
             required_vars = ["height", "number", "mass_percent", "sigma"]
         elif current_type == "EF":
-            required_vars = ["height", "number", "mass_percent", "erosion_coeff", "grain_mass_min", "grain_mass_max","mass_index"]
+            required_vars = ["height", "number", "mass_percent", "erosion_coeff",
+                             "grain_mass_min", "grain_mass_max", "mass_index"]
         elif current_type == "D":
-            required_vars = ["height", "mass_percent", "grain_mass_min", "grain_mass_max","mass_index"]
+            required_vars = ["height", "mass_percent", "grain_mass_min", "grain_mass_max", "mass_index"]
         else:
             required_vars = []
 
         for var in required_vars:
             var_name = f"{var}_{suffix}"
-            if var_name not in extraprior_fixed and var_name not in extraprior_flags:
-                # Add missing var as FIXED using defaults
-                if "number" in var or "mass_percent" in var:
-                    default_val = default_bounds[var][0]  # Use lower bound for number and mass_percent
-                elif "gamma" in var:
-                    default_val = default_bounds[var][1]  # Use upper bound for gamma
-                elif "height" in var_name:
-                    default_val = object_meteor.height_lum[0]
-                elif var in default_bounds:
-                    default_val = np.nan # default_val = np.mean(default_bounds[var]) # 
-                else:
-                    default_val = 1  # Default for number
-                extraprior_fixed[var_name] = default_val
-                # Debug print:
-                print(f"Added missing required param as FIX: {var_name} = {default_val}")
+            if var_name in extraprior_fixed or var_name in extraprior_flags:
+                continue
+
+            # use sensible defaults for FIXED missing required vars (because fixed values won't be repaired later)
+            if var == "height":
+                default_val = float(h_beg)  # "first frame height" equivalent
+            elif var == "number":
+                default_val = 1
+            elif var == "mass_percent":
+                default_val = 10
+            elif var == "gamma":
+                default_val = 1.2
+            elif var == "mass_index":
+                default_val = 2.0
+            elif var == "sigma":
+                # Use typical default (mid of bounds, or pick a known canonical if you prefer)
+                default_val = float(np.mean(default_bounds["sigma"]))
+            elif var == "erosion_coeff":
+                default_val = float(np.mean(default_bounds["erosion_coeff"]))
+            elif var == "grain_mass_min":
+                default_val = float(np.mean(default_bounds["grain_mass_min"]))
+            elif var == "grain_mass_max":
+                default_val = float(np.mean(default_bounds["grain_mass_max"]))
+            else:
+                default_val = 1
+
+            extraprior_fixed[var_name] = default_val
+            print(f"Added missing required param as FIX: {var_name} = {default_val}")
 
         current_defined_vars.clear()
 
-    # Read the file
     with open(file_path, 'r') as file:
         for line in file:
             line = line.strip()
             if line.startswith('#') or not line:
                 continue
+
             if line.startswith('- '):
-                # Finalize the previous fragment block before starting a new one
                 finalize_fragment_block()
                 current_type = line[2:].strip()
-                current_index = current_index + 1
+                current_index = type_counts[current_type]
+                type_counts[current_type] += 1
                 continue
 
-            parts = line.split('#')[0].strip().split(',')  # Remove inline comments
+            parts = line.split('#')[0].strip().split(',')
             name = parts[0].strip()
             var_name = f"{name}_{current_type}{current_index}"
-            # Handle fixed values
+
             if "fix" in parts:
                 val = parts[1].strip() if len(parts) > 1 else "nan"
                 evaluated_val = safe_eval(val)
@@ -2962,29 +3034,28 @@ def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values,
                         extraprior_fixed[var_name] = 1
                     elif "mass_percent" in var_name:
                         extraprior_fixed[var_name] = 10
-                    # elif "height" in var_name:
-                    #     default_val = object_meteor.height_lum[0]
+                    elif "height" in var_name:
+                        extraprior_fixed[var_name] = float(h_beg)
+                    elif name in default_bounds:
+                        extraprior_fixed[var_name] = float(np.mean(default_bounds[name]))
                     else:
-                        extraprior_fixed[var_name] = np.mean(default_bounds[name])
+                        extraprior_fixed[var_name] = 1
                 continue
 
             min_val = parts[1].strip() if len(parts) > 1 else "nan"
             max_val = parts[2].strip() if len(parts) > 2 else "nan"
             flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
-            
             # Handle NaN values and default replacement
             min_val = safe_eval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
             max_val = safe_eval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
 
             min_val, max_val, flags = bounds_min_max_flags(name, object_meteor, min_val, max_val, flags, default_bounds, default_flags)
-            
+
             extraprior_flags[var_name] = flags
             extraprior_bounds.append((min_val, max_val))
 
-    # Finalize last fragment block after EOF
     finalize_fragment_block()
 
-    # Merge into main dicts
     bounds.extend(extraprior_bounds)
     flags_dict.update(extraprior_flags)
     fixed_values.update(extraprior_fixed)
@@ -2993,6 +3064,17 @@ def append_extraprior_to_bounds(object_meteor, bounds, flags_dict, fixed_values,
 
 
 def bounds_min_max_flags(name, object_meteor, min_val, max_val, flags, default_bounds, default_flags):
+
+    # check if min_val is a string and replace it with np.nan
+    if isinstance(min_val, str):
+        # raise an error
+        raise ValueError(f"{name} : ERROR loading min_val = {min_val}")
+        # print(f"{name} : ERROR loading max_val = {max_val}, converting to default value")
+        # min_val = np.nan
+    if isinstance(max_val, str):
+        raise ValueError(f"{name} : ERROR loading max_val = {max_val}")
+        # print(f"{name} : ERROR loading max_val = {max_val}, converting to default value")
+        # max_val = np.nan
 
     #### vel, mass, zenith ####
     # check if name=='v_init' or zenith_angle or m_init or erosion_height_start values are np.nan and replace them with the object_meteor values
@@ -4541,84 +4623,115 @@ def setup_dynesty_output_folder(out_folder, obs_data, bounds, flags_dict, fixed_
     return dynesty_file_in_output_path
 
 
-def read_prior_noise_fps_P_0m(file_path):
+def read_prior_noise_fps_P_0m(file_path, user_inputs=None, object_meteor=None):
     """
-    chack if present and read the prior file and return the bounds, flags, and fixed values.
+    check if present and read the prior file and return the bounds, flags, and fixed values.
     """
 
-    # defealut noise values
+    # default values
     noise_lag_prior = np.nan
     noise_lum_prior = np.nan
     P_0m = np.nan
     fps = np.nan
 
+    user_inputs = {} if user_inputs is None else dict(user_inputs)
+
+    # Build optional eval context (so expressions like n_lag0 work)
+    # NOTE: object_meteor is optional; if not given, h_* fall back to NaN.
+    h_beg = np.nan
+    h_end = np.nan
+    h_peak = np.nan
+    if object_meteor is not None and hasattr(object_meteor, "height_lum") and hasattr(object_meteor, "luminosity"):
+        h_beg  = float(np.max(object_meteor.height_lum))
+        h_end  = float(np.min(object_meteor.height_lum))
+        h_peak = float(object_meteor.height_lum[np.argmax(object_meteor.luminosity)])
+
+    # Allow aliases
+    if "n_lag0" in user_inputs and "noise_lag" not in user_inputs:
+        user_inputs["noise_lag"] = user_inputs["n_lag0"]
+    if "n_lum0" in user_inputs and "noise_lum" not in user_inputs:
+        user_inputs["noise_lum"] = user_inputs["n_lum0"]
+
+    eval_ctx = {
+        "h_beg": user_inputs.get("h_beg", h_beg),
+        "h_end": user_inputs.get("h_end", h_end),
+        "h_peak": user_inputs.get("h_peak", h_peak),
+
+        "v_0": user_inputs.get("v_0", user_inputs.get("v_init", np.nan)),
+        "m_0": user_inputs.get("m_0", user_inputs.get("m_init", np.nan)),
+        "z_0": user_inputs.get("z_0", user_inputs.get("zenith_angle", np.nan)),
+
+        "n_lag0": user_inputs.get("n_lag0", user_inputs.get("noise_lag", np.nan)),
+        "n_lum0": user_inputs.get("n_lum0", user_inputs.get("noise_lum", np.nan)),
+    }
+
     def safe_eval(value):
-        try:    
-            return eval(value, {"__builtins__": {"np": np}}, {})
+        """Evaluate numeric expressions safely; return np.nan if it can't be evaluated."""
+        if not isinstance(value, str):
+            return value
+        v = value.strip()
+        if v.lower() == "nan":
+            return np.nan
+        try:
+            out = eval(v, {"__builtins__": {}, "np": np, **eval_ctx}, {})
+            # ensure scalar numeric; otherwise treat as invalid here
+            if isinstance(out, (int, float, np.number)):
+                return float(out)
+            return np.nan
         except Exception:
-            return value  # Return as string if evaluation fails
-    
+            return np.nan
+
     # Read .prior file, ignoring comment lines
     with open(file_path, 'r') as file:
         for line in file:
             line = line.strip()
             if line.startswith('#') or not line:
                 continue
-            parts = line.split('#')[0].strip().split(',')  # Remove inline comments
+            parts = line.split('#')[0].strip().split(',')
             name = parts[0].strip()
 
-            # check if name is noise_lag
             if name not in ["noise_lag", "noise_lum", "fps", "P_0m"]:
                 continue
-            else:
-                # Handle fixed values
-                if "fix" in parts:
-                    val = parts[1].strip() if len(parts) > 1 else "nan"
-                    val_fixed = safe_eval(val) if val.lower() != "nan" else np.nan
-                    if not np.isnan(val_fixed):
-                        if name == "noise_lag":
-                            noise_lag_prior = val_fixed
-                        elif name == "noise_lum":
-                            noise_lum_prior = val_fixed
-                        elif name == "fps":
-                            fps = val_fixed
-                        elif name == "P_0m":
-                            P_0m = val_fixed
-                    continue  # Skip further processing for fixed values
-                                                    
-                min_val = parts[1].strip() if len(parts) > 1 else "nan"
-                max_val = parts[2].strip() if len(parts) > 2 else "nan"
-                flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
-                
-                # Handle NaN values and default replacement
-                min_val = safe_eval(min_val) if min_val.lower() != "nan" else np.nan
-                max_val = safe_eval(max_val) if max_val.lower() != "nan" else np.nan
 
-                #### vel, mass, zenith ####
-                # check if name=='v_init' or zenith_angle or m_init or erosion_height_start values are np.nan and replace them with the object_meteor values
-                if np.isnan(max_val):
-                    continue
-                elif ("norm" in flags or "invgamma" in flags):
+            # Handle fixed values
+            if "fix" in parts:
+                val = parts[1].strip() if len(parts) > 1 else "nan"
+                val_fixed = safe_eval(val)
+                if not np.isnan(val_fixed):
                     if name == "noise_lag":
-                        noise_lag_prior = max_val
+                        noise_lag_prior = val_fixed
                     elif name == "noise_lum":
-                        noise_lum_prior = max_val
+                        noise_lum_prior = val_fixed
                     elif name == "fps":
-                        fps = max_val
+                        fps = val_fixed
                     elif name == "P_0m":
-                        P_0m = max_val
-                else:
-                    if name == "noise_lag":
-                        # do the mean of the max and min values
-                        noise_lag_prior = np.mean([min_val,max_val])
-                    elif name == "noise_lum":
-                        # do the mean of the max and min values
-                        noise_lum_prior = np.mean([min_val,max_val])
-                    elif name == "fps":
-                        fps = np.mean([min_val, max_val])
-                    elif name == "P_0m":
-                        P_0m = np.mean([min_val, max_val])
-                
+                        P_0m = val_fixed
+                continue
+
+            min_val = parts[1].strip() if len(parts) > 1 else "nan"
+            max_val = parts[2].strip() if len(parts) > 2 else "nan"
+            flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
+
+            min_val = safe_eval(min_val)
+            max_val = safe_eval(max_val)
+
+            if np.isnan(max_val):
+                continue
+
+            if ("norm" in flags or "invgamma" in flags):
+                chosen = max_val
+            else:
+                chosen = np.mean([min_val, max_val]) if not np.isnan(min_val) else max_val
+
+            if name == "noise_lag":
+                noise_lag_prior = chosen
+            elif name == "noise_lum":
+                noise_lum_prior = chosen
+            elif name == "fps":
+                fps = chosen
+            elif name == "P_0m":
+                P_0m = chosen
+
     return noise_lag_prior, noise_lum_prior, fps, P_0m
 
 

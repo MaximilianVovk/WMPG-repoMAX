@@ -2597,7 +2597,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # Whole particle density qp [g/cm^3]
     qp_gcm3 = np.array([ 5.73, 4.28, 3.66, 3.30, 3.11, 2.84, 2.39, 1.14, 1.02, 0.92, 0.89, 2.92, 3.20 ], dtype=float)*1000
 
-    ax.scatter(dp_um, qp_gcm3, color='aquamarine', marker='v', s=50, label="Stardust - Iida et al. (2010)")
+    ax.scatter(dp_um, qp_gcm3, color='deepskyblue', marker='v', s=50, label="Stardust - Iida et al. (2010)")
 
     # # Diameters [μm]
     # diam_um = np.array([74, 63, 45, 42, 36, 34, 32, 24, 19, 19, 17], dtype=float)/1000
@@ -2628,10 +2628,18 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ]) * 1000
 
 
-    ax.scatter(impactor_diam_um, rho_gcm3, color='mediumaquamarine', marker='^', s=50, label="Stardust - Kearsley et al. (2008)**")
+    ax.scatter(impactor_diam_um, rho_gcm3, color='steelblue', marker='^', s=50, label="Stardust - Kearsley et al. (2008)**")
 
     ### bad
-    ax.fill_between([0.0001, 0.1], 3000, 8000, color='lime', alpha=0.1, zorder=0, label="Lunar Microcraters - Nagel et al. (1980)")
+    ax.fill_between([0.0001, 0.1], 3000, 8000, color='lime', alpha=0.1, zorder=0, label="Lunar Microcraters - Nagel et al. (1980)") # Fetching Dust solar system <30 % prbably etween 3 and 1 g/cm3
+
+    ### bad
+    # create a band distribution from Deduced density (gem -a) 8 3 1-2 and Deduced range of particle  diameters (~m) 0.7-3.1 1.3-2.9 1.5-7.2
+    deduced_density = np.array([1000, 2000, 3000, 8000])
+    deduced_diameter_min = np.array([0.7, 0.7, 1.3, 1.5])/1000
+    deduced_diameter_max = np.array([3.1, 3.1, 2.9, 7.2])/1000
+    # make the bands 
+    ax.fill_betweenx(deduced_density, deduced_diameter_min, deduced_diameter_max, color='limegreen', alpha=0.2, zorder=0, label="Lunar Microcraters - Smith et al. (1974)") # , edgecolor='none'
 
     ### bad
     # LDEF ranges from 2.0 to 5 g cm3 for masses of 10^-15 - 10^-9 kg
@@ -2640,6 +2648,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ### bad
     # LDEF ranges from 2.0 to 2.4 g cm3 for masses of 10^-15 - 10^-9 kg
     ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 2400, color='gold', alpha=0.5, zorder=0, label="LDEF - McDonnell and Gardner (1998)") # , edgecolor='none'
+
+    ### bad
+    # put a line between min 50, max is 296 / 1000 mm
+    ax.plot([0.1/1000, 0.35], [2500, 2500], color='yellow', linestyle='--', marker='H', label="Hubble - Moussi et al. (2005)")
 
     ### bad
     # put a line between min 50, max is 296 / 1000 mm
@@ -2684,13 +2696,17 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     mass_kg = np.array([
         7.2e-6, 3.2e-5, 3.5e-5, 7.7e-5, 4.3e-5, 3.1e-5,
         6.0e-5, 3.6e-5, 1.3e-4, 3.8e-5, 2.7e-4, 2.6e-5,
-        1.7e-4, 3.1e-4, 5.0e-4, 6.7e-5, 4.5e-5, 7.0e-5
+        1.7e-4, 7.0e-5,
+        1.19/1000, 1.54/1000, 0.16/1000, 0.13/1000, 0.274/1000, 4.48*10**(-3)/1000,
+        1.87/1000, 0.505/1000, 0.952/1000
     ], dtype=float)
 
     delta_kgm3 = np.array([
         2590, 2000, 1100, 2800, 1090, 2000,
         2430, 2300, 1500, 1900, 1500, 3300,
-        1400, 2000, 2200, 1100, 1850, 700
+        1400, 700,
+        600, 700, 790, 1500, 1500, 2040,
+        1700, 1100, 450
     ], dtype=float)
 
     # append the mass_kg and delta_kgm3 to the previous mass_g and rho_kgm3

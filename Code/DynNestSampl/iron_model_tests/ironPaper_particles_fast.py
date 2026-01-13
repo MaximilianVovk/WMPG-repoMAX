@@ -4,7 +4,7 @@ from scipy.special import gamma as gamma_func
 from concurrent.futures import ThreadPoolExecutor
 import os
 
-output_path = r'C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\iron_model_tests'
+output_path = r'C:\Users\maxiv\Documents\UWO\Papers\2.1)Iron Letter'
 
 def compute_gamma_distribution_with_leftover(
     erosion_bins_per_10mass=10,
@@ -95,8 +95,8 @@ def compute_pwerlaw_distribution_with_leftover(
     return m_grains, int_counts
 
 # Parallel execution for multiple mass indices
-# mass_indices = [1, 1.25, 1.5, 1.75]
-mass_indices = [2, 2.25, 2.5, 2.75, 3]
+# mass_indices = [1, 1.25, 1.5, 1.75] # [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3]
+mass_indices = [1.5, 2, 2.5]
 # mass_indices = [2]
 results = {}
 results_pow = {}
@@ -126,13 +126,13 @@ fig, ax = plt.subplots(figsize=(8, 6))
 for idx in mass_indices:
     mass_bins, int_counts, m_mean = results[idx]
     # ax.axvline(m_mean, color='r', linestyle='--', linewidth=2, label=r'$\langle m \rangle$', zorder=0)
-    ax.plot(mass_bins, int_counts, marker='o', linestyle='-', label=f'Gamma s = {idx}')
+    ax.plot(mass_bins, int_counts, marker='o', linestyle='-', label=f'Gamma $s_{{\gamma}}$ = {idx}')
 
 # reset the color cycle for the next plot
 ax.set_prop_cycle(None)
 for idx in mass_indices:
     mass_bins_pow, int_counts_pow = results_pow[idx]
-    ax.plot(mass_bins_pow, int_counts_pow, marker='x', linestyle='--', label=f'Power-law s = {idx}')
+    ax.plot(mass_bins_pow, int_counts_pow, marker='x', linestyle='--', label=f'Power-law $s$ = {idx}')
 
 # make the y axis up to the biggest number of grain of gamma distribution mass_bins
 max_y = max(max(int_counts) for _, int_counts, _ in results.values())

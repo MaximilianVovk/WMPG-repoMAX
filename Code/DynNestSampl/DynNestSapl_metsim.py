@@ -3727,8 +3727,12 @@ class observation_data:
             if lum_eff_type_val is not None and not (lum_eff_type_val == 0 and lum_eff_type_fixed):
                 # Get the luminous efficiency
                 tau_lum_eff_type = luminousEfficiency(lum_eff_type_val, luminous_efficiency, self.v_init, photom_mass)
-                print("NOTE: Adjusting luminous efficiency for the given lum_eff_type =", tau_lum_eff_type)
-                photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=tau_lum_eff_type, P_0m=self.P_0m)
+                print("NOTE: Adjusting luminous efficiency for the given lum_eff_type new luminous efficiency =", tau_lum_eff_type)
+                if tau_lum_eff_type <= 0:
+                    print("WARNING: Computed non-physical luminous efficiency. Using constant value instead.")
+                else:
+                    # Recompute the photometric mass with the new luminous efficiency
+                    photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=tau_lum_eff_type, P_0m=self.P_0m)
 
             m_init_list.append(photom_mass)
 

@@ -1,15 +1,96 @@
 import os
-import pandas as pd
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+
+def plot_upper_triangle_corr_squares(corr_df: pd.DataFrame,
+                                     outpath: str,
+                                     annotate: bool = True,
+                                     fmt: str = "{:.2f}",
+                                     figsize=(10, 10),
+                                     dpi=300):
+    """
+    Plot an upper-triangle correlation matrix as colored squares.
+    - labels only on left (y) and bottom (x)
+    - upper triangle (k=1) only, diagonal and lower are blank
+    - colormap: blue (negative) -> red (positive)
+    """
+    labels = list(corr_df.index)
+    n = len(labels)
+
+    # Ensure same order for rows/cols
+    corr_df = corr_df.loc[labels, labels]
+
+    cmap = plt.colormaps["coolwarm"]
+    norm = Normalize(vmin=-1, vmax=1)
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Draw only LOWER triangle squares
+    for i in range(n):
+        for j in range(n):
+            if j >= i:
+                continue  # skip diagonal and upper triangle
+
+            val = corr_df.iat[i, j]
+            if np.isnan(val):
+                continue
+
+            color = cmap(norm(val))
+            rect = plt.Rectangle((j, i), 1, 1, facecolor=color, edgecolor="white", linewidth=1.0)
+            ax.add_patch(rect)
+
+            if annotate:
+                ax.text(j + 0.5, i + 0.5, fmt.format(val),
+                        ha="center", va="center", fontsize=10, color="black")
+
+
+    # Axes formatting: make it look like a matrix
+    ax.set_xlim(0, n)
+    ax.set_ylim(n, 0)  # invert y so first label is at top
+
+    ax.set_aspect("equal")
+
+    # ticks at cell centers
+    ax.set_xticks(np.arange(n) + 0.5)
+    ax.set_yticks(np.arange(n) + 0.5)
+
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.set_yticklabels(labels, rotation=0)
+
+    # Only show bottom and left labels; hide top/right ticks
+    ax.tick_params(top=False, bottom=True, left=True, right=False, labeltop=False)
+
+    # Hide x tick labels for non-bottom? (we only have one axis here, so keep bottom)
+    # Draw a clean frame
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    # Add colorbar
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Correlation", rotation=90)
+
+    # ax.set_title("Summed correlation matrix (lower triangle)")
+
+    plt.tight_layout()
+    fig.savefig(outpath, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
 
 def load_and_sum_correlations(directory):
-    # Initialize a dictionary to store correlation sums, max, min, and count of correlations
     correlation_sum = {}
     max_correlation = {}
     min_correlation = {}
     max_correlation_file = {}
     min_correlation_file = {}
     count_correlation = {}
+
+    master_labels = None
+    master_size = -1   # <-- track the largest matrix dimension
+
 
     # Walk through all subdirectories in the given directory
     for root, dirs, files in os.walk(directory):
@@ -20,7 +101,20 @@ def load_and_sum_correlations(directory):
                 
                 # Load the CSV file, skipping the first empty cell (first row and first column)
                 file_path = os.path.join(root, file_name)
-                df = pd.read_csv(file_path, index_col=0)  # Set the first column as index
+
+                df = pd.read_csv(file_path, index_col=0)
+
+                # Strip whitespace just in case
+                df.index = df.index.astype(str).str.strip()
+                df.columns = df.columns.astype(str).str.strip()
+
+                # Keep the label order from the BIGGEST matrix we find
+                # (use number of columns; you can also use df.shape[0]*df.shape[1] if you prefer)
+                this_size = df.shape[1]
+
+                if this_size > master_size:
+                    master_size = this_size
+                    master_labels = list(df.columns)
 
                 # Ensure the dataframe has more than 1 row and column
                 if df.shape[0] > 1 and df.shape[1] > 1:
@@ -63,6 +157,36 @@ def load_and_sum_correlations(directory):
 
     # Convert the correlation sum dictionary to a DataFrame
     correlation_df = pd.DataFrame(list(correlation_sum.items()), columns=['pair', 'total_correlation'])
+
+    # Use the CSV's native order (from the first file)
+    labels = [s.strip() for s in master_labels]
+    n = len(labels)
+
+    sum_mat = np.full((n, n), np.nan, dtype=float)
+
+    # Fill upper triangle using your summed totals (and mirror if you want symmetry)
+    idx = {lab: k for k, lab in enumerate(labels)}
+
+    for pair, total in correlation_sum.items():
+        v1, v2 = [s.strip() for s in pair.split(" - ")]
+        if v1 not in idx or v2 not in idx:
+            continue
+        i = idx[v1]; j = idx[v2]
+        if i == j:
+            continue
+        ii, jj = (i, j) if i > j else (j, i)  # lower triangle
+        avg = total / count_correlation[pair]
+        sum_mat[ii, jj] = avg
+
+
+
+    # Wrap in DataFrame (same labels for rows/cols)
+    sum_corr_df = pd.DataFrame(sum_mat, index=labels, columns=labels)
+
+    # Plot it
+    out_png = os.path.join(directory, "sum_correlation_each_meteor_single.png")
+    plot_upper_triangle_corr_squares(sum_corr_df, out_png, annotate=True, figsize=(0.6*n + 4, 0.6*n + 4))
+
     
     # Add max, min, and average correlation columns, including the file names
     correlation_df['max_correlation'] = correlation_df['pair'].map(max_correlation)
@@ -88,7 +212,7 @@ def load_and_sum_correlations(directory):
 
 
 # Specify the directory where your files are stored
-directory = r'C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new'  # Adjust if needed based on your working directory
+directory = r'C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new'  # Adjust if needed based on your working directory
 
 top_5, bottom_5, output_file = load_and_sum_correlations(directory)
 

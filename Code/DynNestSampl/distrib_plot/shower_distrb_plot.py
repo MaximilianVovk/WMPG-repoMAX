@@ -1728,39 +1728,42 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_kinetic_energy.png"), bbox_inches='tight', dpi=300)
 
-    ### PLOT rho and error against dynamic pressure color by speed ###
-    thr = 2.9999  # log10 Pa  (≈ 1.58 kPa) 3.1 log10 Pa (≈ 1.26 kPa)
-    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+    try:
+        ### PLOT rho and error against dynamic pressure color by speed ###
+        thr = 2.9999  # log10 Pa  (≈ 1.58 kPa) 3.1 log10 Pa (≈ 1.26 kPa)
+        fig = plt.figure(figsize=(6, 4), constrained_layout=True)
 
-    
-    scatter_d = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
-    plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
-    scatter = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
-    plt.errorbar(rho, np.log10(erosion_beg_dyn_press),
-                xerr=[abs(rho_lo), abs(rho_hi)],
-                elinewidth=0.75,
-            capthick=0.75,
-            fmt='none',
-            ecolor='black',
-            capsize=3,
-            zorder=1
-        )
-    # # plot for each the all_names close to their name
-    # for i, txt in enumerate(all_names):
-    #     # put th text in the plot
-    #     plt.annotate(txt, (rho[i], np.log10(erosion_beg_dyn_press[i])), fontsize=8, color='black')
-    # invert the y axis
-    plt.gca().invert_yaxis()
-    plt.colorbar(scatter, label='v$_{0}$ [km/s]')
-    plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
-    plt.ylabel("log$_{10}$ Dynamic Pressure [Pa]", fontsize=15)
-    # plot the thr line
-    plt.axhline(y=thr, color='gray', linestyle='--', linewidth=1)
-    # plt.yscale("log")
-    # grid on
-    plt.grid(True)
+        
+        scatter_d = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+        plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
+        scatter = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
+        plt.errorbar(rho, np.log10(erosion_beg_dyn_press),
+                    xerr=[abs(rho_lo), abs(rho_hi)],
+                    elinewidth=0.75,
+                capthick=0.75,
+                fmt='none',
+                ecolor='black',
+                capsize=3,
+                zorder=1
+            )
+        # # plot for each the all_names close to their name
+        # for i, txt in enumerate(all_names):
+        #     # put th text in the plot
+        #     plt.annotate(txt, (rho[i], np.log10(erosion_beg_dyn_press[i])), fontsize=8, color='black')
+        # invert the y axis
+        plt.gca().invert_yaxis()
+        plt.colorbar(scatter, label='v$_{0}$ [km/s]')
+        plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
+        plt.ylabel("log$_{10}$ Dynamic Pressure [Pa]", fontsize=15)
+        # plot the thr line
+        plt.axhline(y=thr, color='gray', linestyle='--', linewidth=1)
+        # plt.yscale("log")
+        # grid on
+        plt.grid(True)
 
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_dynamic_pressure.png"), bbox_inches='tight', dpi=300)
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_dynamic_pressure.png"), bbox_inches='tight', dpi=300)
+    except:
+        print("Error plotting rho vs dynamic pressure.")
 
     ### PLOT rho and error against eta pressure color by speed ###
 
@@ -4946,7 +4949,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\GEM-test\GEM-CAMO+EMCCDfixed-disruption",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -4985,4 +4988,4 @@ if __name__ == "__main__":
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
     shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, 
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot

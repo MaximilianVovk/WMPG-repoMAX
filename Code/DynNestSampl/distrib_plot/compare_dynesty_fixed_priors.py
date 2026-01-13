@@ -628,97 +628,97 @@ def compare_fixed_priors_with_flags(
 
 ##################################### ORI CAP PLOT #####################################
 
-# info = compare_fixed_priors_with_flags(
-#     input_folders=[
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-lum.eff\Results\LumEff\ORI-HighLumEff",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-lum.eff\Results\LumEff\ORI-LowLumEff",
-#     ],
-#     labels=[r"$\tau$=3%", r"$\tau$=0.4%", r"$\tau$=0.05%"],  # legend labels
-#     colors=["red", "blue", "green"],              # requested colors
-#     ci=0.95,
-#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-lum.eff\Results\ORIcompare_tau_runs.png",    # figure path
-#     # figure_title="ORI Sensitivity to fixed τ prior",   # (optional) title
-#     verbose=True,              # << turn on once to see diagnostics
-#     align_mode="labels",  # << default; uses your flags order
-# )
-# print(info)
+info = compare_fixed_priors_with_flags(
+    input_folders=[
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-lum.eff\ORI-HighLumEff",
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-lum.eff\ORI-LowLumEff",
+    ],
+    labels=[r"$\tau$=3%", r"$\tau$=0.4%", r"$\tau$=0.05%"],  # legend labels
+    colors=["red", "blue", "green"],              # requested colors
+    ci=0.95,
+    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-lum.eff\ORIcompare_tau_runs.png",    # figure path
+    # figure_title="ORI Sensitivity to fixed τ prior",   # (optional) title
+    verbose=True,              # << turn on once to see diagnostics
+    align_mode="labels",  # << default; uses your flags order
+)
+print(info)
 
-# info = compare_fixed_priors_with_flags(
-#     input_folders=[
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-lum.eff\Results\LumEff\CAP-HighLumEff",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-lum.eff\Results\LumEff\CAP-LowLumEff",
-#     ],
-#     labels=[r"$\tau$=3.5%", r"$\tau$=1.4%", r"$\tau$=0.12%"],  # legend labels
-#     colors=["red", "blue", "green"],              # requested colors
-#     ci=0.95,
-#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-lum.eff\Results\CAPcompare_tau_runs.png",    # figure path
-#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
-#     verbose=True,              # << turn on once to see diagnostics
-#     align_mode="labels",  # << default; uses your flags order
-# )
-# print(info)
+info = compare_fixed_priors_with_flags(
+    input_folders=[
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-lum.eff\CAP-HighLumEff",
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-lum.eff\CAP-LowLumEff",
+    ],
+    labels=[r"$\tau$=3.5%", r"$\tau$=1.4%", r"$\tau$=0.12%"],  # legend labels
+    colors=["red", "blue", "green"],              # requested colors
+    ci=0.95,
+    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-lum.eff\CAPcompare_tau_runs.png",    # figure path
+    # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+    verbose=True,              # << turn on once to see diagnostics
+    align_mode="labels",  # << default; uses your flags order
+)
+print(info)
 
-# info = compare_fixed_priors_with_flags(
-#     input_folders=[
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\ORI_radiance",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
-#     ],
-#     labels=[r"EMCCD only", r"EMCCD + CAMO"],  # legend labels
-#     colors=["brown", "blue"],              # requested colors
-#     ci=0.95,
-#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORIcompare_Camera_runs.png",    # figure path
-#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
-#     verbose=True,              # << turn on once to see diagnostics
-#     # align_mode="labels",  # << default; uses your flags order
-# )
-# print(info)
+info = compare_fixed_priors_with_flags(
+    input_folders=[
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\ORI_radiance",
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
+    ],
+    labels=[r"EMCCD only", r"EMCCD + CAMO"],  # legend labels
+    colors=["brown", "blue"],              # requested colors
+    ci=0.95,
+    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORIcompare_Camera_runs.png",    # figure path
+    # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+    verbose=True,              # << turn on once to see diagnostics
+    # align_mode="labels",  # << default; uses your flags order
+)
+print(info)
 
-# info = compare_fixed_priors_with_flags(
-#     input_folders=[
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\CAP_radiance",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
-#     ],
-#     labels=[r"EMCCD only", r"EMCCD + CAMO"],  # legend labels
-#     colors=["brown", "blue"],              # requested colors
-#     ci=0.95,
-#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAPcompare_Camera_runs.png",    # figure path
-#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
-#     verbose=True,              # << turn on once to see diagnostics
-#     # align_mode="labels",  # << default; uses your flags order
-# )
-# print(info)
+info = compare_fixed_priors_with_flags(
+    input_folders=[
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\EMCCD only\CAP_radiance",
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
+    ],
+    labels=[r"EMCCD only", r"EMCCD + CAMO"],  # legend labels
+    colors=["brown", "blue"],              # requested colors
+    ci=0.95,
+    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAPcompare_Camera_runs.png",    # figure path
+    # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+    verbose=True,              # << turn on once to see diagnostics
+    # align_mode="labels",  # << default; uses your flags order
+)
+print(info)
 
-# info = compare_fixed_priors_with_flags(
-#     input_folders=[
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-grainrho\Results\ORI",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
-#     ],
-#     labels=[r"$\rho_g$=3500 kg/m$^3$", r"$\rho_g$=3000 kg/m$^3$"],  # legend labels
-#     colors=["orange", "blue"],              # requested colors
-#     ci=0.95,
-#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-grainrho\Results\ORIcompare_rhoGrains_runs.png",    # figure path
-#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
-#     verbose=True,              # << turn on once to see diagnostics
-#     # align_mode="labels",  # << default; uses your flags order
-# )
-# print(info)
+info = compare_fixed_priors_with_flags(
+    input_folders=[
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-grainrho\ORI",
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\ORI_radiance_new",
+    ],
+    labels=[r"$\rho_g$=3500 kg/m$^3$", r"$\rho_g$=3000 kg/m$^3$"],  # legend labels
+    colors=["orange", "blue"],              # requested colors
+    ci=0.95,
+    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-grainrho\ORIcompare_rhoGrains_runs.png",    # figure path
+    # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+    verbose=True,              # << turn on once to see diagnostics
+    # align_mode="labels",  # << default; uses your flags order
+)
+print(info)
 
-# info = compare_fixed_priors_with_flags(
-#     input_folders=[
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-grainrho\Results\CAP",
-#         r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
-#     ],
-#     labels=[r"$\rho_g$=3500 kg/m$^3$", r"$\rho_g$=3000 kg/m$^3$"],  # legend labels
-#     colors=["orange", "blue"],              # requested colors
-#     ci=0.95,
-#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Validation-grainrho\Results\CAPcompare_rhoGrains_runs.png",    # figure path
-#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
-#     verbose=True,              # << turn on once to see diagnostics
-#     # align_mode="labels",  # << default; uses your flags order
-# )
-# print(info)
+info = compare_fixed_priors_with_flags(
+    input_folders=[
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-grainrho\CAP",
+        r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP_radiance_new",
+    ],
+    labels=[r"$\rho_g$=3500 kg/m$^3$", r"$\rho_g$=3000 kg/m$^3$"],  # legend labels
+    colors=["orange", "blue"],              # requested colors
+    ci=0.95,
+    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Validation\Sensitivity-grainrho\CAPcompare_rhoGrains_runs.png",    # figure path
+    # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+    verbose=True,              # << turn on once to see diagnostics
+    # align_mode="labels",  # << default; uses your flags order
+)
+print(info)
 
 ##################################### Sporadic PLOT #####################################
 
@@ -806,20 +806,21 @@ def compare_fixed_priors_with_flags(
 
 ################################## GEM ####################################
 
-info = compare_fixed_priors_with_flags(
-    input_folders=[
-        r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM-CAMO+EMCCD",
-        r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM-CAMO+EMCCD-lumeff+",
-    ],
-    labels=[r"$\tau$ Vida et Al. (2024)", r"$\tau$ Pecina&Caplecha (1983)"],  # legend labels
-    colors=["blue", "red"],              # requested colors # 
-    ci=0.95,
-    output_png=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM_compare_tau_runs.png",    # figure path
-    # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
-    verbose=True,              # << turn on once to see diagnostics
-    align_mode="labels",  # << default; uses your flags order
-)
-print(info)
+# info = compare_fixed_priors_with_flags(
+#     input_folders=[
+#         r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\GEM_2frag",
+#         r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\GEM_2frag_Borovicka",
+#         r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\GEM_2frag_CZcam_P&C",
+#     ],
+#     labels=[r"$\tau$ Vida et Al. (2024)", r"$\tau$ Borovicka et Al. (2020)", r"$\tau$ P&C (1983) w/ CZ cam."],  # legend labels
+#     colors=["blue", "red", "green"],              # requested colors # 
+#     ci=0.95,
+#     output_png=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\DoubleFragm-GEM_compare_tau_runs.png",    # figure path
+#     # figure_title="CAP Sensitivity to fixed τ prior",   # (optional) title
+#     verbose=True,              # << turn on once to see diagnostics
+#     align_mode="labels",  # << default; uses your flags order
+# )
+# print(info)
 
 # info = compare_fixed_priors_with_flags(
 #     input_folders=[

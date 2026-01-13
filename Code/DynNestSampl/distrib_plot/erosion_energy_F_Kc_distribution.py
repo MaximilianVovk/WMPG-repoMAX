@@ -928,9 +928,9 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
             # ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma1_low, Tot_energy_arr_sigma1_high, color='darkgray', alpha=0.3, label='Atm. Density Uncert. (±1σ)')
             # ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma2_low, Tot_energy_arr_sigma2_high, color='gray', alpha=0.2, label='Atm. Density Uncert. (±2σ)')
             # ax[1].fill_betweenx(unique_heights_massvar/1000, Tot_energy_arr_sigma3_low, Tot_energy_arr_sigma3_high, color='lightgray', alpha=0.1, label='Atm. Density Uncert. (±3σ)')
-            ax[1].plot(Tot_energy_arr_cum, unique_heights_massvar/1000, color='k', label='Receive Energy Profile')
+            ax[1].plot(Tot_energy_arr_cum, unique_heights_massvar/1000, color='k', label='Received Energy')
             # # add a hrizontal line at y=total_energy_before_erosion
-            ax[1].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start $h_{e}$')
+            ax[1].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Height of Erosion Start')# Erosion Height Start $h_{e}$')
             ax[0].axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--')
 
             # found the index of erosion_height_change in variables
@@ -956,7 +956,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
                 print(f"Unit energy before second erosion: {energy_per_mass_before_second_erosion} MJ/kg")
                 # print(f"Total energy before second erosion: {total_energy_before_second_erosion} kJ")
                 # print the constjson_bestfit.erosion_height_change as a line
-                ax[1].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.', label='Erosion Height Change $h_{e_2}$') # , label='Erosion Height Change $h_{e_2}$')
+                ax[1].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.', label='Height of Erosion Change') # Erosion Height Change $h_{e_2}$') # , label='Erosion Height Change $h_{e_2}$')
                 ax[0].axhline(y=erosion_height_change_best/1000, color='gray', linestyle='-.')
 
             print(f"Precise total Kinetic Energy: {Tot_energy} kJ")
@@ -1451,7 +1451,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Validation_nlive\nlive500
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3.2)Iron Letter\irons-rho_eta100-noPoros\Best_iron-fit",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2.1)Iron Letter\irons-rho_eta100-noPoros\Tau3\20210813_022604",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

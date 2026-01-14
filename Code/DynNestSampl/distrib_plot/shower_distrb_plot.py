@@ -123,6 +123,37 @@ variable_map_plot = {
     'noise_lum': r"$\sigma_{lum}$ [W]"
 }
 
+fmt_kind = {
+    'v_init': "fixed2",
+    'zenith_angle': "fixed2",
+    'm_init': "sci",
+    'rho': "int",
+    'sigma': "sci",
+    'erosion_height_start': "fixed2",
+    'erosion_coeff': "sci",
+    'erosion_mass_index': "fixed2",
+    'erosion_mass_min': "sci",
+    'erosion_mass_max': "sci",
+    'erosion_height_change': "fixed2",
+    'erosion_coeff_change': "sci",
+    'erosion_rho_change': "int",
+    'erosion_sigma_change': "sci",
+    'compressive_strength': "sci",
+    'disruption_mass_index': "sci",
+    'disruption_mass_min_ratio': "sci",
+    'disruption_mass_max_ratio': "sci",
+    'disruption_mass_grain_ratio': "sci",
+    'height': "fixed2",
+    'mass_percent': "int",
+    'number': "int",
+    'sigma': "sci",
+    'erosion_coeff': "sci",
+    'grain_mass_min': "sci",
+    'grain_mass_max': "sci",
+    'mass_index': "fixed2",
+    'noise_lag': "sci",
+    'noise_lum': "sci"
+}
 
 # create a txt file where you save averithing that has been printed
 class Logger(object):
@@ -956,6 +987,39 @@ def extract_tj_from_report(report_path):
     return Tj, Tj_low, Tj_high, inclin_val, Vg_val, Q_val, q_val, a_val, e_val
 
 
+def _fmt_value(x, kind="float"):
+    if x is None or (isinstance(x, float) and not np.isfinite(x)):
+        return r"\textemdash"
+    if kind == "int":
+        return f"{int(np.round(x))}"
+    if kind == "fixed2":
+        return f"{x:.2f}"
+    if kind == "sci":
+        return f"{x:.3g}"
+    return f"{x:.3g}"
+
+def fmt_ci_asym(med, lo, hi, kind="float", err_kind=None):
+    if any(v is None or (isinstance(v, float) and not np.isfinite(v)) for v in (med, lo, hi)):
+        return r"\textemdash"
+
+    dlo = med - lo
+    dhi = hi - med
+    err_kind = err_kind or kind
+
+    med_s = _fmt_value(med, kind)
+    dlo_s = _fmt_value(abs(dlo), err_kind)
+    dhi_s = _fmt_value(abs(dhi), err_kind)
+
+    return rf"${med_s}_{{-{dlo_s}}}^{{+{dhi_s}}}$"
+
+def esc_tex(s: str) -> str:
+    # enough for meteor IDs and most labels
+    return (s.replace("\\", r"\textbackslash ")
+             .replace("_", r"\_")
+             .replace("%", r"\%")
+             .replace("&", r"\&")
+             .replace("#", r"\#"))
+
 def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
     """
     Summarize dynesty results, using the sample of max weight as the mode.
@@ -1136,7 +1200,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
     erosion_energy_per_unit_mass_corrected = []
     erosion_energy_per_unit_cross_section_end_corrected = []
     erosion_energy_per_unit_mass_end_corrected = []
-
+    rows = []
 
     # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
     if os.path.exists(output_dir_show+os.sep+"log_shower_distrb_plot.txt"):
@@ -1185,7 +1249,6 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
         labels
         )
 
-
         dynesty_run_results = dsampler.results
         weights = dynesty_run_results.importance_weights()
         w = weights / np.sum(weights)
@@ -1209,6 +1272,15 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 obs_data.noise_lum = guess[i]
             if variable == 'erosion_rho_change':
                 flag_total_rho = True
+
+        row = [esc_tex(base_name)]
+        for var_name in variables:
+            med = summary_df_meteor['Median'].values[variables_sing.index(var_name)]
+            lo  = summary_df_meteor['Low95'].values[variables_sing.index(var_name)]
+            hi  = summary_df_meteor['High95'].values[variables_sing.index(var_name)]
+            kind = fmt_kind.get(var_name, "float")
+            row.append(fmt_ci_asym(med, lo, hi, kind=kind))
+        rows.append(row)
 
         beg_height = obs_data.height_lum[0]
         end_height = obs_data.height_lum[-1]
@@ -1545,6 +1617,38 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
     # Reset sys.stdout to its original value if needed
     sys.stdout = sys.__stdout__
+
+    caption = r"Your caption here."
+    label   = r"tab:phys_prop_x_case"
+
+    colspec = "l" + "c"*len(labels)  # first column left, rest centered
+
+    tex_lines = []
+    tex_lines.append(r"\begin{sidewaystable*}")
+    tex_lines.append(r"\centering")
+    tex_lines.append(r"\scriptsize")
+    tex_lines.append(r"\renewcommand{\arraystretch}{1.4}")
+    tex_lines.append(r"\setlength{\tabcolsep}{3pt}")
+    tex_lines.append(rf"\caption{{{caption}}}")
+    tex_lines.append(rf"\label{{{label}}}")
+    tex_lines.append(rf"\begin{{tabular}}{{{colspec}}}")
+    tex_lines.append(r"\hline")
+    tex_lines.append("Meteor & " + " & ".join(labels) + r"\\")
+    tex_lines.append(r"\hline")
+
+    for row in rows:
+        tex_lines.append(" & ".join(row) + r"\\")
+
+    tex_lines.append(r"\hline")
+    tex_lines.append(r"\end{tabular}")
+    tex_lines.append(r"\end{sidewaystable*}")
+    tex_str = "\n".join(tex_lines) + "\n"
+
+    out_tex = os.path.join(output_dir_show, "results_per_event_table.tex")  # change path/name if you want
+    with open(out_tex, "w", encoding="utf-8") as f:
+        f.write(tex_str)
+
+    print(f"Saved LaTeX table to: {out_tex}")
 
     return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
@@ -4949,7 +5053,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\GEM-test\GEM-CAMO+EMCCDfixed-disruption",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2.1)Iron Letter\irons-rho_eta100-noPoros\Best_iron-fit",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

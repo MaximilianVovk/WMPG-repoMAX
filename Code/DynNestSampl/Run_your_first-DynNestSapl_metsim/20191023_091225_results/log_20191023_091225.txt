@@ -54,4 +54,4 @@ noise_lum:	6.703580952166081
 
 Best fit logL: -181.06860874927605
 
-Time to run dynesty: 0:13:53.196964
+Time to run dynesty: 7:48:28.781154

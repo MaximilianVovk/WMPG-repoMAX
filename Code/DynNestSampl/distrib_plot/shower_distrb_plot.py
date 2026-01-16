@@ -1275,6 +1275,9 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
         row = [esc_tex(base_name)]
         for var_name in variables:
+            if var_name not in variables_sing:
+                row.append(r"\textemdash")
+                continue
             med = summary_df_meteor['Median'].values[variables_sing.index(var_name)]
             lo  = summary_df_meteor['Low95'].values[variables_sing.index(var_name)]
             hi  = summary_df_meteor['High95'].values[variables_sing.index(var_name)]
@@ -2051,6 +2054,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             # if name has "CAP" in the shower_name, then filter the stream_data for the shower_iau_no
             print(f"Filtering stream data for shower: {shower_name}")
             shower_iau_no = -1
+            shower_shw = "..."
             if "CAP" in shower_name:
                 csv_file_1 = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202407.txt","traj_summary_monthly_202407.pickle")
                 # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
@@ -2061,32 +2065,48 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 # extend the in csv_file
                 stream_data = pd.concat([csv_file_1, csv_file_2], ignore_index=True)
                 shower_iau_no = 1#"00001"
+                shower_shw = "CAP"
             elif "GEM" in shower_name:
                 stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202412.txt","traj_summary_monthly_202412.pickle")
                 # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
                 stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202412.csv", index=False)
                 shower_iau_no = 4#"00007"
+                shower_shw = "GEM"
             elif "PER" in shower_name:
                 stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202408.txt","traj_summary_monthly_202408.pickle")
                 # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
                 stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202408.csv", index=False)
                 shower_iau_no = 7#"00007"
+                shower_shw = "PER"
             elif "ORI" in shower_name: 
                 stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202410.txt","traj_summary_monthly_202410.pickle")
                 # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
                 stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202410.csv", index=False)
                 shower_iau_no = 8#"00008"
+                shower_shw = "ORI"
             elif "DRA" in shower_name:  
                 stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202410.txt","traj_summary_monthly_202410.pickle")
                 # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
                 stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202410.csv", index=False)
                 shower_iau_no = 9#"00009"
+                shower_shw = "DRA"
             else:
                 stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202402.txt","traj_summary_monthly_202402.pickle")
                 # save the csv_file to a file called: "traj_summary_monthly_202402.csv"
                 stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202402.csv", index=False)
                 shower_iau_no = -1
 
+            df_EMCCD = pd.read_csv(
+                r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\summ\summ_EMCCD+sporadics.txt",
+                sep=r"\s+",          # whitespace-separated columns
+                engine="python",
+            )
+
+            df_CAMO = pd.read_csv(
+                r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\summ\summ_CAMO+sporadics.txt",
+                sep=r"\s+",          # whitespace-separated columns
+                engine="python",
+            )
 
             print(f"Filtering stream data for shower IAU number: {shower_iau_no}")
             # filter the stream_data for the shower_iau_no
@@ -2108,7 +2128,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             stream_htbeg = stream_lor[:, 6]
             stream_tj = stream_lor[:, 7]
             # print(f"Found {len(stream_lg_min_la_sun)} stream data points for shower IAU number: {shower_iau_no}")
-
+            
             if shower_iau_no != -1:
 
                 print(f"Plotting stream data for shower IAU number: {shower_iau_no}")
@@ -2121,7 +2141,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 spor_lor = spor_data[['LAMgeo (deg)', 'BETgeo (deg)', 'Sol lon (deg)','LAMhel (deg)', 'BEThel (deg)','Vgeo (km/s)','HtBeg (km)', 'TisserandJ']].values
                 # translate to double precision float
                 spor_lor = spor_lor.astype(np.float64)
-                # and now compute lg_min_la_sun = (lg - la_sun)%360
+                df_EMCCD_spor = df_EMCCD[df_EMCCD['shw'] == '...']
+                df_CAMO_spor = df_CAMO[df_CAMO['shw'] == '...']
+                # # and now compute lg_min_la_sun = (lg - la_sun)%360
                 spor_lg_min_la_sun = (spor_lor[:, 0] - spor_lor[:, 2]) % 360
                 spor_bg = spor_lor[:, 1]
                 spor_lg_min_la_sun_helio = (spor_lor[:, 3] - spor_lor[:, 2]) % 360
@@ -2129,31 +2151,57 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 spor_vgeo = spor_lor[:, 5]
                 spor_htbeg = spor_lor[:, 6]
                 spor_tj = spor_lor[:, 7]
-
-                ### Velocity vs begin height scaterd with rho ###
-                print('Creating Velocity vs Begin Height scatter plot with stream...')
-                plt.figure(figsize=(10, 6))
                 scatter_GMN_spor = plt.scatter(spor_vgeo, spor_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
-                scatter_GMN_stream = plt.scatter(stream_vgeo, stream_htbeg, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
-                # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
-                ## mass or mm diameter
-                # scatter_d = plt.scatter(Vg_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
-                # plt.colorbar(scatter_d, label='mass [kg]')
-                scatter = plt.scatter(Vg_val, beg_height, c=rho, cmap='viridis', s=20, norm=Normalize(vmin=(rho.min()), vmax=(rho.max())), zorder=3)
-                plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
 
-                plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
-                plt.ylabel('$h_{beg}$ [km]', fontsize=15)
-                plt.grid(True)
+                df_EMCCD_shower = df_EMCCD[df_EMCCD['shw'] == shower_shw]
+                df_CAMO_shower = df_CAMO[df_CAMO['shw'] == shower_shw]
 
-                # # x axes from 10 to 22
-                # plt.xlim(11, 22)
-                # # y axes from 70 to 110
-                # plt.ylim(70, 110)
+                # plot this 3 times for the 3 cameras
+                for cam_name, df_cam_show, df_cam_spor in zip(['EMCCD', 'CAMO'], [df_EMCCD_shower, df_CAMO_shower], [df_EMCCD_spor, df_CAMO_spor]):
+                    ### Velocity vs Begin Height scatter plot with stream...
+                    print(cam_name,': Creating Velocity vs Begin Height scatter plot with stream...')
+                    plt.figure(figsize=(10, 6))
+                    scatter_EMCCD_spor = plt.scatter(df_cam_spor['v_g'].values, df_cam_spor['H_beg'].values, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
+                    scatter_EMCCD_stream = plt.scatter(df_cam_show['v_g'].values, df_cam_show['H_beg'].values, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
+                    # scatter_GMN_stream = plt.scatter(stream_vgeo, stream_htbeg, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
+                    # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
+                    ## mass or mm diameter
+                    # scatter_d = plt.scatter(Vg_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
+                    # plt.colorbar(scatter_d, label='mass [kg]')
+                    scatter = plt.scatter(Vg_val, beg_height, c=rho, cmap='viridis', s=20, norm=Normalize(vmin=(rho.min()), vmax=(rho.max())), zorder=3)
+                    plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
 
-                plt.tight_layout()
-                plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height.png"), bbox_inches='tight', dpi=300)
-                plt.close()
+                    plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
+                    plt.ylabel('$h_{beg}$ [km]', fontsize=15)
+                    plt.grid(True)
+
+                    # take the x range values
+                    x0, x1 = plt.xlim()
+
+                    # clamp
+                    x1 = min(x1, 80)
+                    x0 = max(x0, 0)
+
+                    plt.xlim(x0, x1)
+
+                    # take the y range values
+                    y0, y1 = plt.ylim()
+
+                    # clamp
+                    y1 = min(y1, 150)
+                    y0 = max(y0, 50)
+
+                    plt.ylim(y0, y1)
+
+
+                    # # x axes from 10 to 22
+                    # plt.xlim(11, 22)
+                    # # y axes from 70 to 110
+                    # plt.ylim(70, 110)
+
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height_{cam_name}.png"), bbox_inches='tight', dpi=300)
+                    plt.close()
 
                 ##### plot the data #####
 
@@ -2283,7 +2331,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 ### Velocity vs begin height scaterd with rho ###
                 print('Creating Velocity vs Begin Height scatter plot with stream...')
                 plt.figure(figsize=(10, 6))
-                scatter_GMN = plt.scatter(stream_vgeo, stream_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
+                df_EMCCD_spor = df_EMCCD[df_EMCCD['shw'] == '...']
+                spor_vgeo = df_EMCCD_spor['v_g'].values
+                spor_htbeg = df_EMCCD_spor['H_beg'].values
+                scatter_EMCCD_spor = plt.scatter(spor_vgeo, spor_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
+
+                # scatter_GMN = plt.scatter(stream_vgeo, stream_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
                 # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
                 # mass or mm diameter
                 # scatter_d = plt.scatter(Vg_val, beg_height, c=np.log10(eta_meteor_begin), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(eta_meteor_begin), 0.025), vmax=_quantile(np.log10(eta_meteor_begin), 0.975)), zorder=2)
@@ -2329,6 +2382,25 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     linewidths=1.2,
                     zorder=3
                 )
+
+                # take the x range values
+                x0, x1 = plt.xlim()
+
+                # clamp
+                x1 = min(x1, 80)
+                x0 = max(x0, 0)
+
+                plt.xlim(x0, x1)
+
+                # take the y range values
+                y0, y1 = plt.ylim()
+
+                # clamp
+                y1 = min(y1, 150)
+                y0 = max(y0, 50)
+
+                plt.ylim(y0, y1)
+
 
                 # one colorbar tied to rho
                 plt.colorbar(scatter, label='$\\rho$ [kg/m³]')

@@ -16,10 +16,8 @@ def byteswap_image(img: np.ndarray) -> np.ndarray:
     Byte-swap pixel values. Do this by default (as requested).
     Safe no-op for 8-bit images.
     """
-    if img.dtype.itemsize == 1:
-        return img
     # byteswap() swaps data; newbyteorder() fixes dtype endianness metadata
-    return img.byteswap().newbyteorder()
+    return img.byteswap()
 
 
 def gaussian(x, A, mu, sigma, C):
@@ -97,9 +95,14 @@ def process_axis(profile, axis_name, outdir, arcsec_per_pix=6.0, range_m=100_000
 
     y = maybe_invert(profile.astype(float))
 
-    # Keep only central third
-    x_c, y_c = central_third(x, y)
-    x_c, y_c = central_third(x_c, y_c)
+    # # keep only the one between + and - 20 pixels
+    mask = (x >= -50) & (x <= 50)
+    x_c = x[mask]
+    y_c = y[mask]
+    
+    # # Keep only central third
+    # x_c, y_c = central_third(x, y)
+    # x_c, y_c = central_third(x_c, y_c)
 
     # Fit 1 Gaussian and 2 Gaussians
     p1, _ = fit_1g(x_c, y_c)

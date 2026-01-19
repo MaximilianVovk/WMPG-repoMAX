@@ -27,11 +27,14 @@ __version__ = "1.0"
 WORK_DIR = os.getcwd()
 
 # Romulan paths (Windows)
-DATA_PATH_ROMULAN  = "/srv"+os.sep+"meteor"+os.sep+"romulan"+os.sep+"events"
-FLATS_PATH_ROMULAN = "/srv"+os.sep+"meteor"+os.sep+"romulan"+os.sep+"flats"
+DATA_PATH_ROMULAN  = "/srv/meteor/romulan/events"
+FLATS_PATH_ROMULAN = "/srv/meteor/romulan/flats"
 # Config files (as you specified)
-CONFIG_01R = "/srv"+os.sep+"reductions"+os.sep+"romulan"+os.sep+"2026_JB_remeasure"+os.sep+"20090825_035144"+os.sep+"01R"+os.sep+"01R_2009.config"
-CONFIG_02R = "/srv"+os.sep+"reductions"+os.sep+"romulan"+os.sep+"2026_JB_remeasure"+os.sep+"20090825_035144"+os.sep+"02R"+os.sep+"02R_2009.config"
+CONFIG_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/01R_2009.config"
+CONFIG_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/02R_2009.config"
+PLATE_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/platepar_cmn2010.cal"
+PLATE_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/platepar_cmn2010.cal"
+
 
 # check the OS
 if platform.system() == 'Windows':
@@ -174,6 +177,23 @@ def decompress_bz2_to_vid(bz2_path: str, dest_vid_path: str) -> None:
     with open(dest_vid_path, "wb") as fout:
         fout.write(data)
 
+def copy_plate(cam: str, dest_dir: str, error_track: ErrorTracker) -> None:
+    """Copy the per-camera plate file into dest_dir."""
+    if cam == "01R":
+        src = PLATE_01R
+    elif cam == "02R":
+        src = PLATE_02R
+    else:
+        error_track.add(f"Unknown camera '{cam}' for plate copy.")
+        return
+
+    if not os.path.isfile(src):
+        error_track.add(f"WARNING! Plate for {cam} not found at: {src}")
+        return
+
+    mkdirP(dest_dir)
+    dest = os.path.join(dest_dir, os.path.basename(src))
+    shutil.copy2(src, dest)
 
 def copy_config(cam: str, dest_dir: str, error_track: ErrorTracker) -> None:
     """Copy the per-camera config file into dest_dir."""
@@ -262,18 +282,21 @@ def processRomulanEvents(event_list: List[str], out_root: str, lookback_days: in
     """Main Romulan processing: create folder, decompress .vid, copy flats and configs."""
     for event_name in event_list:
         event_dir = os.path.join(out_root, event_name)
-        mkdirP(event_dir)
+
 
         for cam in CAMS:
             cam_dir = os.path.join(event_dir, cam)
-            mkdirP(cam_dir)
 
             # 1) Find event .vid.bz2 (with +/- 1s fallback)
             bz2_path, used_event_time = find_event_file(event_name, cam, error_track)
             if not bz2_path:
                 # keep camera dir (maybe you still want flats/config), but log
                 error_track.add(f"{event_name}: NOTE: Skipping .vid extraction for {cam} (event file missing).")
+                continue
             else:
+                mkdirP(event_dir)
+                mkdirP(cam_dir)
+                print(f"{event_name}: {cam} event file found decompressing : {bz2_path}")
                 # 2) Decompress to .vid in cam dir
                 # keep original filename, just drop .bz2
                 base_name = os.path.basename(bz2_path)
@@ -305,6 +328,13 @@ def processRomulanEvents(event_list: List[str], out_root: str, lookback_days: in
                 copy_config(cam, cam_dir, error_track)
             except Exception as e:
                 error_track.add(f"{event_name}: ERROR copying config for {cam}: {e}")
+
+            # 4) Copy plate
+            try:
+                copy_plate(cam, cam_dir, error_track)
+            except Exception as e:
+                error_track.add(f"{event_name}: ERROR copying plate for {cam}: {e}")
+
 
 
 def write_errors(error_track: ErrorTracker, out_root: str) -> None:

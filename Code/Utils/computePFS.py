@@ -96,7 +96,7 @@ def process_axis(profile, axis_name, outdir, arcsec_per_pix=6.0, range_m=100_000
     y = maybe_invert(profile.astype(float))
 
     # # keep only the one between + and - 20 pixels
-    mask = (x >= -50) & (x <= 50)
+    mask = (x >= -10) & (x <= 10)
     x_c = x[mask]
     y_c = y[mask]
     
@@ -131,8 +131,8 @@ def process_axis(profile, axis_name, outdir, arcsec_per_pix=6.0, range_m=100_000
 
     plt.figure(figsize=(8, 5))
     plt.plot(x_c, y_c, ".", label=f"{axis_name} profile (central third)")
-    plt.plot(xx, y1, "-", label=f"1G fit (sigma={sigma_1g:.2f}px, PSF={psf_1g_m:.3f} m)")
-    plt.plot(xx, y2, "--", label=f"2G sum (PSF1={psf_2g_m_1:.3f} m, PSF2={psf_2g_m_2:.3f} m)")
+    plt.plot(xx, y1, "r-", label=f"1G fit (sigma={sigma_1g:.2f}px, PSF={psf_1g_m:.3f} m)")
+    plt.plot(xx, y2, "k-", label=f"2G sum (PSF1={psf_2g_m_1:.3f} m, PSF2={psf_2g_m_2:.3f} m)")
     plt.plot(xx, comp1, ":", label=f"2G comp1 (sigma={s1:.2f}px)")
     plt.plot(xx, comp2, ":", label=f"2G comp2 (sigma={s2:.2f}px)")
     plt.xlabel("Pixels (relative to center)")
@@ -159,7 +159,7 @@ def process_axis(profile, axis_name, outdir, arcsec_per_pix=6.0, range_m=100_000
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--image", default=r"C:\Users\maxiv\Desktop\Elginfield_corr_1766282128_019302.png",
+    ap.add_argument("--image", default=r"/srv/public/mvovk/wake_runs_dynesty/PSF/Elginfield_corr_1766282128_019302.png",
                     help="Path to *_corr.png")
     ap.add_argument("--outdir", default=None,
                     help="Output directory (default: same as image)")

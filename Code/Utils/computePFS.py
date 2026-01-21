@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import argparse
 from pathlib import Path
+import re
 
 import numpy as np
 import matplotlib.pyplot as plt
 import imageio as iio
 from scipy.optimize import curve_fit
+import pandas as pd
 
 
 ARCSEC_TO_RAD = np.pi / (180.0 * 3600.0)
@@ -16,7 +18,6 @@ def byteswap_image(img: np.ndarray) -> np.ndarray:
     Byte-swap pixel values. Do this by default (as requested).
     Safe no-op for 8-bit images.
     """
-    # byteswap() swaps data; newbyteorder() fixes dtype endianness metadata
     return img.byteswap()
 
 
@@ -32,20 +33,42 @@ def two_gaussian(x, A1, mu1, s1, A2, mu2, s2, C):
     )
 
 
-def central_third(x, y):
-    n = len(y)
-    a = n // 3
-    b = 2 * n // 3
-    return x[a:b], y[a:b]
-
-
 def maybe_invert(y):
-    # If center is darker than background, invert so the "star" is a positive peak.
-    mid = y[len(y) // 2]
+    """
+    Decide inversion without assuming the peak is at the center.
+    If the strongest deviation from background is a *dip* (dark star),
+    invert so the signal becomes a positive peak.
+    """
+    y = np.asarray(y, dtype=float)
     bg = np.median(y)
-    if mid < bg:
-        return (y.max() - y)
+
+    # Compare absolute deviation above vs below background
+    dev_up = np.max(y) - bg
+    dev_dn = bg - np.min(y)
+
+    if dev_dn > dev_up:
+        # stronger dip than peak -> invert
+        return (np.max(y) - y)
     return y
+
+
+def peak_index(y, smooth_window=7):
+    """
+    Return index of the peak, using light smoothing to avoid noise spikes.
+    """
+    y = np.asarray(y, dtype=float)
+
+    if smooth_window and smooth_window > 1:
+        w = int(smooth_window)
+        if w % 2 == 0:
+            w += 1
+        kernel = np.ones(w) / w
+        y_s = np.convolve(y, kernel, mode="same")
+    else:
+        y_s = y
+
+    return int(np.argmax(y_s))
+
 
 
 def fit_1g(x, y):
@@ -80,29 +103,40 @@ def fit_2g(x, y):
 
 
 def variance_to_psf_m(variance_pix, arcsec_per_pix=6.0, range_m=100_000.0):
-    # User-specified rule:
-    # x_arcsec = arcsec_per_pix * variance_pix
     x_rad = (arcsec_per_pix * variance_pix) * ARCSEC_TO_RAD
-    # 6 arc sec per pixel * Variance of gaussian = x
-    # height of the meteor 100 km * tang(x) = PSF for both axes
     return range_m * np.tan(x_rad)
 
 
-def process_axis(profile, axis_name, outdir, arcsec_per_pix=6.0, range_m=100_000.0):
-    # Build x in pixel units centered at 0
-    n = len(profile)
-    x = np.arange(n, dtype=float) - (n // 2)
+def extract_event_id(png_path: Path) -> str:
+    """
+    From:
+      Tavistock_corr_1766400731_006487.png
+    return:
+      1766400731_006487
 
+    Falls back to the stem if pattern isn't matched.
+    """
+    name = png_path.name
+    m = re.match(r"^(?:Elginfield|Tavistock)_corr_(.+)\.png$", name)
+    if m:
+        return m.group(1)
+    # fallback: remove extension
+    return png_path.stem
+
+
+def process_axis(profile, axis_name, outdir, event_id, arcsec_per_pix=6.0, range_m=100_000.0):
+    n = len(profile)
+
+    # Make signal positive if needed (does NOT assume center)
     y = maybe_invert(profile.astype(float))
 
-    # # keep only the one between + and - 20 pixels
-    mask = (x >= -10) & (x <= 10)
-    x_c = x[mask]
-    y_c = y[mask]
-    
-    # # Keep only central third
-    # x_c, y_c = central_third(x, y)
-    # x_c, y_c = central_third(x_c, y_c)
+    # Find peak and recenter so peak is at x=0
+    pk = peak_index(y, smooth_window=7)
+    x = np.arange(n, dtype=float) - pk
+
+    # Use full profile (or you can re-enable your masks after this)
+    x_c = x
+    y_c = y
 
     # Fit 1 Gaussian and 2 Gaussians
     p1, _ = fit_1g(x_c, y_c)
@@ -121,7 +155,7 @@ def process_axis(profile, axis_name, outdir, arcsec_per_pix=6.0, range_m=100_000
     psf_2g_m_2 = variance_to_psf_m(var_s2, arcsec_per_pix, range_m)
 
     # Make plot
-    xx = np.linspace(x_c.min(), x_c.max(), 800)
+    xx = np.linspace(x_c.min(), x_c.max(), 8000)
     y1 = gaussian(xx, *p1)
     y2 = two_gaussian(xx, *p2)
 
@@ -130,18 +164,19 @@ def process_axis(profile, axis_name, outdir, arcsec_per_pix=6.0, range_m=100_000
     comp2 = p2[6] + p2[3] * np.exp(-0.5 * ((xx - p2[4]) / p2[5]) ** 2)
 
     plt.figure(figsize=(8, 5))
-    plt.plot(x_c, y_c, ".", label=f"{axis_name} profile (central third)")
-    plt.plot(xx, y1, "r-", label=f"1G fit (sigma={sigma_1g:.2f}px, PSF={psf_1g_m:.3f} m)")
-    plt.plot(xx, y2, "k-", label=f"2G sum (PSF1={psf_2g_m_1:.3f} m, PSF2={psf_2g_m_2:.3f} m)")
-    plt.plot(xx, comp1, ":", label=f"2G comp1 (sigma={s1:.2f}px)")
-    plt.plot(xx, comp2, ":", label=f"2G comp2 (sigma={s2:.2f}px)")
+    plt.plot(x_c, y_c, ".", label=f"{axis_name} profile")
+    plt.plot(xx, y1, "r-", label=f"1G fit (sigma={sigma_1g:.2f}px\nA={p1[0]:.2e},\nPSF={psf_1g_m:.3f} m)")
+    plt.plot(xx, y2, "k-", label=f"2G sum (\nPSF1={psf_2g_m_1:.3f} m,\nPSF2={psf_2g_m_2:.3f} m)")
+    plt.plot(xx, comp1, ":", label=f"2G comp1 (sigma={s1:.2f}px\nA={p2[0]:.2e})")
+    plt.plot(xx, comp2, ":", label=f"2G comp2 (sigma={s2:.2f}px\nA={p2[3]:.2e})")
     plt.xlabel("Pixels (relative to center)")
-    plt.ylabel("Intensity (inverted if needed)")
-    plt.title(f"PSF fit along {axis_name}-axis cut")
-    plt.legend(fontsize=9)
+    plt.ylabel("Intensity")
+    plt.title(f"PSF fit along {axis_name}-axis cut | {event_id}")
+    plt.legend(fontsize=10, loc="upper right")
+    plt.xlim(-10, 10)
     plt.tight_layout()
 
-    outpath = outdir / f"psf_fit_{axis_name}.png"
+    outpath = outdir / f"{event_id}_psf_fit_{axis_name}.png"
     plt.savefig(outpath, dpi=200)
     plt.close()
 
@@ -157,29 +192,32 @@ def process_axis(profile, axis_name, outdir, arcsec_per_pix=6.0, range_m=100_000
     }
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--image", default=r"/srv/public/mvovk/wake_runs_dynesty/PSF/Elginfield_corr_1766282128_019302.png",
-                    help="Path to *_corr.png")
-    ap.add_argument("--outdir", default=None,
-                    help="Output directory (default: same as image)")
-    ap.add_argument("--arcsec-per-pix", type=float, default=6.0,
-                    help="Camera plate scale (arcsec/pixel)")
-    ap.add_argument("--range-km", type=float, default=100.0,
-                    help="Assumed meteor range (km)")
-    ap.add_argument("--no-byteswap", action="store_true",
-                    help="Disable byte-swapping (byte-swap is ON by default).")
-    args = ap.parse_args()
+def iter_matching_pngs(path: Path):
+    """
+    If path is file -> return [path]
+    If path is dir  -> return all pngs containing Elginfield_corr_ or Tavistock_corr_
+    """
+    if path.is_file():
+        return [path]
 
-    img_path = Path(args.image)
-    outdir = Path(args.outdir) if args.outdir else img_path.parent
-    outdir.mkdir(parents=True, exist_ok=True)
+    if not path.is_dir():
+        raise FileNotFoundError(f"Input path does not exist: {path}")
+
+    patterns = ("Elginfield_corr_", "Tavistock_corr_")
+    hits = []
+    for p in sorted(path.rglob("*.png")):
+        name = p.name
+        if any(s in name for s in patterns):
+            hits.append(p)
+    return hits
+
+
+def process_one_image(img_path: Path, outdir: Path, arcsec_per_pix: float, range_km: float, no_byteswap: bool):
+    event_id = extract_event_id(img_path)
 
     img = iio.imread(img_path)
 
-    # Byte-swap by default (as requested)
-    if not args.no_byteswap:
-        print("Byte-swapping image...")
+    if not no_byteswap:
         img = byteswap_image(img)
 
     if img.ndim == 3:
@@ -190,14 +228,13 @@ def main():
     h, w = img.shape
     cy, cx = h // 2, w // 2
 
-    # Requested cuts:
     prof_y = img[:, cx]   # y-axis cut (middle column)
     prof_x = img[cy, :]   # x-axis cut (middle row)
 
-    range_m = args.range_km * 1000.0
+    range_m = range_km * 1000.0
 
-    res_y = process_axis(prof_y, "y", outdir, args.arcsec_per_pix, range_m)
-    res_x = process_axis(prof_x, "x", outdir, args.arcsec_per_pix, range_m)
+    res_y = process_axis(prof_y, "y", outdir, event_id, arcsec_per_pix, range_m)
+    res_x = process_axis(prof_x, "x", outdir, event_id, arcsec_per_pix, range_m)
 
     def line(res):
         psf1 = res["psf_1g_m"]
@@ -207,10 +244,200 @@ def main():
                 f"PSF_2G(comp1)={psf2a:.4f} m,  "
                 f"PSF_2G(comp2)={psf2b:.4f} m  |  plot: {res['plot']}")
 
-    print("\n=== PSF (meters) at range ===")
+    print(f"\n[{img_path.name}] event_id={event_id}")
+    print("=== PSF (meters) at range ===")
     print(line(res_y))
     print(line(res_x))
-    print("")
+
+    return res_x, res_y
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--image",
+        default="/srv/meteor/klingon/mirchk/20251222",
+        help="Path to a *_corr.png OR a directory to scan recursively for Elginfield_corr_*.png / Tavistock_corr_*.png",
+    )
+    ap.add_argument(
+        "--outdir",
+        default=None,
+        help="Output directory (default: same as image's directory if --image is a file; or the input dir if --image is a dir)",
+    )
+    ap.add_argument("--arcsec-per-pix", type=float, default=6.0, help="Camera plate scale (arcsec/pixel)")
+    ap.add_argument("--range-km", type=float, default=100.0, help="Assumed meteor range (km)")
+    ap.add_argument("--no-byteswap", action="store_true", help="Disable byte-swapping (byte-swap is ON by default).")
+    args = ap.parse_args()
+
+    in_path = Path(args.image)
+
+    # Where this script lives
+    script_dir = Path(__file__).resolve().parent
+
+    all_res = []  # collect per-axis results across all images
+
+    # Decide outdir
+    if args.outdir:
+        outdir = Path(args.outdir)
+    else:
+        if in_path.is_file():
+            # single image -> default to script directory
+            outdir = script_dir
+        else:
+            # directory scan -> default to a folder next to the script, named like the data folder
+            outdir = script_dir / in_path.name
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    print(f"Output directory: {outdir}")
+
+    # check if in the output directory there is a psf_summary_all_images.csv file if so skip the plotting and load the results
+    if (outdir / "psf_summary_all_images.csv").exists():
+        print("\nFound existing psf_summary_all_images.csv in output directory, loading results from there.")
+        df = pd.read_csv(outdir / "psf_summary_all_images.csv")
+   
+    else:
+        # Collect inputs
+        pngs = iter_matching_pngs(in_path)
+
+        if in_path.is_dir():
+            print(f"Scanning: {in_path}")
+            print(f"Found {len(pngs)} matching PNG files (Elginfield_corr_ / Tavistock_corr_).")
+            for p in pngs:
+                print(f"  - {p}")
+        else:
+            print(f"Processing single file: {in_path}")
+
+        if len(pngs) == 0:
+            print("No matching files found. Nothing to do.")
+            return
+
+        # Process each image
+        for p in pngs:
+            try:
+                res_x, res_y = process_one_image(
+                    img_path=p,
+                    outdir=outdir,
+                    arcsec_per_pix=args.arcsec_per_pix,
+                    range_km=args.range_km,
+                    no_byteswap=args.no_byteswap,
+                )
+
+                event_id = extract_event_id(p)
+
+                # store both axes as separate rows
+                for r in (res_x, res_y):
+                    all_res.append({
+                        "event_id": event_id,
+                        "image": str(p),
+                        "axis": r["axis"],
+
+                        # 1G
+                        "sigma_1g_px": r["sigma_1g_px"],
+                        "psf_1g_m": r["psf_1g_m"],
+
+                        # 2G (optional summaries)
+                        "sigma_2g_1_px": r["sigma_2g_px"][0],
+                        "sigma_2g_2_px": r["sigma_2g_px"][1],
+                        "psf_2g_1_m": r["psf_2g_m"][0],
+                        "psf_2g_2_m": r["psf_2g_m"][1],
+                    })
+
+            except Exception as e:
+                print(f"\nERROR processing {p}: {e}")
+
+        print(f"\nPlots saved in: {outdir}\n")
+
+        # ------------------------------
+        # Summary statistics (all axes, all images)
+        # ------------------------------
+        def summarize(values, label):
+            v = np.array(values, dtype=float)
+            v = v[np.isfinite(v)]
+            if v.size == 0:
+                print(f"{label}: no valid values")
+                return
+            # delete outlier values greater than 100 m
+            mean = float(np.mean(v[v <= 100.0]))
+            mode = float(pd.Series(np.round(v[v <= 100.0],1)).mode().iloc[0])
+            p2p5, p97p5 = np.percentile(v, [2.5, 97.5])
+            print(f"{label}: mean={mean:.6g}, mode={mode:.1f} | 95% range=[{p2p5:.6g}, {p97p5:.6g}] | N={v.size}")
+
+        if len(all_res) > 0:
+            print("\n==============================")
+            print("GLOBAL SUMMARY (all images, both axes)")
+            print("==============================")
+
+            # 1G: sigma + PSF (treat PSF as your 'aperture' in meters)
+            summarize([r["sigma_1g_px"] for r in all_res], "1G sigma [px]")
+            summarize([r["psf_1g_m"] for r in all_res], "1G PSF [m]")
+
+            # 2G (optional): component sigmas + PSFs
+            summarize([r["sigma_2g_1_px"] for r in all_res], "2G comp1 sigma [px]")
+            summarize([r["sigma_2g_2_px"] for r in all_res], "2G comp2 sigma [px]")
+            summarize([r["psf_2g_1_m"] for r in all_res], "2G comp1 PSF [m]")
+            summarize([r["psf_2g_2_m"] for r in all_res], "2G comp2 PSF [m]")
+
+            for ax in ("x", "y"):
+                print(f"\n=============({ax})==============")
+                sub = [r for r in all_res if r["axis"] == ax]
+                print(f"\n--- Axis {ax.upper()} only ---")
+                summarize([r["sigma_1g_px"] for r in sub], f"1G sigma [px] ({ax})")
+                summarize([r["psf_1g_m"] for r in sub], f"1G PSF [m] ({ax})")
+                summarize([r["sigma_2g_1_px"] for r in sub], f"2G comp1 sigma [px] ({ax})")
+                summarize([r["sigma_2g_2_px"] for r in sub], f"2G comp2 sigma [px] ({ax})")
+                summarize([r["psf_2g_1_m"] for r in sub], f"2G comp1 PSF [m] ({ax})")
+                summarize([r["psf_2g_2_m"] for r in sub], f"2G comp2 PSF [m] ({ax})")
+            
+            # save in a CSV
+            df = pd.DataFrame(all_res)
+            csv_out = outdir / "psf_summary_all_images.csv"
+            df.to_csv(csv_out, index=False)
+            print(f"\nSummary CSV saved to: {csv_out}")
+    
+    # deletre the outlier PSF values greater than 100 m before plotting histograms
+    df = df[df["psf_1g_m"] <= 100.0]
+    df = df[df["psf_2g_1_m"] <= 100.0]
+    df = df[df["psf_2g_2_m"] <= 100.0]
+
+    # creatre a plot with 3 subplots showing histograms of PSF 1G, PSF 2G comp1, PSF 2G comp2
+    plt.figure(figsize=(12, 4))
+    plt.subplot(1, 3, 1)
+    plt.hist(df["psf_1g_m"].dropna(), bins=50, color="blue", alpha=0.7)
+    # put the value of the peak on the top of the histogram
+    peak_1g = np.round(df["psf_1g_m"],1).mode().iloc[0]
+    # plt.text(peak_1g, plt.ylim()[1]*0.9, f"Peak: {peak_1g:.1f} m", ha="left", color="black")
+    # put a vertical line at the peak value
+    plt.axvline(peak_1g, color="black", linestyle="--")
+    plt.xlabel("PSF 1G [m]")
+    plt.ylabel("Count")
+    plt.title("PSF 1G = {:.1f} m".format(peak_1g))   
+    plt.subplot(1, 3, 2)
+    plt.hist(df["psf_2g_1_m"].dropna(), bins=50, color="green", alpha=0.7)
+    # put the value of the peak on the top of the histogram
+    peak_2g_1 = np.round(df["psf_2g_1_m"],1).mode().iloc[0]
+    # plt.text(peak_2g_1, plt.ylim()[1]*0.9, f"Peak: {peak_2g_1:.1f} m", ha="left", color="black")
+    # put a vertical line at the peak value
+    plt.axvline(peak_2g_1, color="black", linestyle="--")
+    plt.xlabel("PSF 2G comp1 [m]")
+    plt.ylabel("Count")
+    plt.title("PSF 2G comp1 = {:.1f} m".format(peak_2g_1))
+    plt.subplot(1, 3, 3)
+    plt.hist(df["psf_2g_2_m"].dropna(), bins=50, color="red", alpha=0.7)
+    # put the value of the peak on the top of the histogram
+    peak_2g_2 = np.round(df["psf_2g_2_m"],1).mode().iloc[0]
+    # plt.text(peak_2g_2, plt.ylim()[1]*0.9, f"Peak: {peak_2g_2:.1f} m", ha="left", color="black")
+    # put a vertical line at the peak value
+    plt.axvline(peak_2g_2, color="black", linestyle="--")
+    plt.xlabel("PSF 2G comp2 [m]")
+    plt.ylabel("Count")
+    plt.title("PSF 2G comp2 = {:.1f} m".format(peak_2g_2))
+    plt.tight_layout()
+    hist_out = outdir / "psf_histograms.png"
+    plt.savefig(hist_out, dpi=200)
+    plt.close()
+    print(f"\nHistogram plot saved to: {hist_out}")
+
+    print("\nDone.")
 
 
 if __name__ == "__main__":

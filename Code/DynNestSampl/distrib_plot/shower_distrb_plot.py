@@ -1121,544 +1121,561 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
     """
     Function to plot the distribution of the parameters from the dynesty files and save them as a table in LaTeX format.
     """
-    # Use the class to find .dynesty, load prior, and decide output folders
-    finder = find_dynestyfile_and_priors(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=False,pick_position=0)
 
-    all_label_sets = []  # List to store sets of labels for each file
-    variables = []  # List to store distributions for each file
-    flags_dict_total = {}  # Dictionary to store flags for each file
-    num_meteors = len(finder.base_names)  # Number of meteors
-    for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names,finder.input_folder_file,finder.priors,finder.output_folders)):
-        dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
-        obs_data = finder.observation_instance(base_name)
-        obs_data.file_name = pickle_file # update the file name in the observation data object
+    # check if in input_dir there is shower_distrb_plot_data.pkl
+    if os.path.exists(input_dirfile + os.sep + "shower_distrb_plot_data.pkl"):
+        print("Found shower_distrb_plot_data.pkl, loading data...")
+        # load the pickle data
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=load_shower_distrb_plot_data(input_dirfile + os.sep + "shower_distrb_plot_data.pkl")
 
-        # # Read the raw pickle bytes
-        # with open(dynesty_file, "rb") as f:
-        #     raw = f.read()
+    else:
 
-        # # Encode as Base64 so it’s pure text
-        # b64 = base64.b64encode(raw).decode("ascii")
+        # Use the class to find .dynesty, load prior, and decide output folders
+        finder = find_dynestyfile_and_priors(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=False,pick_position=0)
 
-        # # create the json file name by just replacing the .dynesty with _dynesty.json
-        # json_file = dynesty_file.replace(".dynesty", "_dynesty.json")
-        # # Write that string into JSON
-        # with open(json_file, "w") as f:
-        #     json.dump({"dynesty_b64": b64}, f, indent=2)
+        all_label_sets = []  # List to store sets of labels for each file
+        variables = []  # List to store distributions for each file
+        flags_dict_total = {}  # Dictionary to store flags for each file
+        num_meteors = len(finder.base_names)  # Number of meteors
+        for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names,finder.input_folder_file,finder.priors,finder.output_folders)):
+            dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
+            obs_data = finder.observation_instance(base_name)
+            obs_data.file_name = pickle_file # update the file name in the observation data object
 
-        # save the lenght of the flags_dict to check if it is the same for all meteors
-        # check if len(flags_dict.keys()) > len(variables) to avoid index error
-        if len(flags_dict.keys()) > len(variables):
-            variables = list(flags_dict.keys())
-            flags_dict_total = flags_dict.copy()
-            bounds_total = bounds.copy()
+            # # Read the raw pickle bytes
+            # with open(dynesty_file, "rb") as f:
+            #     raw = f.read()
 
+            # # Encode as Base64 so it’s pure text
+            # b64 = base64.b64encode(raw).decode("ascii")
 
-    # keep them in the same order distribution_list
-    print(f"Shared labels: {variables}")
+            # # create the json file name by just replacing the .dynesty with _dynesty.json
+            # json_file = dynesty_file.replace(".dynesty", "_dynesty.json")
+            # # Write that string into JSON
+            # with open(json_file, "w") as f:
+            #     json.dump({"dynesty_b64": b64}, f, indent=2)
 
-    ndim = len(variables)
-    
-
-    # check if there are variables in the flags_dict that are not in the variable_map
-    for variable in variables:
-        if variable not in variable_map:
-            print(f"Warning: {variable} not found in variable_map")
-            # Add the variable to the map with a default label
-            variable_map[variable] = variable
-    labels = [variable_map[variable] for variable in variables]
-
-    for variable in variables:
-        if variable not in variable_map_plot:
-            print(f"Warning: {variable} not found in variable_map")
-            # Add the variable to the map with a default label
-            variable_map_plot[variable] = variable
-    labels_plot = [variable_map_plot[variable] for variable in variables]
-
-    # the on that are not variables are the one that were not used in the dynesty run give a np.nan weight to dsampler for those
-    all_samples = []
-    all_weights = []
-    all_names = []  
-
-    # base_name, lg_min_la_sun, bg, rho
-    file_radiance_rho_dict = {}
-    file_radiance_rho_dict_helio = {}
-    file_obs_data_dict = {}
-    file_phys_data_dict = {}
-    file_eeu_dict = {}
-    file_rho_jd_dict = {}
-    find_worst_lag = {}
-    find_worst_lum = {}
-    # corrected rho
-    rho_corrected = []
-    eta_corrected = []
-    sigma_corrected = []
-    tau_corrected = []
-    mm_size_corrected = []
-    mass_distr = []
-    erosion_energy_per_unit_cross_section_corrected = []
-    erosion_energy_per_unit_mass_corrected = []
-    erosion_energy_per_unit_cross_section_end_corrected = []
-    erosion_energy_per_unit_mass_end_corrected = []
-    rows = []
-
-    # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-    if os.path.exists(output_dir_show+os.sep+"log_shower_distrb_plot.txt"):
-        # remove the file
-        os.remove(output_dir_show+os.sep+"log_shower_distrb_plot.txt")
-    # use the Logger class to redirect the print to a file 
-    sys.stdout = Logger(output_dir_show,"log_shower_distrb_plot.txt")
-
-    for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
-        dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
-        print('\n', base_name)
-        print(f"Processed {i+1} out of {len(finder.base_names)}")
-        obs_data = finder.observation_instance(base_name)
-        obs_data.file_name = pickle_file  # update the file name in the observation data object
-        dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-        # dsampler = load_dynesty_file(dynesty_file)
-
-        # Align to the union of all variables (padding missing ones with NaN and 0 weights)
-        samples_aligned, weights_aligned = align_dynesty_samples(dsampler, variables, flags_dict)
-
-        output_dir = os.path.dirname(dynesty_file)
-        report_file = None
-        for name in os.listdir(output_dir):
-            if name.endswith("report.txt"):
-                report_file = name; break
-        if report_file is None:
-            for name in os.listdir(output_dir):
-                if name.endswith("report_sim.txt"):
-                    report_file = name; break
-        if report_file is None:
-            raise FileNotFoundError("No report.txt or report_sim.txt found")
-
-        report_path = os.path.join(output_dir, report_file)
-        print(f"Using report file: {report_path}")
-        lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun, lg_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi = extract_radiant_and_la_sun(report_path)
-        print(f"Ecliptic geocentric (J2000): Lg = {lg}°, Bg = {bg}°")
-        print(f"Solar longitude:       La Sun = {la_sun}°")
-        lg_min_la_sun = (lg - la_sun)%360
-        lg_min_la_sun_helio = (lg_helio - la_sun)%360
-
-        combined_results_meteor = CombinedResults(samples_aligned, weights_aligned)
-
-        summary_df_meteor = summarize_from_cornerplot(
-        combined_results_meteor,
-        variables,
-        labels
-        )
-
-        dynesty_run_results = dsampler.results
-        weights = dynesty_run_results.importance_weights()
-        w = weights / np.sum(weights)
-        samples = dynesty_run_results.samples
-        ndim_single = len(variables)
-        sim_num = np.argmax(dynesty_run_results.logl)
-
-        # copy the best guess values
-        guess = dynesty_run_results.samples[sim_num].copy()
-        flag_total_rho = False
-        # load the variable names
-        variables_sing = list(flags_dict.keys())
-        for i, variable in enumerate(variables_sing):
-            if 'log' in flags_dict[variable]:
-                guess[i] = 10**guess[i]
-                samples[:, i] = 10**samples[:, i]
-            if variable == 'noise_lag':
-                obs_data.noise_lag = guess[i]
-                obs_data.noise_vel = guess[i] * np.sqrt(2)/(1.0/32)
-            if variable == 'noise_lum':
-                obs_data.noise_lum = guess[i]
-            if variable == 'erosion_rho_change':
-                flag_total_rho = True
-
-        row = [esc_tex(base_name)]
-        for var_name in variables:
-            if var_name not in variables_sing:
-                row.append(r"\textemdash")
-                continue
-            med = summary_df_meteor['Median'].values[variables_sing.index(var_name)]
-            lo  = summary_df_meteor['Low95'].values[variables_sing.index(var_name)]
-            hi  = summary_df_meteor['High95'].values[variables_sing.index(var_name)]
-            kind = fmt_kind.get(var_name, "float")
-            row.append(fmt_ci_asym(med, lo, hi, kind=kind))
-        rows.append(row)
-
-        beg_height = obs_data.height_lum[0]
-        end_height = obs_data.height_lum[-1]
-
-        # vel_init = obs_data.v_init
-        lenght_par = obs_data.length[-1]/1000 # convert to km
-        max_lum_height = obs_data.height_lum[np.argmax(obs_data.luminosity)]
-        F_par = (beg_height - max_lum_height) / (beg_height - end_height)
-        kc_par = beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables_sing.index('v_init')]))/0.0612
-        time_tot = obs_data.time_lum[-1] - obs_data.time_lum[0]
-        avg_vel = np.mean(obs_data.velocities)
-        init_mag = obs_data.absolute_magnitudes[0]
-        end_mag = obs_data.absolute_magnitudes[-1]
-        max_mag = obs_data.absolute_magnitudes[np.argmax(obs_data.luminosity)]
-        zenith_angle = np.rad2deg(obs_data.zenith_angle)
+            # save the lenght of the flags_dict to check if it is the same for all meteors
+            # check if len(flags_dict.keys()) > len(variables) to avoid index error
+            if len(flags_dict.keys()) > len(variables):
+                variables = list(flags_dict.keys())
+                flags_dict_total = flags_dict.copy()
+                bounds_total = bounds.copy()
 
 
+        # keep them in the same order distribution_list
+        print(f"Shared labels: {variables}")
 
-        # set up the observation data object
-        obs_data = finder.observation_instance(base_name)
-        obs_data.file_name = pickle_file # update teh file name in the observation data object
-
-        # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
-        if obs_data.v_init < 30000:
-            obs_data.dt = 0.01
-            # const_nominal.erosion_bins_per_10mass = 5
-        else:
-            obs_data.dt = 0.005
-            # const_nominal.erosion_bins_per_10mass = 10
-
-        obs_data.disruption_on = False
-
-        obs_data.lum_eff_type = 5
-
-        obs_data.h_kill = np.min([np.min(obs_data.height_lum),np.min(obs_data.height_lag)])-1000
-        # check if the h_kill is smaller than 0
-        if obs_data.h_kill < 0:
-            obs_data.h_kill = 1
-        # check if np.min(obs_data.velocity[-1]) is smaller than v_init-10000
-        if np.min(obs_data.velocities) < obs_data.v_init-10000:
-            obs_data.v_kill = obs_data.v_init-10000
-        else:
-            obs_data.v_kill = np.min(obs_data.velocities)-5000
-        # check if the v_kill is smaller than 0
-        if obs_data.v_kill < 0:
-            obs_data.v_kill = 1
-
-        best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
-
-        heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
-        mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
-        erosion_beg_dyn_press = best_guess_obj_plot.const.erosion_beg_dyn_press
-        print(f"Dynamic pressure at erosion onset: {erosion_beg_dyn_press} Pa")
-
-        # check if a file that ends in _posterior_backup.pkl.gz is in the folder
-        output_dir = os.path.dirname(dynesty_file)
-        backup_file = None
-        for name in os.listdir(output_dir):
-            if name.endswith("_posterior_backup.pkl.gz"):
-                backup_file = name
-                print(f"Using backup file: {backup_file}")
-                with gzip.open(os.path.join(output_dir, backup_file), "rb") as f:
-                    backup_small = pickle.load(f)
-                break
-
-        if flag_total_rho:
-            
-            # find erosion change height
-            if 'erosion_height_change' in variables_sing:
-                erosion_height_change = guess[variables_sing.index('erosion_height_change')]
-            if 'm_init' in variables_sing:
-                m_init = guess[variables_sing.index('m_init')]
-
-            old_mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-            mass_before = best_guess_obj_plot.const.mass_at_erosion_change
-            print(f"Mass before erosion change: {mass_before} kg, old mass before: {old_mass_before} kg")
-            # check if mass_before is None if so use old_mass_before
-            if mass_before is None:
-                print("Using old mass before erosion change, the new one is none!")
-                mass_before = old_mass_before
-
-            if backup_file is not None:
-                x_valid_rho = backup_small['dynesty']['rho_array']
-                rho, rho_lo, rho_hi = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
-
-            else:
-
-                x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
-
-            rho_corrected.append(x_valid_rho)
-
-            x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
-
-            eta_corrected.append(x_valid_eta)
-
-            # erosion_sigma_change
-            x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
-
-            sigma_corrected.append(x_valid_sigma)
-
-            # x = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
-            # mask = ~np.isnan(x)
-            # x_valid = x[mask]
-            # w_valid = w[mask]
-
-            # # renormalize
-            # w_valid /= np.sum(w_valid)
-
-            # # weighted quantiles
-            # rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
-            # rho_lo = (rho - rho_lo) #/1.96
-            # rho_hi = (rho_hi - rho) #/1.96
-            # rho_total = x_valid
-            # rho_total 
-
-        else:
-            rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
-            rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
-            rho = summary_df_meteor['Median'].values[variables.index('rho')]
-
-            x = samples[:, variables_sing.index('rho')].astype(float)
-            mask = ~np.isnan(x)
-            x_valid_rho = x[mask] 
-
-            rho_corrected.append(x_valid_rho)
-
-            eta_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
-            eta_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
-            eta = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
-
-            x = samples[:, variables_sing.index('erosion_coeff')].astype(float)
-            mask = ~np.isnan(x)
-            x_valid_eta = x[mask]
-
-            eta_corrected.append(x_valid_eta)
-
-            sigma_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
-            sigma_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
-            sigma = summary_df_meteor['Median'].values[variables.index('sigma')]
-
-            x = samples[:, variables_sing.index('sigma')].astype(float)
-            mask = ~np.isnan(x)
-            x_valid_sigma = x[mask]
-
-            sigma_corrected.append(x_valid_sigma)
-
-        # rho_corrected.append(x_valid)
-        # sigma_corrected.append(np.std(x_valid))
-        # eta_corrected.append
-
-        # find the index of m_init in variables
-        tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples[:, variables_sing.index('m_init')].astype(float)*obs_data.velocities[0]**2) * 100
+        ndim = len(variables)
         
-        # calculate the weights calculate the weighted median and the 95 CI for tau
-        tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=w)
-        tau_corrected.append(tau)
-    
-        m_init_meteor_median = summary_df_meteor['Median'].values[variables.index('m_init')]
-        m_init_meteor_lo = summary_df_meteor['Median'].values[variables.index('m_init')] - summary_df_meteor['Low95'].values[variables.index('m_init')]
-        m_init_meteor_hi = summary_df_meteor['High95'].values[variables.index('m_init')] - summary_df_meteor['Median'].values[variables.index('m_init')]
 
-        eta_meteor_begin = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
-        sigma_meteor_begin = summary_df_meteor['Median'].values[variables.index('sigma')]
-        v_init_meteor_median = summary_df_meteor['Median'].values[variables.index('v_init')]
+        # check if there are variables in the flags_dict that are not in the variable_map
+        for variable in variables:
+            if variable not in variable_map:
+                print(f"Warning: {variable} not found in variable_map")
+                # Add the variable to the map with a default label
+                variable_map[variable] = variable
+        labels = [variable_map[variable] for variable in variables]
 
-        kinetic_energy_median = 1/2 * m_init_meteor_median * (v_init_meteor_median*1000)**2
-        kinetic_energy_lo = kinetic_energy_median - 1/2 * summary_df_meteor['Low95'].values[variables.index('m_init')] * (summary_df_meteor['Low95'].values[variables.index('v_init')]*1000)**2
-        kinetic_energy_hi = 1/2 * summary_df_meteor['High95'].values[variables.index('m_init')] * (summary_df_meteor['High95'].values[variables.index('v_init')]*1000)**2 - kinetic_energy_median
+        for variable in variables:
+            if variable not in variable_map_plot:
+                print(f"Warning: {variable} not found in variable_map")
+                # Add the variable to the map with a default label
+                variable_map_plot[variable] = variable
+        labels_plot = [variable_map_plot[variable] for variable in variables]
 
-        # compute the meteoroid_diameter from a spherical shape in mm
-        all_diameter_mm = (6 * samples[:, variables_sing.index('m_init')].astype(float) / (np.pi * x_valid_rho))**(1/3) * 1000
-        mm_size_corrected.append(all_diameter_mm)
-        mass_distr.append(samples[:, variables_sing.index('m_init')].astype(float))
-        # make the quntile base on w 
-        meteoroid_diameter_mm_lo, meteoroid_diameter_mm, meteoroid_diameter_mm_hi = _quantile(all_diameter_mm, [0.025, 0.5, 0.975], weights=w)
-        meteoroid_diameter_mm_lo = (meteoroid_diameter_mm - meteoroid_diameter_mm_lo) #/1.96
-        meteoroid_diameter_mm_hi = (meteoroid_diameter_mm_hi - meteoroid_diameter_mm) #/1.96
+        # the on that are not variables are the one that were not used in the dynesty run give a np.nan weight to dsampler for those
+        all_samples = []
+        all_weights = []
+        all_names = []  
 
-        # meteoroid_diameter_mm_old = (6 * m_init_meteor_median / (np.pi * rho))**(1/3) * 1000
+        # base_name, lg_min_la_sun, bg, rho
+        file_radiance_rho_dict = {}
+        file_radiance_rho_dict_helio = {}
+        file_obs_data_dict = {}
+        file_phys_data_dict = {}
+        file_eeu_dict = {}
+        file_rho_jd_dict = {}
+        find_worst_lag = {}
+        find_worst_lum = {}
+        # corrected rho
+        rho_corrected = []
+        eta_corrected = []
+        sigma_corrected = []
+        tau_corrected = []
+        mm_size_corrected = []
+        mass_distr = []
+        erosion_energy_per_unit_cross_section_corrected = []
+        erosion_energy_per_unit_mass_corrected = []
+        erosion_energy_per_unit_cross_section_end_corrected = []
+        erosion_energy_per_unit_mass_end_corrected = []
+        rows = []
 
-        print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
-        print(f"intial mass {m_init_meteor_median} kg and diameter {meteoroid_diameter_mm:.6f} mm")#, old diameter {meteoroid_diameter_mm_old:.6f} mm")
-        # print(f"erosion coeff: {eta} m/s, 95% CI = [{eta_lo}, {eta_hi}]")
-        # print(f"sigma: {sigma} kg/m^3, 95% CI = [{sigma_lo}, {sigma_hi}]")
+        # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
+        if os.path.exists(output_dir_show+os.sep+"log_shower_distrb_plot.txt"):
+            # remove the file
+            os.remove(output_dir_show+os.sep+"log_shower_distrb_plot.txt")
+        # use the Logger class to redirect the print to a file 
+        sys.stdout = Logger(output_dir_show,"log_shower_distrb_plot.txt")
 
-        # ### EROSION ENERGY CALCULATION ###
-        if plot_correl_flag == True:
-            # take from dynesty_file folder name
-            folder_name = os.path.dirname(dynesty_file)
+        for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
+            dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
+            print('\n', base_name)
+            print(f"Processed {i+1} out of {len(finder.base_names)}")
+            obs_data = finder.observation_instance(base_name)
+            obs_data.file_name = pickle_file  # update the file name in the observation data object
+            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+            # dsampler = load_dynesty_file(dynesty_file)
 
-            # look if in folder_name it exist a file that ends in .dynestyres exist in 
-            if any(f.endswith(".dynestyres") for f in os.listdir(folder_name)):
-                print(f"\nFound existing results in {folder_name}.dynestyres, loading them.")
+            # Align to the union of all variables (padding missing ones with NaN and 0 weights)
+            samples_aligned, weights_aligned = align_dynesty_samples(dsampler, variables, flags_dict)
 
-                # # look for the file that ends in .dynestyres
-                # dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
-                # with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
-                #     dynesty_run_results = pickle.load(f)
+            output_dir = os.path.dirname(dynesty_file)
+            report_file = None
+            for name in os.listdir(output_dir):
+                if name.endswith("report.txt"):
+                    report_file = name; break
+            if report_file is None:
+                for name in os.listdir(output_dir):
+                    if name.endswith("report_sim.txt"):
+                        report_file = name; break
+            if report_file is None:
+                raise FileNotFoundError("No report.txt or report_sim.txt found")
 
-                # erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
-                # erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
+            report_path = os.path.join(output_dir, report_file)
+            print(f"Using report file: {report_path}")
+            lg, lg_lo, lg_hi, bg, bg_lo, bg_hi, la_sun, lg_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi = extract_radiant_and_la_sun(report_path)
+            print(f"Ecliptic geocentric (J2000): Lg = {lg}°, Bg = {bg}°")
+            print(f"Solar longitude:       La Sun = {la_sun}°")
+            lg_min_la_sun = (lg - la_sun)%360
+            lg_min_la_sun_helio = (lg_helio - la_sun)%360
 
+            combined_results_meteor = CombinedResults(samples_aligned, weights_aligned)
+
+            summary_df_meteor = summarize_from_cornerplot(
+            combined_results_meteor,
+            variables,
+            labels
+            )
+
+            dynesty_run_results = dsampler.results
+            weights = dynesty_run_results.importance_weights()
+            w = weights / np.sum(weights)
+            samples = dynesty_run_results.samples
+            ndim_single = len(variables)
+            sim_num = np.argmax(dynesty_run_results.logl)
+
+            # copy the best guess values
+            guess = dynesty_run_results.samples[sim_num].copy()
+            flag_total_rho = False
+            # load the variable names
+            variables_sing = list(flags_dict.keys())
+            for i, variable in enumerate(variables_sing):
+                if 'log' in flags_dict[variable]:
+                    guess[i] = 10**guess[i]
+                    samples[:, i] = 10**samples[:, i]
+                if variable == 'noise_lag':
+                    obs_data.noise_lag = guess[i]
+                    obs_data.noise_vel = guess[i] * np.sqrt(2)/(1.0/32)
+                if variable == 'noise_lum':
+                    obs_data.noise_lum = guess[i]
+                if variable == 'erosion_rho_change':
+                    flag_total_rho = True
+
+            row = [esc_tex(base_name)]
+            for var_name in variables:
+                if var_name not in variables_sing:
+                    row.append(r"\textemdash")
+                    continue
+                med = summary_df_meteor['Median'].values[variables_sing.index(var_name)]
+                lo  = summary_df_meteor['Low95'].values[variables_sing.index(var_name)]
+                hi  = summary_df_meteor['High95'].values[variables_sing.index(var_name)]
+                kind = fmt_kind.get(var_name, "float")
+                row.append(fmt_ci_asym(med, lo, hi, kind=kind))
+            rows.append(row)
+
+            beg_height = obs_data.height_lum[0]
+            end_height = obs_data.height_lum[-1]
+
+            # vel_init = obs_data.v_init
+            lenght_par = obs_data.length[-1]/1000 # convert to km
+            max_lum_height = obs_data.height_lum[np.argmax(obs_data.luminosity)]
+            F_par = (beg_height - max_lum_height) / (beg_height - end_height)
+            kc_par = beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables_sing.index('v_init')]))/0.0612
+            time_tot = obs_data.time_lum[-1] - obs_data.time_lum[0]
+            avg_vel = np.mean(obs_data.velocities)
+            init_mag = obs_data.absolute_magnitudes[0]
+            end_mag = obs_data.absolute_magnitudes[-1]
+            max_mag = obs_data.absolute_magnitudes[np.argmax(obs_data.luminosity)]
+            zenith_angle = np.rad2deg(obs_data.zenith_angle)
+
+
+
+            # set up the observation data object
+            obs_data = finder.observation_instance(base_name)
+            obs_data.file_name = pickle_file # update teh file name in the observation data object
+
+            # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
+            if obs_data.v_init < 30000:
+                obs_data.dt = 0.01
+                # const_nominal.erosion_bins_per_10mass = 5
             else:
-                print(f"\nNo existing results found in {folder_name}.dynestyres, running dynesty.")
-                # dynesty_run_results = dsampler.results
+                obs_data.dt = 0.005
+                # const_nominal.erosion_bins_per_10mass = 10
 
-                # ### add MORE PARAMETERS ###
+            obs_data.disruption_on = False
 
-                # # Package inputs
-                # inputs = [
-                #     (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
-                #     for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
-                # ]
-                # #     for i in range(len(dynesty_run_results.samples)) # 
-                # num_cores = multiprocessing.cpu_count()
+            obs_data.lum_eff_type = 5
 
-                # # Run in parallel
-                # with Pool(processes=num_cores) as pool:  # adjust to number of cores
-                #     results = pool.map(run_single_eeu, inputs)
+            obs_data.h_kill = np.min([np.min(obs_data.height_lum),np.min(obs_data.height_lag)])-1000
+            # check if the h_kill is smaller than 0
+            if obs_data.h_kill < 0:
+                obs_data.h_kill = 1
+            # check if np.min(obs_data.velocity[-1]) is smaller than v_init-10000
+            if np.min(obs_data.velocities) < obs_data.v_init-10000:
+                obs_data.v_kill = obs_data.v_init-10000
+            else:
+                obs_data.v_kill = np.min(obs_data.velocities)-5000
+            # check if the v_kill is smaller than 0
+            if obs_data.v_kill < 0:
+                obs_data.v_kill = 1
 
-                # N = len(dynesty_run_results.samples)
+            best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
 
-                # erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
-                # erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
-                # # erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
-                # # erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
+            heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+            mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+            erosion_beg_dyn_press = best_guess_obj_plot.const.erosion_beg_dyn_press
+            print(f"Dynamic pressure at erosion onset: {erosion_beg_dyn_press} Pa")
 
-                # for res in results:
-                #     i, eeucs, eeum, eeucs_end, eeum_end = res
-                #     erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
-                #     erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
-                #     # erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
-                #     # erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
+            # check if a file that ends in _posterior_backup.pkl.gz is in the folder
+            output_dir = os.path.dirname(dynesty_file)
+            backup_file = None
+            for name in os.listdir(output_dir):
+                if name.endswith("_posterior_backup.pkl.gz"):
+                    backup_file = name
+                    print(f"Using backup file: {backup_file}")
+                    with gzip.open(os.path.join(output_dir, backup_file), "rb") as f:
+                        backup_small = pickle.load(f)
+                    break
 
-                sim_num = np.argmax(dynesty_run_results.logl)
-                # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
-                # create a copy of the best guess
-                best_guess = dynesty_run_results.samples[sim_num].copy()
-                samples = dynesty_run_results.samples
-                # for variable in variables: for 
-                for i, variable in enumerate(variables_sing):
-                    if 'log' in flags_dict[variable]:
-                        # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")  
-                        best_guess[i] = 10**(best_guess[i])
-                        # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")
-                        samples[:, i] = 10**(samples[:, i])  # also transform all samples
-                best_guess_obj_plot = run_simulation(best_guess, obs_data, variables_sing, fixed_values)
-
+            if flag_total_rho:
+                
                 # find erosion change height
                 if 'erosion_height_change' in variables_sing:
-                    erosion_height_change = best_guess[variables_sing.index('erosion_height_change')]
+                    erosion_height_change = guess[variables_sing.index('erosion_height_change')]
                 if 'm_init' in variables_sing:
-                    m_init = best_guess[variables_sing.index('m_init')]
+                    m_init = guess[variables_sing.index('m_init')]
 
-                heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
-                mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
-
-                # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+                old_mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
                 mass_before = best_guess_obj_plot.const.mass_at_erosion_change
-                # if mass_before is None use the old method
+                print(f"Mass before erosion change: {mass_before} kg, old mass before: {old_mass_before} kg")
+                # check if mass_before is None if so use old_mass_before
                 if mass_before is None:
-                    mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-                
-                # # precise erosion tal energy calculation ########################
+                    print("Using old mass before erosion change, the new one is none!")
+                    mass_before = old_mass_before
 
-                if 'erosion_rho_change' in variables_sing:
-                    rho_total_arr = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+                if backup_file is not None:
+                    x_valid_rho = backup_small['dynesty']['rho_array']
+                    rho, rho_lo, rho_hi = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
+
                 else:
-                    rho_total_arr = samples[:, variables_sing.index('rho')].astype(float)
 
-                rho_total_arr = np.array(rho_total_arr, dtype=np.float64)
+                    x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
 
-                # Create a namespace object for dot-style access
-                results = SimpleNamespace(**dsampler.results.__dict__)  # load all default results
+                rho_corrected.append(x_valid_rho)
 
-                # Add your custom attributes
-                results.weights = dynesty_run_results.importance_weights()
-                results.norm_weights = w
-                # results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
-                # results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
-                # results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
-                # results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
-                results.rho_total = rho_total_arr
+                x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
 
-                # delete from base_name _combined if it exists
-                if '_combined' in base_name:
-                    base_name = base_name.replace('_combined', '')
+                eta_corrected.append(x_valid_eta)
 
-                # Save
-                with open(folder_name + os.sep + base_name+"_results.dynestyres", "wb") as f:
-                    pickle.dump(results, f)
-                    print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.dynestyres'}.")
+                # erosion_sigma_change
+                x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
 
-            # erosion_energy_per_unit_cross_section_corrected.append(erosion_energy_per_unit_cross_section_arr)
-            # erosion_energy_per_unit_mass_corrected.append(erosion_energy_per_unit_mass_arr)
-            # erosion_energy_per_unit_cross_section_end_corrected.append(erosion_energy_per_unit_cross_section_arr_end)
-            # erosion_energy_per_unit_mass_end_corrected.append(erosion_energy_per_unit_mass_arr_end)
+                sigma_corrected.append(x_valid_sigma)
 
-        ### SAVE DATA ###
+                # x = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+                # mask = ~np.isnan(x)
+                # x_valid = x[mask]
+                # w_valid = w[mask]
 
-        # delete from base_name _combined if it exists
-        if '_combined' in base_name:
-            base_name = base_name.replace('_combined', '')
+                # # renormalize
+                # w_valid /= np.sum(w_valid)
 
-        file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, rho, lg_lo, lg_hi, bg_lo, bg_hi)
-        file_radiance_rho_dict_helio[base_name] = (lg_min_la_sun_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi)
+                # # weighted quantiles
+                # rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
+                # rho_lo = (rho - rho_lo) #/1.96
+                # rho_hi = (rho_hi - rho) #/1.96
+                # rho_total = x_valid
+                # rho_total 
 
-        tj, tj_lo, tj_hi, inclin_val, Vg_val, Q_val, q_val, a_val, e_val = extract_tj_from_report(report_path)
+            else:
+                rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
+                rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
+                rho = summary_df_meteor['Median'].values[variables.index('rho')]
 
-        file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vg_val, Q_val, q_val, a_val, e_val)
-        # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
-        file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, kinetic_energy_median, kinetic_energy_lo, kinetic_energy_hi, tau_median, tau_low95, tau_high95)
-        file_phys_data_dict[base_name] = (eta_meteor_begin, eta, eta_lo, eta_hi, sigma_meteor_begin, sigma, sigma_lo, sigma_hi, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi)
+                x = samples[:, variables_sing.index('rho')].astype(float)
+                mask = ~np.isnan(x)
+                x_valid_rho = x[mask] 
 
-        find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
-        find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
+                rho_corrected.append(x_valid_rho)
 
-        all_names.append(base_name)
-        all_samples.append(samples_aligned)
-        all_weights.append(weights_aligned)
+                eta_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
+                eta_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+                eta = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+
+                x = samples[:, variables_sing.index('erosion_coeff')].astype(float)
+                mask = ~np.isnan(x)
+                x_valid_eta = x[mask]
+
+                eta_corrected.append(x_valid_eta)
+
+                sigma_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
+                sigma_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
+                sigma = summary_df_meteor['Median'].values[variables.index('sigma')]
+
+                x = samples[:, variables_sing.index('sigma')].astype(float)
+                mask = ~np.isnan(x)
+                x_valid_sigma = x[mask]
+
+                sigma_corrected.append(x_valid_sigma)
+
+            # rho_corrected.append(x_valid)
+            # sigma_corrected.append(np.std(x_valid))
+            # eta_corrected.append
+
+            # find the index of m_init in variables
+            tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples[:, variables_sing.index('m_init')].astype(float)*obs_data.velocities[0]**2) * 100
+            
+            # calculate the weights calculate the weighted median and the 95 CI for tau
+            tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=w)
+            tau_corrected.append(tau)
+        
+            m_init_meteor_median = summary_df_meteor['Median'].values[variables.index('m_init')]
+            m_init_meteor_lo = summary_df_meteor['Median'].values[variables.index('m_init')] - summary_df_meteor['Low95'].values[variables.index('m_init')]
+            m_init_meteor_hi = summary_df_meteor['High95'].values[variables.index('m_init')] - summary_df_meteor['Median'].values[variables.index('m_init')]
+
+            eta_meteor_begin = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+            sigma_meteor_begin = summary_df_meteor['Median'].values[variables.index('sigma')]
+            v_init_meteor_median = summary_df_meteor['Median'].values[variables.index('v_init')]
+
+            kinetic_energy_median = 1/2 * m_init_meteor_median * (v_init_meteor_median*1000)**2
+            kinetic_energy_lo = kinetic_energy_median - 1/2 * summary_df_meteor['Low95'].values[variables.index('m_init')] * (summary_df_meteor['Low95'].values[variables.index('v_init')]*1000)**2
+            kinetic_energy_hi = 1/2 * summary_df_meteor['High95'].values[variables.index('m_init')] * (summary_df_meteor['High95'].values[variables.index('v_init')]*1000)**2 - kinetic_energy_median
+
+            # compute the meteoroid_diameter from a spherical shape in mm
+            all_diameter_mm = (6 * samples[:, variables_sing.index('m_init')].astype(float) / (np.pi * x_valid_rho))**(1/3) * 1000
+            mm_size_corrected.append(all_diameter_mm)
+            mass_distr.append(samples[:, variables_sing.index('m_init')].astype(float))
+            # make the quntile base on w 
+            meteoroid_diameter_mm_lo, meteoroid_diameter_mm, meteoroid_diameter_mm_hi = _quantile(all_diameter_mm, [0.025, 0.5, 0.975], weights=w)
+            meteoroid_diameter_mm_lo = (meteoroid_diameter_mm - meteoroid_diameter_mm_lo) #/1.96
+            meteoroid_diameter_mm_hi = (meteoroid_diameter_mm_hi - meteoroid_diameter_mm) #/1.96
+
+            # meteoroid_diameter_mm_old = (6 * m_init_meteor_median / (np.pi * rho))**(1/3) * 1000
+
+            print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
+            print(f"intial mass {m_init_meteor_median} kg and diameter {meteoroid_diameter_mm:.6f} mm")#, old diameter {meteoroid_diameter_mm_old:.6f} mm")
+            # print(f"erosion coeff: {eta} m/s, 95% CI = [{eta_lo}, {eta_hi}]")
+            # print(f"sigma: {sigma} kg/m^3, 95% CI = [{sigma_lo}, {sigma_hi}]")
+
+            # ### EROSION ENERGY CALCULATION ###
+            if plot_correl_flag == True:
+                # take from dynesty_file folder name
+                folder_name = os.path.dirname(dynesty_file)
+
+                # look if in folder_name it exist a file that ends in .dynestyres exist in 
+                if any(f.endswith(".dynestyres") for f in os.listdir(folder_name)):
+                    print(f"\nFound existing results in {folder_name}.dynestyres, loading them.")
+
+                    # # look for the file that ends in .dynestyres
+                    # dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
+                    # with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
+                    #     dynesty_run_results = pickle.load(f)
+
+                    # erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
+                    # erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
+
+                else:
+                    print(f"\nNo existing results found in {folder_name}.dynestyres, running dynesty.")
+                    # dynesty_run_results = dsampler.results
+
+                    # ### add MORE PARAMETERS ###
+
+                    # # Package inputs
+                    # inputs = [
+                    #     (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
+                    #     for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
+                    # ]
+                    # #     for i in range(len(dynesty_run_results.samples)) # 
+                    # num_cores = multiprocessing.cpu_count()
+
+                    # # Run in parallel
+                    # with Pool(processes=num_cores) as pool:  # adjust to number of cores
+                    #     results = pool.map(run_single_eeu, inputs)
+
+                    # N = len(dynesty_run_results.samples)
+
+                    # erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
+                    # erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
+                    # # erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
+                    # # erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
+
+                    # for res in results:
+                    #     i, eeucs, eeum, eeucs_end, eeum_end = res
+                    #     erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
+                    #     erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
+                    #     # erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
+                    #     # erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
+
+                    sim_num = np.argmax(dynesty_run_results.logl)
+                    # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
+                    # create a copy of the best guess
+                    best_guess = dynesty_run_results.samples[sim_num].copy()
+                    samples = dynesty_run_results.samples
+                    # for variable in variables: for 
+                    for i, variable in enumerate(variables_sing):
+                        if 'log' in flags_dict[variable]:
+                            # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")  
+                            best_guess[i] = 10**(best_guess[i])
+                            # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")
+                            samples[:, i] = 10**(samples[:, i])  # also transform all samples
+                    best_guess_obj_plot = run_simulation(best_guess, obs_data, variables_sing, fixed_values)
+
+                    # find erosion change height
+                    if 'erosion_height_change' in variables_sing:
+                        erosion_height_change = best_guess[variables_sing.index('erosion_height_change')]
+                    if 'm_init' in variables_sing:
+                        m_init = best_guess[variables_sing.index('m_init')]
+
+                    heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+                    mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+
+                    # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+                    mass_before = best_guess_obj_plot.const.mass_at_erosion_change
+                    # if mass_before is None use the old method
+                    if mass_before is None:
+                        mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+                    
+                    # # precise erosion tal energy calculation ########################
+
+                    if 'erosion_rho_change' in variables_sing:
+                        rho_total_arr = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+                    else:
+                        rho_total_arr = samples[:, variables_sing.index('rho')].astype(float)
+
+                    rho_total_arr = np.array(rho_total_arr, dtype=np.float64)
+
+                    # Create a namespace object for dot-style access
+                    results = SimpleNamespace(**dsampler.results.__dict__)  # load all default results
+
+                    # Add your custom attributes
+                    results.weights = dynesty_run_results.importance_weights()
+                    results.norm_weights = w
+                    # results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
+                    # results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
+                    # results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
+                    # results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
+                    results.rho_total = rho_total_arr
+
+                    # delete from base_name _combined if it exists
+                    if '_combined' in base_name:
+                        base_name = base_name.replace('_combined', '')
+
+                    # Save
+                    with open(folder_name + os.sep + base_name+"_results.dynestyres", "wb") as f:
+                        pickle.dump(results, f)
+                        print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.dynestyres'}.")
+
+                # erosion_energy_per_unit_cross_section_corrected.append(erosion_energy_per_unit_cross_section_arr)
+                # erosion_energy_per_unit_mass_corrected.append(erosion_energy_per_unit_mass_arr)
+                # erosion_energy_per_unit_cross_section_end_corrected.append(erosion_energy_per_unit_cross_section_arr_end)
+                # erosion_energy_per_unit_mass_end_corrected.append(erosion_energy_per_unit_mass_arr_end)
+
+            ### SAVE DATA ###
+
+            # delete from base_name _combined if it exists
+            if '_combined' in base_name:
+                base_name = base_name.replace('_combined', '')
+
+            file_radiance_rho_dict[base_name] = (lg_min_la_sun, bg, rho, lg_lo, lg_hi, bg_lo, bg_hi)
+            file_radiance_rho_dict_helio[base_name] = (lg_min_la_sun_helio, lg_helio_lo, lg_helio_hi, bg_helio, bg_helio_lo, bg_helio_hi)
+
+            tj, tj_lo, tj_hi, inclin_val, Vg_val, Q_val, q_val, a_val, e_val = extract_tj_from_report(report_path)
+
+            file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vg_val, Q_val, q_val, a_val, e_val)
+            # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
+            file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, kinetic_energy_median, kinetic_energy_lo, kinetic_energy_hi, tau_median, tau_low95, tau_high95)
+            file_phys_data_dict[base_name] = (eta_meteor_begin, eta, eta_lo, eta_hi, sigma_meteor_begin, sigma, sigma_lo, sigma_hi, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi)
+
+            find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
+            find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
+
+            all_names.append(base_name)
+            all_samples.append(samples_aligned)
+            all_weights.append(weights_aligned)
 
 
-    print("Worst 5 lag:")
-    worst_lag_items = sorted(find_worst_lag.items(), key=lambda x: x[1], reverse=True)[:5]
-    for base_name, lag in worst_lag_items:
-        print(f"{base_name}: {lag} m")
-    print("Worst 5 lum:")
-    worst_lum_items = sorted(find_worst_lum.items(), key=lambda x: x[1], reverse=True)[:5]
-    for base_name, lum in worst_lum_items:
-        print(f"{base_name}: {lum} W")
+        print("Worst 5 lag:")
+        worst_lag_items = sorted(find_worst_lag.items(), key=lambda x: x[1], reverse=True)[:5]
+        for base_name, lag in worst_lag_items:
+            print(f"{base_name}: {lag} m")
+        print("Worst 5 lum:")
+        worst_lum_items = sorted(find_worst_lum.items(), key=lambda x: x[1], reverse=True)[:5]
+        for base_name, lum in worst_lum_items:
+            print(f"{base_name}: {lum} W")
 
-    # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-    sys.stdout.close()
+        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+        sys.stdout.close()
 
-    # Reset sys.stdout to its original value if needed
-    sys.stdout = sys.__stdout__
+        # Reset sys.stdout to its original value if needed
+        sys.stdout = sys.__stdout__
 
-    caption = r"Your caption here."
-    label   = r"tab:phys_prop_x_case"
+        caption = r"Your caption here."
+        label   = r"tab:phys_prop_x_case"
 
-    colspec = "l" + "c"*len(labels)  # first column left, rest centered
+        colspec = "l" + "c"*len(labels)  # first column left, rest centered
 
-    tex_lines = []
-    tex_lines.append(r"\begin{sidewaystable*}")
-    tex_lines.append(r"\centering")
-    tex_lines.append(r"\scriptsize")
-    tex_lines.append(r"\renewcommand{\arraystretch}{1.4}")
-    tex_lines.append(r"\setlength{\tabcolsep}{3pt}")
-    tex_lines.append(rf"\caption{{{caption}}}")
-    tex_lines.append(rf"\label{{{label}}}")
-    tex_lines.append(rf"\begin{{tabular}}{{{colspec}}}")
-    tex_lines.append(r"\hline")
-    tex_lines.append("Meteor & " + " & ".join(labels) + r"\\")
-    tex_lines.append(r"\hline")
+        tex_lines = []
+        tex_lines.append(r"\begin{sidewaystable*}")
+        tex_lines.append(r"\centering")
+        tex_lines.append(r"\scriptsize")
+        tex_lines.append(r"\renewcommand{\arraystretch}{1.4}")
+        tex_lines.append(r"\setlength{\tabcolsep}{3pt}")
+        tex_lines.append(rf"\caption{{{caption}}}")
+        tex_lines.append(rf"\label{{{label}}}")
+        tex_lines.append(rf"\begin{{tabular}}{{{colspec}}}")
+        tex_lines.append(r"\hline")
+        tex_lines.append("Meteor & " + " & ".join(labels) + r"\\")
+        tex_lines.append(r"\hline")
 
-    for row in rows:
-        tex_lines.append(" & ".join(row) + r"\\")
+        for row in rows:
+            tex_lines.append(" & ".join(row) + r"\\")
 
-    tex_lines.append(r"\hline")
-    tex_lines.append(r"\end{tabular}")
-    tex_lines.append(r"\end{sidewaystable*}")
-    tex_str = "\n".join(tex_lines) + "\n"
+        tex_lines.append(r"\hline")
+        tex_lines.append(r"\end{tabular}")
+        tex_lines.append(r"\end{sidewaystable*}")
+        tex_str = "\n".join(tex_lines) + "\n"
 
-    out_tex = os.path.join(output_dir_show, "results_per_event_table.tex")  # change path/name if you want
-    with open(out_tex, "w", encoding="utf-8") as f:
-        f.write(tex_str)
+        out_tex = os.path.join(output_dir_show, "results_per_event_table.tex")  # change path/name if you want
+        with open(out_tex, "w", encoding="utf-8") as f:
+            f.write(tex_str)
 
-    print(f"Saved LaTeX table to: {out_tex}")
+        print(f"Saved LaTeX table to: {out_tex}")
+
+        # save all in a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
+        with open(input_dirfile + os.sep + "shower_distrb_plot_data.pkl", "wb") as f:
+            pickle.dump((variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr), f)
+        print(f"Saved shower distrb plot data to: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
 
     return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
-
-
-
+def load_shower_distrb_plot_data(input_dirfile):
+    # load all from a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
+    with open(input_dirfile, "rb") as f:
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) = pickle.load(f)
+    print(f"Loaded shower distrb plot data from: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
 
@@ -1793,8 +1810,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ################ GROUP of ABOVE AND BELOW  h_{beg} and V_{geo} ################
 
     # Define the curve via the given points (v, h)
-    curve_v = np.array([10, 20, 30, 40, 50, 60, 70], dtype=float)
-    curve_h = np.array([84, 90, 96, 98, 102, 104, 107], dtype=float)
+    # # v_inf
+    # curve_v = np.array([10, 20, 30, 40, 50, 60, 70], dtype=float)
+    # curve_h = np.array([84, 90, 96, 98, 102, 104, 107], dtype=float)
+    # v_g
+    curve_v = np.array([0, 10, 20, 30, 40, 50, 60, 70], dtype=float)
+    curve_h = np.array([85,90, 93, 95, 102, 103, 105, 110], dtype=float)
 
     # Generate a smooth-ish line for plotting (linear interpolation is fine here)
     v_dense = np.linspace(curve_v.min(), curve_v.max(), 200)
@@ -2203,7 +2224,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_velocity_vs_beg_height_{cam_name}.png"), bbox_inches='tight', dpi=300)
                     plt.close()
 
-                ##### plot the data #####
+                ##### plot the radiance of the data #####
+
+                plt.figure(figsize=(10, 6))
 
                 # after you’ve built your rho array:
                 norm = Normalize(vmin=rho.min(), vmax=rho.max())
@@ -3206,6 +3229,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # Now do a tolerant match (±3 s) against your available names
         foundJB = 0
         size_dynesty_JB = []
+        mass_dynesty_JB = []
         rho_dynesty_JB = []
         tau_dynesty_JB = []
         avg_speed_JB = []
@@ -3217,8 +3241,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 rho_JB = rho_kgm3[i]
                 rho_dynesty = file_radiance_rho_dict_JB[matched_key][2]
                 rho_dynesty_JB.append(rho_dynesty)
+                mass_dynesty = file_obs_data_dict_JB[matched_key][12] # m_init_med 12
+                mass_dynesty_JB.append(mass_dynesty)
                 size_JB = from_mass2size(mass_kg[i], rho_JB)
-                size_dynesty = file_obs_data_dict_JB[matched_key][13]
+                size_dynesty = file_obs_data_dict_JB[matched_key][13] # m_init_med 12
                 size_dynesty_JB.append(size_dynesty)
                 tau_dynesty_JB.append(file_obs_data_dict_JB[matched_key][19])
                 avg_speed_JB.append(file_obs_data_dict_JB[matched_key][6])
@@ -3242,7 +3268,40 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ax.set_xscale("log")
         plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_kikwaya.png"), bbox_inches='tight', dpi=300)
         plt.close()
-        
+
+        print("Creating 2D density against mass plot Kikwaya only...")
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+        name_ids = [row[0] for row in rows]
+        # Now do a tolerant match (±3 s) against your available names
+        if foundJB > 0:
+            for i, code in enumerate(name_ids):
+            # Try to find an exact-or-close match for this code inside all_names
+                matched_key = find_close_in_list(code, all_names_JB, tol_seconds=3)
+                if matched_key is not None and (matched_key in file_radiance_rho_dict_JB) and (matched_key in file_obs_data_dict_JB):
+                    ax.plot([mass_kg[i], file_obs_data_dict_JB[matched_key][12]], [rho_kgm3[i], file_radiance_rho_dict_JB[matched_key][2]],
+                        color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
+            
+            print(foundJB,"Found matching meteoroids from JB (±3 s tolerance).")
+            ax.plot([], [], color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8,
+                    label="This work vs. Kikwaya et al. (2009)")
+            
+        ax.scatter(mass_dynesty_JB, rho_dynesty_JB, color='red', marker='+', s=70, zorder=6) 
+        ax.scatter(mass_kg, rho_kgm3, color='dodgerblue', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
+
+        plt.grid(True, linestyle='--', alpha=0.5)
+        ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
+        ax.set_xlabel("Mass [kg]", fontsize=15)
+        # ax.set_xlim([2*10**(-6), 4*10**(-2)])
+        ax.set_ylim([-100, 8100])
+        # put the legend at the right outside the plot after the y axis
+        ax.legend(fontsize=14)
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        ax.set_xscale("log")
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_mass_kikwaya.png"), bbox_inches='tight', dpi=300)
+        plt.close()
+            
         print("Creating 2D density against tau plot Kikwaya only...")
 
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -5125,7 +5184,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2.1)Iron Letter\irons-rho_eta100-noPoros\Best_iron-fit",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -5163,5 +5222,6 @@ if __name__ == "__main__":
         print(f"Setting name to {cml_args.name}")
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
+    
     shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, 
-                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=True) # cml_args.radiance_plot cml_args.correl_plot

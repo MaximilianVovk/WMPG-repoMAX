@@ -1191,16 +1191,31 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
 
     # save i a .tex file the results in a table for ID F lenght_par eeucs
     with open(os.path.join(output_dir_show, name_distr + "_erosion_energy_results_table.tex"), "w") as f:
-        f.write("\\begin{tabular}{lcccccccccc}\n")
+        f.write("\\resizebox{\\textwidth}{!}{")
+        f.write("\\begin{tabular}{lccccccccccc}\n")
         f.write("\\hline\n")
-        f.write("ID & $E_{erosion}/A$ (MJ/m$^2$) & $E_{erosion}/m$ (MJ/kg) & F & $h_{kc}$ (km) & Length (km) & $\\rho$ (kg/m$^3$) & Zenith Angle (°) & $m_{init}$ (kg) & $E_{erosion}$ to $h_e$ (MJ) & $E_{erosion}$ to $h_{e2}$ (MJ) & Tot $E_{erosion}$ \\\\\n")
+        f.write("ID & $E_{erosion}/A$ (MJ/m$^2$) & $E_{erosion}/m$ (MJ/kg) & F & $kc$ & Length (km) & $\\rho$ (kg/m$^3$) & Zenith Angle (°) & $m_{init}$ (kg) & $E_{erosion}$ to $h_e$ (MJ) & $E_{erosion}$ to $h_{e2}$ (MJ) & Tot $E_{erosion}$ \\\\\n")
         f.write("\\hline\n")
         for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1, zenith_angle_1, \
                         eeum_b1, eeum_b2, eebest_first_1, eebest_second_1, Tot_energy_1, m_init_1, v_init_1, best_eros_height_1, best_eros_height_change_1) in file_eeu_dict.items():
+            # change base_name to put "\_" instead of "_"
+            base_name = base_name.replace("_", "\_")
             f.write(f"{base_name} & {eeucs_1:.2f} & {eeum_1:.2f} & {F_par_1:.2f} & {kc_par_1:.2f} & {lenght_par_1:.2f} & {rho_total_1:.2f} & {zenith_angle_1:.2f} & {m_init_1:.2f} & {eebest_first_1:.2f} & {eebest_second_1:.2f} & {Tot_energy_1:.2f} \\\\\n")
         f.write("\\hline\n")
+        f.write("\\end{tabular}}\n")
+    with open(os.path.join(output_dir_show, name_distr + "_small_erosion_energy_results_table.tex"), "w") as f:
+        f.write("\\begin{tabular}{lcccc}\n")
+        f.write("\\hline\n")
+        f.write("ID & $E_{s}$ (MJ/m$^2$) & F & Length (km) & $\\rho$ (kg/m$^3$) \\\\\n")
+        f.write("\\hline\n")
+        for base_name, (eeucs_1, eeum_1, F_par_1, kc_par_1, lenght_par_1, rho_total_1, zenith_angle_1, \
+                        eeum_b1, eeum_b2, eebest_first_1, eebest_second_1, Tot_energy_1, m_init_1, v_init_1, best_eros_height_1, best_eros_height_change_1) in file_eeu_dict.items():
+            # change base_name to put "\_" instead of "_"
+            base_name = base_name.replace("_", "\_")
+            f.write(f"{base_name} & {eeucs_1:.2f} & {F_par_1:.2f} & {lenght_par_1:.2f} & {rho_total_1:.2f} \\\\\n")
+        f.write("\\hline\n")
         f.write("\\end{tabular}\n")
-    print(f"Results table saved successfully in {os.path.join(output_dir_show, name_distr + '_erosion_energy_results_table.tex')}.")
+    print(f"Results tables saved successfully.")
 
     print("\nPlots:")
 
@@ -1451,7 +1466,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Validation_nlive\nlive500
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2.1)Iron Letter\irons-rho_eta100-noPoros\Tau3\20210813_022604",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_NEW\JB-ironNEW",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

@@ -30,10 +30,14 @@ WORK_DIR = os.getcwd()
 DATA_PATH_ROMULAN  = "/srv/meteor/romulan/events"
 FLATS_PATH_ROMULAN = "/srv/meteor/romulan/flats"
 # Config files (as you specified)
-CONFIG_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/01R_2009.config"
-CONFIG_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/02R_2009.config"
-PLATE_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/platepar_cmn2010.cal"
-PLATE_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/platepar_cmn2010.cal"
+# CONFIG_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/01R_2009.config"
+# CONFIG_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/02R_2009.config"
+# PLATE_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/platepar_cmn2010.cal"
+# PLATE_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/platepar_cmn2010.cal"
+CONFIG_01R = "/srv/meteor/reductions/config+calib/skyfit2/romulan/2009/01R/01R_2009.config"
+CONFIG_02R = "/srv/meteor/reductions/config+calib/skyfit2/romulan/2009/02R/02R_2009.config"
+PLATE_01R = "/srv/meteor/reductions/config+calib/skyfit2/romulan/2009/01R/platepar_cmn2010.cal"
+PLATE_02R = "/srv/meteor/reductions/config+calib/skyfit2/romulan/2009/02R/platepar_cmn2010.cal"
 
 
 # check the OS
@@ -43,8 +47,10 @@ if platform.system() == 'Windows':
     DATA_PATH_ROMULAN  = r"M:\romulan\events"
     FLATS_PATH_ROMULAN = r"M:\romulan\flats"
     # Config files (as you specified)
-    CONFIG_01R = r"M:\reductions\romulan\2026_JB_remeasure\20090825_035144\01R\01R_2009.config"
-    CONFIG_02R = r"M:\reductions\romulan\2026_JB_remeasure\20090825_035144\02R\02R_2009.config"
+    CONFIG_01R = r"M:\reductions\reductions\config+calib\skyfit2\romulan\2009\01R\01R_2009.config"
+    CONFIG_02R = r"M:\reductions\reductions\config+calib\skyfit2\romulan\2009\02R\02R_2009.config"
+    PLATE_01R = r"M:\reductions\reductions\config+calib\skyfit2\romulan\2009\01R\platepar_cmn2010.cal"
+    PLATE_02R = r"M:\reductions\reductions\config+calib\skyfit2\romulan\2009\02R\platepar_cmn2010.cal"
 elif platform.system() == 'Linux':
     print('Linux OS detected')
 else:

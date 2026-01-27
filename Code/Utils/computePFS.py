@@ -441,7 +441,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--image",
-        default="/srv/meteor/klingon/mirchk/20221022", #20201012
+        default="/srv/meteor/klingon/mirchk/20251222",
         help="Path to a *_corr.png OR a directory to scan recursively for Elginfield_corr_*.png / Tavistock_corr_*.png",
     )
     ap.add_argument(

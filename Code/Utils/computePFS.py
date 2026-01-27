@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import imageio as iio
 from scipy.optimize import curve_fit
+from scipy.optimize import minimize
 import pandas as pd
 
 
@@ -71,7 +72,7 @@ def peak_index(y, smooth_window=7):
 
 
 
-def fit_1g(x, y):
+def fit_1g_old(x, y):
     C0 = np.median(y)
     A0 = float(np.max(y) - C0)
     mu0 = float(x[np.argmax(y)])
@@ -85,7 +86,7 @@ def fit_1g(x, y):
     return popt, pcov
 
 
-def fit_2g(x, y):
+def fit_2g_old(x, y):
     C0 = np.median(y)
     A0 = float(np.max(y) - C0)
     mu0 = float(x[np.argmax(y)])
@@ -100,6 +101,151 @@ def fit_2g(x, y):
 
     popt, pcov = curve_fit(two_gaussian, x, y, p0=p0, bounds=bounds, maxfev=50000)
     return popt, pcov
+
+def _sigmoid(z):
+    # stable sigmoid
+    z = np.clip(z, -60.0, 60.0)
+    return 1.0 / (1.0 + np.exp(-z))
+
+def _map_to_bounds(z, lo, hi):
+    # maps R -> (lo, hi)
+    return lo + (hi - lo) * _sigmoid(z)
+
+def _safe_exp(z):
+    # maps R -> (0, +inf), safely
+    z = np.clip(z, -60.0, 60.0)
+    return np.exp(z)
+
+def fit_1g(x, y):
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+
+    xmin, xmax = float(x.min()), float(x.max())
+
+    # initial guesses in *physical* space
+    C0 = float(np.median(y))
+    A0 = float(np.max(y) - C0)
+    mu0 = float(x[np.argmax(y)])
+    s0 = 3.0
+
+    # transform initial guesses to unconstrained variables
+    # A = exp(a), mu = xmin + (xmax-xmin)*sigmoid(m), sigma = smin + (smax-smin)*sigmoid(s), C free
+    smin, smax = 0.2, 100.0
+
+    a0 = np.log(max(A0, 1e-12))
+    # invert sigmoid approximately for mu/sigma initial guesses
+    def inv_sigmoid(u):
+        u = np.clip(u, 1e-6, 1 - 1e-6)
+        return np.log(u / (1 - u))
+
+    m0 = inv_sigmoid((mu0 - xmin) / (xmax - xmin + 1e-12))
+    t0 = inv_sigmoid((s0 - smin) / (smax - smin))
+
+    p0 = np.array([a0, m0, t0, C0], dtype=float)
+
+    # scale for SSE
+    sse_scale = float(np.mean((y - C0) ** 2) + 1e-12)
+
+    def obj(p):
+        a, m, t, C = p
+        A = _safe_exp(a)
+        mu = _map_to_bounds(m, xmin, xmax)
+        sig = _map_to_bounds(t, smin, smax)
+        model = gaussian(x, A, mu, sig, C)
+        r = y - model
+        return float(np.sum(r * r)) / sse_scale
+
+    res = minimize(
+        obj, p0,
+        method="Nelder-Mead",
+        options=dict(
+            maxiter=4000,      # lower = faster
+            xatol=1e-4,        # looser tolerances = faster
+            fatol=1e-4,
+            adaptive=True,
+        )
+    )
+
+    a, m, t, C = res.x
+    A = _safe_exp(a)
+    mu = _map_to_bounds(m, xmin, xmax)
+    sig = _map_to_bounds(t, smin, smax)
+    popt = np.array([A, mu, sig, C], dtype=float)
+    return popt, None
+
+
+def fit_2g(x, y):
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+
+    xmin, xmax = float(x.min()), float(x.max())
+
+    C0 = float(np.median(y))
+    A0 = float(np.max(y) - C0)
+    mu0 = float(x[np.argmax(y)])
+
+    # bounds
+    s1min, s1max = 0.2, 50.0
+    s2min, s2max = 0.5, 200.0
+
+    def inv_sigmoid(u):
+        u = np.clip(u, 1e-6, 1 - 1e-6)
+        return np.log(u / (1 - u))
+
+    # initial guesses in physical space
+    A10 = 0.7 * A0
+    A20 = 0.3 * A0
+    mu10 = mu0
+    mu20 = mu0
+    s10 = 2.0
+    s20 = 6.0
+
+    # transform initial guesses to unconstrained
+    a10 = np.log(max(A10, 1e-12))
+    a20 = np.log(max(A20, 1e-12))
+    m10 = inv_sigmoid((mu10 - xmin) / (xmax - xmin + 1e-12))
+    m20 = inv_sigmoid((mu20 - xmin) / (xmax - xmin + 1e-12))
+    t10 = inv_sigmoid((s10 - s1min) / (s1max - s1min))
+    t20 = inv_sigmoid((s20 - s2min) / (s2max - s2min))
+
+    p0 = np.array([a10, m10, t10, a20, m20, t20, C0], dtype=float)
+
+    sse_scale = float(np.mean((y - C0) ** 2) + 1e-12)
+
+    def obj(p):
+        a1, m1, t1, a2, m2, t2, C = p
+        A1 = _safe_exp(a1)
+        A2 = _safe_exp(a2)
+        mu1 = _map_to_bounds(m1, xmin, xmax)
+        mu2 = _map_to_bounds(m2, xmin, xmax)
+        s1 = _map_to_bounds(t1, s1min, s1max)
+        s2 = _map_to_bounds(t2, s2min, s2max)
+
+        model = two_gaussian(x, A1, mu1, s1, A2, mu2, s2, C)
+        r = y - model
+        return float(np.sum(r * r)) / sse_scale
+
+    res = minimize(
+        obj, p0,
+        method="Nelder-Mead",
+        options=dict(
+            maxiter=8000,
+            xatol=2e-4,
+            fatol=2e-4,
+            adaptive=True,
+        )
+    )
+
+    a1, m1, t1, a2, m2, t2, C = res.x
+    A1 = _safe_exp(a1)
+    A2 = _safe_exp(a2)
+    mu1 = _map_to_bounds(m1, xmin, xmax)
+    mu2 = _map_to_bounds(m2, xmin, xmax)
+    s1 = _map_to_bounds(t1, s1min, s1max)
+    s2 = _map_to_bounds(t2, s2min, s2max)
+
+    popt = np.array([A1, mu1, s1, A2, mu2, s2, C], dtype=float)
+    return popt, None
 
 
 def variance_to_psf_m(variance_pix, arcsec_per_pix=6.0, range_m=100_000.0):
@@ -185,9 +331,11 @@ def process_axis(profile, axis_name, outdir, event_id, arcsec_per_pix=6.0, range
         "sigma_1g_px": sigma_1g,
         "var_1g_px2": var_1g,
         "psf_1g_m": psf_1g_m,
+        "A_1g": p1[0],
         "sigma_2g_px": [s1, s2],
         "var_2g_px2": [var_s1, var_s2],
         "psf_2g_m": [psf_2g_m_1, psf_2g_m_2],
+        "A_2g": [p2[0], p2[3]],
         "plot": str(outpath),
     }
 
@@ -334,12 +482,15 @@ def main():
                         # 1G
                         "sigma_1g_px": r["sigma_1g_px"],
                         "psf_1g_m": r["psf_1g_m"],
+                        "A_1g": r["A_1g"],
 
                         # 2G (optional summaries)
                         "sigma_2g_1_px": r["sigma_2g_px"][0],
                         "sigma_2g_2_px": r["sigma_2g_px"][1],
                         "psf_2g_1_m": r["psf_2g_m"][0],
                         "psf_2g_2_m": r["psf_2g_m"][1],
+                        "A_2g_1": r["A_2g"][0],
+                        "A_2g_2": r["A_2g"][1],
                     })
 
             except Exception as e:
@@ -369,11 +520,9 @@ def main():
 
             # 1G: sigma + PSF (treat PSF as your 'aperture' in meters)
             summarize([r["sigma_1g_px"] for r in all_res], "1G sigma [px]")
-            summarize([r["psf_1g_m"] for r in all_res], "1G PSF [m]")
-
-            # 2G (optional): component sigmas + PSFs
             summarize([r["sigma_2g_1_px"] for r in all_res], "2G comp1 sigma [px]")
             summarize([r["sigma_2g_2_px"] for r in all_res], "2G comp2 sigma [px]")
+            summarize([r["psf_1g_m"] for r in all_res], "1G PSF [m]")
             summarize([r["psf_2g_1_m"] for r in all_res], "2G comp1 PSF [m]")
             summarize([r["psf_2g_2_m"] for r in all_res], "2G comp2 PSF [m]")
 
@@ -382,9 +531,9 @@ def main():
                 sub = [r for r in all_res if r["axis"] == ax]
                 print(f"\n--- Axis {ax.upper()} only ---")
                 summarize([r["sigma_1g_px"] for r in sub], f"1G sigma [px] ({ax})")
-                summarize([r["psf_1g_m"] for r in sub], f"1G PSF [m] ({ax})")
                 summarize([r["sigma_2g_1_px"] for r in sub], f"2G comp1 sigma [px] ({ax})")
                 summarize([r["sigma_2g_2_px"] for r in sub], f"2G comp2 sigma [px] ({ax})")
+                summarize([r["psf_1g_m"] for r in sub], f"1G PSF [m] ({ax})")
                 summarize([r["psf_2g_1_m"] for r in sub], f"2G comp1 PSF [m] ({ax})")
                 summarize([r["psf_2g_2_m"] for r in sub], f"2G comp2 PSF [m] ({ax})")
             
@@ -394,48 +543,120 @@ def main():
             df.to_csv(csv_out, index=False)
             print(f"\nSummary CSV saved to: {csv_out}")
     
-    # deletre the outlier PSF values greater than 100 m before plotting histograms
-    df = df[df["psf_1g_m"] <= 100.0]
-    df = df[df["psf_2g_1_m"] <= 100.0]
-    df = df[df["psf_2g_2_m"] <= 100.0]
+    # check if df is in memory if not load it from the csv
+    if 'df' in locals():
 
-    # creatre a plot with 3 subplots showing histograms of PSF 1G, PSF 2G comp1, PSF 2G comp2
-    plt.figure(figsize=(12, 4))
-    plt.subplot(1, 3, 1)
-    plt.hist(df["psf_1g_m"].dropna(), bins=50, color="blue", alpha=0.7)
-    # put the value of the peak on the top of the histogram
-    peak_1g = np.round(df["psf_1g_m"],1).mode().iloc[0]
-    # plt.text(peak_1g, plt.ylim()[1]*0.9, f"Peak: {peak_1g:.1f} m", ha="left", color="black")
-    # put a vertical line at the peak value
-    plt.axvline(peak_1g, color="black", linestyle="--")
-    plt.xlabel("PSF 1G [m]")
-    plt.ylabel("Count")
-    plt.title("PSF 1G = {:.1f} m".format(peak_1g))   
-    plt.subplot(1, 3, 2)
-    plt.hist(df["psf_2g_1_m"].dropna(), bins=50, color="green", alpha=0.7)
-    # put the value of the peak on the top of the histogram
-    peak_2g_1 = np.round(df["psf_2g_1_m"],1).mode().iloc[0]
-    # plt.text(peak_2g_1, plt.ylim()[1]*0.9, f"Peak: {peak_2g_1:.1f} m", ha="left", color="black")
-    # put a vertical line at the peak value
-    plt.axvline(peak_2g_1, color="black", linestyle="--")
-    plt.xlabel("PSF 2G comp1 [m]")
-    plt.ylabel("Count")
-    plt.title("PSF 2G comp1 = {:.1f} m".format(peak_2g_1))
-    plt.subplot(1, 3, 3)
-    plt.hist(df["psf_2g_2_m"].dropna(), bins=50, color="red", alpha=0.7)
-    # put the value of the peak on the top of the histogram
-    peak_2g_2 = np.round(df["psf_2g_2_m"],1).mode().iloc[0]
-    # plt.text(peak_2g_2, plt.ylim()[1]*0.9, f"Peak: {peak_2g_2:.1f} m", ha="left", color="black")
-    # put a vertical line at the peak value
-    plt.axvline(peak_2g_2, color="black", linestyle="--")
-    plt.xlabel("PSF 2G comp2 [m]")
-    plt.ylabel("Count")
-    plt.title("PSF 2G comp2 = {:.1f} m".format(peak_2g_2))
-    plt.tight_layout()
-    hist_out = outdir / "psf_histograms.png"
-    plt.savefig(hist_out, dpi=200)
-    plt.close()
-    print(f"\nHistogram plot saved to: {hist_out}")
+        # deletre the outlier PSF values greater than 100 m before plotting histograms
+        df = df[df["psf_1g_m"] <= 100.0]
+        df = df[df["psf_2g_1_m"] <= 100.0]
+        df = df[df["psf_2g_2_m"] <= 1000.0]
+
+        # creatre a plot with 3 subplots showing histograms of PSF 1G, PSF 2G comp1, PSF 2G comp2
+        plt.figure(figsize=(12, 4))
+        plt.subplot(1, 3, 1)
+        plt.hist(df["psf_1g_m"].dropna(), bins=50, color="blue", alpha=0.7)
+        # put the value of the peak on the top of the histogram
+        peak_1g = np.round(df["psf_1g_m"],1).mode().iloc[0]
+        # plt.text(peak_1g, plt.ylim()[1]*0.9, f"Peak: {peak_1g:.1f} m", ha="left", color="black")
+        # put a vertical line at the peak value
+        plt.axvline(peak_1g, color="black", linestyle="--")
+        plt.xlabel("PSF 1G [m]")
+        plt.ylabel("Count")
+        plt.title("PSF 1G = {:.1f} m".format(peak_1g))   
+        plt.subplot(1, 3, 2)
+        plt.hist(df["psf_2g_1_m"].dropna(), bins=50, color="green", alpha=0.7)
+        # put the value of the peak on the top of the histogram
+        peak_2g_1 = np.round(df["psf_2g_1_m"],0).mode().iloc[0]
+        # plt.text(peak_2g_1, plt.ylim()[1]*0.9, f"Peak: {peak_2g_1:.1f} m", ha="left", color="black")
+        # put a vertical line at the peak value
+        plt.axvline(peak_2g_1, color="black", linestyle="--")
+        plt.xlabel("PSF 2G comp1 [m]")
+        plt.ylabel("Count")
+        plt.title("PSF 2G comp1 = {:.1f} m".format(peak_2g_1))
+        plt.subplot(1, 3, 3)
+        plt.hist(df["psf_2g_2_m"].dropna(), bins=50, color="red", alpha=0.7)
+        # put the value of the peak on the top of the histogram
+        peak_2g_2 = np.round(df["psf_2g_2_m"],0).mode().iloc[0]
+        # plt.text(peak_2g_2, plt.ylim()[1]*0.9, f"Peak: {peak_2g_2:.1f} m", ha="left", color="black")
+        # put a vertical line at the peak value
+        plt.axvline(peak_2g_2, color="black", linestyle="--")
+        plt.xlabel("PSF 2G comp2 [m]")
+        plt.ylabel("Count")
+        plt.title("PSF 2G comp2 = {:.1f} m".format(peak_2g_2))
+        plt.tight_layout()
+        hist_out = outdir / "psf_histograms.png"
+        plt.savefig(hist_out, dpi=200)
+        plt.close()
+        print(f"\nHistogram plot saved to: {hist_out}")
+
+        # make the hinstogram of the A_1g, A_2g_1, A_2g_2 values in log scale along the x axis
+        plt.figure(figsize=(12, 4))
+        plt.subplot(1, 3, 1)
+        plt.hist(np.log10(df["A_1g"].dropna()), bins=50, color="blue", alpha=0.7)
+        plt.xlabel("log$_{10}$(px Intensity)")
+        plt.ylabel("Count")
+        plt.title("A_1g")
+        plt.subplot(1, 3, 2)
+        plt.hist(np.log10(df["A_2g_1"].dropna()), bins=50, color="green", alpha=0.7)
+        plt.xlabel("log$_{10}$(px Intensity)")
+        plt.ylabel("Count")
+        plt.title("A_2g comp1")
+        plt.subplot(1, 3, 3)
+        plt.hist(np.log10(df["A_2g_2"].dropna()), bins=50, color="red", alpha=0.7)
+        plt.xlabel("log$_{10}$(px Intensity)")
+        plt.ylabel("Count")
+        plt.title("A_2g comp2")
+        plt.tight_layout()
+        hist_a_out = outdir / "a_values_histograms.png"
+        plt.savefig(hist_a_out, dpi=200)
+        plt.close()
+        print(f"\nA values histogram plot saved to: {hist_a_out}")
+
+        # create a scatter subplot of PSF 1G vs A_1g and PSF 2G vs A_2g for both components
+        plt.figure(figsize=(12, 5))
+        plt.subplot(1, 3, 1)
+        plt.scatter(df["A_1g"], df["psf_1g_m"], alpha=0.7, color="blue")
+        plt.xlabel("px Intensity")
+        # make it log scale
+        plt.xscale("log")
+        plt.ylabel("PSF 1G [m]")
+        plt.title("PSF 1G vs px Intensity")
+        plt.subplot(1, 3, 2)
+        plt.scatter(df["A_2g_1"], df["psf_2g_1_m"], alpha=0.7, color="green")
+        plt.xlabel("px Intensity")
+        # make it log scale
+        plt.xscale("log")
+        plt.ylabel("PSF 2G comp1 [m]")
+        plt.title("PSF 2G comp1 vs px Intensity")
+        plt.subplot(1, 3, 3)
+        plt.scatter(df["A_2g_2"], df["psf_2g_2_m"], alpha=0.7, color="red")
+        plt.xlabel("px Intensity")
+        # make it log scale
+        plt.xscale("log")
+        plt.ylabel("PSF 2G comp2 [m]")
+        plt.title("PSF 2G comp2 vs px Intensity")
+        plt.tight_layout()
+        scatter_out = outdir / "psf_scatter_plots.png"
+        plt.savefig(scatter_out, dpi=200)
+        plt.close()
+        print(f"\nScatter plot saved to: {scatter_out}")
+
+        # plot the histogram of amplitude1_2G/(amplitude1_2G + amplitude2_2G)
+        ratio_1g_2g = df["A_2g_1"] / (df["A_2g_1"] + df["A_2g_2"])
+        plt.figure(figsize=(6, 4))
+        plt.hist((ratio_1g_2g.dropna()), bins=50, color="purple", alpha=0.7)
+        plt.xlabel("(A_2g_comp1 / (A_2g_comp1 + A_2g_comp2))")
+        plt.ylabel("Count")
+        peak_ratio = np.round(ratio_1g_2g,2).mode().iloc[0]
+        plt.title("px Intensity Ratio Peak = {:.2f}".format(peak_ratio))
+        ratio_out = outdir / "amplitude_ratio_histogram.png"
+        plt.savefig(ratio_out, dpi=200)
+        plt.close()
+        print(f"\nAmplitude ratio histogram plot saved to: {ratio_out}")
+
+
+
+    # create a plot 
 
     print("\nDone.")
 

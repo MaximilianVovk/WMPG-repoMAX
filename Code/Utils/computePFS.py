@@ -72,7 +72,7 @@ def peak_index(y, smooth_window=7):
 
 
 
-def fit_1g_old(x, y):
+def fit_1g(x, y):
     C0 = np.median(y)
     A0 = float(np.max(y) - C0)
     mu0 = float(x[np.argmax(y)])
@@ -86,7 +86,7 @@ def fit_1g_old(x, y):
     return popt, pcov
 
 
-def fit_2g_old(x, y):
+def fit_2g(x, y):
     C0 = np.median(y)
     A0 = float(np.max(y) - C0)
     mu0 = float(x[np.argmax(y)])
@@ -116,7 +116,7 @@ def _safe_exp(z):
     z = np.clip(z, -60.0, 60.0)
     return np.exp(z)
 
-def fit_1g(x, y):
+def fit_1g_NelderMead(x, y):
     x = np.asarray(x, float)
     y = np.asarray(y, float)
 
@@ -174,7 +174,7 @@ def fit_1g(x, y):
     return popt, None
 
 
-def fit_2g(x, y):
+def fit_2g_NelderMead(x, y):
     x = np.asarray(x, float)
     y = np.asarray(y, float)
 

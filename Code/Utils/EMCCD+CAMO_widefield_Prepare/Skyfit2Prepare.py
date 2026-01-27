@@ -661,6 +661,16 @@ def find_best_cal_file(station, event_dt):
     default_name = f"{station}_platepar.cal"
     default_path = os.path.join(station_dir, default_name)
     has_default = os.path.exists(default_path)
+    if has_default:
+        print(f"Found default cal for station {station}: {default_path}")
+    else:
+        # check for all cals in the folder and pick the first
+        for file in os.listdir(station_dir):
+            if file.endswith('.cal'):
+                default_path = os.path.join(station_dir, file)
+                has_default = True
+                print(f"Found default cal for station {station}: {default_path}")
+                break
 
     candidates = []
 
@@ -722,7 +732,95 @@ def find_best_cal_file(station, event_dt):
 
     return None
 
+def find_best_config_file(station, event_dt):
+    """
+    Given a station code like '01G' and the event datetime, return the path
+    to the best .config file in SKYFIT2_PATH_EMCCD/station.
 
+    Expected naming:
+      - Dated:   {station}_YYYYMMDD.config   (e.g., 01G_20180305.config)
+      - Default: emccd{station}.config           (e.g., emccd01G.config) [optional]
+
+    Logic:
+    - If event_dt is provided: pick the latest dated config with date <= event date.
+      If event is earlier than all dated configs:
+        - use default {station}.config if it exists, else use the earliest dated config.
+    - If event_dt is None:
+        - prefer default {station}.config if it exists, else use the latest dated config.
+    - If station directory missing: return default if it exists, else None.
+    """
+
+    station_dir = os.path.join(SKYFIT2_PATH_EMCCD, station)
+
+    # Optional unlabeled "oldest"/default config, e.g. 01G.config
+    default_name = f"emccd{station}.config"
+    default_path = os.path.join(station_dir, default_name)
+    has_default = os.path.exists(default_path)
+    if has_default:
+        print(f"Found default config for station {station}: {default_path}")
+    else:
+        # check for all configs in the folder and pick the first
+        for file in os.listdir(station_dir):
+            if file.endswith('.config'):
+                default_path = os.path.join(station_dir, file)
+                has_default = True
+                print(f"Found default config for station {station}: {default_path}")
+                break
+    
+
+    candidates = []
+
+    try:
+        files = os.listdir(station_dir)
+    except FileNotFoundError:
+        return default_path if has_default else None
+
+    # Look for files like 01G_YYYYMMDD.config
+    prefix = f"{station}_"
+    for fname in files:
+        if not (fname.startswith(prefix) and fname.endswith(".config")):
+            continue
+
+        m = re.search(r"(\d{8})", fname)
+        if not m:
+            continue
+
+        date_str = m.group(1)
+        try:
+            cfg_date = datetime.datetime.strptime(date_str, "%Y%m%d").date()
+        except ValueError:
+            continue
+
+        candidates.append((cfg_date, fname))
+
+    # If we don't have an event datetime, choose a reasonable default
+    if event_dt is None:
+        if has_default:
+            return default_path
+        if candidates:
+            _, best_fname = max(candidates, key=lambda x: x[0])  # latest dated
+            return os.path.join(station_dir, best_fname)
+        return None
+
+    event_date = event_dt.date()
+
+    if candidates:
+        valid = [c for c in candidates if c[0] <= event_date]
+        if valid:
+            _, best_fname = max(valid, key=lambda x: x[0])  # latest <= event
+            return os.path.join(station_dir, best_fname)
+        else:
+            # Event earlier than all dated configs
+            if has_default:
+                return default_path
+            _, best_fname = min(candidates, key=lambda x: x[0])  # earliest dated
+            return os.path.join(station_dir, best_fname)
+
+    # No dated configs, fallback to default if present
+    if has_default:
+        return default_path
+
+    return None
 
 
 
@@ -748,18 +846,29 @@ if __name__ == "__main__":
         Edited 2023-09-19: Maximilian Vovk, email: mvovk@uwo.ca = add skyfit2 .config and .cal to the event directory
         Edited 2024-05-13: Maximilian Vovk, email: mvovk@uwo.ca = add get also the Klingon files with config and cal for skyfit2 and check previous seconds or early seconds if the file is not found
         Edited 2024-06-06: Maximilian Vovk, email: mvovk@uwo.ca = no longer break if there are data in the F or G folder
-        Edited 2025-11-17: Maximilian Vovk, email: mvovk@uwo.ca = Check for the best .cal file based on the event date                                        
+        Edited 2025-11-17: Maximilian Vovk, email: mvovk@uwo.ca = Check for the best .cal file based on the event date
+        Edited 2025-11-20: Maximilian Vovk, email: mvovk@uwo.ca = Check for the best .config file based on the event date                              
         """)
     arg_parser.add_argument('meteors', \
         help="""Comma separated EMCCD events, e.g. "20190506_033100" or "20190506 03:31:00 UTC ..." .""")
-    arg_parser.add_argument('--emccd', metavar='EMCCD', type=bool, default=True,\
-        help='Gets the EMCCD data files, set True by default.')
-    arg_parser.add_argument('--wide', metavar='WIDE', type=bool, default=True,\
-        help='Gets the CAMO wide-field data files, set True by default but turn False if the OS is Windows as VidChop does not work.')
+    arg_parser.add_argument('-onlyemccd', action="store_true",\
+        help='Gets only the EMCCD data files, set True by default.')
+    arg_parser.add_argument('-onlywide', action="store_true",\
+        help='Gets only the CAMO wide-field data files, set True by default but turn False if the OS is Windows as VidChop does not work.')
 
     # Parse the command line arguments
     cml_args = arg_parser.parse_args()
 
+    cml_args.emccd = True
+    cml_args.wide = True
+
+    if cml_args.onlyemccd:
+        cml_args.wide = False
+    if cml_args.onlywide:
+        cml_args.emccd = False
+    # check if both are false
+    if not cml_args.emccd and not cml_args.wide:
+        print('Both -onlyemccd and -onlywide used, nothing to do! If you want to process both EMCCD and CAMO wide-field data, do not use these flags.')
 
     # Override the event list if there are events given in the command line arguments
     if cml_args.meteors:
@@ -790,51 +899,64 @@ if __name__ == "__main__":
 
                     if '1F' in file:
                         station = '01F'
-                        shutil.copy2(os.path.join(SKYFIT2_PATH_EMCCD, station, 'emccd01F.config'),
+                        config_path = find_best_config_file(station, event_dt)
+                        if config_path is not None:
+                            shutil.copy2(config_path,
                                      event_dir_data+os.sep+'tavis_F')
+                        else:
+                            error_track.addError(f'No .config file found for the station {station} in :',
+                                                 SKYFIT2_PATH_EMCCD)
 
                         cal_path = find_best_cal_file(station, event_dt)
                         if cal_path is not None:
                             shutil.copy2(cal_path, event_dir_data+os.sep+'tavis_F')
                         else:
-                            error_track.addError(f'No .cal file found for the station {station} in :',
-                                                 SKYFIT2_PATH_EMCCD)
+                            error_track.addError(f"No .cal file found for the station {station} in: {SKYFIT2_PATH_EMCCD}")
 
                     elif '1G' in file:
                         station = '01G'
-                        shutil.copy2(os.path.join(SKYFIT2_PATH_EMCCD, station, 'emccd01G.config'),
+                        config_path = find_best_config_file(station, event_dt)
+                        if config_path is not None:
+                            shutil.copy2(config_path,
                                      event_dir_data+os.sep+'tavis_G')
+                        else:
+                            error_track.addError(f"No .config file found for the station {station} in: {SKYFIT2_PATH_EMCCD}")
 
                         cal_path = find_best_cal_file(station, event_dt)
                         if cal_path is not None:
                             shutil.copy2(cal_path, event_dir_data+os.sep+'tavis_G')
                         else:
-                            error_track.addError(f'No .cal file found for the station {station} in :',
-                                                 SKYFIT2_PATH_EMCCD)
+                            error_track.addError(f"No .config file found for the station {station} in: {SKYFIT2_PATH_EMCCD}")
 
                     elif '2F' in file:
                         station = '02F'
-                        shutil.copy2(os.path.join(SKYFIT2_PATH_EMCCD, station, 'emccd02F.config'),
+                        config_path = find_best_config_file(station, event_dt)
+                        if config_path is not None:
+                            shutil.copy2(config_path,
                                      event_dir_data+os.sep+'elgin_F')
+                        else:
+                            error_track.addError(f"No .config file found for the station {station} in: {SKYFIT2_PATH_EMCCD}")
 
                         cal_path = find_best_cal_file(station, event_dt)
                         if cal_path is not None:
                             shutil.copy2(cal_path, event_dir_data+os.sep+'elgin_F')
                         else:
-                            error_track.addError(f'No .cal file found for the station {station} in :',
-                                                 SKYFIT2_PATH_EMCCD)
+                            error_track.addError(f"No .cal file found for the station {station} in: {SKYFIT2_PATH_EMCCD}")
 
                     elif '2G' in file:
                         station = '02G'
-                        shutil.copy2(os.path.join(SKYFIT2_PATH_EMCCD, station, 'emccd02G.config'),
+                        config_path = find_best_config_file(station, event_dt)
+                        if config_path is not None:
+                            shutil.copy2(config_path,
                                      event_dir_data+os.sep+'elgin_G')
+                        else:
+                            error_track.addError(f"No .config file found for the station {station} in: {SKYFIT2_PATH_EMCCD}")
 
                         cal_path = find_best_cal_file(station, event_dt)
                         if cal_path is not None:
                             shutil.copy2(cal_path, event_dir_data+os.sep+'elgin_G')
                         else:
-                            error_track.addError(f'No .cal file found for the station {station} in :',
-                                                 SKYFIT2_PATH_EMCCD)
+                            error_track.addError(f"No .cal file found for the station {station} in: {SKYFIT2_PATH_EMCCD}")
 
                     else:
                         error_track.addError('No .config and .cal file found for the station in :',

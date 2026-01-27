@@ -682,7 +682,7 @@ def main():
     # 2) Amplitude histograms (log10)
     plt.figure(figsize=(12, 4))
     plt.subplot(1, 3, 1)
-    plt.hist(np.log10(df["A_1g"].dropna()), bins=50, alpha=0.7, color="orange")
+    plt.hist(np.log10(df["A_1g"].dropna()), bins=50, alpha=0.7, color="blue")
     plt.xlabel("log$_{10}$(px Intensity)")
     plt.ylabel("Count")
     plt.title("A_1g")

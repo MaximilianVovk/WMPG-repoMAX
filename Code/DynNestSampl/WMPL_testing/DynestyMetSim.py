@@ -58,7 +58,7 @@ except ImportError:
     print("Dynesty package not found. Install dynesty to use the Dynesty functions.")
     DYNESTY_FOUND = False
 
-from wmpl.MetSim.GUI import FragmentationEntry, SimulationResults, loadConstants, saveConstants
+from wmpl.MetSim.GUI import FragmentationEntry, SimulationResults, loadConstants, saveConstants, loadWakeFile, plotWakeOverview, WakeContainter
 from wmpl.MetSim.MetSimErosion import Constants, runSimulation, zenithAngleAtSimulationBegin
 from wmpl.MetSim.ML.GenerateSimulations import MetParam, generateErosionSim, saveProcessedList
 from wmpl.Utils.Math import lineFunc, meanAngle, mergeClosePoints
@@ -322,6 +322,9 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0):
     # delete any json file that start with obs_data_
     json_files = [f for f in json_files if not f.startswith('obs_data_')]
 
+    # delete any json file that start with obs_data_
+    json_files = [f for f in json_files if not f.startswith('wake_data_')]
+
     # delete any json file that ends with _with_noise.json
     json_files = [f for f in json_files if not f.endswith('_with_noise.json')]
     
@@ -376,6 +379,85 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0):
         except Exception as e:
             print(f"Error encountered loading json file {const_json_file}: {e}")
 
+
+
+def plotWakeSimVsObsResiduals(sr, wake_containers, plot_dir, event_name, site_id=None, wake_samples=8,
+                     first_height_ratio=0.1, final_height_ratio=0.75, peak_region=20, 
+                     xlim=(-200, 80), dpi=300):
+    """
+    Same visual style as WMPL plotWakeOverview, but consider if observed-only is present.
+    Labels show HEIGHT (km) from pt.ht computed during wake loading.
+    """
+
+    # If sr provided, reuse WMPL plotWakeOverview directly
+    if sr is not None:
+
+        plotWakeOverview(
+            sr, wake_containers, plot_dir, event_name,
+            site_id=site_id,
+            wake_samples=wake_samples,
+            first_height_ratio=first_height_ratio,
+            final_height_ratio=final_height_ratio,
+            peak_region=peak_region,
+        )
+
+    else:
+
+        os.makedirs(plot_dir, exist_ok=True)
+
+        # optional filter by site
+        if site_id is not None:
+            wake_containers = [wc for wc in wake_containers if int(wc.site_id) == int(site_id)]
+        if not wake_containers:
+            raise RuntimeError("No wake containers available (after filtering).")
+
+        heights = np.array([wc.points[0].ht for wc in wake_containers], dtype=float)
+        ht_min, ht_max = np.nanmin(heights), np.nanmax(heights)
+        ht_range = ht_max - ht_min
+
+        fracs = np.linspace(first_height_ratio, final_height_ratio, int(wake_samples))
+
+        fig, axes = plt.subplots(figsize=(8, 8), nrows=len(fracs), sharex=True)
+
+        for i, f in enumerate(fracs):
+            ht_ref_target = ht_max - f * ht_range
+            idx = int(np.nanargmin(np.abs(heights - ht_ref_target)))
+            wc = wake_containers[idx]
+            ht_ref = float(wc.points[0].ht)
+
+            x = np.array([pt.leading_frag_length for pt in wc.points], dtype=float)
+            y = np.array([pt.intens_sum for pt in wc.points], dtype=float)
+
+            ok = np.isfinite(x) & np.isfinite(y)
+            x, y = x[ok], y[ok]
+            if x.size == 0:
+                continue
+
+            # normalize area near peak
+            if peak_region is None:
+                peak_region = np.inf
+            xpk = x[np.argmax(y)]
+            region = np.abs(x - xpk) < peak_region
+            area = np.trapz(y[region], x[region]) if np.any(region) else np.trapz(y, x)
+            if area != 0 and np.isfinite(area):
+                y = y / area
+
+            # WMPL convention: plot distance behind leading fragment with negative sign
+            axes[i].plot(-x, y, color="black", linestyle="--", linewidth=1, alpha=0.85)
+            axes[i].text(0.98, 0.55, f"{ht_ref/1000:.1f} km",
+                        transform=axes[i].transAxes, ha="right", va="center", fontsize=8)
+            axes[i].set_yticks([])
+
+        axes[-1].set_xlabel("Length (m)", fontsize=12)
+        if xlim is not None:
+            axes[-1].set_xlim(*xlim)
+        axes[-1].invert_xaxis()
+
+        plt.subplots_adjust(hspace=0)
+
+        out_path = os.path.join(plot_dir, f"{event_name}_wake_overview_obs.png")
+        plt.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
 
 # Plotting function
 def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='', color_sim='black', label_sim='Best Fit'):
@@ -4766,11 +4848,12 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
             obs_data = finder.obsInstance(base_name)
             obs_data.file_name = pickle_file # update teh file name in the observation data object
+            wake_data = finder.wakeInstance(base_name)
 
             # update the log file with the error join out_folder,"log_"+base_name+".txt"
             log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
 
-            dynesty_file = setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name, log_file_path, report_txt)
+            dynesty_file = setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name, log_file_path, report_txt, wake_data)
             
             ### set up obs_data const values to run same simultaions in run_simulation #################
 
@@ -5026,7 +5109,113 @@ def restoreBackupDynesty(backup_file: str):
 
 
 
-def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_files='', dynesty_file='', prior_path='', base_name='', log_file_path='', report_txt=''):
+def saveWakeContainersJson(wake_containers, out_json_path, metadata=None):
+    """
+    Serialize a list of WMPL WakeContainter objects to a JSON file.
+
+    Args:
+        wake_containers: list[WakeContainter]
+        out_json_path: str
+        metadata: optional dict (e.g., {"event": "...", "traj_pickle": "..."} )
+
+    Returns:
+        out_json_path
+    """
+
+    def to_json_safe(x):
+        # numpy scalars -> python scalars
+        if isinstance(x, np.integer):
+            return int(x)
+        if isinstance(x, np.floating):
+            x = float(x)
+
+        # floats: map NaN/inf -> None for JSON
+        if isinstance(x, float):
+            return x if math.isfinite(x) else None
+
+        return x
+
+    payload = {
+        "version": 1,
+        "metadata": metadata or {},
+        "wake_containers": []
+    }
+
+    for wc in wake_containers:
+        wc_dict = {
+            "site_id": int(wc.site_id),
+            "frame_n": int(wc.frame_n),
+            "points": []
+        }
+
+        for p in wc.points:
+            wc_dict["points"].append({
+                "n": to_json_safe(p.n),
+                "th": to_json_safe(p.th),
+                "phi": to_json_safe(p.phi),
+                "intens_sum": to_json_safe(p.intens_sum),
+                "amp": to_json_safe(p.amp),
+                "r": to_json_safe(p.r),
+                "b": to_json_safe(p.b),
+                "c": to_json_safe(p.c),
+                "state_vect_dist": to_json_safe(p.state_vect_dist),
+                "ht": to_json_safe(p.ht),
+                "leading_frag_length": to_json_safe(getattr(p, "leading_frag_length", 0.0)),
+            })
+
+        payload["wake_containers"].append(wc_dict)
+
+    with open(out_json_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+    return out_json_path
+
+
+def loadWakeContainersJson(json_path):
+    """
+    Load wake containers saved by save Wake Containers Json and reconstruct
+    WMPL WakeContainter objects.
+
+    Args:
+        json_path: str
+
+    Returns:
+        (wake_containers, metadata)
+    """
+
+    def from_json_safe(x):
+        # restore None -> np.nan for numeric fields
+        return np.nan if x is None else x
+
+    with open(json_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    wake_containers = []
+    for wc_d in payload.get("wake_containers", []):
+        wc = WakeContainter(wc_d["site_id"], wc_d["frame_n"])
+
+        for p in wc_d.get("points", []):
+            wc.addPoint(
+                from_json_safe(p["n"]),
+                from_json_safe(p["th"]),
+                from_json_safe(p["phi"]),
+                from_json_safe(p["intens_sum"]),
+                from_json_safe(p["amp"]),
+                from_json_safe(p["r"]),
+                from_json_safe(p["b"]),
+                from_json_safe(p["c"]),
+                from_json_safe(p["state_vect_dist"]),
+                from_json_safe(p["ht"]),
+            )
+            wc.points[-1].leading_frag_length = from_json_safe(p.get("leading_frag_length", 0.0))
+
+        wake_containers.append(wc)
+
+    metadata = payload.get("metadata", {})
+    return wake_containers, metadata
+
+
+def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_files='', dynesty_file='', prior_path='', base_name='', log_file_path='', report_txt='', wake_data=None):
     """
     Create the output folder and set up the log file.
     """
@@ -5057,6 +5246,12 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
     for (low_val, high_val), param_name in zip(bounds, param_names):
         print(f"    {param_name}: [{low_val}, {high_val}] flags={flags_dict[param_name]}")
     print("  Fixed Values: ", fixed_values)
+    if wake_data is not None:
+        wake_data_present = True
+        print("  Wake data : True")
+    else:
+        wake_data_present = False
+        print("  Wake data : False")
     # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
     sys.stdout.close()
     # Reset sys.stdout to its original value if needed
@@ -5066,6 +5261,9 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
     # create output folder and put the image
     os.makedirs(out_folder, exist_ok=True)
     plotSimVsObsResiduals(obs_data, output_folder=out_folder, file_name=base_name)
+    if wake_data_present:
+        plotWakeSimVsObsResiduals(None, wake_data, plot_dir=out_folder, event_name=base_name)
+        saveWakeContainersJson(wake_data, os.path.join(out_folder, f"wake_data_{base_name}.json"), metadata={"event": base_name, "traj_pickle": pickle_files})
     
     dynesty_file_in_output_path = os.path.join(out_folder,os.path.basename(dynesty_file))
     # copy the dynesty file to the output folder if not already there
@@ -5323,6 +5521,7 @@ class autoSetupDynestyFiles:
         self.output_folders = []    # [output_folder_for_this_dynesty, ...]
         self.report_txt = []          # [report_txt_path, ...]
         self.observation_objects = {}  # {base_name: observation_instance}
+        self.wake_objects = {} # {base_name: wake_container_instance, ...} 
 
         # Kick off processing
         self.processInput()
@@ -5390,6 +5589,74 @@ class autoSetupDynestyFiles:
                         else:
                             self.mainDirConstructor(cluster_info['filenames'],new_combined_input_folder,[],cluster_info['cluster_name'])
 
+    def makeWakeContainers(self, pickle_files):
+        """
+        Load wake data from wid_*.txt files in the input directory.
+        Arguments:
+            pickle_file: str or list of str
+                Path(s) to the trajectory pickle file(s) for loading wake data.
+        """
+
+        # check if pikle_file it will be set as an array
+        if not isinstance(pickle_files, list):
+            pickle_files = [pickle_files]
+        
+        for pk in pickle_files:
+            input_dir = os.path.dirname(pk)
+   
+            print(f"Searching for wake files in directory: {input_dir}")
+            # walk in the input_dir and find all wid_*.txt files
+            wake_files = []
+            for root, dirs, files in os.walk(input_dir):
+                for file in files:
+                    if file.startswith('wid_') and file.endswith('.txt'):
+                        wake_files.append(os.path.join(root, file))
+
+            if len(wake_files) == 0:
+                print("No wake files found in the input directory.")
+                wake_json_files = []
+                # check if file that starts with wake_data_ and ends with .json file is present
+                for root, dirs, files in os.walk(input_dir):
+                    for file in files:
+                        if file.startswith('wake_data_') and file.endswith('.json'):
+                            wake_json_files.append(os.path.join(root, file))
+                # wake_json_files = [f for f in os.listdir(input_dir) if f.startswith('wake_data_') and f.endswith('.json')]
+                if wake_json_files:
+                    print("Found wake JSON file in the input directory.")
+                    wake_json_file = os.path.join(input_dir, wake_json_files[0])
+                    self.wake_containers, _ = loadWakeContainersJson(wake_json_file)
+                    return
+                else:
+                    self.wake_containers = None
+                    continue
+
+            print(f"Found {len(wake_files)} wake files in the input directory.")
+
+            try:
+                traj = loadPickle(*os.path.split(pk))
+                if hasattr(traj, "observations") and hasattr(traj, "jdt_ref") and hasattr(traj, "rbeg_ele"):
+                        print(f"Loaded trajectory pickle: {pk}")
+                wake_containers = []
+                for pk in wake_files:
+                    try:
+                        wc = loadWakeFile(traj, pk)
+                        # wc = loadWakeFile_fixed(traj, fp)
+                        if wc is not None:
+                            wake_containers.append(wc)
+                    except Exception as e:
+                        print(f"\nFAILED loading {pk}: {e}")
+
+            except Exception as e:
+                    print(f"Not a trajectory / failed: {pk} ({e})")
+            
+            if not wake_containers:
+                print("No valid wake files could be loaded.")
+                self.wake_containers = None
+                continue
+            else:
+                print(f"Successfully loaded {len(wake_containers)} wake containers.")
+                self.wake_containers = wake_containers
+                return
 
 
     def combinePickleFiles(self, all_pickle_files, time_threshold=1/86400):
@@ -5575,6 +5842,8 @@ class autoSetupDynestyFiles:
             print("No camera found in the observation file:", input_file)
             return
 
+        self.makeWakeContainers(input_file)
+
         # check if new_json_file_save is present in observation_instance
         if hasattr(observation_instance, 'new_json_file_save'):
             # change the input_file to the new_json_file_save
@@ -5681,7 +5950,11 @@ class autoSetupDynestyFiles:
         self.output_folders.append(output_folder)
         self.report_txt.append(os.path.join(file_dir_IAU, report_file))
         self.observation_objects[base_name] = observation_instance
+        self.wake_objects[base_name] = self.wake_containers
 
+    def wakeInstance(self, base_name):
+        """Return the observation instance corresponding to a specific base name."""
+        return self.wake_objects.get(base_name, None)
 
     def obsInstance(self, base_name):
         """Return the observation instance corresponding to a specific base name."""
@@ -6053,7 +6326,7 @@ def addFragToConst(const_nominal, var_frag_dic):
 # Function: dynesty
 ###############################################################################
 
-def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout=20):
+def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout=20, logLtype="meteor"):
     """ Calculate the log-likelihood for Dynesty.
 
     Arguments:
@@ -6110,7 +6383,7 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
     ### ONLY on LINUX ###
 
     # check if the OS is not Linux
-    if os.name != 'posix':
+    if os.name == 'nt':
         # If not Linux, run the simulation without timeout
         simulation_results = runSimulationDynesty(guess_var, obs_metsim_obj, var_names, fix_var)
     else:
@@ -6189,15 +6462,20 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
     # print("log_likelihood_lum:", log_likelihood_lum)
     log_likelihood_lag = np.nansum(-0.5*np.log(2*np.pi*obs_metsim_obj.noise_lag**2) - 0.5/(obs_metsim_obj.noise_lag**2)*(obs_metsim_obj.lag - lag_sim) ** 2)
     # print("log_likelihood_lag:", log_likelihood_lag)
-
-    log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
-
-    ### Chi Square ###
-
-    # chi_square_lum = - 0.5/(obs_metsim_obj.noise_lum**2)*np.nansum((obs_metsim_obj.luminosity_arr - simulated_lc_intensity) ** 2)  # add the error
-    # chi_square_lag = - 0.5/(obs_metsim_obj.noise_lag**2)*np.nansum((obs_metsim_obj.lag - lag_sim) ** 2)  # add the error
-
-    # log_likelihood_tot = chi_square_lum + chi_square_lag
+    if logLtype=="meteor":
+        log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
+    # elif logLtype=="wake":
+    #     log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
+    #     # Wake terms at selected heights
+    #     log_likelihood_wake = 0.0
+    #     lambda_wake = 1.0  # weight for wake log-likelihood
+    #     for idx in wake_indices:
+    #         y = obs.wake_profiles[idx]       # 1D wake vector at that height
+    #         s = sim.wake_profiles[idx]       # same grid; otherwise interpolate (see below)
+    #         sig = obs.wake_sigma[idx]        # scalar or vector
+    #         log_likelihood_wake += np.nansum(-0.5*np.log(2*np.pi*obs_metsim_obj.noise_lag**2) - 0.5/(obs_metsim_obj.noise_lag**2)*(obs_metsim_obj.wake - lag_sim) ** 2)
+        
+    #     log_likelihood_tot = log_likelihood_lum + log_likelihood_lag + lambda_wake * log_likelihood_wake
 
     return log_likelihood_tot
 
@@ -6389,7 +6667,7 @@ if __name__ == "__main__":
         "If False, create a new dynesty version.",
         action="store_false")
     
-    arg_parser.add_argument('-NoBackup','--save_backup',
+    arg_parser.add_argument('-NoBackup','--not_backup',
         help="Run all the simulation agin at th end saves the weighted mass bulk density and save a back with all the data" \
         "and creates the distribution plot takes, in general 10 more minute or more base on the number of cores available.",
         action="store_false")

@@ -255,6 +255,7 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
     """
 
     wake_indices = [i for i, w in enumerate(sr.wake_results) if w is not None]
+
     # delete the ones that are not in wake_indices
     for i in sorted(set(range(len(sr.wake_results))) - set(wake_indices), reverse=True):
         del sr.wake_results[i]
@@ -262,8 +263,8 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
     if len(wake_indices)<wake_samples:
         wake_samples = len(wake_indices)
 
-    # filter the sr.wake_results only take those in wake_indices discard the rest
-    sr.wake_results = [sr.wake_results[i] for i in wake_indices]
+    # # filter the sr.wake_results only take those in wake_indices discard the rest
+    # sr.wake_results = [sr.wake_results[i] for i in wake_indices]
 
     # Make N plots for wake_samples heights
     height_fractions = np.linspace(first_height_ratio, final_height_ratio, wake_samples)
@@ -293,11 +294,16 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
         # Get a list of all heights in the wake
         wake_heights = [wake_container.points[0].ht for wake_container in wake_containers]
 
-        # Compute the range of heights
-        ht_range = np.max(wake_heights) - np.min(wake_heights)
+        if len(wake_indices) == wake_samples:
+            # Compute the probing heights
+            ht_ref = sr.leading_frag_height_arr[wake_indices[i]] # sr.wake_results[len(height_fractions)-1 - i].leading_frag_length
 
-        # Compute the probing heights
-        ht_ref = np.max(wake_heights) - height_fraction*ht_range
+        else:  
+            # Compute the range of heights
+            ht_range = np.max(wake_heights) - np.min(wake_heights)
+
+            # Compute the probing heights
+            ht_ref = np.max(wake_heights) - height_fraction*ht_range
 
         # Find the container which are closest to reference height of the wake fraction
         ht_ref_idx = np.argmin(np.abs(np.array(wake_heights) - ht_ref))
@@ -823,12 +829,18 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
             # Load the constants
             const, _ = loadConstants(json_name)
             const.dens_co = np.array(const.dens_co)
+            const.wake_psf = [5] # PSF width in meters
 
-            # const.wake_heights [102000, 101000, 100000]
+            const.wake_heights = [102000, 101000, 100000]
 
             # Run the simulation
             frag_main, results_list, wake_results = runSimulation(const, compute_wake=True)
             sr = SimulationResults(const, frag_main, results_list, wake_results)
+            # # print the altitudes of the wake_results
+            # wake_indices = [i for i, w in enumerate(sr.wake_results) if w is not None]
+            # print(f"Wake result indices: {wake_indices}")
+            # # print the from results_list the leading fragment heights
+            # print(f"Wake result heights (m): {sr.leading_frag_height_arr[wake_indices]}")
             if verbose:
                 print(f"Successfully ran MetSimErosion simulation from constants in: {json_name}")
             break  # successfully ran simulation
@@ -876,7 +888,7 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
 # ============================================================
 
 if __name__ == "__main__":
-    input_dir = r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test\20221022_081607_combined"
+    input_dir = r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test\20191023_091225_combined"
     output_dir = r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test_plots"
     # extract the name of the event from the folder name
     name = os.path.basename(os.path.normpath(input_dir))

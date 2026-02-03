@@ -109,24 +109,22 @@ def wake_containers_to_json(wake_containers, out_path, metadata=None):
 
 
 
-def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_len_shift=50, normalization_method="area", align_method="correlate"):
+def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_len_shift=50, normalization_method="peak", align_method="correlate", lenMax=100, interp=True):
     """ Extract the wake from the simulation results. 
     
     Arguments:
-        sr: [SimulationResults object] Simulation results.
-        wake_containers: [list of WakeContainer objects] List of wake containers.
+        wake_ref: [SimulationResults object] Simulation results.
+        wake_container_ref: [WakeContainer object] Wake container.
 
     Keyword arguments:
-        wake_fraction: [float] Fraction of the wake height to probe. 0 is the height when tracking began and
-            1 is the height when the tracking stopped.
         peak_region: [float] Region around the peak to use for the wake normalization (m). If None, the whole
             wake will be used.
-        site_id: [int] Name of the site where the meteor was observed. 1 for Tavistock and 2 for Elginfield. 
-            If None, both will be taken.
         max_len_shift: [float] Maximum length shift allowed when aligning the observed and simulated wakes (m).
             If the shift is larger than this, the wake will not be aligned.
         normalization_method: [str] Method to normalize the wake intensity. Options are "area" or "peak".
         align_method: [str] Method to align the observed and simulated wakes. Options are "correlate" or "peak".
+        lenMax: [float] Maximum length of the wake to consider (m).
+        interp: [bool] Whether to interpolate the simulated wake to the observed wake lengths.
     """
 
     # Extract the wake points from the containers
@@ -204,9 +202,29 @@ def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_l
         # Add the offset to the observed length
         len_ref_array += len_shift
 
+    sim_wake_ref_length = wake_ref.length_array
+    sim_wake_ref_luminosity = wake_ref.wake_luminosity_profile
+
+    if lenMax != 0:
+        # Limit the length array to the specified maximum length
+        length_filter = (len_ref_array < lenMax) & (-len_ref_array < wake_ref.length_array.max())
+        # Limit the simulated wake to the specified maximum length
+        length_filter_sim = sim_wake_ref_length > -lenMax
+
+        len_ref_array = len_ref_array[length_filter]
+        wake_ref_intensity_array = wake_ref_intensity_array[length_filter]
+        sim_wake_ref_length = sim_wake_ref_length[length_filter_sim]
+        sim_wake_ref_luminosity = sim_wake_ref_luminosity[length_filter_sim]
+
+    if interp == True:
+        # Interpolate the simulated wake to the observed wake lengths so they have the same length array
+        sim_wake_interp_final = scipy.interpolate.interp1d(sim_wake_ref_length, \
+            sim_wake_ref_luminosity, bounds_error=False, fill_value=0)
+        sim_wake_ref_luminosity = sim_wake_interp_final(-len_ref_array)
+        sim_wake_ref_length = -len_ref_array
 
     return (
-        wake_ref.length_array, wake_ref.wake_luminosity_profile, # Return the simulated wake at the ref ht
+        sim_wake_ref_length, sim_wake_ref_luminosity, # Return the simulated wake at the ref ht
         -len_ref_array, wake_ref_intensity_array # Return the observed wake at the ref ht
     )
 
@@ -214,7 +232,7 @@ def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_l
 
 def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=None, wake_samples=8,
                      first_height_ratio=0.1, final_height_ratio=0.75, peak_region=20, 
-                     normalization_method="area", align_method="correlate"):
+                     normalization_method="area", align_method="correlate", lenMax = 0, noise_guess=1):
     """ Plot the wake at a range of heights showing the match between the observed and simulated wake. 
 
     Arguments:
@@ -255,6 +273,11 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
 
     # Length at which text is plotted
     txt_len_coord = 50 # m
+
+    if lenMax == 0:
+        interp_flag = False
+    else:   
+        interp_flag = True
 
     # Loop through the heights
     for i, height_fraction in enumerate(height_fractions):
@@ -297,7 +320,9 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
         (
             wake_len_array, wake_lum_array, # Return the simulated wake at the ref ht
             obs_len_array, obs_lum_array # Return the observed wake at the ref ht
-        ) = WakeNormalizeAlignReduce(sr.wake_results[wake_res_indx_ref], wake_container_ref, normalization_method=normalization_method, align_method=align_method)
+        ) = WakeNormalizeAlignReduce(sr.wake_results[wake_res_indx_ref], wake_container_ref, 
+                                     normalization_method=normalization_method, align_method=align_method, 
+                                     lenMax=lenMax, interp=interp_flag)
 
         # Plot the observed wake
         axes[i].plot(obs_len_array, obs_lum_array, color="black", linestyle="--", linewidth=1, alpha=0.75)
@@ -308,8 +333,18 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
         # Get the height label as halfway between the peak model wake and 0
         txt_ht = np.max(wake_lum_array)/2
 
-        # Set the height label
-        axes[i].text(txt_len_coord, txt_ht, "{:.1f} km".format(ht_ref/1000), fontsize=8, ha="right", va="center")
+        if len(wake_len_array) == len(obs_len_array):
+            # axes[i].scatter(obs_len_array, obs_lum_array, color="red", s=5, alpha=0.75)
+            for jj in range(len(obs_len_array)):
+                axes[i].plot([obs_len_array[jj],wake_len_array[jj]] , [obs_lum_array[jj], wake_lum_array[jj]], ":xr", alpha=0.75, markersize=1, linewidth=0.2)
+            # compute the loglikehood between the two wakes
+            log_likelihood_wake = np.nansum(-0.5*np.log(2*np.pi*noise_guess**2) - 0.5/(noise_guess**2)*(obs_lum_array - wake_lum_array) ** 2)
+            txt_len_coord = -80  # m
+            # Set the height label
+            axes[i].text(txt_len_coord, txt_ht, "{:.1f} km\nLogL={:.2f}".format(ht_ref/1000, log_likelihood_wake), fontsize=8, ha="left", va="center")
+        
+        else:
+            axes[i].text(txt_len_coord, txt_ht, "{:.1f} km".format(ht_ref/1000), fontsize=8, ha="right", va="center")
 
     # Remove Y ticks on all axes
     for ax in axes:
@@ -317,9 +352,13 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
 
     # Set the X label
     axes[-1].set_xlabel("Length (m)", fontsize=12)
-
-    # Set X axis limits
-    axes[-1].set_xlim(-200, 80)
+    
+    if len(wake_len_array) == len(obs_len_array):
+        # Set X axis limits
+        axes[-1].set_xlim(-100, max(np.max(wake_len_array), np.max(obs_len_array)))
+    else:
+        # Set X axis limits
+        axes[-1].set_xlim(-200, 80)
 
     # Invert X axis
     axes[-1].invert_xaxis()
@@ -331,11 +370,13 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
         os.makedirs(plot_dir)
 
     # Save the plot
-    plt.savefig(os.path.join(plot_dir, "{:s}_wake_overview.png".format(event_name)), dpi=300, 
+    plt.savefig(os.path.join(plot_dir, "{:s}_wake_overview_{:s}_{:s}.png".format(event_name, normalization_method, align_method)), dpi=300, 
                 bbox_inches="tight")
 
     # Close the plot
     plt.close(fig)
+
+    return os.path.join(plot_dir, "{:s}_wake_overview_{:s}_{:s}.png".format(event_name, normalization_method, align_method))
 
 def plotWakeOverviewObservedOnly(wake_containers, plot_dir, event_name,
                                 site_id=None, wake_samples=8,
@@ -745,7 +786,7 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
     # create the plot directory
     os.makedirs(plot_dir, exist_ok=True)
 
-    per_alt, overall = compute_wake_noise_by_altitude(
+    per_alt, overall_noise = compute_wake_noise_by_altitude(
         wake_containers,
         site_id=None,          # or 1 / 2
         x_threshold=-100.0,
@@ -761,7 +802,7 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
     for alt_entry in per_alt:
         # print altitude and noise
         print(f"Altitude: {alt_entry['ht_km']:.2f} km, Noise: {alt_entry['noise_median_abs_resid']:.4f}")
-    print("Overall noise (median across altitudes):", overall)
+    print("Overall noise (median across altitudes):", overall_noise)
 
     # check if there are .json files in the input_dir
     json_files = _find_files(input_dir, "*.json")
@@ -795,28 +836,29 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
             if verbose:
                 print(f"Failed to run MetSimErosion simulation from {json_name}: {e}")
 
-    # join plot_dir and event_name for output json
-    out_json = save_sr_wake_results_json(
-        sr,
-        os.path.join(plot_dir, f"{event_name}_sr_wake_results.json"),
-        metadata={"event": event_name},
-        include_fragments=True
-    )
+    # # join plot_dir and event_name for output json
+    # out_json = save_sr_wake_results_json(
+    #     sr,
+    #     os.path.join(plot_dir, f"{event_name}_sr_wake_results.json"),
+    #     metadata={"event": event_name},
+    #     include_fragments=True
+    # )
 
 
     # If sr provided, reuse WMPL plotWakeOverview directly
     if sr is not None:
-        plotWakeOverviewOptions(
+        return plotWakeOverviewOptions(
             sr, wake_containers, plot_dir, event_name,
             site_id=site_id,
             wake_samples=wake_samples,
             first_height_ratio=first_height_ratio,
             final_height_ratio=final_height_ratio,
             peak_region=peak_region,
-            normalization_method="area",           # or  "area", "peak"
+            normalization_method="peak",           # or  "area", "peak"
             align_method="correlate",              # or "none","correlate","peak"
+            lenMax=100,
+            noise_guess=overall_noise
         )
-        return os.path.join(plot_dir, f"{event_name}_wake_overview.png")
     else:
         # Otherwise observed-only
         return plotWakeOverviewObservedOnly(
@@ -834,7 +876,7 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
 # ============================================================
 
 if __name__ == "__main__":
-    input_dir = r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test\20191023_091225_combined"
+    input_dir = r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test\20221022_081607_combined"
     output_dir = r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test_plots"
     # extract the name of the event from the folder name
     name = os.path.basename(os.path.normpath(input_dir))

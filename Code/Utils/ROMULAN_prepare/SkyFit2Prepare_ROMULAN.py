@@ -19,6 +19,7 @@ import argparse
 import bz2
 import datetime
 import platform
+import tarfile
 from typing import Optional, Tuple, List
 
 
@@ -28,16 +29,13 @@ WORK_DIR = os.getcwd()
 
 # Romulan paths (Windows)
 DATA_PATH_ROMULAN  = "/srv/meteor/romulan/events"
+DATA_PATH_ROMULAN_OLD = "/srv/meteor/romulan/old_results/events"
 FLATS_PATH_ROMULAN = "/srv/meteor/romulan/flats"
 # Config files (as you specified)
-# CONFIG_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/01R_2009.config"
-# CONFIG_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/02R_2009.config"
-# PLATE_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/platepar_cmn2010.cal"
-# PLATE_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/platepar_cmn2010.cal"
-CONFIG_01R = "/srv/meteor/reductions/config+calib/skyfit2/romulan/2009/01R/01R_2009.config"
-CONFIG_02R = "/srv/meteor/reductions/config+calib/skyfit2/romulan/2009/02R/02R_2009.config"
-PLATE_01R = "/srv/meteor/reductions/config+calib/skyfit2/romulan/2009/01R/platepar_cmn2010.cal"
-PLATE_02R = "/srv/meteor/reductions/config+calib/skyfit2/romulan/2009/02R/platepar_cmn2010.cal"
+CONFIG_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/01R_2009.config"
+CONFIG_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/02R_2009.config"
+PLATE_01R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/01R/platepar_cmn2010.cal"
+PLATE_02R = "/srv/meteor/reductions/romulan/2026_JB_remeasure/20090825_035144/02R/platepar_cmn2010.cal"
 
 
 # check the OS
@@ -45,12 +43,11 @@ if platform.system() == 'Windows':
     print('Windows OS detected')
     # Romulan paths (Windows)
     DATA_PATH_ROMULAN  = r"M:\romulan\events"
+    DATA_PATH_ROMULAN_OLD = r"M:\romulan\old_results\events"
     FLATS_PATH_ROMULAN = r"M:\romulan\flats"
     # Config files (as you specified)
-    CONFIG_01R = r"M:\reductions\reductions\config+calib\skyfit2\romulan\2009\01R\01R_2009.config"
-    CONFIG_02R = r"M:\reductions\reductions\config+calib\skyfit2\romulan\2009\02R\02R_2009.config"
-    PLATE_01R = r"M:\reductions\reductions\config+calib\skyfit2\romulan\2009\01R\platepar_cmn2010.cal"
-    PLATE_02R = r"M:\reductions\reductions\config+calib\skyfit2\romulan\2009\02R\platepar_cmn2010.cal"
+    CONFIG_01R = r"M:\reductions\romulan\2026_JB_remeasure\20090825_035144\01R\01R_2009.config"
+    CONFIG_02R = r"M:\reductions\romulan\2026_JB_remeasure\20090825_035144\02R\02R_2009.config"
 elif platform.system() == 'Linux':
     print('Linux OS detected')
 else:
@@ -158,6 +155,26 @@ def find_event_file(event_name: str, cam: str, error_track: ErrorTracker) -> Tup
     for sec_adj in [0, 1, -1]:
         ev_try = adjust_event_time(event_name, sec_adj)
         for d in _candidate_dirs(DATA_PATH_ROMULAN, night):
+            for pat in patterns_for_cam(ev_try):
+                hits = glob.glob(os.path.join(d, pat))
+                if hits:
+                    # pick most recent if multiple
+                    hits.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                    if sec_adj != 0:
+                        error_track.add(
+                            f"{event_name}: WARNING! {cam} event not found at exact second. "
+                            f"SOLVED by using {ev_try}."
+                        )
+                    return hits[0], ev_try
+
+    patterns_for_cam = lambda ev: [
+        # Expected style: ev_YYYYMMDD_HHMMSS A _01R.vid.bz2 (A can vary) -> '*' after timestamp catches it.
+        f"ev_{ev}*_{cam}.tar",
+        f"ev_{ev}*{cam}.tar",
+    ]
+    for sec_adj in [0, 1, -1]:
+        ev_try = adjust_event_time(event_name, sec_adj)
+        for d in _candidate_dirs(DATA_PATH_ROMULAN_OLD, night):
             for pat in patterns_for_cam(ev_try):
                 hits = glob.glob(os.path.join(d, pat))
                 if hits:
@@ -308,15 +325,39 @@ def processRomulanEvents(event_list: List[str], out_root: str, lookback_days: in
                 base_name = os.path.basename(bz2_path)
                 if base_name.endswith(".bz2"):
                     vid_name = base_name[:-4]
+                elif base_name.endswith(".tar"):
+                    vid_name = base_name[:-4]  # assuming .tar
                 else:
                     vid_name = base_name + ".vid"
 
                 dest_vid = os.path.join(cam_dir, vid_name)
                 try:
+                    print(f"{event_name}: {cam} decompressing .bz2 to .vid -> {dest_vid}")
                     decompress_bz2_to_vid(bz2_path, dest_vid)
                     print(f"{event_name}: {cam} decompressed -> {dest_vid}")
                 except Exception as e:
                     error_track.add(f"{event_name}: ERROR decompressing {cam} file '{bz2_path}': {e}")
+                    try:
+                        print(f"{event_name}: {cam} trying to extract .tar file")
+                        # in case of .tar, try extracting
+                        with tarfile.open(bz2_path, 'r') as tar:
+                            tar.extractall(path=cam_dir)
+                        # look for folders in cam_dir
+                        folders = [f for f in os.listdir(cam_dir) if os.path.isdir(os.path.join(cam_dir, f))]
+                        if folders:
+                            #look if in any of the folders there are .png files
+                            for folder in folders:
+                                folder_path = os.path.join(cam_dir, folder)
+                                png_files = glob.glob(os.path.join(folder_path, "*.png"))
+                                if png_files:
+                                    for png in png_files:
+                                        shutil.move(png, cam_dir)
+                                    shutil.rmtree(folder_path)
+
+                        print(f"{event_name}: {cam} extracted .tar -> {cam_dir}")
+                    except Exception as e2:
+                        error_track.add(f"{event_name}: ERROR extracting {cam} .tar file '{bz2_path}': {e2}")
+                        continue
 
                 # If second adjusted, optionally note which timestamp ended up used
                 if used_event_time and used_event_time != event_name:

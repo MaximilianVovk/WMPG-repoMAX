@@ -5200,7 +5200,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             # this can be done becuase the version of wmpl is correct
             _, _, _, h_beg_wake_default, h_end_wake_default = extractHeightsFromStations(obs_data)
             diff_height= h_beg_wake_default-h_end_wake_default
-            obs_data.wake_heights = [diff_height*0.9+h_end_wake_default, diff_height*0.8+h_end_wake_default, diff_height*0.7+h_end_wake_default, diff_height*0.6+h_end_wake_default, diff_height*0.5+h_end_wake_default]
+            obs_data.wake_heights = [diff_height*0.9+h_end_wake_default, diff_height*0.7+h_end_wake_default, diff_height*0.5+h_end_wake_default]
 
             ##################################################################################################
             if save_backup:

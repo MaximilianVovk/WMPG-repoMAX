@@ -2296,7 +2296,11 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 print(f"Found noise_wake in variables and flag_wake is True, using noise_wake_plot: {noise_wake_plot} for the wake plot")
 
         plotWakeOverviewOptions(best_guess_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_bestLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, lenMax = 100)
-        plotWakeOverviewOptions(best_guess_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_best", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot)
+        # put None to wake_heights in obs_data_NoneWakeHeights
+        obs_data_NoneWakeHeights = copy.deepcopy(obs_data)
+        obs_data_NoneWakeHeights.wake_heights = None
+        best_guess_obj_plot_NoneWakeHeights = runSimulationDynesty(best_guess, obs_data_NoneWakeHeights, variables, fixed_values, flag_wake=flag_wake)
+        plotWakeOverviewOptions(best_guess_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_best", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot)
 
     _ = constructConstants(best_guess, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_BestGuess.json')
 
@@ -2466,7 +2470,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 noise_wake_plot = approx_modes_all[i]
 
         plotWakeOverviewOptions(approx_mode_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_modeLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red', lenMax = 100)
-        plotWakeOverviewOptions(approx_mode_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mode", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red')
+        approx_mode_obj_plot_NoneWakeHeights = runSimulationDynesty(approx_modes_all, obs_data_NoneWakeHeights, variables, fixed_values, flag_wake=flag_wake)
+        plotWakeOverviewOptions(approx_mode_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mode", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red')
 
     _ = constructConstants(approx_modes_all, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_mode.json')
 
@@ -2485,7 +2490,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 noise_wake_plot = all_samples_mean[i]
 
         plotWakeOverviewOptions(mean_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_meanLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue', lenMax = 100)
-        plotWakeOverviewOptions(mean_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mean", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue')
+        mean_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_mean, obs_data_NoneWakeHeights, variables, fixed_values, flag_wake=flag_wake)
+        plotWakeOverviewOptions(mean_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mean", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue')
 
     _ = constructConstants(all_samples_mean, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_mean.json')
 
@@ -2504,7 +2510,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 noise_wake_plot = all_samples_median[i]
 
         plotWakeOverviewOptions(median_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_medianLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue', lenMax = 100)
-        plotWakeOverviewOptions(median_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_median", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue')
+        median_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_median, obs_data_NoneWakeHeights, variables, fixed_values, flag_wake=flag_wake)
+        plotWakeOverviewOptions(median_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_median", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue')
 
     _ = constructConstants(all_samples_median, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_median.json')
 

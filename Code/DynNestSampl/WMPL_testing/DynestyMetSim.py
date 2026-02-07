@@ -5831,6 +5831,8 @@ def updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, b
         variables = list(flags_dict.keys())
         with open(new_name_prior, "w") as f:
             f.write("# Updated prior file with posterior credible intervals\n")
+            f.write("# what is writen after '#' is ignored\n")
+            f.write("# name var, min/sigma/alpha, max/mean/mode, options\n")
             for (low_val, high_val), param_name in zip(new_bounds, variables):
                 flags = flags_dict.get(param_name, [])
                 flags_str = ", ".join(flags) if flags else ""

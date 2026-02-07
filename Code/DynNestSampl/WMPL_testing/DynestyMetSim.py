@@ -5092,6 +5092,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
     try:
         constjson_test = Constants()
         constjson_test.__dict__['wake_psf'] = wake_psf
+        constjson_test.__dict__['disruption_on'] = False
         frag_main, results_list, wake_results = runSimulation(constjson_test, compute_wake=use_wake_data)
     except Exception as e:
         print(f"This is an old version of wmpl ({e}), wake runs might take longer!")
@@ -5596,6 +5597,10 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
             shutil.copy(report_txt, out_folder)
             print("report file copied to output folder:", report_txt_in_output_path)
 
+    update_priors_with_posteriors = False
+    if priorFile_to_update_with_posteriors != '':
+        update_priors_with_posteriors = True
+
     # chek if prior path is an array or a string
     if isinstance(prior_path, list):
         for prior_or_extra in prior_path:
@@ -5606,7 +5611,7 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
                 if not os.path.exists(prior_file_output):
                     shutil.copy(prior_or_extra, out_folder)
                     print("prior or extraprior file copied to output folder:", prior_file_output)
-               
+            
     else:
         # add the prior pr
         if prior_path != "":
@@ -5621,16 +5626,12 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
             #     shutil.copy(prior_path, os.path.dirname(pickle_file))
             #     print("prior file copied to input folder:", prior_file_input)
 
-    update_priors_with_posteriors = False
-    if priorFile_to_update_with_posteriors != '':
-        update_priors_with_posteriors = True
-
     dynesty_file_in_output_path = os.path.join(out_folder,os.path.basename(dynesty_file))
     # check if dynesty_file exist and if update_priors_with_posteriors is True
     if update_priors_with_posteriors and os.path.isfile(dynesty_file):
 
         # update the prior file with the posterior file
-        bounds, flags_dict, fixed_values, prior_path = updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, prior_file_output, log_file_path, obs_data, priorFile_to_update_with_posteriors)
+        bounds, flags_dict, fixed_values, prior_file_output = updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, base_name, prior_file_output, log_file_path, obs_data, priorFile_to_update_with_posteriors)
         # except Exception as e:
         #     print(f"Error encountered loading the dynestsy file for updating priors: {e}")
         #     print("Proceeding without updating priors.")
@@ -5686,7 +5687,7 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
     return dynesty_file_in_output_path, bounds, flags_dict, fixed_values, prior_path
 
 
-def updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, 
+def updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, base_name='',
                                prior_file_output='', log_file_path='', obs_data =None,
                                priorFile_to_update_with_posteriors='', ci=0.95):
     """
@@ -5826,20 +5827,25 @@ def updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values,
 
     if prior_file_output != '':
         # write new prior file
-        with open(prior_file_output, "w") as f:
+        new_name_prior = prior_file_output.replace(".prior", "_updated_with_posteriors.prior")
+        variables = list(flags_dict.keys())
+        with open(new_name_prior, "w") as f:
             f.write("# Updated prior file with posterior credible intervals\n")
             for (low_val, high_val), param_name in zip(new_bounds, variables):
                 flags = flags_dict.get(param_name, [])
                 flags_str = ", ".join(flags) if flags else ""
+                if flags_str == 'log':
+                    low_val = 10**low_val
+                    high_val = 10**high_val
                 f.write(f"{param_name}, {low_val}, {high_val}, {flags_str}\n")
             for param_name, fixed_val in fixed_values.items():
                 f.write(f"{param_name}, {fixed_val}, fix\n")
-        print(f"\nUpdated prior file written to: {prior_file_output}")
+        print(f"\nUpdated prior file written to: {new_name_prior}")
         # write the new bounds, flags_dict, and fixed_values to the log file
         if log_file_path != '' and os.path.exists(log_file_path):
             out_folder,base_name_log = os.path.split(log_file_path)
             sys.stdout = Logger(out_folder,base_name_log) # 
-            print("  Updated Prior file:   ", prior_file_output)
+            print("  Updated Prior file:   ", new_name_prior)
             print("  New Bounds:")
             param_names = list(flags_dict.keys())
             for (low_val, high_val), param_name in zip(new_bounds, param_names):
@@ -5852,13 +5858,13 @@ def updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values,
             print("--------------------------------------------------")
         # change the name of the prior file to have _updated_with_posteriors at the end
         try:
-            new_name_prior = prior_file_output.replace(".prior", "_updated_with_posteriors.prior")
-            os.rename(prior_file_output, new_name_prior)
-            print(f"Renamed updated prior file to: {new_name_prior}")
+            old_name_prior = prior_file_output.replace(".prior", ".old_prior")
+            # delete the new_name_prior if it already exists
+            os.rename(prior_file_output, old_name_prior)
+            print(f"Renamed updated prior file to: {old_name_prior}")
         except Exception as e:
             print(f"Error encountered renaming the updated prior file: {e}")
             print("Proceeding without renaming the updated prior file.")
-            new_name_prior = prior_file_output
 
     return new_bounds, flags_dict, fixed_values, new_name_prior
 

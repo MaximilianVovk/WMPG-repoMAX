@@ -7592,7 +7592,7 @@ if __name__ == "__main__":
         help="If wake data present use it.", 
         action="store_false")
 
-    arg_parser.add_argument('-updateP','--priorFile_to_update_with_posteriors',
+    arg_parser.add_argument('--priorposteriorupdate', metavar='PRIORPOSTERIORUPDATE', type=str,
         default=r"",
         help="If active update the priors with the posteriors 95CI as new priors and create a new .prior file merging the data from this file.")
 
@@ -7617,6 +7617,6 @@ if __name__ == "__main__":
                           use_all_cameras=cml_args.all_cameras, only_plot=cml_args.only_plot, cores=cml_args.cores, 
                           pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior, save_backup=cml_args.save_backup, 
                           use_wake_data=cml_args.use_wake_data,
-                          priorFile_to_update_with_posteriors=cml_args.priorFile_to_update_with_posteriors)
+                          priorFile_to_update_with_posteriors=cml_args.priorposteriorupdate)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

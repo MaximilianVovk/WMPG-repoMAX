@@ -232,7 +232,7 @@ def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_l
 
 def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=None, wake_samples=8,
                      first_height_ratio=0.1, final_height_ratio=0.75, peak_region=20, 
-                     normalization_method="area", align_method="correlate", lenMax = 0, noise_guess=1):
+                     normalization_method="peak", align_method="correlate", lenMax = 0, noise_guess=1):
     """ Plot the wake at a range of heights showing the match between the observed and simulated wake. 
 
     Arguments:

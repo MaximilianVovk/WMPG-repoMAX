@@ -44,5 +44,5 @@ if __name__ == "__main__":
     setupDirAndRunDynesty(cml_args.input_dir, 
         cml_args.output_dir, cml_args.prior, use_all_cameras=cml_args.all_cameras, 
         extraprior_file=cml_args.extraprior, save_backup=False, 
-        only_plot=True)
+        only_plot=True)#, priorFile_to_update_with_posteriors=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\stony_meteoroid_wake.prior")
     

@@ -17,11 +17,11 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test", 
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\Results\20221022_081606_combined", 
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test_output",
+        default=r"",
         help="Where to store results. If empty, store next to each .dynesty.")
     
     arg_parser.add_argument('--prior', metavar='PRIOR', type=str,

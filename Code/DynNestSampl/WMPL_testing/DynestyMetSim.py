@@ -2013,7 +2013,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         'mass_index': r"$s$",
         'noise_lag': r"$\sigma_{lag}$ [m]",
         'noise_lum': r"$\sigma_{lum}$ [W]",
-        'noise_wake': r"$\sigma_{wake}$ [-]"
+        'noise_wake': r"$\sigma_{wake}$ [ADUs]"
     }
 
     # Mapping of original variable names to LaTeX-style labels
@@ -2047,7 +2047,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         'mass_index': r"$s$",
         'noise_lag': r"$\sigma_{lag}$ [m]",
         'noise_lum': r"$\sigma_{lum}$ [W]",
-        'noise_wake': r"$\sigma_{wake}$ [-]"
+        'noise_wake': r"$\sigma_{wake}$ [ADUs]"
     }
 
     # check if there are variables in the flags_dict that are not in the variable_map

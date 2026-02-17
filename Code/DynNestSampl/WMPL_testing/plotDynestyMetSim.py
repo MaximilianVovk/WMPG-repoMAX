@@ -17,7 +17,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\Results\20221022_081606_combined", 
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\Results\Wake_file_update_fix\20191023_091225_combined", 
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -43,6 +43,6 @@ if __name__ == "__main__":
 
     setupDirAndRunDynesty(cml_args.input_dir, 
         cml_args.output_dir, cml_args.prior, use_all_cameras=cml_args.all_cameras, 
-        extraprior_file=cml_args.extraprior, save_backup=False, 
+        extraprior_file=cml_args.extraprior, save_backup=False, noise_wake_limit=-100,
         only_plot=True)#, priorFile_to_update_with_posteriors=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\stony_meteoroid_wake.prior")
     

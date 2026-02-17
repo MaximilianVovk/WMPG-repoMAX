@@ -493,11 +493,16 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
             # axes[i].scatter(obs_len_array, obs_lum_array, color="red", s=5, alpha=0.75)
             for jj in range(len(obs_len_array)):
                 axes[i].plot([obs_len_array[jj],wake_len_array[jj]] , [obs_lum_array[jj], wake_lum_array[jj]], ":xk", alpha=0.75, markersize=1, linewidth=0.2)
+            # chack if the noise_guess is an array
+            if isinstance(noise_guess, (list, np.ndarray)):
+                noise_logl = noise_guess[ht_ref_idx]
+            else:
+                noise_logl = noise_guess
             # compute the loglikehood between the two wakes
-            log_likelihood_wake = np.nansum(-0.5*np.log(2*np.pi*noise_guess**2) - 0.5/(noise_guess**2)*(obs_lum_array - wake_lum_array) ** 2)
+            log_likelihood_wake = np.nansum(-0.5*np.log(2*np.pi*noise_logl**2) - 0.5/(noise_logl**2)*(obs_lum_array - wake_lum_array) ** 2)
             txt_len_coord = -80  # m
             # Set the height label
-            axes[i].text(txt_len_coord, txt_ht, "{:.1f} km\nLogL={:.2f}".format(ht_ref/1000, log_likelihood_wake), fontsize=8, ha="left", va="center")
+            axes[i].text(txt_len_coord, txt_ht, "{:.1f} km\nLogL={:.2f}\nNoise={:.2f}".format(ht_ref/1000, log_likelihood_wake, noise_logl), fontsize=8, ha="left", va="center")
         
         else:
             axes[i].text(txt_len_coord, txt_ht, "{:.1f} km".format(ht_ref/1000), fontsize=8, ha="right", va="center")
@@ -2135,6 +2140,18 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     else:
         align_method = "correlate"
 
+    noise_wake_array = None
+    altitudes_noises_wake = None
+    flag_wake_varing_noise = False
+    for variable in fixed_values.keys():
+        if 'ht' in variable:
+            flag_wake_varing_noise = True
+            if hasattr(obs_data, 'altitudes_noises_wake'):
+                altitudes_noises_wake = obs_data.altitudes_noises_wake
+            if hasattr(obs_data, 'noise_wake_array'):
+                noise_wake_array = obs_data.noise_wake_array
+
+
     def convertToSerializable(obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
@@ -2290,6 +2307,10 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         if hasattr(obs_data, 'noise_wake'):
             print(f"Using obs_data.noise_wake as default value for noise_wake_plot: {obs_data.noise_wake}")
             noise_wake_plot = obs_data.noise_wake
+
+        if flag_wake_varing_noise:
+            print("Wake noise array provided. Will use the wake noise array in the log-likelihood calculation.")
+            noise_wake_plot = noise_wake_array
 
         # check for each var_name in flags_dict if there is "log" in the flags_dict
         for i, var_name in enumerate(variables):
@@ -5061,7 +5082,7 @@ class ObservationData:
 
 def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True, 
     only_plot=True, cores=None, pool_MPI=None, pick_position=0, extraprior_file='', save_backup=True,
-    use_wake_data=True, priorFile_to_update_with_posteriors=""):
+    use_wake_data=True, noise_wake_limit=-100, priorFile_to_update_with_posteriors=""):
     """ Create the output folder if it doesn't exist and run the Dynesty simulation.
 
     Arguments:
@@ -5099,10 +5120,15 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
         constjson_test = Constants()
         constjson_test.__dict__['wake_psf'] = wake_psf
         constjson_test.__dict__['disruption_on'] = False
-        frag_main, results_list, wake_results = runSimulation(constjson_test, compute_wake=use_wake_data)
+        _, _, _ = runSimulation(constjson_test, compute_wake=use_wake_data)
     except Exception as e:
         print(f"This is an old version of wmpl ({e}), wake runs might take longer!")
         wake_psf = 5
+    
+    if noise_wake_limit > 0:
+        print(f"wake data below -{noise_wake_limit} luminosity will be considered noise and not used in the dynesty fit")
+        noise_wake_limit = -abs(noise_wake_limit)
+        
 
     cml_args.input_dir = input_dir
     cml_args.output_dir = output_dir
@@ -5142,7 +5168,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             output_dir=cml_args.output_dir,
             use_all_cameras=cml_args.use_all_cameras,
             pick_position=pick_position,
-            extraprior_file=cml_args.extraprior_file
+            extraprior_file=cml_args.extraprior_file,
+            noise_wake_limit=noise_wake_limit
         )
 
         # check if finder is empty
@@ -5169,7 +5196,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             # update the log file with the error join out_folder,"log_"+base_name+".txt"
             log_file_path = os.path.join(out_folder, f"log_{base_name}.txt")
 
-            dynesty_file, bounds, flags_dict, fixed_values, prior_path = setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name, log_file_path, report_txt, wake_data, priorFile_to_update_with_posteriors)
+            dynesty_file, bounds, flags_dict, fixed_values, prior_path = setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_file, dynesty_file, prior_path, base_name, log_file_path, report_txt, wake_data, noise_wake_limit, priorFile_to_update_with_posteriors)
             
             ### set up obs_data const values to run same simultaions in run_simulation #################
 
@@ -5546,7 +5573,7 @@ def loadWakeContainersJson(json_path):
     return wake_containers, metadata
 
 
-def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_files='', dynesty_file='', prior_path='', base_name='', log_file_path='', report_txt='', wake_data=None, priorFile_to_update_with_posteriors=''):
+def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values, pickle_files='', dynesty_file='', prior_path='', base_name='', log_file_path='', report_txt='', wake_data=None, noise_wake_limit=-100, priorFile_to_update_with_posteriors=''):
     """
     Create the output folder and set up the log file.
     """
@@ -5595,6 +5622,10 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
     if wake_data_present:
         plotWakeSimVsObsResiduals(None, wake_data, plot_dir=out_folder, event_name=base_name)
         saveWakeContainersJson(wake_data, os.path.join(out_folder, f"wake_data_{base_name}.json"), metadata={"event": base_name, "traj_pickle": pickle_files})
+        # reaate a folder called wake_noise_plots in the output folder check if present
+        wake_noise_plots_dir = os.path.join(out_folder, "wake_noise_plots")
+        os.makedirs(wake_noise_plots_dir, exist_ok=True)
+        _, _, _, _ = computeWakeNoiseXAltitude(wake_data, save_plots=True, output_dir=wake_noise_plots_dir, x_threshold=noise_wake_limit)
 
     if os.path.isfile(report_txt):
         # copy the report file to the output folder if not already there
@@ -6141,24 +6172,35 @@ def computeWakeNoiseXAltitude(
         noise = float(np.median(np.abs(resid_trim))) if resid_trim.size else float(np.median(np.abs(resid)))
 
         if save_plots:
-            # Diagnostic plot
+            # Diagnostic plot make a second plot with the distribution of residuals and the thresholds
             plt.figure(figsize=(6, 4))
+            plt.subplot(1, 2, 1)
             plt.scatter(x, y, color="gray", s=10, label="Data")
             plt.scatter(xr, yr, color="blue", s=20, label="Fit region")
             x_fit = np.linspace(np.min(xr), np.max(xr), 200)
             y_fit = np.polyval(coeffs, x_fit)
             plt.plot(x_fit, y_fit, color="red", linewidth=2, label="Poly fit")
-            plt.title(f"Wake noise at ht={ht_m/1000:.2f} km\nNoise={noise:.4f}, Region={region_used}")
-            plt.xlabel("Length (m)")
-            plt.ylabel("Intensity sum")
+            plt.suptitle(f"Wake noise at ht={ht_m/1000:.2f} km\nNoise={noise:.4f}, Region={region_used}")
+            plt.xlabel("Length [m]")
+            plt.ylabel("Intensity [ADUs]")
             # invert x-axis
             plt.gca().invert_xaxis()
             plt.legend()
+            plt.subplot(1, 2, 2)
+            # put the residuals and the width of the bars is the same as the bin size of the histogram
+            plt.hist(resid, bins=30, color="blue", alpha=0.7, label="Residuals")
+            # put the 
+            # put a red line in the center
+            plt.axvline(0, color="red", linestyle="-", label="Zero resid")
+            # put in the x axis label
+            plt.xlabel("Residual intensity [ADUs]")
+            # plt.title("Residuals distribution")
+            # plt.legend()
             plot_path = os.path.join(output_dir or "noise_wake_plots", f"noise_wake_ht_{int(ht_m)}m_site_{wc.site_id}_frame_{wc.frame_n}.png")
             os.makedirs(os.path.dirname(plot_path), exist_ok=True)
             plt.savefig(plot_path, dpi=200)
             plt.close()
-            print("Saved wake noise plot:", plot_path)
+            # print("Saved wake noise plot:", plot_path)
 
         results.append({
             "ht_m": ht_m,
@@ -6175,10 +6217,15 @@ def computeWakeNoiseXAltitude(
 
     # Overall robust noise summary across altitudes
     noises = np.array([r["noise_median_abs_resid"] for r in results], dtype=float)
+    altitudes_noise = np.array([r["ht_m"] for r in results], dtype=float)
+    altitudes_noise = altitudes_noise[np.isfinite(noises)]
     noises = noises[np.isfinite(noises)]
     overall_noise = float(np.median(noises)) if noises.size else np.nan
 
-    return results, overall_noise
+    if save_plots:
+        print(f"saved all noise fit in: {output_dir}")
+
+    return results, overall_noise, noises, altitudes_noise
 
 
 
@@ -6222,7 +6269,7 @@ class autoSetupDynestyFiles:
     """
 
     def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False,
-                 pick_position=0, extraprior_file=""):
+                 pick_position=0, extraprior_file="", noise_wake_limit=-100):
         """ Initialize the autoSetupDynestyFiles class.
 
         Arguments:
@@ -6235,7 +6282,7 @@ class autoSetupDynestyFiles:
             use_all_cameras: [bool] Flag to use all cameras. False by default.
             pick_position: [int] Index to pick specific position/station data. 0 by default.
             extraprior_file: [str] Path to an extra prior file. Empty string by default.
-
+            noise_wake_limit: [int] Threshold for wake noise computation (default -100 m).
         """
         self.input_dir_or_file = input_dir_or_file
         self.prior_file = prior_file
@@ -6244,6 +6291,7 @@ class autoSetupDynestyFiles:
         self.use_all_cameras = use_all_cameras
         self.pick_position = pick_position
         self.extraprior_file = extraprior_file  # to be filled if found
+        self.noise_wake_limit = noise_wake_limit  # to be filled if found in prior file
 
         # Prepare placeholders
         self.base_names = []        # [base_name, ...] (no extension)
@@ -6356,13 +6404,14 @@ class autoSetupDynestyFiles:
                     print("Found wake JSON file in the input directory.")
                     wake_json_file = os.path.join(input_dir, wake_json_files[0])
                     self.wake_containers, _ = loadWakeContainersJson(wake_json_file)
-                    _, self.noise_wake = computeWakeNoiseXAltitude(self.wake_containers)
-                    # print the initial noise guess
-                    print(f"Initial wake noise guess: {self.noise_wake}")
+                    self.resultsXalt_wake, self.noise_wake, self.noise_wake_array, self.altitudes_noises_wake = computeWakeNoiseXAltitude(self.wake_containers, x_threshold=self.noise_wake_limit)
                     return
                 else:
                     self.wake_containers = None
                     self.noise_wake = None
+                    self.resultsXalt_wake = None
+                    self.noise_wake_array = None
+                    self.altitudes_noises_wake = None
                     continue
 
             print(f"Found {len(wake_files)} wake files in the input directory.")
@@ -6388,11 +6437,14 @@ class autoSetupDynestyFiles:
                 print("No valid wake files could be loaded.")
                 self.wake_containers = None
                 self.noise_wake = None
+                self.resultsXalt_wake = None
+                self.noise_wake_array = None
+                self.altitudes_noises_wake = None
                 continue
             else:
                 print(f"Successfully loaded {len(wake_containers)} wake containers.")
                 self.wake_containers = wake_containers
-                _, self.noise_wake = computeWakeNoiseXAltitude(self.wake_containers)
+                self.resultsXalt_wake, self.noise_wake, self.noise_wake_array, self.altitudes_noises_wake = computeWakeNoiseXAltitude(self.wake_containers, x_threshold=self.noise_wake_limit)
                 print(f"Initial wake noise guess: {self.noise_wake}")
                 return
 
@@ -6578,6 +6630,9 @@ class autoSetupDynestyFiles:
         self.makeWakeContainers(input_file)
 
         observation_instance.noise_wake = self.noise_wake
+        observation_instance.resultsXalt_wake = self.resultsXalt_wake
+        observation_instance.altitudes_noises_wake = self.altitudes_noises_wake
+        observation_instance.noise_wake_array = self.noise_wake_array
 
        # check if any camera was found if not return
         if not hasattr(observation_instance,'stations_lag'):
@@ -7224,6 +7279,13 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             obs_metsim_obj.noise_lum = fix_var[var_name]
         if var_name == 'noise_wake' and flag_wake:
             obs_metsim_obj.noise_wake = fix_var[var_name]
+            if 'ht' in  obs_metsim_obj.noise_wake:
+                # special case to use a variable wake for altitiudes 
+                obs_metsim_obj.altitudes_noises_wake = obs_metsim_obj.altitudes_noises_wake
+                obs_metsim_obj.noise_wake_array = obs_metsim_obj.noise_wake_array
+            else:
+                obs_metsim_obj.altitudes_noises_wake = None
+                obs_metsim_obj.noise_wake_array = None
         if var_name == 'wake_align' and flag_wake:
             align_method = fix_var[var_name]
         if var_name == 'wake_norm' and flag_wake:
@@ -7240,6 +7302,8 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             obs_metsim_obj.noise_lum = guess_var[i]
         if var_name == 'noise_wake' and flag_wake:
             obs_metsim_obj.noise_wake = guess_var[i]
+            obs_metsim_obj.noise_wake_ht = None
+            obs_metsim_obj.noise_wake_array = None
 
 
     # check if among the var_names there is a "erosion_mass_max" and if there is a "erosion_mass_min"
@@ -7352,9 +7416,17 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             ) = WakeNormalizeAlignReduce(simulation_results.wake_results[wake_indices[jj]], wake_container_ref, 
                                         normalization_method=normalization_method, align_method=align_method, 
                                         lenMax=100, interp=True)
-            
+
+            if obs_metsim_obj.noise_wake_array is not None:
+                # find the obs_metsim_obj.noise_wake_array that is closest to the reference ht_ref
+                obs_metsim_obj.noise_wake = obs_metsim_obj.noise_wake_array[np.argmin(np.abs(obs_metsim_obj.altitudes_noises_wake - ht_ref))]
+                # print(f"Using variable noise_wake: {obs_metsim_obj.noise_wake} at height {ht_ref} m")
+                # print(f"index of noise_wake_array used: {np.argmin(np.abs(obs_metsim_obj.altitudes_noises_wake - ht_ref))} ")
+                # print(f"other index: {ht_ref_idx}")
+
             log_likelihood_wake_array[jj] = np.nansum(-0.5*np.log(2*np.pi*obs_metsim_obj.noise_wake**2) - 0.5/(obs_metsim_obj.noise_wake**2)*(obs_lum_array - wake_lum_array) ** 2)
             tot_num_values += np.sum(~np.isnan(obs_lum_array))
+            # print("number of wake values:", np.sum(~np.isnan(obs_lum_array)), "log_likelihood_wake_array[jj]:", log_likelihood_wake_array[jj])
         log_likelihood_wake = np.sum(log_likelihood_wake_array)
 
     # # create a plot with the obs_metsim_obj.luminosity and simulated_lc_intensity
@@ -7603,9 +7675,12 @@ if __name__ == "__main__":
         action="store_true")
 
     arg_parser.add_argument('-NoWake','--use_wake_data',
-        help="If wake data present use it.", 
+        help="If wake data present not use it.", 
         action="store_false")
-
+    
+    arg_parser.add_argument('--noise_wake_limit', metavar='NOISE_WAKE_LIMIT', type=int, default=-100,
+        help="Lenght where computed the noise in the wake (always negative), by default -100 m.")
+    
     arg_parser.add_argument('--priorposteriorupdate', metavar='PRIORPOSTERIORUPDATE', type=str,
         default=r"",
         help="If active update the priors with the posteriors 95CI as new priors and create a new .prior file merging the data from this file.")
@@ -7630,7 +7705,7 @@ if __name__ == "__main__":
     setupDirAndRunDynesty(cml_args.input_dir, output_dir=cml_args.output_dir, prior=cml_args.prior, resume=cml_args.new_dynesty, 
                           use_all_cameras=cml_args.all_cameras, only_plot=cml_args.only_plot, cores=cml_args.cores, 
                           pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior, save_backup=cml_args.not_backup, 
-                          use_wake_data=cml_args.use_wake_data,
+                          use_wake_data=cml_args.use_wake_data, noise_wake_limit=cml_args.noise_wake_limit,
                           priorFile_to_update_with_posteriors=cml_args.priorposteriorupdate)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

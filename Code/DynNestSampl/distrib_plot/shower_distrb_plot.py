@@ -1126,7 +1126,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
     if os.path.exists(input_dirfile + os.sep + "shower_distrb_plot_data.pkl"):
         print("Found shower_distrb_plot_data.pkl, loading data...")
         # load the pickle data
-        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr)=load_shower_distrb_plot_data(input_dirfile + os.sep + "shower_distrb_plot_data.pkl")
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all)=load_shower_distrb_plot_data(input_dirfile + os.sep + "shower_distrb_plot_data.pkl")
 
     else:
 
@@ -1202,6 +1202,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
         rho_corrected = []
         eta_corrected = []
         sigma_corrected = []
+        kinetic_energy_all = []
         tau_corrected = []
         mm_size_corrected = []
         mass_distr = []
@@ -1467,6 +1468,8 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             sigma_meteor_begin = summary_df_meteor['Median'].values[variables.index('sigma')]
             v_init_meteor_median = summary_df_meteor['Median'].values[variables.index('v_init')]
 
+            kinetic_energy_all.append(1/2 * samples[:, variables_sing.index('m_init')].astype(float) * (samples[:, variables_sing.index('v_init')].astype(float)*1000)**2)
+
             kinetic_energy_median = 1/2 * m_init_meteor_median * (v_init_meteor_median*1000)**2
             kinetic_energy_lo = kinetic_energy_median - 1/2 * summary_df_meteor['Low95'].values[variables.index('m_init')] * (summary_df_meteor['Low95'].values[variables.index('v_init')]*1000)**2
             kinetic_energy_hi = 1/2 * summary_df_meteor['High95'].values[variables.index('m_init')] * (summary_df_meteor['High95'].values[variables.index('v_init')]*1000)**2 - kinetic_energy_median
@@ -1673,25 +1676,25 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
         # save all in a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
         with open(input_dirfile + os.sep + "shower_distrb_plot_data.pkl", "wb") as f:
-            pickle.dump((variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr), f)
+            pickle.dump((variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all), f)
         print(f"Saved shower distrb plot data to: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
 
-    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
 def load_shower_distrb_plot_data(input_dirfile):
     # load all from a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
     with open(input_dirfile, "rb") as f:
-        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) = pickle.load(f)
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all) = pickle.load(f)
     print(f"Loaded shower distrb plot data from: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
-    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr) # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all) # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
 
 
 
 
-def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
     # check if there are variables in the flags_dict that are not in the variable_map
@@ -1785,6 +1788,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     mm_size_corrected = np.concatenate(mm_size_corrected)
     mass_distr = np.concatenate(mass_distr)
     tau_corrected = np.concatenate(tau_corrected)
+    kinetic_energy_all = np.concatenate(kinetic_energy_all)
     # if plot_correl_flag == True:
     #     erosion_energy_per_unit_cross_section_corrected = np.concatenate(erosion_energy_per_unit_cross_section_corrected)
     #     erosion_energy_per_unit_mass_corrected = np.concatenate(erosion_energy_per_unit_mass_corrected)
@@ -3232,7 +3236,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             tau_Hill2005.append(luminous_efficiency_tauI_Hill2005(vel))
         tau_Hill2005 = np.array(tau_Hill2005, dtype=float)
 
-        (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
+        (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
 
         name_ids = [row[0] for row in rows]
         # Now do a tolerant match (±3 s) against your available names
@@ -3366,6 +3370,94 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # ax.legend(fontsize=14)
         # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_vel_tau_kikwaya.png"), bbox_inches='tight', dpi=300)
         # plt.close()
+        
+        # kinetic energy kikwaya only
+        kinetic_energy_kikwaya = 0.5 * mass_kg * (vel_kms*1000)**2
+        # weights for the kinetic energy plot
+        weights_kinetic_JB = kinetic_energy_kikwaya / np.sum(kinetic_energy_kikwaya)
+
+        # Create figure
+        fig = plt.figure(figsize=(8, 10))
+        gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
+
+        # Set main axes (with shared x-axis)
+        ax_dist = fig.add_subplot(gs[0])
+        ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
+
+        # --- TOP PANEL: Rho Distribution but use the kinetic energy weight ---
+        
+        smooth = 0.02
+        lo, hi = np.min(rho_kgm3), np.max(rho_kgm3)
+        nbins = int(round(10. / smooth))
+        hist, edges = np.histogram(rho_kgm3, bins=nbins, weights=weights_kinetic_JB, range=(lo, hi))
+        hist = norm_kde(hist, 10.0)
+        bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+        ax_dist.fill_between(bin_centers, hist, color='dimgray', alpha=0.6)
+
+        rho_corrected_lo_kinetic_JB, rho_corrected_median_kinetic_JB, rho_corrected_hi_kinetic_JB = _quantile(rho_kgm3, [0.025, 0.5, 0.975], weights=weights_kinetic_JB)
+
+        # Percentile lines
+        ax_dist.axvline(rho_corrected_median_kinetic_JB, color='dimgray', linestyle='--', linewidth=1.5)
+        ax_dist.axvline(rho_corrected_lo_kinetic_JB, color='dimgray', linestyle='--', linewidth=1.5)
+        ax_dist.axvline(rho_corrected_hi_kinetic_JB, color='dimgray', linestyle='--', linewidth=1.5)
+
+        # Title and formatting
+        plus = rho_corrected_hi_kinetic_JB - rho_corrected_median_kinetic_JB
+        minus = rho_corrected_median_kinetic_JB - rho_corrected_lo_kinetic_JB
+        fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+        title = rf"Tot N.{len(rho_kgm3)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_kinetic_JB)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+        ax_dist.set_title(title, fontsize=20)
+        ax_dist.set_xlim(-100, 8300)
+        ax_dist.tick_params(axis='x', labelbottom=False)
+        ax_dist.tick_params(axis='y', left=False, labelleft=False)
+        ax_dist.set_ylabel("")
+        ax_dist.spines['bottom'].set_visible(False)
+        ax_dist.spines['left'].set_visible(False)
+        ax_dist.spines['right'].set_visible(False)
+        ax_dist.spines['top'].set_visible(False)
+
+        # --- BOTTOM PANEL: Rho vs Tj ---
+
+        scatter_d = plt.scatter(rho_kgm3, (kinetic_energy_kikwaya)/1000, c=np.log10(from_mass2size(mass_kg, rho_kgm3)), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+
+        # plt.errorbar(rho_kgm3, (kinetic_energy_kikwaya)/1000,
+        #             xerr=[abs(rho_lo), abs(rho_hi)],
+        #             yerr=[abs(kinetic_energy_lo)/1000, abs(kinetic_energy_hi)/1000],
+        #             elinewidth=0.75,
+        #         capthick=0.75,
+        #         fmt='none',
+        #         ecolor='black',
+        #         capsize=3,
+        #         zorder=1
+        #     )
+
+        # Add manually aligned colorbar
+        # Get position of ax_scatter to align colorbar
+        pos = ax_scatter.get_position()
+        cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
+        cbar = plt.colorbar(scatter_d, cax=cbar_ax)
+        cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+
+        # the ticks size of the colorbar
+        cbar.ax.tick_params(labelsize=20)
+
+        # Axis labels
+        ax_scatter.set_xlim(-100, 8300)
+        ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        ax_scatter.set_ylabel(r'Kinetic Energy [kJ]', fontsize=20)
+        ax_scatter.tick_params(labelsize=20)
+        # display the values on the x and y axes at 0 2000 4000 6000 8000
+        ax_scatter.set_xticks(np.arange(0, 9000, 2000))
+        ax_scatter.grid(True)
+        ax_scatter.set_yscale("log")
+
+        # Save
+        # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_KintEner_log10diam_kikwaya.png"), bbox_inches='tight', dpi=300)
+        plt.close()
+
+
 
     # # plot 2D density of mass vs rho_corrected
 
@@ -3491,7 +3583,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # save only the plot above as a separate plot:
     
-    # Create figure
+    # Create figure for rho ############
     fig = plt.figure(figsize=(8, 6))
     ax_dist = fig.add_subplot(111)
 
@@ -3523,6 +3615,39 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax_dist.spines['right'].set_visible(False)
     ax_dist.spines['top'].set_visible(False)
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"), bbox_inches='tight')
+
+    # Create figure for rho ############
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
+    # weight of kinetic energy but use it with the rho distribution to see if it changes the distribution shape using kinetic_energy_all and mapping it in rho_corrected
+    weights_kinetic = kinetic_energy_all / np.sum(kinetic_energy_all)
+    rho_corrected_weighted_kinetic = np.histogram(rho_corrected, bins=nbins, weights=weights_kinetic, range=(lo, hi))[0]
+    rho_corrected_weighted = norm_kde(rho_corrected_weighted_kinetic, 10.0)
+
+    ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='dimgray', alpha=0.6)
+
+    rho_corrected_lo_kinetic, rho_corrected_median_kinetic, rho_corrected_hi_kinetic = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=weights_kinetic)
+    # Percentile lines
+    ax_dist.axvline(rho_corrected_median_kinetic, color='dimgray', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo_kinetic, color='dimgray', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi_kinetic, color='dimgray', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = rho_corrected_hi_kinetic - rho_corrected_median_kinetic
+    minus = rho_corrected_median_kinetic - rho_corrected_lo_kinetic
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_kinetic)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+
+    ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    # ax_dist.set_ylabel("Weighted by Kinetic Energy", fontsize=20)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy.png"), bbox_inches='tight')
 
     # Tau plot ############
     print("Creating combined plot tau...")
@@ -3672,6 +3797,85 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     summary_df_rho_tj.to_csv(os.path.join(output_dir_show, shower_name+"_rho_tj_summary.csv"), index=False)
 
+
+    # Create figure
+    fig = plt.figure(figsize=(8, 10))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
+
+    # Set main axes (with shared x-axis)
+    ax_dist = fig.add_subplot(gs[0])
+    ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
+
+    # --- TOP PANEL: Rho Distribution but use the kinetic energy weight ---
+    
+    smooth = 0.02
+    lo, hi = np.min(rho_corrected), np.max(rho_corrected)
+    nbins = int(round(10. / smooth))
+    hist, edges = np.histogram(rho_corrected, bins=nbins, weights=weights_kinetic, range=(lo, hi))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+    ax_dist.fill_between(bin_centers, hist, color='dimgray', alpha=0.6)
+
+    # Percentile lines
+    ax_dist.axvline(rho_corrected_median_kinetic, color='dimgray', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo_kinetic, color='dimgray', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi_kinetic, color='dimgray', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = rho_corrected_hi_kinetic - rho_corrected_median_kinetic
+    minus = rho_corrected_median_kinetic - rho_corrected_lo_kinetic
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_kinetic)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    ax_dist.set_xlim(-100, 8300)
+    ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.spines['bottom'].set_visible(False)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+
+    # --- BOTTOM PANEL: Rho vs Tj ---
+
+    scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+
+    plt.errorbar(rho, (kinetic_energy_median)/1000,
+                xerr=[abs(rho_lo), abs(rho_hi)],
+                yerr=[abs(kinetic_energy_lo)/1000, abs(kinetic_energy_hi)/1000],
+                elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
+
+    # Add manually aligned colorbar
+    # Get position of ax_scatter to align colorbar
+    pos = ax_scatter.get_position()
+    cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
+    cbar = plt.colorbar(scatter, cax=cbar_ax)
+    cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+
+    # the ticks size of the colorbar
+    cbar.ax.tick_params(labelsize=20)
+
+    # Axis labels
+    ax_scatter.set_xlim(-100, 8300)
+    ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    ax_scatter.set_ylabel(r'Kinetic Energy [kJ]', fontsize=20)
+    ax_scatter.tick_params(labelsize=20)
+    # display the values on the x and y axes at 0 2000 4000 6000 8000
+    ax_scatter.set_xticks(np.arange(0, 9000, 2000))
+    ax_scatter.grid(True)
+    ax_scatter.set_yscale("log")
+
+    # Save
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_KintEner_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.close()
 
     ### plot of JFC HTC AST ###
 
@@ -5232,7 +5436,7 @@ if __name__ == "__main__":
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, 
      file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, 
-     mm_size_corrected, mass_distr)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
+     mm_size_corrected, mass_distr, kinetic_energy_all)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
     
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, 
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all,
                        radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=True) # cml_args.radiance_plot cml_args.correl_plot

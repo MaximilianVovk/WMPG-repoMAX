@@ -2124,21 +2124,17 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         if variable in constjson_bestfit.__dict__.keys():
             constjson_bestfit.__dict__[variable] = best_guess[variables.index(variable)]
 
+    normalization_method = "peak"
+    align_method = "correlate"
     # do te same for the fixed values
     for variable in fixed_values.keys():
         if variable in constjson_bestfit.__dict__.keys():
             constjson_bestfit.__dict__[variable] = fixed_values[variable]
             print(f"Fixed value for {variable}: {fixed_values[variable]}")
-
-    # check if obs_data has wake_norm
-    if hasattr(obs_data, 'wake_norm'):
-        normalization_method = obs_data.wake_norm
-    else:
-        normalization_method = "peak"
-    if hasattr(obs_data, 'wake_align'):
-        align_method = obs_data.wake_align
-    else:
-        align_method = "correlate"
+        if variable == 'wake_norm':
+            normalization_method = fixed_values[variable]
+        if variable == 'wake_align':
+            align_method = fixed_values[variable]
 
     noise_wake_array = None
     altitudes_noises_wake = None

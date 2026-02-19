@@ -2124,8 +2124,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         if variable in constjson_bestfit.__dict__.keys():
             constjson_bestfit.__dict__[variable] = best_guess[variables.index(variable)]
 
-    normalization_method = "peak"
-    align_method = "correlate"
+    normalization_method = "none"
+    align_method = "none"
     # do te same for the fixed values
     for variable in fixed_values.keys():
         if variable in constjson_bestfit.__dict__.keys():

@@ -2113,7 +2113,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     constjson_bestfit.__dict__['lum_eff_type'] = obs_data.lum_eff_type
     constjson_bestfit.__dict__['disruption_on'] = obs_data.disruption_on
     constjson_bestfit.__dict__['wake_psf'] = obs_data.wake_psf
-    constjson_bestfit.__dict__['wake_heights'] = obs_data.wake_heights
+    # constjson_bestfit.__dict__['wake_heights'] = obs_data.wake_heights
     constjson_bestfit.__dict__['dens_co'] = obs_data.dens_co
     constjson_bestfit.__dict__['dt'] = obs_data.dt
     constjson_bestfit.__dict__['h_kill'] = obs_data.h_kill
@@ -5230,7 +5230,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             # this can be done becuase the version of wmpl is correct
             _, _, _, h_beg_wake_default, h_end_wake_default = extractHeightsFromStations(obs_data)
             diff_height= h_beg_wake_default-h_end_wake_default
-            obs_data.wake_heights = [diff_height*0.9+h_end_wake_default, diff_height*0.7+h_end_wake_default, diff_height*0.5+h_end_wake_default]
+            # obs_data.wake_heights = [diff_height*0.9+h_end_wake_default, diff_height*0.7+h_end_wake_default, diff_height*0.5+h_end_wake_default]
 
             ##################################################################################################
             if save_backup:
@@ -6865,7 +6865,7 @@ def constructConstants(parameter_guess, real_event, var_names, fix_var, dir_path
     # const_nominal.h_init = 180000
 
     const_nominal.wake_psf = real_event.wake_psf
-    const_nominal.wake_heights = real_event.wake_heights
+    # const_nominal.wake_heights = real_event.wake_heights
 
     # create a dictionary for var_names_frag and take the associated parameter_guess[i]
     var_dic_guess = {var_names: parameter_guess[i] for i, var_names in enumerate(var_names)}

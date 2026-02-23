@@ -6176,7 +6176,7 @@ def computeWakeNoiseXAltitude(
             x_fit = np.linspace(np.min(xr), np.max(xr), 200)
             y_fit = np.polyval(coeffs, x_fit)
             plt.plot(x_fit, y_fit, color="red", linewidth=2, label="Poly fit")
-            plt.suptitle(f"Wake noise at ht={ht_m/1000:.2f} km\nNoise={noise:.4f}, Region={region_used}")
+            plt.suptitle(f"Wake noise at ht={ht_m/1000:.2f} km\nNoise={noise:.4f}") # , Region={region_used}
             plt.xlabel("Length [m]")
             plt.ylabel("Intensity [ADUs]")
             # invert x-axis
@@ -6190,6 +6190,9 @@ def computeWakeNoiseXAltitude(
             plt.axvline(0, color="red", linestyle="-", label="Zero resid")
             # put in the x axis label
             plt.xlabel("Residual intensity [ADUs]")
+            plt.ylabel("Count")
+            # make space so that count is not on the other plot
+            plt.tight_layout()
             # plt.title("Residuals distribution")
             # plt.legend()
             plot_path = os.path.join(output_dir or "noise_wake_plots", f"noise_wake_ht_{int(ht_m)}m_site_{wc.site_id}_frame_{wc.frame_n}.png")

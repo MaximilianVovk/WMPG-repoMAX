@@ -1844,8 +1844,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     fig = plt.figure(figsize=(6, 4), constrained_layout=True)
 
     
-    scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
-    plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
+    # scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+    scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=np.log10(m_init_med), cmap='Spectral_r', s=60, norm=Normalize(vmin=_quantile(np.log10(m_init_med), 0.025), vmax=_quantile(np.log10(m_init_med), 0.975)), zorder=2)
+    # plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
+    plt.colorbar(scatter_d, label='log$_{10}$ $m_0$ [kg]')
     plt.errorbar(rho, (kinetic_energy_median)/1000,
                 xerr=[abs(rho_lo), abs(rho_hi)],
                 # yerr=[abs(kinetic_energy_lo), abs(kinetic_energy_hi)],
@@ -1859,7 +1861,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # # plot for each the all_names close to their name
     # for i, txt in enumerate(all_names):
     #     # put th text in the plot
-    #     plt.annotate(txt, (rho[i], np.log10(erosion_beg_dyn_press[i])), fontsize=8, color='black')
+    #     plt.annotate(txt, (rho[i], (kinetic_energy_median[i])/1000), fontsize=8, color='black')
     # invert the y axis
     plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
     plt.ylabel("Kinetic Energy [kJ]", fontsize=15)
@@ -1868,6 +1870,69 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.grid(True)
 
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_kinetic_energy.png"), bbox_inches='tight', dpi=300)
+
+
+    try:
+        ### PLOT rho and error against dynamic pressure color by speed ###
+        fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+        # scatter_d = plt.scatter(v_init_meteor_median,(kinetic_energy_median)/1000, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+        # plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
+        scatter_d = plt.scatter(v_init_meteor_median,(kinetic_energy_median)/1000, c=np.log10(m_init_med), cmap='Spectral_r', s=60, norm=Normalize(vmin=_quantile(np.log10(m_init_med), 0.025), vmax=_quantile(np.log10(m_init_med), 0.975)), zorder=2)
+        plt.colorbar(scatter_d, label='log$_{10}$ $m_0$ [kg]')
+        # plot for each the all_names close to their name
+        # for i, txt in enumerate(all_names):
+        #     # put th text in the plot
+        #     plt.annotate(txt, (v_init_meteor_median[i], (kinetic_energy_median[i])/1000), fontsize=8, color='black')
+        plt.xlabel("v$_{0}$ [km/s]", fontsize=15) # log$_{10}$ 
+        plt.ylabel("Kinetic Energy [kJ]", fontsize=15)
+        # grid on
+        plt.grid(True)
+
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_vel_vs_kinetic_energy_mass_color.png"), bbox_inches='tight', dpi=300)
+    except:
+        print("Error plotting velocity vs kinetic energy.")
+
+
+    try:
+        ### PLOT rho and error against dynamic pressure color by speed ###
+        fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+        scatter_d = plt.scatter(v_init_meteor_median,(kinetic_energy_median)/1000, c=(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile((meteoroid_diameter_mm), 0.025), vmax=_quantile((meteoroid_diameter_mm), 0.975)), zorder=2)
+        plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
+        # scatter_d = plt.scatter(v_init_meteor_median,(kinetic_energy_median)/1000, c=np.log10(m_init_med), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(m_init_med), 0.025), vmax=_quantile(np.log10(m_init_med), 0.975)), zorder=2)
+        # plt.colorbar(scatter_d, label='log$_{10}$ $m_0$ [kg]')
+        # plot for each the all_names close to their name
+        # for i, txt in enumerate(all_names):
+        #     # put th text in the plot
+        #     plt.annotate(txt, (v_init_meteor_median[i], (kinetic_energy_median[i])/1000), fontsize=8, color='black')
+        plt.xlabel("v$_{0}$ [km/s]", fontsize=15) # log$_{10}$ 
+        plt.ylabel("Kinetic Energy [kJ]", fontsize=15)
+        # grid on
+        plt.grid(True)
+
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_vel_vs_kinetic_energy_diameter_color.png"), bbox_inches='tight', dpi=300)
+    except:
+        print("Error plotting velocity vs kinetic energy.")
+
+    # try:
+    #     ### PLOT rho and error against dynamic pressure color by speed ###
+    #     fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+    #     scatter_d = plt.scatter((kinetic_energy_median)/1000,v_init_meteor_median, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+    #     plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
+    #     # plot for each the all_names close to their name
+    #     for i, txt in enumerate(all_names):
+    #         # put th text in the plot
+    #         plt.annotate(txt, ((kinetic_energy_median[i])/1000, v_init_meteor_median[i]), fontsize=8, color='black')
+    #     plt.ylabel("v$_{0}$ [km/s]", fontsize=15) # log$_{10}$ 
+    #     plt.xlabel("Kinetic Energy [kJ]", fontsize=15)
+    #     # grid on
+    #     plt.grid(True)
+
+    #     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_vel_vs_kinetic_energy_with_name.png"), bbox_inches='tight', dpi=300)
+    # except:
+    #     print("Error plotting velocity vs kinetic energy invert with name.")
 
     try:
         ### PLOT rho and error against dynamic pressure color by speed ###
@@ -2077,7 +2142,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     stream_lg_min_la_sun = []
     stream_bg = []
     shower_iau_no = -1
-
+    apex_mask = None
     if radiance_plot_flag == True:
         # check if "C:\Users\maxiv\WMPG-repoMAX\Code\Utils\streamfulldata2022.csv" exists
         if not os.path.exists(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results"):
@@ -2202,7 +2267,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     ## mass or mm diameter
                     # scatter_d = plt.scatter(Vg_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
                     # plt.colorbar(scatter_d, label='mass [kg]')
-                    scatter = plt.scatter(Vg_val, beg_height, c=rho, cmap='viridis', s=20, norm=Normalize(vmin=(rho.min()), vmax=(rho.max())), zorder=3)
+                    scatter = plt.scatter(Vg_val, beg_height, c=rho, cmap='plasma', s=20, norm=Normalize(vmin=(rho.min()), vmax=(rho.max())), zorder=3)
                     plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
 
                     plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
@@ -2307,7 +2372,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 scatter = plt.scatter(
                     lg_min_la_sun, bg,
                     c=rho,
-                    cmap='viridis',
+                    cmap='plasma',
                     norm=norm,
                     s=30,
                     zorder=2
@@ -2411,7 +2476,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     Vg_val[finite],
                     beg_height[finite],
                     c=rho[finite],          # facecolor from rho
-                    cmap='viridis',
+                    cmap='plasma',
                     norm=norm,
                     edgecolors=edge_colors[finite],  # edges from groups
                     s=60,
@@ -2454,7 +2519,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 ### AITOFF PLOT ###
                 print("Creating Aitoff plot with GMN data...")
 
-                for plot_type in ['helio', 'geo']:
+                for plot_type in ['helio','geo']:
                     print(f"Plotting ecliptic {plot_type}centric data with GMN...")
                     if plot_type == 'geo':
                         lg_min_la_sun_plot = lg_min_la_sun
@@ -2512,18 +2577,39 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     lg_rad_flipped = -np.deg2rad(lg_deg_wrapped)
                     bg_rad = np.deg2rad(bg_plot)
 
+                    # if plot_type == 'geo':
+                    #     # find the one at the apex between 300 and 220 in lg_rad_flipped and between 75 and -75 in bg_rad
+                    #     apex_mask = (lg_rad_flipped > np.deg2rad(-150)) & (lg_rad_flipped < np.deg2rad(50)) & (bg_rad > np.deg2rad(-75)) & (bg_rad < np.deg2rad(75))
+                    if plot_type == 'helio':
+                        # find the one at the apex between 300 and 220 in lg_rad_flipped and between 75 and -75 in bg_rad
+                        apex_mask = (lg_rad_flipped > np.deg2rad(-130)) & (lg_rad_flipped < np.deg2rad(80)) & (bg_rad > np.deg2rad(-60)) & (bg_rad < np.deg2rad(60))
+                    #     # anti helio sources
+                    #     antihel_mask = (lg_rad_flipped > np.deg2rad(80)) & (lg_rad_flipped < np.deg2rad(300)) & (bg_rad > np.deg2rad(-30)) & (bg_rad < np.deg2rad(30))
+                    #     # true and false values in apex_mask
+                    #     print(f"Found {apex_mask.sum()} points in the apex region.")
+                    #     print(f"Found {antihel_mask.sum()} points in the antihelion region.")
+                    # ax.scatter(
+                    #         lg_rad_flipped[apex_mask],
+                    #         bg_rad[apex_mask],
+                    #         c='red',
+                    #         s=40,
+                    #         # edgecolors='k',
+                    #         # linewidths=0.3,
+                    #         zorder=2
+                    #     )
+
                     # Normalize rho for color mapping
                     norm = Normalize(vmin=np.nanmin(rho), vmax=np.nanmax(rho))
                     scatter = ax.scatter(
                         lg_rad_flipped,
                         bg_rad,
                         c=rho,
-                        cmap='viridis',
+                        cmap='plasma',
                         norm=norm,
                         s=20,
                         edgecolors='k',
                         linewidths=0.3,
-                        zorder=2
+                        zorder=3
                     )
 
                     # Error bars
@@ -3417,9 +3503,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ax_dist.spines['right'].set_visible(False)
         ax_dist.spines['top'].set_visible(False)
 
-        # --- BOTTOM PANEL: Rho vs Tj ---
+        # --- BOTTOM PANEL: Rho vs Tj color log10 mass ---
 
-        scatter_d = plt.scatter(rho_kgm3, (kinetic_energy_kikwaya)/1000, c=np.log10(from_mass2size(mass_kg, rho_kgm3)), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+        # scatter_d = plt.scatter(rho_kgm3, (kinetic_energy_kikwaya)/1000, c=np.log10(from_mass2size(mass_kg, rho_kgm3)), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+        scatter_d = plt.scatter(rho_kgm3, (kinetic_energy_kikwaya)/1000, c=np.log10((mass_kg)), cmap='Spectral_r', s=40, norm=Normalize(vmin=_quantile(log10_m_init, 0.025), vmax=_quantile(log10_m_init, 0.975)), zorder=2, edgecolors='black', linewidth=0.5) # , edgecolors='black', linewidth=0.5
 
         # plt.errorbar(rho_kgm3, (kinetic_energy_kikwaya)/1000,
         #             xerr=[abs(rho_lo), abs(rho_hi)],
@@ -3437,10 +3524,20 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         pos = ax_scatter.get_position()
         cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
         cbar = plt.colorbar(scatter_d, cax=cbar_ax)
-        cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+        # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+        cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
 
         # the ticks size of the colorbar
         cbar.ax.tick_params(labelsize=20)
+
+        # Tj markers
+        if shower_iau_no == -1:
+            ax_scatter.axhline(y=0.054, color='lime', linestyle=':', linewidth=1.5, zorder=1)
+            ax_scatter.text(7200, 0.06, 'Air gun', color='black', fontsize=15, va='bottom')
+            ax_scatter.axhline(y=0.840, color='lime', linestyle='--', linewidth=1.5, zorder=1)
+            ax_scatter.text(7500, 0.9, 'Pistol', color='black', fontsize=15, va='bottom')
+            ax_scatter.axhline(y=23, color='lime', linestyle='-.', linewidth=1.5, zorder=1)
+            ax_scatter.text(7500, 24, 'Rifle', color='black', fontsize=15, va='bottom')
 
         # Axis labels
         ax_scatter.set_xlim(-100, 8300)
@@ -3454,7 +3551,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         # Save
         # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
-        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_KintEner_log10diam_kikwaya.png"), bbox_inches='tight', dpi=300)
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_KintEner_logmass_combined_kikwaya.png"), bbox_inches='tight', dpi=300)
         plt.close()
 
 
@@ -3741,15 +3838,19 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     scatter = ax_scatter.scatter(
         rho, tj,
-        c=np.log10(meteoroid_diameter_mm),
+        # c=np.log10(meteoroid_diameter_mm),
+        c=log10_m_init,
         # c=kc_par,
         # cmap='viridis',
-        cmap='coolwarm',
-        norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)),
-        # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
+        # cmap='coolwarm',
+        cmap='Spectral_r',
+        # norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)),
+        norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
         # norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
-        s=30,
-        zorder=2
+        s=40,
+        zorder=2,
+        edgecolors='black', 
+        linewidth=0.5
     )
 
     # Add manually aligned colorbar
@@ -3757,8 +3858,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     pos = ax_scatter.get_position()
     cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
     cbar = plt.colorbar(scatter, cax=cbar_ax)
-    cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
-    # cbar.set_label('$log_{10} m_0 [kg]$', fontsize=20)
+    # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+    cbar.set_label('$log_{10} $m_0$ [kg]$', fontsize=20)
     # cbar.set_label('$k_c$ parameter', fontsize=20)
     # the ticks size of the colorbar
     cbar.ax.tick_params(labelsize=20)
@@ -3782,8 +3883,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax_scatter.grid(True)
 
     # Save
-    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_logmass_combined_plot.png"), bbox_inches='tight', dpi=300)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
     # save as a csv the first column is all base_name then the Tj and then density
@@ -3839,7 +3940,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # --- BOTTOM PANEL: Rho vs Tj ---
 
-    scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+    # scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+    scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=log10_m_init, cmap='Spectral_r', s=40, norm=Normalize(vmin=_quantile(log10_m_init, 0.025), vmax=_quantile(log10_m_init, 0.975)), zorder=2, edgecolors='black', linewidth=0.5)
 
     plt.errorbar(rho, (kinetic_energy_median)/1000,
                 xerr=[abs(rho_lo), abs(rho_hi)],
@@ -3856,11 +3958,25 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # Get position of ax_scatter to align colorbar
     pos = ax_scatter.get_position()
     cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
-    cbar = plt.colorbar(scatter, cax=cbar_ax)
-    cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+    cbar = plt.colorbar(scatter_d, cax=cbar_ax)
+    # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+    cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
 
     # the ticks size of the colorbar
     cbar.ax.tick_params(labelsize=20)
+
+    # Tj markers
+    if shower_iau_no == -1:
+        # ax_scatter.axhline(y=0.054, color='lime', linestyle=':', linewidth=1.5, zorder=1)
+        # ax_scatter.text(7500, 0.06, 'Air gun', color='black', fontsize=15, va='bottom')
+        ax_scatter.axhline(y=0.840, color='lime', linestyle='--', linewidth=1.5, zorder=1)
+        ax_scatter.text(7500, 0.9, 'Pistol', color='black', fontsize=15, va='bottom')
+        ax_scatter.axhline(y=23, color='lime', linestyle='-.', linewidth=1.5, zorder=1)
+        ax_scatter.text(7500, 24, 'Rifle', color='black', fontsize=15, va='bottom')
+
+        # if ax_scatter.get_ylim()[0] < 1.5:
+        #     ax_scatter.text(7500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+
 
     # Axis labels
     ax_scatter.set_xlim(-100, 8300)
@@ -3873,8 +3989,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax_scatter.set_yscale("log")
 
     # Save
-    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_kc_combined_plot.png"), bbox_inches='tight', dpi=300)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_KintEner_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_KintEner_logmass_combined_plot.png"), bbox_inches='tight', dpi=300)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_KintEner_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
     ### plot of JFC HTC AST ###
@@ -4701,6 +4817,83 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     )
     print("Saved:", out_path)
     plt.close(fig)
+
+    ### Apex and Antihelion ###
+
+    if apex_mask is not None:
+        print("Apex vs Antihelion plots for rho...")
+        apex_mask = np.asarray(apex_mask, bool)
+        # what is True is False for anti_mask
+        anti_mask = ~apex_mask
+
+        apex_num = np.count_nonzero(apex_mask)
+        anti_num = np.count_nonzero(anti_mask)
+        
+        # Dict: event_name -> bool (below / above)
+        apex_by_name = {str(n): bool(b) for n, b in zip(event_names_like, apex_mask)}
+        anti_by_name = {str(n): bool(b) for n, b in zip(event_names_like, anti_mask)}
+
+        # Sample-level boolean flags based on event classification
+        apex_samples = np.array(
+            [apex_by_name.get(n, False) for n in names_per_sample],
+            dtype=bool
+        )
+        anti_samples = np.array(
+            [anti_by_name.get(n, False) for n in names_per_sample],
+            dtype=bool
+        )
+        finite = np.isfinite(rho_samp) & np.isfinite(w_all)
+        apex_class = finite & apex_samples
+        anti_class = finite & anti_samples
+
+        # ---------- Figure with two stacked panels ----------
+        fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
+        _panel_like_top(axes[0], rho_samp[apex_class], w_all[apex_class], "Tot N." + str(apex_num) + " Apex", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[anti_class], w_all[anti_class], "Tot N." + str(anti_num) + " Antihelion", lo_all, hi_all, nbins, xlim)
+        # Bottom labels/ticks to match your style
+        axes[1].tick_params(axis='x', labelbottom=True)
+        axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[1].set_xticks(np.arange(0, 9000, 2000))
+        for ax in axes:
+            ax.tick_params(labelsize=20)
+
+        # Save
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_apex_anti_threepanels_weighted.png")
+        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        plt.close()
+
+        # ### rho distribution plot ###
+        groups = {
+            "Apex": apex_class,
+            "Antihelion": anti_class
+        }
+        tex, results = weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,                 # bump up for smoother p-values
+            random_seed=123,
+            caption=r"Pairwise tests on $\rho$ by Apex/Antihelion class (weighted posteriors).",
+            label="tab:rho_apex_anti_weighted_tests",
+            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_apex_anti.tex"),
+        )
+
+        cuts = [
+            (apex_class, f"Tot N.{apex_num} Apex"),
+            (anti_class, f"Tot N.{anti_num} Antihelion"),
+        ]
+        # --- Call the plotter ---
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_apex_anti_grid.png")
+        fig, axes = plot_by_cuts_and_vars(
+            vars_list=vars_to_plot,
+            cuts_list=cuts,
+            weights_all=w_all,
+            nbins=int(round(10.0 / 0.02)),
+            smooth=0.02,
+            out_path=out_path
+        )
+        print("Saved:", out_path)
+        plt.close(fig)
 
 
     ### Above below begin height change plots ###

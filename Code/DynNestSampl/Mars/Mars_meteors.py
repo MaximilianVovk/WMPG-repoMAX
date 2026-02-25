@@ -1953,6 +1953,23 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     plt.savefig(output_dir_show + os.sep + "density_mean_AbsMagHeight.png")
     plt.close()
 
+    ############ PLOTTING Earth peak values ##############
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for name in all_names:
+        rho, rho_lo, rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Vg_val, Q_val, q_val, a_val, e_val, V_val_earth, V_val_mars, Vg_val_mars, Vinf_val_mars, Vg_val_mars_min_max, Vinf_val_mars_min_max, Vg_val_denis, Vinf_val_denis = file_rho_jd_dict[name]
+        kc_par, F_par, lenght_par, beg_height, end_height, max_lum_height, avg_vel, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, tau_median, tau_low95, tau_high95= file_obs_data_dict[name] 
+        ax.scatter(max_mag,max_lum_height,color='blue', label='Earth', s=60)
+    ax.set_xlabel('Peak Abs.Mag [-]', fontsize=12)
+    # invert the x axis
+    ax.invert_xaxis()
+    ax.set_ylabel('Height of Peak Brightness [km]', fontsize=12)
+    # ax.set_title('Earth Peak Brightness vs Height', fontsize=14)
+    ax.grid()
+    plt.tight_layout()
+    plt.savefig(output_dir_show + os.sep + "Earth_Peak_Brightness_vs_Height.png")
+    plt.close()
+
     ############ PLOTTING SUMMARY ##############
     print("\nPlotting Velocity height with brightness colorbar...")
     # plot the distribution of speed and Vg_val and Vg_val_mars in a single plot one in blue for earth and one in red for mars 
@@ -3334,7 +3351,7 @@ if __name__ == "__main__":
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\Sporaics_Mars",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Test",
         help="Output directory, if not given is the same as input_dir.")
     
     arg_parser.add_argument('--name', metavar='NAME', type=str,

@@ -7455,7 +7455,13 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
     log_likelihood_lag = np.nansum(-0.5*np.log(2*np.pi*obs_metsim_obj.noise_lag**2) - 0.5/(obs_metsim_obj.noise_lag**2)*(obs_metsim_obj.lag - lag_sim) ** 2)
     # print("log_likelihood_lag:", log_likelihood_lag)
     log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
+
+    only_wake = True
+
     if flag_wake:
+        if only_wake:
+            # do not consider the luminosity and lag log-likelihoods
+            log_likelihood_tot = 0
         # weight by the number of points in the wake to avoid overweighting the wake if there are many points
         log_likelihood_tot += ((len(obs_metsim_obj.lag)+len(obs_metsim_obj.luminosity))/tot_num_values)*log_likelihood_wake
     # elif logLtype=="wake":

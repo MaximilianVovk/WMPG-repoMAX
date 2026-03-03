@@ -1320,7 +1320,9 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
             single_body_folder = r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\SingleBody"
             # check if any folder in single_body_folder contains base_name
             matching_folders = [f for f in os.listdir(single_body_folder) if base_name in f]
+            found_single_body = False
             if len(matching_folders) > 0:
+                found_single_body = True
                 print(f"Found single body ablation folder for {base_name}")
                 # use the finder to load the observation data
                 single_body_folder_full = os.path.join(single_body_folder, matching_folders[0])
@@ -1373,8 +1375,9 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
                     print("Even single body do not work")
                     
             else:
-                print(f"No single body ablation folder found for {base_name}, skipping single body Mars simulation.")
-                continue
+                print(f"No single body ablation folder found for {base_name}") # , skipping single body Mars simulation.
+                best_guess_obj_plot_single_mars = copy.deepcopy(best_guess_obj_plot_mars)
+                # continue
 
             
             
@@ -1513,13 +1516,14 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
 
             ####### plot the single body ablation model on Mars ######
-            if (1 / obs_data.fps_lum) > best_guess_obj_plot_single_mars.const.dt:
-                best_guess_obj_plot_single_mars.luminosity_arr, best_guess_obj_plot_single_mars.abs_magnitude = luminosity_integration(
-                    best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.luminosity_arr,
-                    best_guess_obj_plot_single_mars.const.dt, obs_data.fps_lum, obs_data.P_0m   
-                )
-            ax.plot(best_guess_obj_plot_single_mars.abs_magnitude,best_guess_obj_plot_single_mars.leading_frag_height_arr/1000, color='peru', linestyle=':', label='Single Body Ablation (Mars)')
-        
+            if found_single_body:
+                if (1 / obs_data.fps_lum) > best_guess_obj_plot_single_mars.const.dt:
+                    best_guess_obj_plot_single_mars.luminosity_arr, best_guess_obj_plot_single_mars.abs_magnitude = luminosity_integration(
+                        best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.luminosity_arr,
+                        best_guess_obj_plot_single_mars.const.dt, obs_data.fps_lum, obs_data.P_0m   
+                    )
+                ax.plot(best_guess_obj_plot_single_mars.abs_magnitude,best_guess_obj_plot_single_mars.leading_frag_height_arr/1000, color='peru', linestyle=':', label='Single Body Ablation (Mars)')
+            
             # ax[0].invert_xaxis()
             # ax[1].legend(fontsize=10)
             # ax.set_title('Mars', fontsize=16)
@@ -1964,7 +1968,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     # invert the x axis
     ax.invert_xaxis()
     ax.set_ylabel('Height of Peak Brightness [km]', fontsize=12)
-    # ax.set_title('Earth Peak Brightness vs Height', fontsize=14)
+    median_peak_brigh = np.median([file_obs_data_dict[name][9] for name in all_names])
+    ax.set_title(f'Median Peak Brightness = {median_peak_brigh:.2f}', fontsize=14)
     ax.grid()
     plt.tight_layout()
     plt.savefig(output_dir_show + os.sep + "Earth_Peak_Brightness_vs_Height.png")

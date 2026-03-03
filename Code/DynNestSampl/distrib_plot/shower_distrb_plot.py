@@ -1823,12 +1823,16 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ################ GROUP of ABOVE AND BELOW  h_{beg} and V_{geo} ################
 
     # Define the curve via the given points (v, h)
-    # # v_inf
+    # # v_inf # GMN
     # curve_v = np.array([10, 20, 30, 40, 50, 60, 70], dtype=float)
     # curve_h = np.array([84, 90, 96, 98, 102, 104, 107], dtype=float)
     # v_g
+    # curve_v = np.array([0, 10, 20, 30, 40, 50, 60, 70], dtype=float)
+    # curve_h = np.array([85,90, 93, 95, 102, 103, 105, 110], dtype=float)
+
+    # v_inf
     curve_v = np.array([0, 10, 20, 30, 40, 50, 60, 70], dtype=float)
-    curve_h = np.array([85,90, 93, 95, 102, 103, 105, 110], dtype=float)
+    curve_h = np.array([80, 88, 93, 98, 100, 102, 104, 107], dtype=float)
 
     # Generate a smooth-ish line for plotting (linear interpolation is fine here)
     v_dense = np.linspace(curve_v.min(), curve_v.max(), 200)
@@ -1884,6 +1888,13 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # for i, txt in enumerate(all_names):
         #     # put th text in the plot
         #     plt.annotate(txt, (v_init_meteor_median[i], (kinetic_energy_median[i])/1000), fontsize=8, color='black')
+
+        plt.axhline(y=0.840, color='lime', linestyle='--', linewidth=1.5, zorder=1)
+        plt.text(68, 0.900, 'Pistol', color='black', fontsize=10, va='bottom')
+        plt.axhline(y=23, color='lime', linestyle='-.', linewidth=1.5, zorder=1)
+        plt.text(68, 24, 'Rifle', color='black', fontsize=10, va='bottom')
+        # make it log scale in y
+        plt.yscale("log")
         plt.xlabel("v$_{0}$ [km/s]", fontsize=15) # log$_{10}$ 
         plt.ylabel("Kinetic Energy [kJ]", fontsize=15)
         # grid on
@@ -1891,7 +1902,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         plt.savefig(os.path.join(output_dir_show, f"{shower_name}_vel_vs_kinetic_energy_mass_color.png"), bbox_inches='tight', dpi=300)
     except:
-        print("Error plotting velocity vs kinetic energy.")
+        print("Error plotting velocity vs kinetic energy mass.")
 
 
     try:
@@ -1906,6 +1917,13 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # for i, txt in enumerate(all_names):
         #     # put th text in the plot
         #     plt.annotate(txt, (v_init_meteor_median[i], (kinetic_energy_median[i])/1000), fontsize=8, color='black')
+
+        plt.axhline(y=0.840, color='lime', linestyle='--', linewidth=1.5, zorder=1)
+        plt.text(68, 0.900, 'Pistol', color='black', fontsize=10, va='bottom')
+        plt.axhline(y=23, color='lime', linestyle='-.', linewidth=1.5, zorder=1)
+        plt.text(68, 24, 'Rifle', color='black', fontsize=10, va='bottom')
+        # make it log scale in y
+        plt.yscale("log")
         plt.xlabel("v$_{0}$ [km/s]", fontsize=15) # log$_{10}$ 
         plt.ylabel("Kinetic Energy [kJ]", fontsize=15)
         # grid on
@@ -1913,7 +1931,38 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         plt.savefig(os.path.join(output_dir_show, f"{shower_name}_vel_vs_kinetic_energy_diameter_color.png"), bbox_inches='tight', dpi=300)
     except:
-        print("Error plotting velocity vs kinetic energy.")
+        print("Error plotting velocity vs kinetic energy diameter.")
+
+
+
+    try:
+        ### PLOT rho and error against dynamic pressure color by speed ###
+        fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+        scatter_d = plt.scatter(v_init_meteor_median,(kinetic_energy_median)/1000, c=(rho), cmap='YlGn_r', s=60, norm=Normalize(vmin=(rho).min(), vmax=(rho).max()), zorder=2)
+        plt.colorbar(scatter_d, label=r'$\rho$ [kg/m$^3$]')
+        # scatter_d = plt.scatter(v_init_meteor_median,(kinetic_energy_median)/1000, c=np.log10(m_init_med), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(m_init_med), 0.025), vmax=_quantile(np.log10(m_init_med), 0.975)), zorder=2)
+        # plt.colorbar(scatter_d, label='log$_{10}$ $m_0$ [kg]')
+        # plot for each the all_names close to their name
+        # for i, txt in enumerate(all_names):
+        #     # put th text in the plot
+        #     plt.annotate(txt, (v_init_meteor_median[i], (kinetic_energy_median[i])/1000), fontsize=8, color='black')
+
+        plt.axhline(y=0.840, color='lime', linestyle='--', linewidth=1.5, zorder=1)
+        plt.text(68, 0.900, 'Pistol', color='black', fontsize=10, va='bottom')
+        plt.axhline(y=23, color='lime', linestyle='-.', linewidth=1.5, zorder=1)
+        plt.text(68, 24, 'Rifle', color='black', fontsize=10, va='bottom')
+
+        plt.xlabel("v$_{0}$ [km/s]", fontsize=15) # log$_{10}$ 
+        plt.ylabel("Kinetic Energy [kJ]", fontsize=15)
+        # make it log scale in y
+        plt.yscale("log")
+        # grid on
+        plt.grid(True)
+
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_vel_vs_kinetic_energy_rho_color.png"), bbox_inches='tight', dpi=300)
+    except:
+        print("Error plotting velocity vs kinetic energy rho.")
 
     # try:
     #     ### PLOT rho and error against dynamic pressure color by speed ###
@@ -2433,7 +2482,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 print('Creating Velocity vs Begin Height scatter plot with stream...')
                 plt.figure(figsize=(10, 6))
                 df_EMCCD_spor = df_EMCCD[df_EMCCD['shw'] == '...']
-                spor_vgeo = df_EMCCD_spor['v_g'].values
+                # spor_vgeo = df_EMCCD_spor['v_g'].values
+                spor_vgeo = df_EMCCD_spor['vel'].values
                 spor_htbeg = df_EMCCD_spor['H_beg'].values
                 scatter_EMCCD_spor = plt.scatter(spor_vgeo, spor_htbeg, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
 
@@ -2473,10 +2523,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
                 # single scatter: filled markers + colored edges
                 scatter = plt.scatter(
-                    Vg_val[finite],
+                    # Vg_val[finite],
+                    v_init_meteor_median[finite],
                     beg_height[finite],
                     c=rho[finite],          # facecolor from rho
-                    cmap='plasma',
+                    cmap='YlGn_r',
                     norm=norm,
                     edgecolors=edge_colors[finite],  # edges from groups
                     s=60,
@@ -2506,7 +2557,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 # one colorbar tied to rho
                 plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
 
-                plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
+                # plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
+                plt.xlabel('$v_{0}$ [km/s]', fontsize=15)
                 plt.ylabel('$h_{beg}$ [km]', fontsize=15)
                 plt.grid(True)
 
@@ -2583,15 +2635,24 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     if plot_type == 'helio':
                         # find the one at the apex between 300 and 220 in lg_rad_flipped and between 75 and -75 in bg_rad
                         apex_mask = (lg_rad_flipped > np.deg2rad(-130)) & (lg_rad_flipped < np.deg2rad(80)) & (bg_rad > np.deg2rad(-60)) & (bg_rad < np.deg2rad(60))
-                    #     # anti helio sources
-                    #     antihel_mask = (lg_rad_flipped > np.deg2rad(80)) & (lg_rad_flipped < np.deg2rad(300)) & (bg_rad > np.deg2rad(-30)) & (bg_rad < np.deg2rad(30))
-                    #     # true and false values in apex_mask
-                    #     print(f"Found {apex_mask.sum()} points in the apex region.")
-                    #     print(f"Found {antihel_mask.sum()} points in the antihelion region.")
+                        # anti helio sources
+                        antihel_mask = (lg_rad_flipped > np.deg2rad(80)) & (lg_rad_flipped < np.deg2rad(300)) & (bg_rad > np.deg2rad(-30)) & (bg_rad < np.deg2rad(30))
+                        # true and false values in apex_mask
+                        print(f"Found {apex_mask.sum()} points in the apex region.")
+                        print(f"Found {antihel_mask.sum()} points in the antihelion region.")
                     # ax.scatter(
                     #         lg_rad_flipped[apex_mask],
                     #         bg_rad[apex_mask],
-                    #         c='red',
+                    #         c='sandybrown',
+                    #         s=40,
+                    #         # edgecolors='k',
+                    #         # linewidths=0.3,
+                    #         zorder=2
+                    #     )
+                    # ax.scatter(
+                    #         lg_rad_flipped[antihel_mask],
+                    #         bg_rad[antihel_mask],
+                    #         c='cyan',
                     #         s=40,
                     #         # edgecolors='k',
                     #         # linewidths=0.3,
@@ -2604,7 +2665,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         lg_rad_flipped,
                         bg_rad,
                         c=rho,
-                        cmap='plasma',
+                        cmap='YlGn_r',
                         norm=norm,
                         s=20,
                         edgecolors='k',
@@ -3859,7 +3920,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
     cbar = plt.colorbar(scatter, cax=cbar_ax)
     # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
-    cbar.set_label('$log_{10} $m_0$ [kg]$', fontsize=20)
+    cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
     # cbar.set_label('$k_c$ parameter', fontsize=20)
     # the ticks size of the colorbar
     cbar.ax.tick_params(labelsize=20)
@@ -4008,56 +4069,45 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             axes = np.asarray([[ax] for ax in axes])
         return axes
 
-    # ---------- Generic grid plotter (rows = cuts, cols = variables) ----------
-    def plot_by_cuts_and_vars(vars_list, cuts_list, weights_all,
-                            nbins=200, smooth=0.02, figsize=None,
-                            bottom_xlabel_per_col=None, tight=True, dpi=300,
-                            out_path=None):
-        """
-        Parameters
-        ----------
-        vars_list : list of dicts
-            Each dict describes one plotted variable (i.e., one column):
-            {
-            "values": array of shape (N_samples,),      # required
-            "label":  r"$\\rho$ (kg/m$^3$)",            # x-axis label for bottom row (optional)
-            "name":   "rho",                            # short name for titles/logging (optional)
-            "xlim":   (lo, hi),                         # limits, if None computed per variable (optional)
-            "color":  "black"                           # fill/line color for this variable (optional)
-            }
-        cuts_list : list of dicts/tuples
-            Each item describes one row (a selection mask and a title prefix):
-            Either a tuple: (mask, title_prefix)
-            or a dict: {"mask": mask, "title": "Tot N.123 AST"}.
-        weights_all : array-like
-            Importance weights aligned with vars_list[j]["values"] (N_samples,).
-        nbins : int
-            Histogram bins.
-        smooth : float
-            Smoothing parameter passed into your `norm_kde` call (keep as in your code).
-        figsize : tuple
-            Figure size.
-        bottom_xlabel_per_col : list[str] | None
-            If provided, length must equal len(vars_list); labels placed on bottom row.
-            If None, tries to use vars_list[j]["label"] if present.
-        tight : bool
-            Use tight bbox when saving.
-        dpi : int
-            Save resolution.
-        out_path : str | None
-            If given, save figure there.
+    # =========================
+    # Robust plot_by_cuts_and_vars
+    # Supports BOTH:
+    #  - base_mask: optional per-variable mask in FULL sample space (length Nfull)
+    #  - parent_mask: optional mapping from FULL -> REDUCED sample space
+    #     (use this ONLY if vinfo["values"] was already sliced, e.g. values = full_values[rho_cut])
+    # =========================
 
-        Returns
-        -------
-        fig, axes : matplotlib Figure and 2D ndarray of Axes (rows=len(cuts_list), cols=len(vars_list))
-        """
+    def plot_by_cuts_and_vars(
+        vars_list, cuts_list, weights_all,
+        nbins=200, smooth=0.02, figsize=None,
+        bottom_xlabel_per_col=None, tight=True, dpi=300,
+        out_path=None ):
 
-        # Local wrapper around your existing panel plotter -------------------------
-        def _panel_like_top(ax, var_vals, weights, title_prefix, lo, hi, nbins, xlim, var_name="", color_plot="black"):
-            # guard
+        def _ensure_axes_2d(axes, nrows, ncols):
+            if nrows == 1 and ncols == 1:
+                axes = np.asarray([[axes]])
+            elif nrows == 1:
+                axes = np.asarray([axes])
+            elif ncols == 1:
+                axes = np.asarray([[ax] for ax in axes])
+            return axes
+
+        def _style(ax, xlim):
+            if np.all(np.isfinite(xlim)):
+                ax.set_xlim(*xlim)
+            ax.tick_params(axis='x', labelbottom=False)
+            ax.tick_params(axis='y', left=False, labelleft=False)
+            ax.set_ylabel("")
+            for sp in ['left', 'right', 'top']:
+                ax.spines[sp].set_visible(False)
+
+        def _panel_like_top(ax, var_vals, weights, title_prefix, lo, hi, nbins, xlim,
+                            var_name="", color_plot="black"):
+
             m = np.isfinite(var_vals)
             if weights is not None:
                 m &= np.isfinite(weights)
+
             if not np.any(m):
                 ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
                         ha='center', va='center', fontsize=14, color='black')
@@ -4072,7 +4122,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 w = (w / s) if s > 0 else None
 
             hist, edges = np.histogram(r, bins=nbins, weights=w, range=(lo, hi))
-            hist = norm_kde(hist, 10.0)  # keep your original smoothing kernel span
+            hist = norm_kde(hist, 10.0)  # keep your original kernel span
             bin_centers = 0.5 * (edges[:-1] + edges[1:])
 
             # Weighted percentiles
@@ -4085,19 +4135,19 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             for q in (q_lo, q_med, q_hi):
                 ax.axvline(q, linestyle='--', linewidth=1.5, color=color_plot)
 
-            if "log_{10}" in var_name:
-                r = 10**(r)
-                # delete log_{10} from var_name
-                var_name = var_name.replace("$\log_{10}$", "")
-                # Weighted percentiles
+            # If label includes log10, convert for title stats (OPTIONAL; keep your behavior)
+            if "log_{10}" in (var_name):
+                r_lin = 10.0**(r)
+                var_name_lin = str(var_name).replace("$\\log_{10}$", "")
                 if w is not None:
-                    q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
+                    q_lo, q_med, q_hi = _quantile(r_lin, [0.025, 0.5, 0.975], weights=w)
                 else:
-                    q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
-
+                    q_lo, q_med, q_hi = np.nanpercentile(r_lin, [2.5, 50, 97.5])
+                var_name = var_name_lin
             plus  = q_hi - q_med
             minus = q_med - q_lo
             fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+
             if title_prefix == "":
                 title = (rf"{var_name} = {fmt(q_med)}"
                         rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
@@ -4108,19 +4158,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
             _style(ax, xlim)
 
-        def _style(ax, xlim):
-            # check if Nan or Inf in xlim
-            if np.all(np.isfinite(xlim)):
-                ax.set_xlim(*xlim)
-            ax.tick_params(axis='x', labelbottom=False)
-            ax.tick_params(axis='y', left=False, labelleft=False)
-            ax.set_ylabel("")
-            for sp in ['left', 'right', 'top']:
-                ax.spines[sp].set_visible(False)
-
-        # Normalize inputs ---------------------------------------------------------
+        # -------------------------
+        # Normalize cuts_list input
+        # -------------------------
         cuts_norm = []
-        for i, item in enumerate(cuts_list):
+        for item in cuts_list:
             if isinstance(item, dict):
                 cuts_norm.append((np.asarray(item["mask"], bool), str(item.get("title", ""))))
             else:
@@ -4128,58 +4170,118 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 cuts_norm.append((np.asarray(m, bool), str(t)))
         cuts_list = cuts_norm
 
-        # Figure and axes ----------------------------------------------------------
+        # -------------------------
+        # Figure / axes
+        # -------------------------
         nrows = len(cuts_list)
         ncols = len(vars_list)
         if figsize is None:
-            figsize = (ncols * 8, nrows * 3)  # (8, 10)
+            figsize = (ncols * 8, nrows * 3)
+
         fig, axes = plt.subplots(nrows, ncols, figsize=figsize, sharex=False)
         axes = _ensure_axes_2d(axes, nrows, ncols)
 
-        # Default bottom x-labels from vars_list if not provided
         if bottom_xlabel_per_col is None:
-            bottom_xlabel_per_col = [
-                v.get("label", v.get("name", f"var{j}")) for j, v in enumerate(vars_list)
-            ]
+            bottom_xlabel_per_col = [v.get("label", v.get("name", f"var{j}")) for j, v in enumerate(vars_list)]
 
-        # Per-column global limits (if not provided) -------------------------------
+        # -------------------------
+        # Full-space size
+        # -------------------------
+        Nfull = cuts_list[0][0].shape[0]
+        weights_all = np.asarray(weights_all, float)
+        if weights_all.shape[0] != Nfull:
+            raise RuntimeError(f"weights_all length {weights_all.shape[0]} != cuts length {Nfull}")
+
+        # -------------------------
+        # Sanity checks on vars_list
+        # -------------------------
+        for vinfo in vars_list:
+            vals = np.asarray(vinfo["values"])
+            nvals = vals.shape[0]
+            pm = vinfo.get("parent_mask", None)
+
+            if nvals != Nfull:
+                if pm is None:
+                    raise RuntimeError(
+                        f"Variable '{vinfo.get('name','?')}' has length {nvals} but cuts have length {Nfull}. "
+                        f"Either keep values full-length OR provide parent_mask (full->reduced mapping)."
+                    )
+                pm = np.asarray(pm, bool)
+                if pm.shape[0] != Nfull:
+                    raise RuntimeError(f"parent_mask length mismatch for '{vinfo.get('name','?')}': {pm.shape[0]} vs {Nfull}")
+                if pm.sum() != nvals:
+                    raise RuntimeError(
+                        f"parent_mask.sum()={pm.sum()} but '{vinfo.get('name','?')}' values length is {nvals}."
+                    )
+
+            bm = vinfo.get("base_mask", None)
+            if bm is not None:
+                bm = np.asarray(bm, bool)
+                if bm.shape[0] != Nfull:
+                    raise RuntimeError(f"base_mask length mismatch for '{vinfo.get('name','?')}': {bm.shape[0]} vs {Nfull}")
+
+        # -------------------------
+        # Per-column xlim defaults
+        # IMPORTANT: compute limits in the *variable's own universe*
+        # -------------------------
         for j, vinfo in enumerate(vars_list):
             vals = np.asarray(vinfo["values"], float)
             if vinfo.get("xlim") is None:
                 lo = float(np.nanmin(vals))
                 hi = float(np.nanmax(vals))
-                # Avoid identical limits
                 if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
                     lo, hi = -1.0, 1.0
                 vinfo["xlim"] = (lo, hi)
 
-        # Plot grid ----------------------------------------------------------------
-        weights_all = np.asarray(weights_all, float)
-        for i, (mask, cut_title) in enumerate(cuts_list):
+        # =========================
+        # Plot grid
+        # =========================
+        for i, (cut_mask, cut_title) in enumerate(cuts_list):
             for j, vinfo in enumerate(vars_list):
                 ax = axes[i, j]
+
                 vals = np.asarray(vinfo["values"], float)
                 color = vinfo.get("color", "black")
                 xlim  = vinfo["xlim"]
                 lo, hi = xlim
-                if j!=0:
-                    cut_title = ""
+
+                # titles only in first column
+                title_here = "" if j != 0 else cut_title
+
+                # 1) build FULL-space mask m_full = cut_mask & base_mask(optional)
+                base = vinfo.get("base_mask", None)
+                if base is None:
+                    m_full = cut_mask
+                else:
+                    base = np.asarray(base, bool)
+                    m_full = cut_mask & base
+
+                # 2) If values are reduced, map m_full to reduced space using parent_mask
+                pm = vinfo.get("parent_mask", None)
+                if vals.shape[0] == Nfull:
+                    v_use = vals[m_full]
+                    w_use = weights_all[m_full] if np.ndim(weights_all) else None
+                else:
+                    pm = np.asarray(pm, bool)  # validated above
+                    m_red = m_full[pm]         # reduced boolean mask
+                    v_use = vals[m_red]
+                    w_use = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
+
                 _panel_like_top(
                     ax,
-                    vals[mask],
-                    weights_all[mask] if np.ndim(weights_all) else None,
-                    cut_title,
+                    v_use,
+                    w_use,
+                    title_here,
                     lo, hi, nbins, xlim,
                     var_name=vinfo.get("label", vinfo.get("name", "")),
                     color_plot=color
                 )
 
-        # X labels on bottom row only
+        # bottom row labels
         for j in range(ncols):
             axes[-1, j].tick_params(axis='x', labelbottom=True)
             axes[-1, j].set_xlabel(bottom_xlabel_per_col[j], fontsize=16)
 
-        # Consistent tick label size
         for ax in axes.ravel():
             ax.tick_params(labelsize=14)
 
@@ -4187,8 +4289,111 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             plt.savefig(out_path, bbox_inches='tight' if tight else None, dpi=dpi)
             plt.close(fig)
 
+        # =========================
+        # LaTeX summary table (ROBUST)
+        # Uses the same masking logic as plotting (supports parent_mask + base_mask)
+        # Handles empty / single-point cuts safely
+        # =========================
+
+        table_data = []
+        Nfull = cuts_list[0][0].shape[0]  # full-space length
+
+        for i, (cut_mask, cut_title) in enumerate(cuts_list):
+            row = [cut_title]
+
+            for j, vinfo in enumerate(vars_list):
+                vals = np.asarray(vinfo["values"], float)
+
+                # ---- full-space selection mask ----
+                base = vinfo.get("base_mask", None)
+                if base is None:
+                    m_full = cut_mask
+                else:
+                    m_full = cut_mask & np.asarray(base, bool)
+
+                # ---- map to reduced space if needed ----
+                pm = vinfo.get("parent_mask", None)
+                if vals.shape[0] == Nfull:
+                    vals_cut = vals[m_full]
+                    w_cut = weights_all[m_full] if np.ndim(weights_all) else None
+                else:
+                    pm = np.asarray(pm, bool)
+                    m_red = m_full[pm]                 # mask in reduced universe
+                    vals_cut = vals[m_red]
+                    w_cut = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
+
+                # ---- force arrays + finite filtering ----
+                vals_cut = np.atleast_1d(np.asarray(vals_cut, float))
+
+                if w_cut is not None:
+                    w_cut = np.atleast_1d(np.asarray(w_cut, float))
+                    fin = np.isfinite(vals_cut) & np.isfinite(w_cut)
+                    vals_cut = vals_cut[fin]
+                    w_cut = w_cut[fin]
+                    if vals_cut.size == 0:
+                        row.append("---")
+                        continue
+                    s = np.nansum(w_cut)
+                    w_cut = (w_cut / s) if s > 0 else None
+                else:
+                    fin = np.isfinite(vals_cut)
+                    vals_cut = vals_cut[fin]
+                    if vals_cut.size == 0:
+                        row.append("---")
+                        continue
+
+                # ---- percentiles (log10 aware) ----
+                label_here = vinfo.get("label", vinfo.get("name", ""))
+
+                if "log_{10}" in str(label_here):
+                    # table stats in linear space (consistent with your plotting titles)
+                    r_lin = 10.0 ** vals_cut
+                    if w_cut is not None:
+                        q_lo, q_med, q_hi = _quantile(r_lin, [0.025, 0.5, 0.975], weights=w_cut)
+                    else:
+                        qs = np.nanpercentile(r_lin, [2.5, 50, 97.5])
+                        q_lo, q_med, q_hi = float(qs[0]), float(qs[1]), float(qs[2])
+                else:
+                    if w_cut is not None:
+                        q_lo, q_med, q_hi = _quantile(vals_cut, [0.025, 0.5, 0.975], weights=w_cut)
+                    else:
+                        qs = np.nanpercentile(vals_cut, [2.5, 50, 97.5])
+                        q_lo, q_med, q_hi = float(qs[0]), float(qs[1]), float(qs[2])
+
+                plus  = q_hi - q_med
+                minus = q_med - q_lo
+                fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+                cell_text = f"{fmt(q_med)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+                row.append(cell_text)
+
+            table_data.append(row)
+
+        # ---- column headers ----
+        col_headers = ["Cut"] + [
+            variable_map_plot.get(
+                vinfo.get("name", f"var{j}"),
+                vinfo.get("label", vinfo.get("name", f"var{j}"))
+            )
+            for j, vinfo in enumerate(vars_list)
+        ]
+
+        # ---- build LaTeX table ----
+        latex_table = "\\begin{tabular}{l" + "c" * len(vars_list) + "}\n"
+        latex_table += " & ".join(col_headers) + " \\\\\n"
+        latex_table += "\\hline\n"
+        for row in table_data:
+            latex_table += " & ".join(row) + " \\\\\n"
+        latex_table += "\\end{tabular}"
+
+        # ---- save ----
+        if out_path:
+            table_out_path = out_path.replace(".png", "_summary_table.tex")
+            with open(table_out_path, "w") as f:
+                f.write(latex_table)
+
+        print("Generated LaTeX table:\n", latex_table)
         return fig, axes
-    
+
     event_names_like = all_names
 
     tj = np.asarray(tj, float)  # per-event Tj (same length as event_names_like)
@@ -4376,84 +4581,205 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         "xlim":   (-100, 8300),   # or (rho_lo, rho_hi)
         "color":  "black",
     }
+    vars_to_plot = vars_to_plot + [rho_spec]  
 
-    vars_to_plot = vars_to_plot + [rho_spec]
-    # --- Column 2: erosion_coeff (if present) ---
-    idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
-    if idx_arr.size:
-        index_eros = int(idx_arr[0])
-        eros_vals  = samples[:, index_eros].astype(float)
-        # eros_vals  = np.log10(samples[:, index_eros].astype(float))
-        eros_lo, eros_hi = float(np.nanmin(eros_vals)), float(np.nanmax(eros_vals))
-        eros_spec = {
-            "values": eros_vals,
-            "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
-            "name":   "erosion_coeff",
-            "xlim":   (eros_lo, eros_hi),
-            "color":  "blue",
-        }
-        vars_to_plot = vars_to_plot + [eros_spec]
-        
-    idx_arr = np.where(np.asarray(variables) == "sigma")[0]
-    if idx_arr.size:
-        index_sigma = int(idx_arr[0])
-        sigma_vals  = samples[:, index_sigma].astype(float)
-        sigma_lo, sigma_hi = float(np.nanmin(sigma_vals)), float(np.nanmax(sigma_vals))
-        sigma_spec = {
-            "values": sigma_vals,
-            "label":  r"$\sigma$ [kg/MJ]",
-            "name":   "sigma",
-            "xlim":   (sigma_lo, sigma_hi),
-            "color":  "green",
-        }
-        vars_to_plot = vars_to_plot + [sigma_spec]
+    # ============================================================
+    # HOW TO BUILD vars_to_plot WITH YOUR "rho<4000" EXCEPTION
+    # Two safe patterns:
+    #   Pattern 1 (recommended): keep values FULL length + base_mask=rho_cut
+    #   Pattern 2: keep values REDUCED (already sliced) + parent_mask=rho_cut
+    # ============================================================
 
+    # full-length reference masks
+    rho_vals = np.asarray(rho_samp, float)  # full length Nfull
+    rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
 
-    # add the mass index
+    # --------------------------
+    # Pattern 1 (recommended)
+    # --------------------------
+    # Keep full-length arrays and just apply base_mask in the plotter
+
+    eros_vals_full  = np.asarray(np.log10(eta_corrected*1e6), float)      # FULL
+    sigma_vals_full = np.asarray(sigma_corrected*1e6, float)              # FULL
     idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
-    if idx_arr.size:
-        index_s = int(idx_arr[0])
-        s_vals  = samples[:, index_s].astype(float)
-        s_lo, s_hi = float(np.nanmin(s_vals)), float(np.nanmax(s_vals))
-        s_spec = {
-            "values": s_vals,
-            "label":  r"$s$",
-            "name":   "erosion_mass_index",
-            "xlim":   (s_lo, s_hi),
-            "color":  "red",
-        }
-        vars_to_plot = vars_to_plot + [s_spec]
-
-
-    # add the mass index
+    index_s = int(idx_arr[0])
     idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
-    if idx_arr.size:
-        index_ml = int(idx_arr[0])
-        ml_vals  = samples[:, index_ml].astype(float)
-        ml_lo, ml_hi = float(np.nanmin(ml_vals)), float(np.nanmax(ml_vals))
-        ml_spec = {
-            "values": ml_vals,
-            "label":   r"$\log_{10}$ $m_{l}$ [kg]",
-            "name":   "erosion_mass_min",
-            "xlim":   (ml_lo, ml_hi),
-            "color":  "purple",
-        }
-        vars_to_plot = vars_to_plot + [ml_spec]
-
-    # add the mass index
+    index_ml = int(idx_arr[0])
     idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
-    if idx_arr.size:
-        index_mu = int(idx_arr[0])
-        mu_vals  = samples[:, index_mu].astype(float)
-        mu_lo, mu_hi = float(np.nanmin(mu_vals)), float(np.nanmax(mu_vals))
-        mu_spec = {
-            "values": mu_vals,
-            "label":  r"$\log_{10}$ $m_{u}$ [kg]",
-            "name":   "erosion_mass_max",
-            "xlim":   (mu_lo, mu_hi),
-            "color":  "violet",
-        }
-        vars_to_plot = vars_to_plot + [mu_spec]
+    index_mu = int(idx_arr[0])
+    s_vals_full     = samples[:, index_s].astype(float)                   # FULL
+    ml_vals_full    = samples[:, index_ml].astype(float)                  # FULL
+    mu_vals_full    = samples[:, index_mu].astype(float)                  # FULL
+
+    eros_spec = {
+        "values": eros_vals_full,
+        "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
+        "name":   "erosion_coeff",
+        "xlim":   (float(np.nanmin(eros_vals_full[rho_cut])), float(np.nanmax(eros_vals_full[rho_cut]))),
+        "color":  "blue",
+        "base_mask": rho_cut,
+    }
+
+    sigma_spec = {
+        "values": sigma_vals_full,
+        "label":  r"$\sigma$ [kg/MJ]",
+        "name":   "sigma",
+        "xlim":   (float(np.nanmin(sigma_vals_full[rho_cut])), float(np.nanmax(sigma_vals_full[rho_cut]))),
+        "color":  "green",
+        "base_mask": rho_cut,
+    }
+
+    s_spec = {
+        "values": s_vals_full,
+        "label":  r"$s$",
+        "name":   "erosion_mass_index",
+        "xlim":   (float(np.nanmin(s_vals_full[rho_cut])), float(np.nanmax(s_vals_full[rho_cut]))),
+        "color":  "red",
+        "base_mask": rho_cut,
+    }
+
+    ml_spec = {
+        "values": ml_vals_full,
+        "label":  r"$\log_{10}$ $m_l$ [kg]",
+        "name":   "erosion_mass_min",
+        "xlim":   (float(np.nanmin(ml_vals_full[rho_cut])), float(np.nanmax(ml_vals_full[rho_cut]))),
+        "color":  "purple",
+        "base_mask": rho_cut,
+    }
+
+    mu_spec = {
+        "values": mu_vals_full,
+        "label":  r"$\log_{10}$ $m_u$ [kg]",
+        "name":   "erosion_mass_max",
+        "xlim":   (float(np.nanmin(mu_vals_full[rho_cut])), float(np.nanmax(mu_vals_full[rho_cut]))),
+        "color":  "violet",
+        "base_mask": rho_cut,
+    }
+
+    vars_to_plot = vars_to_plot + [eros_spec] + [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
+
+    # rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
+
+    # eros_vals = np.asarray(np.log10(eta_corrected)*1e6, float)  # full length
+    # eros_spec = {
+    #     "values": eros_vals,
+    #     "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
+    #     "name":   "erosion_coeff",
+    #     "xlim":   (np.nanmin(eros_vals[rho_cut]), np.nanmax(eros_vals[rho_cut])),
+    #     "color":  "blue",
+    #     "base_mask": rho_cut,   # <-- key
+    # }
+
+    # vars_to_plot = vars_to_plot + [rho_spec]
+    # # --- Column 2: erosion_coeff (if present) ---
+
+    # rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
+
+    # eros_vals = np.asarray(np.log10(eta_corrected)*1e6, float)  # full length
+    # eros_spec = {
+    #     "values": eros_vals,
+    #     "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
+    #     "name":   "erosion_coeff",
+    #     "xlim":   (np.nanmin(eros_vals[rho_cut]), np.nanmax(eros_vals[rho_cut])),
+    #     "color":  "blue",
+    #     "base_mask": rho_cut,   # <-- key
+    # }
+
+    # # idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
+    # # if idx_arr.size:
+    # #     index_eros = int(idx_arr[0])
+    # #     # eros_vals  = samples[:, index_eros].astype(float)
+    # #     # eros_vals  = np.asarray(eta_corrected, float)
+    # #     # eros_vals  = np.asarray(np.log10(eta_corrected*1e6), float)
+    # #     eros_vals  = np.asarray(np.log10(eta_corrected[rho_vals<4000])*1e6, float)
+    # #     # eros_vals  = np.log10(samples[:, index_eros].astype(float))
+    # #     eros_lo, eros_hi = float(np.nanmin(eros_vals)), float(np.nanmax(eros_vals))
+    # #     eros_spec = {
+    # #         "values": eros_vals,
+    # #         "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
+    # #         "name":   "erosion_coeff",
+    # #         "xlim":   (eros_lo, eros_hi),
+    # #         "color":  "blue",
+    # #     }
+    # vars_to_plot = vars_to_plot + [eros_spec]
+        
+    # idx_arr = np.where(np.asarray(variables) == "sigma")[0]
+    # if idx_arr.size:
+    #     index_sigma = int(idx_arr[0])
+    #     # sigma_vals  = samples[:, index_sigma].astype(float)
+    #     # sigma_vals  = np.asarray(sigma_corrected*1e6, float)
+    #     sigma_vals  = np.asarray(sigma_corrected[rho_vals<4000]*1e6, float)
+    #     sigma_lo, sigma_hi = float(np.nanmin(sigma_vals)), float(np.nanmax(sigma_vals))
+    #     sigma_spec = {
+    #         "values": sigma_vals,
+    #         "label":  r"$\sigma$ [kg/MJ]",
+    #         "name":   "sigma",
+    #         "xlim":   (sigma_lo, sigma_hi),
+    #         "color":  "green",
+    #     }
+    #     vars_to_plot = vars_to_plot + [sigma_spec]
+
+
+    # # add the mass index
+    # idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
+    # if idx_arr.size:
+    #     index_s = int(idx_arr[0])
+    #     # s_vals  = samples[:, index_s].astype(float)
+    #     s_vals  = samples[rho_vals<4000, index_s].astype(float)
+    #     s_lo, s_hi = float(np.nanmin(s_vals)), float(np.nanmax(s_vals))
+    #     s_spec = {
+    #         "values": s_vals,
+    #         "label":  r"$s$",
+    #         "name":   "erosion_mass_index",
+    #         "xlim":   (s_lo, s_hi),
+    #         "color":  "red",
+    #     }
+    #     vars_to_plot = vars_to_plot + [s_spec]
+
+
+    # # add the mass index
+    # idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
+    # if idx_arr.size:
+    #     index_ml = int(idx_arr[0])
+    #     # ml_vals  = samples[:, index_ml].astype(float)
+    #     ml_vals  = samples[rho_vals<4000, index_ml].astype(float)
+    #     ml_lo, ml_hi = float(np.nanmin(ml_vals)), float(np.nanmax(ml_vals))
+    #     ml_spec = {
+    #         "values": ml_vals,
+    #         "label":   r"$\log_{10}$ $m_{l}$ [kg]",
+    #         "name":   "erosion_mass_min",
+    #         "xlim":   (ml_lo, ml_hi),
+    #         "color":  "purple",
+    #     }
+    #     vars_to_plot = vars_to_plot + [ml_spec]
+
+    # # add the mass index
+    # idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
+    # if idx_arr.size:
+    #     index_mu = int(idx_arr[0])
+    #     # mu_vals  = samples[:, index_mu].astype(float)
+    #     mu_vals  = samples[rho_vals<4000, index_mu].astype(float)
+    #     mu_lo, mu_hi = float(np.nanmin(mu_vals)), float(np.nanmax(mu_vals))
+    #     mu_spec = {
+    #         "values": mu_vals,
+    #         "label":  r"$\log_{10}$ $m_{u}$ [kg]",
+    #         "name":   "erosion_mass_max",
+    #         "xlim":   (mu_lo, mu_hi),
+    #         "color":  "violet",
+    #     }
+    #     vars_to_plot = vars_to_plot + [mu_spec]
+
+    # sigma_vals = np.asarray(sigma_corrected*1e6, float)
+    # sigma_spec["base_mask"] = rho_cut
+
+    # s_vals = samples[:, index_s].astype(float)          # full length
+    # s_spec["base_mask"] = rho_cut
+
+    # ml_vals = samples[:, index_ml].astype(float)        # full length
+    # ml_spec["base_mask"] = rho_cut
+
+    # mu_vals = samples[:, index_mu].astype(float)        # full length
+    # mu_spec["base_mask"] = rho_cut
 
     # --- Call the plotter ---
     out_path = os.path.join(output_dir_rho, f"{shower_name}_by_Tj_grid.png")
@@ -4494,7 +4820,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # ---------- Figure with three stacked panels ----------
     fig, axes = plt.subplots(8, 1, figsize=(8, 22), sharex=True)
 
-    _panel_like_top(axes[0], rho_samp[ast_m5over], w_all[ast_m5over], "Tot N." + str(num_tj_above_5) + " AST (Tj>=5)", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[0], rho_samp[ast_m5over], w_all[ast_m5over], "Tot N." + str(num_tj_above_5) + " AST (Tj>5)", lo_all, hi_all, nbins, xlim)
     _panel_like_top(axes[1], rho_samp[ast_m45], w_all[ast_m45], "Tot N." + str(num_tj_between_4_and_5) + " AST (4<Tj<5)", lo_all, hi_all, nbins, xlim)
     _panel_like_top(axes[2], rho_samp[ast_m32], w_all[ast_m32], "Tot N." + str(num_tj_between_3_to_4) + " AST (3.05<Tj<4)", lo_all, hi_all, nbins, xlim)
     _panel_like_top(axes[3], rho_samp[ast_jfc_mix], w_all[ast_jfc_mix], "Tot N." + str(num_tj_between_mix) + " mix (2.8<Tj<3.05)", lo_all, hi_all, nbins, xlim)
@@ -4517,7 +4843,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # Build group masks (any number of groups works)
     groups = {
-        "AST (Tj>=5)": ast_m5over,
+        "AST (Tj>5)": ast_m5over,
         "AST (4<Tj<5)": ast_m45,
         "AST (3.05<Tj<4)": ast_m32,
         "mix (2.8<Tj<3.05)": ast_jfc_mix,
@@ -4541,7 +4867,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # print(tex)  # also written to file if save_path was given
 
     cuts = [
-        (ast_m5over, f"Tot N.{num_tj_above_5} AST (Tj>=5)"),
+        (ast_m5over, f"Tot N.{num_tj_above_5} AST (Tj>5)"),
         (ast_m45, f"Tot N.{num_tj_between_4_and_5} AST (4<Tj<5)"),
         (ast_m32, f"Tot N.{num_tj_between_3_to_4} AST (3.05<Tj<4)"),
         (ast_jfc_mix, f"Tot N.{num_tj_between_mix} mix (2.8<Tj<3.05)"),
@@ -4616,8 +4942,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # plot scatter
     fig, ax = plt.subplots(figsize=(6, 8), constrained_layout=True)  # larger width, auto spacing
 
-    sc = ax.scatter(rho, log10_m_init, c=np.log10(meteoroid_diameter_mm), cmap='viridis', s=30, norm=Normalize(vmin=np.log10(meteoroid_diameter_mm.min()), vmax=np.log10(meteoroid_diameter_mm.max())), zorder=2)
-
+    # sc = ax.scatter(rho, log10_m_init, c=np.log10(meteoroid_diameter_mm), cmap='viridis', s=30, norm=Normalize(vmin=np.log10(meteoroid_diameter_mm.min()), vmax=np.log10(meteoroid_diameter_mm.max())), zorder=2)
+    sc = ax.scatter(rho, log10_m_init, c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
     plt.errorbar(rho, log10_m_init, 
             xerr=[abs(rho_lo), abs(rho_hi)],
             # yerr=[abs(meteoroid_diameter_mm_lo)/1.96, abs(meteoroid_diameter_mm_hi)/1.96],
@@ -4625,12 +4951,13 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             fmt='none', ecolor='black', capsize=3, zorder=1)
     
     cbar = fig.colorbar(sc, ax=ax, orientation='vertical', pad=0.08)
-    cbar.set_label("$log_{10}$ Diameter [mm]", fontsize=20)
+    # cbar.set_label("$log_{10}$ Diameter [mm]", fontsize=20)
+    cbar.set_label("$v_{0}$ [km/s]", fontsize=20)
     cbar.ax.tick_params(labelsize=12)
         
     # Guide lines
     for yline in (np.log10(10**(-4)), np.log10(5*10**(-5)), np.log10(10**(-5))):
-        plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='slategray')
+        plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='lime')
 
     # add the label
     plt.xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
@@ -4642,7 +4969,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.grid(True, alpha=0.2)
 
     # save the rho vs diameter plot
-    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_scatter.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_v_scatter.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
     # ### rho distribution plot ###
@@ -4667,7 +4994,6 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         label="tab:rho_mass_weighted_tests",
         save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_mass.tex"),
     )
-
 
     # mass cuts
     cuts = [
@@ -4750,13 +5076,16 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 fmt='none', ecolor='black', capsize=3, zorder=1)
 
     sc = plt.scatter(rho, meteoroid_diameter_mm,
-                    c=log10_m_init, cmap='viridis',
-                    norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
-                    s=30, zorder=2)
+                     c=v_init_meteor_median, cmap='viridis',
+                     norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()),
+                     s=30, zorder=2)
+                    # c=log10_m_init, cmap='viridis',
+                    # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
+                    # s=30, zorder=2)
 
     # Guide lines
     for yline in (2.5, 5.0, 7.5):
-        plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='slategray')
+        plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='lime')
 
     plt.xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
     # set x axis lim from (-100, 8300)
@@ -4768,11 +5097,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # Colorbar on the right of scatter only
     cbar = fig.colorbar(sc, ax=ax, orientation='vertical', pad=0.08)
-    cbar.set_label(r'$\log_{10}(m_{0}$ [kg]$)$', fontsize=20)
+    # cbar.set_label(r'$\log_{10}(m_{0}$ [kg]$)$', fontsize=20)
+    cbar.set_label(r'$v_{0}$ [km/s]', fontsize=20)
     cbar.ax.tick_params(labelsize=12)
 
     # save the rho vs diameter plot
-    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_scatter.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_v_scatter.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
     # ### rho distribution plot ###
@@ -4824,7 +5154,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         print("Apex vs Antihelion plots for rho...")
         apex_mask = np.asarray(apex_mask, bool)
         # what is True is False for anti_mask
-        anti_mask = ~apex_mask
+        # anti_mask = ~apex_mask
+        anti_mask = np.asarray(antihel_mask, bool)
 
         apex_num = np.count_nonzero(apex_mask)
         anti_num = np.count_nonzero(anti_mask)
@@ -5590,7 +5921,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\GEM_2frag_P&C_P_0m1500",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -5632,4 +5963,4 @@ if __name__ == "__main__":
      mm_size_corrected, mass_distr, kinetic_energy_all)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
     
     shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all,
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=True) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot

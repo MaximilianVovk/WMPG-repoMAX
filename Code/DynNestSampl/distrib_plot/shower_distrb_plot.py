@@ -1112,8 +1112,8 @@ def weighted_var_eros_height_change(var_start, var_heightchange, mass_before, m_
 
     # weighted quantiles
     rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
-    rho_lo = (rho - rho_lo) #/1.96
-    rho_hi = (rho_hi - rho) #/1.96
+    # rho_lo = (rho - rho_lo) #/1.96
+    # rho_hi = (rho_hi - rho) #/1.96
     return x_valid, rho, rho_lo, rho_hi
 
 
@@ -1382,16 +1382,19 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 else:
 
                     x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
-
+                rho_lo = (rho - rho_lo) #/1.96
+                rho_hi = (rho_hi - rho) #/1.96
                 rho_corrected.append(x_valid_rho)
 
                 x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
-
+                eta_lo = (eta - eta_lo) #/1.96
+                eta_hi = (eta_hi - eta) #/1.96
                 eta_corrected.append(x_valid_eta)
 
                 # erosion_sigma_change
                 x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
-
+                sigma_lo = (sigma - sigma_lo) #/1.96
+                sigma_hi = (sigma_hi - sigma) #/1.96
                 sigma_corrected.append(x_valid_sigma)
 
                 # x = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
@@ -1412,6 +1415,8 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             else:
                 rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
                 rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
+                # rho_lo = summary_df_meteor['Low95'].values[variables.index('rho')]
+                # rho_hi = summary_df_meteor['High95'].values[variables.index('rho')]
                 rho = summary_df_meteor['Median'].values[variables.index('rho')]
 
                 x = samples[:, variables_sing.index('rho')].astype(float)
@@ -1723,7 +1728,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     bg_hi = np.array([v[6] for v in file_radiance_rho_dict.values()])
 
     rho_lo = np.array([v[1] for v in file_rho_jd_dict.values()])
+    # rho_lo = rho - rho_lo
     rho_hi = np.array([v[2] for v in file_rho_jd_dict.values()])
+    # rho_hi = rho_hi - rho
     tj = np.array([v[3] for v in file_rho_jd_dict.values()])
     tj_lo = np.array([v[4] for v in file_rho_jd_dict.values()])
     tj_hi = np.array([v[5] for v in file_rho_jd_dict.values()])
@@ -2309,14 +2316,14 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     ### Velocity vs Begin Height scatter plot with stream...
                     print(cam_name,': Creating Velocity vs Begin Height scatter plot with stream...')
                     plt.figure(figsize=(10, 6))
-                    scatter_EMCCD_spor = plt.scatter(df_cam_spor['v_g'].values, df_cam_spor['H_beg'].values, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
-                    scatter_EMCCD_stream = plt.scatter(df_cam_show['v_g'].values, df_cam_show['H_beg'].values, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
+                    scatter_EMCCD_spor = plt.scatter(df_cam_spor['vel'].values, df_cam_spor['H_beg'].values, c='black', s=1, alpha=0.5, linewidths=0, zorder=1) # c=stream_tj, cmap='inferno'
+                    scatter_EMCCD_stream = plt.scatter(df_cam_show['vel'].values, df_cam_show['H_beg'].values, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
                     # scatter_GMN_stream = plt.scatter(stream_vgeo, stream_htbeg, c='red', s=5, alpha=0.5, linewidths=0, zorder=2) # c=stream_tj, cmap='inferno'
                     # plt.colorbar(scatter_GMN, label='$T_{j}$', orientation='vertical')
                     ## mass or mm diameter
                     # scatter_d = plt.scatter(Vg_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
                     # plt.colorbar(scatter_d, label='mass [kg]')
-                    scatter = plt.scatter(Vg_val, beg_height, c=rho, cmap='plasma', s=20, norm=Normalize(vmin=(rho.min()), vmax=(rho.max())), zorder=3)
+                    scatter = plt.scatter(v_init_meteor_median, beg_height, c=rho, cmap='YlGn_r', s=20, norm=Normalize(vmin=(rho.min()), vmax=(rho.max())), zorder=3)
                     plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
 
                     plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
@@ -2421,7 +2428,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 scatter = plt.scatter(
                     lg_min_la_sun, bg,
                     c=rho,
-                    cmap='plasma',
+                    cmap='YlGn_r',
                     norm=norm,
                     s=30,
                     zorder=2
@@ -3773,6 +3780,53 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax_dist.spines['right'].set_visible(False)
     ax_dist.spines['top'].set_visible(False)
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"), bbox_inches='tight')
+    plt.close()
+    print("Rho distribution plot saved:",os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"))
+
+    # Create figure for mass ############
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
+    idx_arr = np.where(np.asarray(variables) == "m_init")[0]
+    index_m_init = int(idx_arr[0])
+    m_init_vals  = 10**samples[:, index_m_init].astype(float)
+    # print("m_init_vals:", m_init_vals)
+    m_init_lo, m_init_hi = float(np.nanmin(m_init_vals)), float(np.nanmax(m_init_vals))
+    # 95% confidence interval for m_init
+    m_init_lo, m_init_median, m_init_hi = _quantile(m_init_vals, [0.025, 0.5, 0.975], weights=w)
+
+    smooth = 0.02
+    lo_log, hi_log = np.log10(np.min(m_init_vals)), np.log10(np.max(m_init_vals))
+    lo, hi = np.min(m_init_vals), np.max(m_init_vals)
+    nbins = int(round(10. / smooth))
+    # do the log of the m_init_vals for the histogram
+    hist, edges = np.histogram(np.log10(m_init_vals), bins=nbins, weights=w, range=(lo_log, hi_log))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+    ax_dist.fill_between(bin_centers, hist, color='gold', alpha=0.6)
+
+    # Percentile lines
+    ax_dist.axvline(np.log10(m_init_median), color='gold', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(np.log10(m_init_lo), color='gold', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(np.log10(m_init_hi), color='gold', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = m_init_hi - m_init_median
+    minus = m_init_median - m_init_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $m_0$ [kg] = {fmt(m_init_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    # ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.set_xlabel(r'$m_0$ [kg]', fontsize=20)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all.png"), bbox_inches='tight')
+    plt.close()
+    print("Mass distribution plot saved:", os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all.png"))
 
     # Create figure for rho ############
     fig = plt.figure(figsize=(8, 6))
@@ -4557,7 +4611,21 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         (htc_m, f"Tot N.{num_tj_below_2} HTC"),
     ]
 
-    # --- Column 0: m_init ---
+    # --- Column 1: v_init ---
+    idx_arr = np.where(np.asarray(variables) == "v_init")[0]
+    index_v_init = int(idx_arr[0])
+    v_init_vals  = samples[:, index_v_init].astype(float)
+    v_init_lo, v_init_hi = float(np.nanmin(v_init_vals)), float(np.nanmax(v_init_vals))
+    v_init_spec = {
+        "values": v_init_vals,
+        "label":  r"$v_0$ [km/s]",
+        "name":   "v_init",
+        "xlim":   (v_init_lo, v_init_hi),
+        "color":  "orange",
+    }
+    vars_to_plot = [v_init_spec]
+
+    # --- Column 1: m_init ---
     idx_arr = np.where(np.asarray(variables) == "m_init")[0]
     index_m_init = int(idx_arr[0])
     m_init_vals  = samples[:, index_m_init].astype(float)
@@ -4569,9 +4637,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         "xlim":   (m_init_lo, m_init_hi),
         "color":  "gold",
     }
-    vars_to_plot = [m_init_spec]
+    vars_to_plot = vars_to_plot + [m_init_spec]
 
-    # --- Column 1: rho ---
+    # --- Column 2: rho ---
     rho_vals = np.asarray(rho_samp, float)
     rho_lo_all, rho_hi_all = float(np.nanmin(rho_vals)), float(np.nanmax(rho_vals))
     rho_spec = {
@@ -5921,7 +5989,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\GEM_2frag_P&C_P_0m1500",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

@@ -1960,16 +1960,24 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     ############ PLOTTING Earth peak values ##############
 
     fig, ax = plt.subplots(figsize=(8, 6))
+    max_mag_values = []
+    max_lum_height_values = []
+    Vinf_values = []
     for name in all_names:
         rho, rho_lo, rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Vg_val, Q_val, q_val, a_val, e_val, V_val_earth, V_val_mars, Vg_val_mars, Vinf_val_mars, Vg_val_mars_min_max, Vinf_val_mars_min_max, Vg_val_denis, Vinf_val_denis = file_rho_jd_dict[name]
         kc_par, F_par, lenght_par, beg_height, end_height, max_lum_height, avg_vel, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, tau_median, tau_low95, tau_high95= file_obs_data_dict[name] 
-        ax.scatter(max_mag,max_lum_height,color='blue', label='Earth', s=60)
+        max_mag_values.append(max_mag)
+        max_lum_height_values.append(max_lum_height)
+        Vinf_values.append(Vinf_val)
+    ax.scatter(max_mag_values,max_lum_height_values,c=Vinf_values, cmap='viridis', norm=plt.Normalize(np.min(Vinf_values), np.max(Vinf_values))) # , label=name
+    cbar = plt.colorbar(ax.collections[0], ax=ax)
+    cbar.set_label('$V_{0}$ [km/s]', fontsize=12)
     ax.set_xlabel('Peak Abs.Mag [-]', fontsize=12)
     # invert the x axis
     ax.invert_xaxis()
     ax.set_ylabel('Height of Peak Brightness [km]', fontsize=12)
     median_peak_brigh = np.median([file_obs_data_dict[name][9] for name in all_names])
-    ax.set_title(f'Median Peak Brightness = {median_peak_brigh:.2f}', fontsize=14)
+    ax.set_title(f'Peak Brightness = {median_peak_brigh:.2f}', fontsize=14)
     ax.grid()
     plt.tight_layout()
     plt.savefig(output_dir_show + os.sep + "Earth_Peak_Brightness_vs_Height.png")

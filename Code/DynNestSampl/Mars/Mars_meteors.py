@@ -1977,7 +1977,13 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     ax.invert_xaxis()
     ax.set_ylabel('Height of Peak Brightness [km]', fontsize=12)
     median_peak_brigh = np.median([file_obs_data_dict[name][9] for name in all_names])
-    ax.set_title(f'Peak Brightness = {median_peak_brigh:.2f}', fontsize=14)
+    # 95 credible interval for the peak brightness
+    ci_95 = np.percentile([file_obs_data_dict[name][9] for name in all_names], [2.5, 97.5])
+    ax.set_title(f'Peak Brightness = {median_peak_brigh:.2f} ({ci_95[0]:.2f}-{ci_95[1]:.2f})', fontsize=14)
+    # put 3 dashed lines at the median and the 95 credible interval
+    ax.axvline(median_peak_brigh, color='black', linestyle='--', label='Median Peak Brightness')
+    ax.axvline(ci_95[0], color='black', linestyle='--', label='95% CI Lower')
+    ax.axvline(ci_95[1], color='black', linestyle='--', label='95% CI Upper')
     ax.grid()
     plt.tight_layout()
     plt.savefig(output_dir_show + os.sep + "Earth_Peak_Brightness_vs_Height.png")

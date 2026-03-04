@@ -4343,38 +4343,172 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             plt.savefig(out_path, bbox_inches='tight' if tight else None, dpi=dpi)
             plt.close(fig)
 
-        # =========================
-        # LaTeX summary table (ROBUST)
-        # Uses the same masking logic as plotting (supports parent_mask + base_mask)
-        # Handles empty / single-point cuts safely
-        # =========================
+        build_summary_table_latex(
+            cuts_list, vars_list, weights_all,
+            variable_map_plot={v.get("name", f"var{j}"): v.get("label", f"var{j}") for j, v in enumerate(vars_list)},
+            out_path=out_path.replace(".png", "_summary_table.tex") if out_path else None,
+            transpose=True,
+            first_col_name="Parameter",
+            counts_row_label="N"
+        )
 
+        # ---- column headers ----
+        # col_headers = ["Cut"] + [
+            # variable_map_plot.get(
+            #     vinfo.get("name", f"var{j}"),
+            #     vinfo.get("label", vinfo.get("name", f"var{j}"))
+            # )
+            # for j, vinfo in enumerate(vars_list)
+        # ]
+        
+        return fig, axes
+
+    # =========================
+    def split_cut_title(cut_title: str):
+        """
+        Examples:
+        'Tot N.11 AST (Tj>5)'      -> ('AST (Tj>5)', '11')
+        'Tot N.13 AST (4<Tj<5)'    -> ('AST (4<Tj<5)', '13')
+        """
+        s = str(cut_title).strip()
+        m = re.search(r"Tot\s*N\.(\d+)\s*(.*)$", s)
+        if not m:
+            return (s, "")
+        N = m.group(1)
+        label = m.group(2).strip()
+        return (label, N)
+
+
+    def weighted_quantile(x, q, weights=None):
+        """
+        Weighted quantiles for 1D arrays.
+        q in [0,1] list/array.
+        """
+        x = np.asarray(x, float)
+        q = np.asarray(q, float)
+
+        if weights is None:
+            return np.quantile(x, q)
+
+        w = np.asarray(weights, float)
+        m = np.isfinite(x) & np.isfinite(w)
+        x = x[m]
+        w = w[m]
+        if x.size == 0:
+            return np.array([np.nan] * q.size)
+
+        s = np.sum(w)
+        if not np.isfinite(s) or s <= 0:
+            return np.array([np.nan] * q.size)
+
+        # sort by x
+        idx = np.argsort(x)
+        x = x[idx]
+        w = w[idx]
+
+        cdf = np.cumsum(w) / s
+        # interpolate quantiles on CDF
+        return np.interp(q, cdf, x, left=x[0], right=x[-1])
+
+
+    def fmt_pm(q_lo, q_med, q_hi):
+        plus  = q_hi - q_med
+        minus = q_med - q_lo
+        f = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+        return f"{f(q_med)}$^{{+{f(plus)}}}_{{-{f(minus)}}}$"
+
+
+    # -------------------------
+    # Main table builder
+    # -------------------------
+    def build_summary_table_latex(
+        cuts_list,
+        vars_list,
+        weights_all,
+        variable_map_plot=None,
+        out_path=None,
+        transpose=True,
+        first_col_name="Parameter",
+        counts_row_label="N",
+    ):
+        """
+        cuts_list: [(cut_mask(bool array len Nfull), cut_title(str)), ...]
+        vars_list: list of dicts with keys:
+            - "values": array (len Nfull or reduced length)
+            - optional "base_mask": bool array len Nfull
+            - optional "parent_mask": bool array len Nfull (maps full->reduced)
+            - optional "name", "label"
+        weights_all: array len Nfull (or scalar/None). If scalar/ndim==0 treated as no weights.
+        variable_map_plot: dict mapping var "name" -> pretty label (optional)
+        transpose: if True => rows=variables, columns=cuts (with a second header row for N)
+        """
+        if variable_map_plot is None:
+            variable_map_plot = {}
+
+        if not cuts_list:
+            raise ValueError("cuts_list is empty.")
+        if not vars_list:
+            raise ValueError("vars_list is empty.")
+
+        Nfull = cuts_list[0][0].shape[0]
+
+        # Precompute cut labels and counts (for headers)
+        cut_labels = []
+        cut_counts = []
+        for _, cut_title in cuts_list:
+            lab, N = split_cut_title(cut_title)
+            cut_labels.append(lab)
+            cut_counts.append(N)
+
+        # Variable headers (pretty names)
+        var_headers = [
+            variable_map_plot.get(
+                vinfo.get("name", f"var{j}"),
+                vinfo.get("label", vinfo.get("name", f"var{j}"))
+            )
+            for j, vinfo in enumerate(vars_list)
+        ]
+
+        # delete $log_{10}$ from var_headers if present, we will add it back in the table stats if needed
+        var_headers = [str(h).replace("$\\log_{10}$", "") for h in var_headers]
+
+        # ----------------------------------------------------------
+        # Build table_data in the ORIGINAL orientation:
+        # rows = cuts, cols = [cut_title] + variables
+        # ----------------------------------------------------------
         table_data = []
-        Nfull = cuts_list[0][0].shape[0]  # full-space length
 
-        for i, (cut_mask, cut_title) in enumerate(cuts_list):
+        for (cut_mask, cut_title) in cuts_list:
             row = [cut_title]
 
-            for j, vinfo in enumerate(vars_list):
+            for vinfo in vars_list:
                 vals = np.asarray(vinfo["values"], float)
 
                 # ---- full-space selection mask ----
                 base = vinfo.get("base_mask", None)
                 if base is None:
-                    m_full = cut_mask
+                    m_full = np.asarray(cut_mask, bool)
                 else:
-                    m_full = cut_mask & np.asarray(base, bool)
+                    m_full = np.asarray(cut_mask, bool) & np.asarray(base, bool)
 
                 # ---- map to reduced space if needed ----
                 pm = vinfo.get("parent_mask", None)
                 if vals.shape[0] == Nfull:
                     vals_cut = vals[m_full]
-                    w_cut = weights_all[m_full] if np.ndim(weights_all) else None
+                    w_cut = weights_all[m_full] if (weights_all is not None and np.ndim(weights_all) > 0) else None
                 else:
+                    if pm is None:
+                        raise ValueError(
+                            f"Variable appears reduced (len={vals.shape[0]} != Nfull={Nfull}) "
+                            "but vinfo has no parent_mask."
+                        )
                     pm = np.asarray(pm, bool)
-                    m_red = m_full[pm]                 # mask in reduced universe
+                    m_red = m_full[pm]  # mask in reduced universe
                     vals_cut = vals[m_red]
-                    w_cut = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
+                    if (weights_all is not None) and (np.ndim(weights_all) > 0):
+                        w_cut = weights_all[pm][m_red]
+                    else:
+                        w_cut = None
 
                 # ---- force arrays + finite filtering ----
                 vals_cut = np.atleast_1d(np.asarray(vals_cut, float))
@@ -4388,7 +4522,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         row.append("---")
                         continue
                     s = np.nansum(w_cut)
-                    w_cut = (w_cut / s) if s > 0 else None
+                    w_cut = (w_cut / s) if (np.isfinite(s) and s > 0) else None
                 else:
                     fin = np.isfinite(vals_cut)
                     vals_cut = vals_cut[fin]
@@ -4400,53 +4534,72 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 label_here = vinfo.get("label", vinfo.get("name", ""))
 
                 if "log_{10}" in str(label_here):
-                    # table stats in linear space (consistent with your plotting titles)
+                    # table stats in linear space
                     r_lin = 10.0 ** vals_cut
-                    if w_cut is not None:
-                        q_lo, q_med, q_hi = _quantile(r_lin, [0.025, 0.5, 0.975], weights=w_cut)
-                    else:
-                        qs = np.nanpercentile(r_lin, [2.5, 50, 97.5])
-                        q_lo, q_med, q_hi = float(qs[0]), float(qs[1]), float(qs[2])
+                    q_lo, q_med, q_hi = weighted_quantile(r_lin, [0.025, 0.5, 0.975], weights=w_cut)
                 else:
-                    if w_cut is not None:
-                        q_lo, q_med, q_hi = _quantile(vals_cut, [0.025, 0.5, 0.975], weights=w_cut)
-                    else:
-                        qs = np.nanpercentile(vals_cut, [2.5, 50, 97.5])
-                        q_lo, q_med, q_hi = float(qs[0]), float(qs[1]), float(qs[2])
+                    q_lo, q_med, q_hi = weighted_quantile(vals_cut, [0.025, 0.5, 0.975], weights=w_cut)
 
-                plus  = q_hi - q_med
-                minus = q_med - q_lo
-                fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-                cell_text = f"{fmt(q_med)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
-                row.append(cell_text)
+                row.append(fmt_pm(q_lo, q_med, q_hi))
 
             table_data.append(row)
 
-        # ---- column headers ----
-        col_headers = ["Cut"] + [
-            variable_map_plot.get(
-                vinfo.get("name", f"var{j}"),
-                vinfo.get("label", vinfo.get("name", f"var{j}"))
-            )
-            for j, vinfo in enumerate(vars_list)
-        ]
+        # ----------------------------------------------------------
+        # Convert to transposed orientation if requested
+        # ----------------------------------------------------------
+        if transpose:
+            # table_data rows: [cut_title, var1, var2, ...]
+            # want rows: [var_header, cut1, cut2, ...]
+            table_data_T = []
+            for j, vname in enumerate(var_headers):
+                table_data_T.append([vname] + [table_data[i][j + 1] for i in range(len(table_data))])
 
-        # ---- build LaTeX table ----
-        latex_table = "\\begin{tabular}{l" + "c" * len(vars_list) + "}\n"
-        latex_table += " & ".join(col_headers) + " \\\\\n"
-        latex_table += "\\hline\n"
-        for row in table_data:
-            latex_table += " & ".join(row) + " \\\\\n"
-        latex_table += "\\end{tabular}"
+            # build LaTeX with 2 header rows:
+            #   1) labels
+            #   2) counts
+            col_headers = [first_col_name] + cut_labels
 
-        # ---- save ----
+            latex = ""
+            latex += "\\begin{tabular}{l" + "c" * len(cuts_list) + "}\n"
+            latex += " & ".join(col_headers) + " \\\\\n"
+            latex += f"{counts_row_label} & " + " & ".join(cut_counts) + " \\\\\n"
+            latex += "\\hline\n"
+            for row in table_data_T:
+                latex += " & ".join(row) + " \\\\\n"
+            latex += "\\end{tabular}\n"
+
+        else:
+            # non-transposed: add two leading columns (label, N) instead of raw cut_title
+            table_data_nt = []
+            for row in table_data:
+                lab, N = split_cut_title(row[0])
+                table_data_nt.append([lab, N] + row[1:])
+
+            col_headers = ["Cut", "N"] + var_headers
+
+            latex = ""
+            latex += "\\begin{tabular}{l c" + "c" * len(vars_list) + "}\n"
+            latex += " & ".join(col_headers) + " \\\\\n"
+            latex += "\\hline\n"
+            for row in table_data_nt:
+                latex += " & ".join(row) + " \\\\\n"
+            latex += "\\end{tabular}\n"
+
+        # ---- save (optional) ----
         if out_path:
-            table_out_path = out_path.replace(".png", "_summary_table.tex")
+            # check if has .png extension, if so replace with .tex for the table output
+            if out_path.endswith(".png"):
+                table_out_path = out_path.replace(".png", "_summary_table.tex")
+            elif out_path.endswith(".tex"):
+                table_out_path = out_path
+            else:                
+                table_out_path = out_path + "_summary_table.tex"
+            # # you had .png -> _summary_table.tex, keep that behavior if you like:
+            # table_out_path = out_path.replace(".png", "_summary_table.tex")
             with open(table_out_path, "w") as f:
-                f.write(latex_table)
+                f.write(latex)
+        print("Summary table LaTeX:\n", latex)
 
-        print("Generated LaTeX table:\n", latex_table)
-        return fig, axes
 
     event_names_like = all_names
 
@@ -5989,7 +6142,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\GEM_2frag_3lumeff",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

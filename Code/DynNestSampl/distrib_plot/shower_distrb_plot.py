@@ -40,6 +40,7 @@ from wmpl.Formats.WmplTrajectorySummary import loadTrajectorySummaryFast
 from multiprocessing import Pool
 from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
 from types import SimpleNamespace
+import matplotlib.gridspec as gridspec
 
 # try to resolve dynesty's internal _hist2d no matter how it's imported
 try:
@@ -2716,7 +2717,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     #     )
 
                     # --- Add colorbar for scatter points only ---
-                    cbar = plt.colorbar(scatter, orientation='horizontal', pad=0.08)
+                    cbar = plt.colorbar(scatter) # , orientation='horizontal', pad=0.08
                     cbar.set_label('$\\rho$ [kg/m$^3$]', fontsize=13)
                     cbar.ax.tick_params(labelsize=11)
 
@@ -3820,7 +3821,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # ax_dist.tick_params(axis='x', labelbottom=False)
     ax_dist.tick_params(axis='y', left=False, labelleft=False)
     ax_dist.set_ylabel("")
-    ax_dist.set_xlabel(r'$m_0$ [kg]', fontsize=20)
+    ax_dist.set_xlabel(r'log$_{10}$($m_0$ [kg])', fontsize=20)
     ax_dist.spines['left'].set_visible(False)
     ax_dist.spines['right'].set_visible(False)
     ax_dist.spines['top'].set_visible(False)
@@ -4133,9 +4134,315 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     def plot_by_cuts_and_vars(
         vars_list, cuts_list, weights_all,
-        nbins=200, smooth=0.02, figsize=None,
+        nbins=None, smooth=0.02, figsize=None,
+        bottom_xlabel_per_col=None, tight=True, dpi=300,
+        out_path=None,
+        # NEW:
+        wrap_cols=4,          # how many variables (columns) per band
+        band_gap=0.65,        # vertical gap between bands (in "row units")
+        wspace=0.08,          # horizontal spacing
+        hspace=0.15           # vertical spacing within a band
+    ):
+        """
+        Plot a grid of (cuts x variables) hist panels, but wrap variables into multiple
+        vertical bands to avoid a very wide figure. Example:
+        nvars=8, wrap_cols=4 -> 2 bands stacked vertically, each band is ncuts x 4.
+        """
+
+        if nbins is None:
+            nbins = int(round(10. / smooth))
+
+        def _style(ax, xlim, hide_xticks=True):
+            if np.all(np.isfinite(xlim)):
+                ax.set_xlim(*xlim)
+            ax.tick_params(axis='y', left=False, labelleft=False)
+            ax.set_ylabel("")
+            for sp in ['left', 'right', 'top']:
+                ax.spines[sp].set_visible(False)
+            if hide_xticks:
+                ax.tick_params(axis='x', labelbottom=False)
+
+        def _panel_like_top(ax, var_vals, weights, title_prefix, lo, hi, nbins, xlim,
+                            var_name="", color_plot="black", hide_xticks=True):
+
+            m = np.isfinite(var_vals)
+            if weights is not None:
+                m &= np.isfinite(weights)
+
+            if not np.any(m):
+                ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
+                        ha='center', va='center', fontsize=14, color='black')
+                _style(ax, xlim, hide_xticks=hide_xticks)
+                return
+
+            r = var_vals[m]
+            w = None
+            if weights is not None:
+                w = weights[m].astype(float)
+                s = np.nansum(w)
+                w = (w / s) if s > 0 else None
+
+            hist, edges = np.histogram(r, bins=nbins, weights=w, range=(lo, hi))
+
+            # keep your original kernel span call
+            hist = norm_kde(hist, 10.0)
+            bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+            # Weighted percentiles
+            if w is not None:
+                q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
+            else:
+                q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
+
+            ax.fill_between(bin_centers, hist, alpha=0.6, color=color_plot)
+            for q in (q_lo, q_med, q_hi):
+                ax.axvline(q, linestyle='--', linewidth=1.5, color=color_plot)
+
+            # If label includes log10, convert for title stats (OPTIONAL; keep your behavior)
+            if "log_{10}" in (var_name):
+                r_lin = 10.0**(r)
+                var_name_lin = str(var_name).replace("$\\log_{10}$", "")
+                if w is not None:
+                    q_lo, q_med, q_hi = _quantile(r_lin, [0.025, 0.5, 0.975], weights=w)
+                else:
+                    q_lo, q_med, q_hi = np.nanpercentile(r_lin, [2.5, 50, 97.5])
+                var_name = var_name_lin
+
+            plus  = q_hi - q_med
+            minus = q_med - q_lo
+            fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+
+            if title_prefix == "":
+                title = (rf"{var_name} = {fmt(q_med)}"
+                        rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+            else:
+                title = (rf"{title_prefix} — {var_name} = {fmt(q_med)}"
+                        rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+            ax.set_title(title, fontsize=16)
+
+            _style(ax, xlim, hide_xticks=hide_xticks)
+
+        # -------------------------
+        # Normalize cuts_list input
+        # -------------------------
+        cuts_norm = []
+        for item in cuts_list:
+            if isinstance(item, dict):
+                cuts_norm.append((np.asarray(item["mask"], bool), str(item.get("title", ""))))
+            else:
+                m, t = item
+                cuts_norm.append((np.asarray(m, bool), str(t)))
+        cuts_list = cuts_norm
+
+        # -------------------------
+        # Basic sizes
+        # -------------------------
+        ncuts = len(cuts_list)
+        nvars = len(vars_list)
+
+        if wrap_cols is None or wrap_cols <= 0:
+            wrap_cols = nvars
+
+        nbands = int(math.ceil(nvars / wrap_cols))
+
+        # X labels (per original variable column index)
+        if bottom_xlabel_per_col is None:
+            bottom_xlabel_per_col = [v.get("label", v.get("name", f"var{j}")) for j, v in enumerate(vars_list)]
+
+        # -------------------------
+        # Full-space size
+        # -------------------------
+        Nfull = cuts_list[0][0].shape[0]
+        weights_all = np.asarray(weights_all, float)
+        if weights_all.shape[0] != Nfull:
+            raise RuntimeError(f"weights_all length {weights_all.shape[0]} != cuts length {Nfull}")
+
+        # -------------------------
+        # Sanity checks on vars_list
+        # -------------------------
+        for vinfo in vars_list:
+            vals = np.asarray(vinfo["values"])
+            nvals = vals.shape[0]
+            pm = vinfo.get("parent_mask", None)
+
+            if nvals != Nfull:
+                if pm is None:
+                    raise RuntimeError(
+                        f"Variable '{vinfo.get('name','?')}' has length {nvals} but cuts have length {Nfull}. "
+                        f"Either keep values full-length OR provide parent_mask (full->reduced mapping)."
+                    )
+                pm = np.asarray(pm, bool)
+                if pm.shape[0] != Nfull:
+                    raise RuntimeError(f"parent_mask length mismatch for '{vinfo.get('name','?')}': {pm.shape[0]} vs {Nfull}")
+                if pm.sum() != nvals:
+                    raise RuntimeError(
+                        f"parent_mask.sum()={pm.sum()} but '{vinfo.get('name','?')}' values length is {nvals}."
+                    )
+
+            bm = vinfo.get("base_mask", None)
+            if bm is not None:
+                bm = np.asarray(bm, bool)
+                if bm.shape[0] != Nfull:
+                    raise RuntimeError(f"base_mask length mismatch for '{vinfo.get('name','?')}': {bm.shape[0]} vs {Nfull}")
+
+        # -------------------------
+        # Per-variable xlim defaults
+        # -------------------------
+        for j, vinfo in enumerate(vars_list):
+            vals = np.asarray(vinfo["values"], float)
+            if vinfo.get("xlim") is None:
+                lo = float(np.nanmin(vals))
+                hi = float(np.nanmax(vals))
+                if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+                    lo, hi = -1.0, 1.0
+                vinfo["xlim"] = (lo, hi)
+
+        # -------------------------
+        # Figure / GridSpec (bands + spacer rows)
+        # -------------------------
+        # Overall rows: nbands blocks of ncuts, with (nbands-1) spacer rows
+        total_rows = nbands * ncuts + (nbands - 1)
+
+        # Height ratios: normal rows = 1, spacer rows = band_gap
+        height_ratios = []
+        for b in range(nbands):
+            height_ratios.extend([1.0] * ncuts)
+            if b != nbands - 1:
+                height_ratios.append(float(band_gap))
+
+        # Default figsize tuned to wrapped layout
+        if figsize is None:
+            cols_effective = min(wrap_cols, nvars)
+            fig_w = cols_effective * 8
+            fig_h = (nbands * ncuts) * 4 + (nbands - 1) * 2
+            figsize = (fig_w, fig_h)
+
+        fig = plt.figure(figsize=figsize)
+        gs = gridspec.GridSpec(
+            nrows=total_rows,
+            ncols=wrap_cols,              # each band uses up to wrap_cols columns
+            figure=fig,
+            height_ratios=height_ratios,
+            hspace=hspace,
+            wspace=wspace
+        )
+
+        # Axes mapping: (band, cut_row, col_in_band) -> ax
+        axes_map = [[ [None]*wrap_cols for _ in range(ncuts) ] for _ in range(nbands)]
+
+        # Create axes only where a variable exists; leave empty columns blank in last band if needed
+        for b in range(nbands):
+            band_row0 = b * (ncuts + 1)  # +1 for spacer row after each band (except last)
+            for i in range(ncuts):
+                for k in range(wrap_cols):
+                    j = b * wrap_cols + k
+                    if j >= nvars:
+                        continue
+                    ax = fig.add_subplot(gs[band_row0 + i, k])
+                    axes_map[b][i][k] = ax
+
+        # -------------------------
+        # Plot panels
+        # -------------------------
+        for i, (cut_mask, cut_title) in enumerate(cuts_list):
+            for j, vinfo in enumerate(vars_list):
+
+                b = j // wrap_cols
+                k = j % wrap_cols
+                ax = axes_map[b][i][k]
+                if ax is None:
+                    continue
+
+                vals = np.asarray(vinfo["values"], float)
+                color = vinfo.get("color", "black")
+                xlim  = vinfo["xlim"]
+                lo, hi = xlim
+
+                # titles only in first column of each band
+                title_here = "" if k != 0 else cut_title
+
+                # 1) build FULL-space mask m_full = cut_mask & base_mask(optional)
+                base = vinfo.get("base_mask", None)
+                if base is None:
+                    m_full = cut_mask
+                else:
+                    base = np.asarray(base, bool)
+                    m_full = cut_mask & base
+
+                # 2) If values are reduced, map m_full to reduced space using parent_mask
+                pm = vinfo.get("parent_mask", None)
+                if vals.shape[0] == Nfull:
+                    v_use = vals[m_full]
+                    w_use = weights_all[m_full] if np.ndim(weights_all) else None
+                else:
+                    pm = np.asarray(pm, bool)
+                    m_red = m_full[pm]
+                    v_use = vals[m_red]
+                    w_use = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
+
+                # show xticks only on the bottom cut-row of each band
+                hide_xticks = (i != ncuts - 1)
+
+                _panel_like_top(
+                    ax,
+                    v_use,
+                    w_use,
+                    title_here,
+                    lo, hi, nbins, xlim,
+                    var_name=vinfo.get("label", vinfo.get("name", "")),
+                    color_plot=color,
+                    hide_xticks=hide_xticks
+                )
+
+                # X labels at bottom cut-row of each band
+                if i == ncuts - 1:
+                    ax.tick_params(axis='x', labelbottom=True)
+                    ax.set_xlabel(bottom_xlabel_per_col[j], fontsize=16)
+
+        # Tick label sizes
+        for b in range(nbands):
+            for i in range(ncuts):
+                for k in range(wrap_cols):
+                    ax = axes_map[b][i][k]
+                    if ax is not None:
+                        ax.tick_params(labelsize=14)
+
+        if out_path:
+            plt.savefig(out_path, bbox_inches='tight' if tight else None, dpi=dpi)
+            plt.close(fig)
+
+
+
+        build_summary_table_latex(
+            cuts_list, vars_list, weights_all,
+            variable_map_plot={v.get("name", f"var{j}"): v.get("label", f"var{j}") for j, v in enumerate(vars_list)},
+            out_path=out_path.replace(".png", "_summary_table.tex") if out_path else None,
+            transpose=True,
+            first_col_name="Parameter",
+            counts_row_label="N"
+        )
+
+        # ---- column headers ----
+        # col_headers = ["Cut"] + [
+            # variable_map_plot.get(
+            #     vinfo.get("name", f"var{j}"),
+            #     vinfo.get("label", vinfo.get("name", f"var{j}"))
+            # )
+            # for j, vinfo in enumerate(vars_list)
+        # ]
+        
+        return fig, axes
+
+
+
+    def plot_by_cuts_and_vars_straight(
+        vars_list, cuts_list, weights_all,
+        nbins=None, smooth=0.02, figsize=None,
         bottom_xlabel_per_col=None, tight=True, dpi=300,
         out_path=None ):
+        
+        if nbins is None:
+            nbins = int(round(10. / smooth))
 
         def _ensure_axes_2d(axes, nrows, ncols):
             if nrows == 1 and ncols == 1:
@@ -4362,6 +4669,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # ]
         
         return fig, axes
+
 
     # =========================
     def split_cut_title(cut_title: str):
@@ -4877,6 +5185,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         "base_mask": rho_cut,
     }
 
+    vars_to_plot_split1 = vars_to_plot + [eros_spec] 
+    vars_to_plot_split2 = [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
+
     vars_to_plot = vars_to_plot + [eros_spec] + [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
 
     # rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
@@ -5126,31 +5437,47 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # Map each sample's base_name -> Tj (NaN if missing)
     m_init_med_samples = np.array([m_init_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
 
+    # # ---------- Class masks at SAMPLE level ----------
+    # finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
+    # big_kg = finite & (m_init_med_samples >= 10**(-4))
+    # medium_b_kg = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
+    # medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
+    # small_kg = finite & (m_init_med_samples < 10**(-5))
+
+    # # find the number of mass
+    # num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
+    # num_medium_b_kg = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
+    # num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
+    # num_small_kg = m_init_med[m_init_med < 10**(-5)].shape[0]
+
     # ---------- Class masks at SAMPLE level ----------
     finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
     big_kg = finite & (m_init_med_samples >= 10**(-4))
-    medium_b_kg = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
-    medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
-    small_kg = finite & (m_init_med_samples < 10**(-5))
+    medium_b_kg = finite & (m_init_med_samples >= 10**(-4.5)) & (m_init_med_samples < 10**(-4))
+    medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 10**(-4.5))
+    small_b_kg = finite & (m_init_med_samples >= 10**(-5.5)) & (m_init_med_samples < 10**(-5))
+    small_kg = finite & (m_init_med_samples < 10**(-5.5))
 
     # find the number of mass
     num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
-    num_medium_b_kg = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
-    num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
-    num_small_kg = m_init_med[m_init_med < 10**(-5)].shape[0]
+    num_medium_b_kg = m_init_med[(m_init_med >= 10**(-4.5)) & (m_init_med < 10**(-4))].shape[0]
+    num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 10**(-4.5))].shape[0]
+    num_small_b_kg = m_init_med[(m_init_med >= 10**(-5.5)) & (m_init_med < 10**(-5))].shape[0]
+    num_small_kg = m_init_med[m_init_med < 10**(-5.5)].shape[0]
 
     # ---------- Figure with three stacked panels ----------
-    fig, axes = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
+    fig, axes = plt.subplots(5, 1, figsize=(10, 15), sharex=True)
 
     _panel_like_top(axes[0], rho_samp[big_kg], w_all[big_kg], "Tot N." + str(num_big_kg) + " above 10$^{-4}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[1], rho_samp[medium_b_kg], w_all[medium_b_kg], "Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 5$\cdot$10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[2], rho_samp[medium_s_kg], w_all[medium_s_kg], "Tot N." + str(num_medium_s_kg) + " 5$\cdot$10$^{-5}$ - 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[3], rho_samp[small_kg], w_all[small_kg], "Tot N." + str(num_small_kg) + " below 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[1], rho_samp[medium_b_kg], w_all[medium_b_kg], "Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 5$\cdot$10$^{-4.5}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[2], rho_samp[medium_s_kg], w_all[medium_s_kg], "Tot N." + str(num_medium_s_kg) + " 10$^{-4.5}$ - 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[3], rho_samp[small_b_kg], w_all[small_b_kg], "Tot N." + str(num_small_b_kg) + " 10$^{-5}$ - 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
+    _panel_like_top(axes[4], rho_samp[small_kg], w_all[small_kg], "Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
 
     # Bottom labels/ticks to match your style
-    axes[3].tick_params(axis='x', labelbottom=True)
-    axes[3].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    axes[3].set_xticks(np.arange(0, 9000, 2000))
+    axes[4].tick_params(axis='x', labelbottom=True)
+    axes[4].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    axes[4].set_xticks(np.arange(0, 9000, 2000))
     for ax in axes:
         ax.tick_params(labelsize=20)
 
@@ -5177,7 +5504,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     cbar.ax.tick_params(labelsize=12)
         
     # Guide lines
-    for yline in (np.log10(10**(-4)), np.log10(5*10**(-5)), np.log10(10**(-5))):
+    for yline in (np.log10(10**(-4)), np.log10(10**(-4.5)), np.log10(10**(-5)), np.log10(10**(-5.5))):
         plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='lime')
 
     # add the label
@@ -5219,9 +5546,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # mass cuts
     cuts = [
         (big_kg, rf"Tot N." + str(num_big_kg) + " above 10$^{-4}$ kg"),
-        (medium_b_kg, rf"Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 5$\cdot$10$^{-5}$ kg"),
-        (medium_s_kg, rf"Tot N." + str(num_medium_s_kg) + " 5$\cdot$10$^{-5}$ - 10$^{-5}$ kg"),
-        (small_kg, rf"Tot N." + str(num_small_kg) + " below 10$^{-5}$ kg"),
+        (medium_b_kg, rf"Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 10$^{-4.5}$ kg"),
+        (medium_s_kg, rf"Tot N." + str(num_medium_s_kg) + " 10$^{-4.5}$ - 10$^{-5}$ kg"),
+        (small_b_kg, rf"Tot N." + str(num_small_b_kg) + " 10$^{-5}$ - 10$^{-5.5}$ kg"),
+        (small_kg, rf"Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg"),
     ]
 
     # --- Call the plotter ---
@@ -5731,6 +6059,307 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     
     
 
+    ################ Grun debiased dataset based on the mass flux of the meteoroids, using the formula from Grun et al. (1985) ################
+
+    # ---------------------------
+    # Grün (1985) cumulative flux F(>m) in m^-2 yr^-1
+    # m must be in grams
+    # ---------------------------
+    def grun_F_cum_m2yr(m_g: np.ndarray) -> np.ndarray:
+        """
+        Grün cumulative flux F(>m) [m^-2 yr^-1], with m in grams.
+        ESABASE2 technical description / Grün-like fit.
+        """
+        m_g = np.asarray(m_g, dtype=float)
+        m_g = np.maximum(m_g, 1e-300)  # avoid zeros
+
+        c0 = 3.156e7
+        c1 = 2.2e3
+        c2 = 15.0
+        c3 = 1.3e-9
+        c4 = 1.0e11
+        c5 = 1.0e27
+        c6 = 1.3e-16
+        c7 = 1.0e6
+
+        term1 = (c1 * (m_g ** 0.306) + c2) ** (-4.38)
+        term2 = (m_g + c4 * (m_g ** 2) + c5 * (m_g ** 4)) ** (-0.36)
+        term3 = (m_g + c7 * (m_g ** 2)) ** (-0.85)
+
+        return c0 * (term1 + c3 * term2 + c6 * term3)
+
+
+    def grun_pdf_log10m(m_kg: np.ndarray, mmin_kg: float, mmax_kg: float) -> np.ndarray:
+        """
+        Target PDF proportional to -dF/dlog10(m) on [mmin, mmax], evaluated at sample masses (kg).
+
+        Returns p_target(log10 m) values (NOT normalized over R, but normalized over window).
+        """
+        m_kg = np.asarray(m_kg, dtype=float)
+
+        # Window in grams
+        mmin_g = 1e3 * float(mmin_kg)
+        mmax_g = 1e3 * float(mmax_kg)
+
+        # Evaluate cumulative flux at window endpoints
+        Fmin = grun_F_cum_m2yr(mmin_g)
+        Fmax = grun_F_cum_m2yr(mmax_g)
+        norm = (Fmin - Fmax)
+        if not np.isfinite(norm) or norm <= 0:
+            raise ValueError("Bad Grün normalization: check mmin_kg < mmax_kg and ranges are sensible.")
+
+        # For each mass, compute -dF/dlog10m via numerical derivative in log-space
+        # Work in grams internally.
+        m_g = 1e3 * m_kg
+        m_g = np.clip(m_g, mmin_g, mmax_g)
+
+        x = np.log10(m_g)
+
+        # step in log10 space; small but not too small (stability)
+        dx = 1e-3
+
+        m1 = 10 ** (x - dx)
+        m2 = 10 ** (x + dx)
+
+        F1 = grun_F_cum_m2yr(m1)
+        F2 = grun_F_cum_m2yr(m2)
+
+        dFdx = (F2 - F1) / (2 * dx)  # derivative w.r.t. log10(m_g)
+        phi = -dFdx                  # phi = -dF/dlog10m
+
+        # Normalize to become a proper PDF over the window:
+        # integral phi dx = F(mmin)-F(mmax)
+        p = phi / norm
+
+        # Avoid zeros for later ratios
+        return np.maximum(p, 1e-300)
+
+
+    # ---------------------------
+    # Reweighting function
+    # ---------------------------
+    def reweight_to_target_mass_pdf(
+        m_kg: np.ndarray,
+        w: np.ndarray | None = None,
+        *,
+        mmin_kg: float | None = None,
+        mmax_kg: float | None = None,
+        nbins: int = 80,
+        smooth: float = 0.02,
+        clip_ratio: float = 1e3,
+    ) -> dict:
+        """
+        Reweight samples so their weighted mass distribution matches Grün (1985)
+        within [mmin_kg, mmax_kg].
+
+        Inputs
+        ------
+        m_kg : array
+            Sample masses in kg (e.g., posterior samples or per-event point estimates).
+        w : array or None
+            Current weights (same length). If None, uses uniform weights.
+        mmin_kg, mmax_kg : float
+            Mass window for normalization. If None, uses min/max of m_kg.
+            (You should usually set this to your physically relevant / completeness window.)
+        nbins : int
+            Histogram bins in log10(m) for estimating p_empirical.
+        smooth : float
+            Gaussian smoothing (in bins). 0 disables smoothing.
+        clip_ratio : float
+            Caps importance ratios to limit weight explosion (stability).
+
+        Returns
+        -------
+        dict with:
+            w_new : normalized reweighted weights
+            ratio : applied importance ratios (before normalization)
+            ess   : effective sample size after reweighting
+            mmin_kg, mmax_kg used
+        """
+        m_kg = np.asarray(m_kg, dtype=float)
+        if w is None:
+            w = np.ones_like(m_kg, dtype=float)
+        else:
+            w = np.asarray(w, dtype=float)
+
+        if m_kg.shape != w.shape:
+            raise ValueError("m_kg and w must have the same shape.")
+        if np.any(m_kg <= 0):
+            raise ValueError("All masses must be > 0.")
+
+        # Window defaults
+        if mmin_kg is None:
+            mmin_kg = float(np.min(m_kg))
+        if mmax_kg is None:
+            mmax_kg = float(np.max(m_kg))
+        if not (mmin_kg < mmax_kg):
+            raise ValueError("Require mmin_kg < mmax_kg.")
+
+        # Work in log10 mass
+        x = np.log10(np.clip(m_kg, mmin_kg, mmax_kg))
+
+        # Estimate empirical p(x) from weighted histogram (density in x=log10m)
+        edges = np.linspace(np.log10(mmin_kg), np.log10(mmax_kg), nbins + 1)
+        counts, _ = np.histogram(x, bins=edges, weights=w)
+
+        # Convert counts to a density over x (log10 m)
+        bin_width = edges[1] - edges[0]
+        p_emp = counts / (np.sum(counts) * bin_width + 1e-300)
+
+        # Optional smoothing in bin-space (simple Gaussian kernel)
+        if smooth and smooth > 0:
+            # build kernel
+            radius = int(max(3, np.ceil(4 * smooth)))
+            kx = np.arange(-radius, radius + 1)
+            ker = np.exp(-0.5 * (kx / smooth) ** 2)
+            ker /= np.sum(ker)
+            p_emp = np.convolve(p_emp, ker, mode="same")
+            # renormalize to be safe
+            p_emp = np.maximum(p_emp, 1e-300)
+            p_emp /= (np.sum(p_emp) * bin_width)
+
+        # Map each sample to its bin density
+        bin_idx = np.clip(np.digitize(x, edges) - 1, 0, nbins - 1)
+        p_emp_i = p_emp[bin_idx]
+
+        # Target Grün pdf in x=log10(m)
+        p_tar_i = grun_pdf_log10m(m_kg, mmin_kg=mmin_kg, mmax_kg=mmax_kg)
+
+        # Importance ratios
+        ratio = p_tar_i / np.maximum(p_emp_i, 1e-300)
+
+        # Cap extreme ratios to prevent a few samples dominating
+        if clip_ratio is not None and clip_ratio > 0:
+            ratio = np.clip(ratio, 1.0 / clip_ratio, clip_ratio)
+
+        # New weights
+        w_new = w * ratio
+        w_new = np.maximum(w_new, 0.0)
+        w_new_sum = np.sum(w_new)
+        if w_new_sum <= 0 or not np.isfinite(w_new_sum):
+            raise RuntimeError("Reweighting failed: weights collapsed. Try larger window/bins/smoothing/clip_ratio.")
+        w_new /= w_new_sum
+
+        # Effective sample size
+        ess = 1.0 / np.sum(w_new ** 2)
+
+        return {
+            "w_new": w_new,
+            "ratio": ratio,
+            "ess": ess,
+            "mmin_kg": mmin_kg,
+            "mmax_kg": mmax_kg,
+        }
+
+
+    # ---------------------------
+    # Helper: compute weighted PDF or weighted quantiles of any parameter
+    # ---------------------------
+    def weighted_quantile(values, quantiles, sample_weight):
+        values = np.asarray(values, float)
+        quantiles = np.asarray(quantiles, float)
+        w = np.asarray(sample_weight, float)
+
+        sorter = np.argsort(values)
+        v = values[sorter]
+        w = w[sorter]
+
+        cdf = np.cumsum(w)
+        cdf /= cdf[-1]
+        return np.interp(quantiles, cdf, v)
+
+    # w_all = np.asarray(combined_results.importance_weights(), float)
+    # w_all = np.where(np.isfinite(w_all), w_all, 0.0)
+    # if np.nansum(w_all) > 0:
+    #     w_all = w_all / np.nansum(w_all)
+
+    masscredible_interval= weighted_quantile(mass_distr, [0.025, 0.5, 0.975], sample_weight=w_all)
+
+    # smooth = 0.02
+    # # lo, hi = np.min(rho_kgm3), np.max(rho_kgm3)
+    # nbins = int(round(10. / smooth))
+
+    idx_arr = np.where(np.asarray(variables) == "m_init")[0]
+    index_m_init = int(idx_arr[0])
+    m_init_vals  = 10**samples[:, index_m_init].astype(float)
+
+    # new_w = reweight_to_target_mass_pdf(m_kg=mass_distr, w=w_all, mmin_kg=np.min(mass_distr), mmax_kg=np.max(mass_distr), nbins=nbins, smooth=smooth, clip_ratio=1e3)
+    new_w = reweight_to_target_mass_pdf(m_kg=m_init_vals, w=w_all, mmin_kg=masscredible_interval[0], mmax_kg=masscredible_interval[2], nbins=nbins, smooth=smooth, clip_ratio=1e3)
+
+    # Create figure for mass ############
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
+
+    # print("m_init_vals:", m_init_vals)
+    m_init_lo, m_init_hi = float(np.nanmin(m_init_vals)), float(np.nanmax(m_init_vals))
+    # 95% confidence interval for m_init
+    m_init_lo, m_init_median, m_init_hi = _quantile(m_init_vals, [0.025, 0.5, 0.975], weights=new_w['w_new'])
+
+    smooth = 0.02
+    lo_log, hi_log = np.log10(np.min(m_init_vals)), np.log10(np.max(m_init_vals))
+    lo, hi = np.min(m_init_vals), np.max(m_init_vals)
+    nbins = int(round(10. / smooth))
+    # do the log of the m_init_vals for the histogram
+    hist, edges = np.histogram(np.log10(m_init_vals), bins=nbins, weights=new_w['w_new'], range=(lo_log, hi_log))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+    ax_dist.fill_between(bin_centers, hist, color='gold', alpha=0.6)
+
+    # Percentile lines
+    ax_dist.axvline(np.log10(m_init_median), color='gold', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(np.log10(m_init_lo), color='gold', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(np.log10(m_init_hi), color='gold', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = m_init_hi - m_init_median
+    minus = m_init_median - m_init_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $m_0$ [kg] = {fmt(m_init_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    # ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.set_xlabel(r'log$_{10}$($m_0$ [kg])', fontsize=20)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all_reweighted.png"), bbox_inches='tight')
+    plt.close()
+    print("Mass distribution plot reweighted saved:", os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all_reweighted.png"))
+
+    # now do the same for rho_corrected
+
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+    rho_corrected_lo, rho_corrected_hi = float(np.nanmin(rho_corrected)), float(np.nanmax(rho_corrected))
+    rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=new_w['w_new'])
+    smooth = 0.02
+    lo, hi = np.min(rho_corrected), np.max(rho_corrected)
+    nbins = int(round(10. / smooth))
+    hist, edges = np.histogram(rho_corrected, bins=nbins, weights=new_w['w_new'], range=(lo, hi))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+    ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
+    ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
+    plus = rho_corrected_hi - rho_corrected_median
+    minus = rho_corrected_median - rho_corrected_lo
+
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)   
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_all_reweighted.png"), bbox_inches='tight')
+    plt.close()
+    print("Rho distribution plot reweighted saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_all_reweighted.png"))
 
     ### CORNER PLOT ###
     # takes forever, so run it last
@@ -6142,7 +6771,7 @@ if __name__ == "__main__":
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
                             
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Results\GEM_2frag_3lumeff",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\Results\ORI-wake_ht",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -6184,4 +6813,4 @@ if __name__ == "__main__":
      mm_size_corrected, mass_distr, kinetic_energy_all)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
     
     shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all,
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot

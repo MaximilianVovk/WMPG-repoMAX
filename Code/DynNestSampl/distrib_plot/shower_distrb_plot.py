@@ -41,6 +41,8 @@ from multiprocessing import Pool
 from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
 from types import SimpleNamespace
 import matplotlib.gridspec as gridspec
+from matplotlib.colors import PowerNorm
+from matplotlib.patches import Patch, Polygon
 
 # try to resolve dynesty's internal _hist2d no matter how it's imported
 try:
@@ -1127,7 +1129,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
     if os.path.exists(input_dirfile + os.sep + "shower_distrb_plot_data.pkl"):
         print("Found shower_distrb_plot_data.pkl, loading data...")
         # load the pickle data
-        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all)=load_shower_distrb_plot_data(input_dirfile + os.sep + "shower_distrb_plot_data.pkl")
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict)=load_shower_distrb_plot_data(input_dirfile + os.sep + "shower_distrb_plot_data.pkl")
 
     else:
 
@@ -1195,6 +1197,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
         file_radiance_rho_dict_helio = {}
         file_obs_data_dict = {}
         file_phys_data_dict = {}
+        file_extra_param_dict = {}
         file_eeu_dict = {}
         file_rho_jd_dict = {}
         find_worst_lag = {}
@@ -1207,6 +1210,15 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
         tau_corrected = []
         mm_size_corrected = []
         mass_distr = []
+        energy_per_cs_before_erosion_backup = []
+        energy_per_mass_before_erosion_backup = []
+        erosion_beg_vel_backup = []
+        erosion_beg_mass_backup = []
+        erosion_beg_dyn_press_backup = []
+        mass_at_erosion_change_backup = []
+        dyn_press_at_erosion_change_backup = []
+        main_mass_exhaustion_ht_backup = []
+        main_bottom_ht_backup = []
         erosion_energy_per_unit_cross_section_corrected = []
         erosion_energy_per_unit_mass_corrected = []
         erosion_energy_per_unit_cross_section_end_corrected = []
@@ -1386,13 +1398,38 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 rho_lo = (rho - rho_lo) #/1.96
                 rho_hi = (rho_hi - rho) #/1.96
                 rho_corrected.append(x_valid_rho)
+                # if backup_file is not None:
+                #     mass_at_erosion_change_now = []
+                #     const_backups = backup_small['dynesty']['const_backups']
+                #     for const in const_backups:
+                #         if const is not None:
+                #             mass_at_erosion_change_now.append(const["mass_at_erosion_change"])
+                #     # for mass_er_ch in mass_at_erosion_change_now:
+                #     #     if mass_er_ch is None:
+                #     #         idx = np.nanargmin(np.abs(h_raw - erosion_height_change))
+                #     #         mass_at_erosion_change = mass[idx]
+                #     # print(f"Mass at erosion change from backup: {mass_at_erosion_change_now}")
+                #     # # print the number of values in mass_at_erosion_change_now
+                #     # mass_at_erosion_change_now = np.array(mass_at_erosion_change_now)
+                #     # print(f"Number of values in mass_at_erosion_change_now: {len(mass_at_erosion_change_now)}")
+                #     # # number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float)
+                #     # print(f"Number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float): {len(samples[:, variables_sing.index('erosion_coeff')].astype(float))}")
 
+                #     x_valid_eta = samples[:, variables_sing.index('erosion_coeff')].astype(float)*(abs(samp\les[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_coeff_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
+                #     eta_lo, eta, eta_hi = _quantile(x_valid_eta, [0.025, 0.5, 0.975], weights=w)
+                # else:
+                #     x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
                 x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
                 eta_lo = (eta - eta_lo) #/1.96
                 eta_hi = (eta_hi - eta) #/1.96
                 eta_corrected.append(x_valid_eta)
 
                 # erosion_sigma_change
+                # if backup_file is not None:
+                #     x_valid_sigma = samples[:, variables_sing.index('sigma')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_sigma_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
+                #     sigma_lo, sigma, sigma_hi = _quantile(x_valid_sigma, [0.025, 0.5, 0.975], weights=w)
+                # else:
+                #     x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
                 x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
                 sigma_lo = (sigma - sigma_lo) #/1.96
                 sigma_hi = (sigma_hi - sigma) #/1.96
@@ -1496,118 +1533,32 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             # print(f"erosion coeff: {eta} m/s, 95% CI = [{eta_lo}, {eta_hi}]")
             # print(f"sigma: {sigma} kg/m^3, 95% CI = [{sigma_lo}, {sigma_hi}]")
 
-            # ### EROSION ENERGY CALCULATION ###
-            if plot_correl_flag == True:
-                # take from dynesty_file folder name
-                folder_name = os.path.dirname(dynesty_file)
 
-                # look if in folder_name it exist a file that ends in .dynestyres exist in 
-                if any(f.endswith(".dynestyres") for f in os.listdir(folder_name)):
-                    print(f"\nFound existing results in {folder_name}.dynestyres, loading them.")
-
-                    # # look for the file that ends in .dynestyres
-                    # dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
-                    # with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
-                    #     dynesty_run_results = pickle.load(f)
-
-                    # erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
-                    # erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
-
-                else:
-                    print(f"\nNo existing results found in {folder_name}.dynestyres, running dynesty.")
-                    # dynesty_run_results = dsampler.results
-
-                    # ### add MORE PARAMETERS ###
-
-                    # # Package inputs
-                    # inputs = [
-                    #     (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
-                    #     for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
-                    # ]
-                    # #     for i in range(len(dynesty_run_results.samples)) # 
-                    # num_cores = multiprocessing.cpu_count()
-
-                    # # Run in parallel
-                    # with Pool(processes=num_cores) as pool:  # adjust to number of cores
-                    #     results = pool.map(run_single_eeu, inputs)
-
-                    # N = len(dynesty_run_results.samples)
-
-                    # erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
-                    # erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
-                    # # erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
-                    # # erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
-
-                    # for res in results:
-                    #     i, eeucs, eeum, eeucs_end, eeum_end = res
-                    #     erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
-                    #     erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
-                    #     # erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
-                    #     # erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
-
-                    sim_num = np.argmax(dynesty_run_results.logl)
-                    # best_guess_obj_plot = dynesty_run_results.samples[sim_num]
-                    # create a copy of the best guess
-                    best_guess = dynesty_run_results.samples[sim_num].copy()
-                    samples = dynesty_run_results.samples
-                    # for variable in variables: for 
-                    for i, variable in enumerate(variables_sing):
-                        if 'log' in flags_dict[variable]:
-                            # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")  
-                            best_guess[i] = 10**(best_guess[i])
-                            # print(f"Transforming {variable} from log scale to linear scale.{best_guess[i]}")
-                            samples[:, i] = 10**(samples[:, i])  # also transform all samples
-                    best_guess_obj_plot = run_simulation(best_guess, obs_data, variables_sing, fixed_values)
-
-                    # find erosion change height
-                    if 'erosion_height_change' in variables_sing:
-                        erosion_height_change = best_guess[variables_sing.index('erosion_height_change')]
-                    if 'm_init' in variables_sing:
-                        m_init = best_guess[variables_sing.index('m_init')]
-
-                    heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
-                    mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
-
-                    # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-                    mass_before = best_guess_obj_plot.const.mass_at_erosion_change
-                    # if mass_before is None use the old method
-                    if mass_before is None:
-                        mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-                    
-                    # # precise erosion tal energy calculation ########################
-
-                    if 'erosion_rho_change' in variables_sing:
-                        rho_total_arr = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
+            if backup_file is not None:
+                const_backups = backup_small['dynesty']['const_backups']
+                for const in const_backups:
+                    if const is not None:
+                        energy_per_cs_before_erosion_backup.append(const["energy_per_cs_before_erosion"])
+                        energy_per_mass_before_erosion_backup.append(const["energy_per_mass_before_erosion"])
+                        erosion_beg_vel_backup.append(const["erosion_beg_vel"])
+                        erosion_beg_mass_backup.append(const["erosion_beg_mas"])
+                        erosion_beg_dyn_press_backup.append(const["erosion_beg_dyn_press"])
+                        mass_at_erosion_change_backup.append(const["mass_at_erosion_change"])
+                        dyn_press_at_erosion_change_backup.append(const["dyn_press_at_erosion_change"])
+                        main_mass_exhaustion_ht_backup.append(const["main_mass_exhaustion_ht"])
+                        main_bottom_ht_backup.append(const["main_bottom_ht"])
                     else:
-                        rho_total_arr = samples[:, variables_sing.index('rho')].astype(float)
+                        # fill with None for as may values like np.full(shape=5, fill_value=None) in samples[:, variables_sing.index('erosion_coeff')].astype(float)
+                        energy_per_cs_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                        energy_per_mass_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                        erosion_beg_vel_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                        erosion_beg_mass_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                        erosion_beg_dyn_press_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                        mass_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                        dyn_press_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                        main_mass_exhaustion_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                        main_bottom_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
 
-                    rho_total_arr = np.array(rho_total_arr, dtype=np.float64)
-
-                    # Create a namespace object for dot-style access
-                    results = SimpleNamespace(**dsampler.results.__dict__)  # load all default results
-
-                    # Add your custom attributes
-                    results.weights = dynesty_run_results.importance_weights()
-                    results.norm_weights = w
-                    # results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
-                    # results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
-                    # results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
-                    # results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
-                    results.rho_total = rho_total_arr
-
-                    # delete from base_name _combined if it exists
-                    if '_combined' in base_name:
-                        base_name = base_name.replace('_combined', '')
-
-                    # Save
-                    with open(folder_name + os.sep + base_name+"_results.dynestyres", "wb") as f:
-                        pickle.dump(results, f)
-                        print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.dynestyres'}.")
-
-                # erosion_energy_per_unit_cross_section_corrected.append(erosion_energy_per_unit_cross_section_arr)
-                # erosion_energy_per_unit_mass_corrected.append(erosion_energy_per_unit_mass_arr)
-                # erosion_energy_per_unit_cross_section_end_corrected.append(erosion_energy_per_unit_cross_section_arr_end)
-                # erosion_energy_per_unit_mass_end_corrected.append(erosion_energy_per_unit_mass_arr_end)
 
             ### SAVE DATA ###
 
@@ -1624,6 +1575,8 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
             file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, kinetic_energy_median, kinetic_energy_lo, kinetic_energy_hi, tau_median, tau_low95, tau_high95)
             file_phys_data_dict[base_name] = (eta_meteor_begin, eta, eta_lo, eta_hi, sigma_meteor_begin, sigma, sigma_lo, sigma_hi, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi)
+
+            file_extra_param_dict[base_name] = (energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup)
 
             find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
             find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
@@ -1682,25 +1635,25 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
         # save all in a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
         with open(input_dirfile + os.sep + "shower_distrb_plot_data.pkl", "wb") as f:
-            pickle.dump((variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all), f)
+            pickle.dump((variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict), f)
         print(f"Saved shower distrb plot data to: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
 
-    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
 def load_shower_distrb_plot_data(input_dirfile):
     # load all from a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
     with open(input_dirfile, "rb") as f:
-        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all) = pickle.load(f)
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict) = pickle.load(f)
     print(f"Loaded shower distrb plot data from: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
-    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all) # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict) # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
 
 
 
 
-def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
     # check if there are variables in the flags_dict that are not in the variable_map
@@ -1947,7 +1900,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ### PLOT rho and error against dynamic pressure color by speed ###
         fig = plt.figure(figsize=(6, 4), constrained_layout=True)
 
-        scatter_d = plt.scatter(v_init_meteor_median,(kinetic_energy_median)/1000, c=(rho), cmap='YlGn_r', s=60, norm=Normalize(vmin=(rho).min(), vmax=(rho).max()), zorder=2)
+        scatter_d = plt.scatter(v_init_meteor_median,(kinetic_energy_median)/1000, c=(rho), cmap='YlGn_r', s=60, norm=PowerNorm(gamma=0.5, vmin=np.nanmin(rho), vmax=np.nanmax(rho)), zorder=2)
         plt.colorbar(scatter_d, label=r'$\rho$ [kg/m$^3$]')
         # scatter_d = plt.scatter(v_init_meteor_median,(kinetic_energy_median)/1000, c=np.log10(m_init_med), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(m_init_med), 0.025), vmax=_quantile(np.log10(m_init_med), 0.975)), zorder=2)
         # plt.colorbar(scatter_d, label='log$_{10}$ $m_0$ [kg]')
@@ -2027,6 +1980,37 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_dynamic_pressure.png"), bbox_inches='tight', dpi=300)
     except:
         print("Error plotting rho vs dynamic pressure.")
+
+        
+    ### Plot inclination vs tisserand parameter color by rho ###
+    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+    scatter = plt.scatter(
+        tj, inclin_val,
+        c=rho,
+        cmap='YlGn_r',
+        s=30,
+        norm=PowerNorm(gamma=0.5, vmin=np.nanmin(rho), vmax=np.nanmax(rho)),
+        zorder=5
+    )
+
+    # cmap = plt.get_cmap('YlGn_r', 256)   # more color levels
+    # scatter = plt.scatter(tj, inclin_val, c=rho, cmap=cmap, s=30, norm=Normalize(vmin=rho.min(), vmax=rho.max()), zorder=5)
+    # make the colorbar log scale
+    plt.colorbar(scatter, label=r'$\rho$ [kg/m$^3$]')
+    plt.ylabel("Inclination [°]", fontsize=15)
+    plt.xlabel("Tisserand parameter (T$_j$)", fontsize=15)
+    # clor of a red transparent area for Tj > 3 to 10 and all inclination
+    plt.axvspan(3, 10, color='red', alpha=0.1, zorder=0)
+    # fill area area from 2 to 3 tj and from inclination 0 to 45
+    plt.fill_betweenx([0, 45], 2, 3, color='blue', alpha=0.1, zorder=0)
+    # put a shaded line at 3
+    plt.axvline(x=3, color='black', linestyle='--', linewidth=1, zorder=1)
+    # take te x axis values from -1 to 10
+    plt.xlim(-1, 10)
+    plt.grid(True)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_inclination_vs_Tj.png"), bbox_inches='tight', dpi=300)
+    plt.close()
 
     ### PLOT rho and error against eta pressure color by speed ###
 
@@ -2141,12 +2125,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # Define your observable names and corresponding data arrays
     observable_names = [
         "$v_{avg}$ [km/s]", "$T$ [s]", "log$_{10}$($m_0$) [kg]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
-        "$k_c$", "$F$", "$d$ [mm]", "$T_j$", "$z_c$ [deg]"
+        "$k_c$", "$F$", "$T_j$", "$z_c$ [deg]", "$M_{peak}$"
     ]
 
     observable_arrays = [
         avg_vel, time_tot, log10_m_init, beg_height, end_height,
-        kc_par, F_par, meteoroid_diameter_mm, tj, zenith_angle
+        kc_par, F_par, tj, zenith_angle, max_mag
     ]
 
     # observable_names = [
@@ -2192,7 +2176,6 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
 
     ### RADIANCE PLOT ###
-    print("saving radiance plot...")
 
     # print(lg_lo, lg_hi, bg_lo, bg_hi)
     plt.figure(figsize=(8, 6))
@@ -2201,6 +2184,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     shower_iau_no = -1
     apex_mask = None
     if radiance_plot_flag == True:
+        print("saving radiance plot...")
         # check if "C:\Users\maxiv\WMPG-repoMAX\Code\Utils\streamfulldata2022.csv" exists
         if not os.path.exists(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results"):
             print("GMN File traj_summary_monthly not found. Please get the data from the GMN website or use the local files.")
@@ -2324,7 +2308,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     ## mass or mm diameter
                     # scatter_d = plt.scatter(Vg_val, beg_height, c=log10_m_init, cmap='coolwarm', s=60, norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()), zorder=2)
                     # plt.colorbar(scatter_d, label='mass [kg]')
-                    scatter = plt.scatter(v_init_meteor_median, beg_height, c=rho, cmap='YlGn_r', s=20, norm=Normalize(vmin=(rho.min()), vmax=(rho.max())), zorder=3)
+                    scatter = plt.scatter(v_init_meteor_median, beg_height, c=rho, cmap='YlGn_r', s=20, norm=PowerNorm(gamma=0.5, vmin=np.nanmin(rho), vmax=np.nanmax(rho)), zorder=3) #norm=Normalize(vmin=(rho.min()), vmax=(rho.max())), zorder=3)
                     plt.colorbar(scatter, label='$\\rho$ [kg/m³]')
 
                     plt.xlabel('$v_{geo}$ [km/s]', fontsize=15)
@@ -2430,7 +2414,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     lg_min_la_sun, bg,
                     c=rho,
                     cmap='YlGn_r',
-                    norm=norm,
+                    norm=PowerNorm(gamma=0.5, vmin=np.nanmin(rho), vmax=np.nanmax(rho)),
                     s=30,
                     zorder=2
                 )
@@ -2536,7 +2520,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     beg_height[finite],
                     c=rho[finite],          # facecolor from rho
                     cmap='YlGn_r',
-                    norm=norm,
+                    norm=PowerNorm(gamma=0.5, vmin=np.nanmin(rho), vmax=np.nanmax(rho)),
                     edgecolors=edge_colors[finite],  # edges from groups
                     s=60,
                     linewidths=1.2,
@@ -2674,7 +2658,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         bg_rad,
                         c=rho,
                         cmap='YlGn_r',
-                        norm=norm,
+                        norm=PowerNorm(gamma=0.5, vmin=np.nanmin(rho), vmax=np.nanmax(rho)),
                         s=20,
                         edgecolors='k',
                         linewidths=0.3,
@@ -2920,16 +2904,16 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     sigma = 120.0  # choose a width so most weight lies in the specified span
     weights_raw = np.exp(-0.5 * ((bin_center - mu) / sigma) ** 2)
     # Truncate outside the stated range is already implied by bins
-    weights = weights_raw / weights_raw.sum()
+    weights_GIADA = weights_raw / weights_raw.sum()
 
     # Create the top-down block strip across x = 0.1–0.8 mm
-    x_min_mm, x_max_mm = 0.1, 0.80
-    x_edges = np.array(sorted([x_min_mm, x_max_mm]))
+    x_min_mm_fulle, x_max_mm_fulle = 0.1, 0.80
+    x_edges = np.array(sorted([x_min_mm_fulle, x_max_mm_fulle]))
 
-    y_edges = np.r_[bin_left, bin_right[-1]]
-    Z = weights[:, None]
+    y_edges_GIADA = np.r_[bin_left, bin_right[-1]]
+    Z_GIADA = weights_GIADA[:, None]
 
-    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Blues", zorder=0) # , alpha=0.5
+    plt.pcolormesh(x_edges, y_edges_GIADA, Z_GIADA, shading="flat", cmap="Blues", zorder=0) # , alpha=0.5
 
     proxy_blue = Patch(facecolor=plt.cm.Blues(0.7), edgecolor='none', label="GIADA - Fulle et al. (2017)") # alpha=0.5, 
 
@@ -2950,6 +2934,24 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # make a shadeded green area between 0.3 and 10 between 100 and 1000 with alpha of 0.1 and a z order of 0
     ax.fill_between([0.3, 100], 100, 1000, color='teal', alpha=0.1,  label="OSIRIS - Güttler et al. (2017)") # , edgecolor='none'
+
+    d_rho_cosima = np.array([
+        [108, 204],
+        [ 41, 302],
+        [ 87, 223],
+        [ 89, 220],
+        [309, 135],
+        [ 63, 254],
+        [207, 158],
+        [179, 167],
+        [120, 196],
+        [214, 156]
+    ], dtype=float)
+
+    d_cosima   = d_rho_cosima[:, 0]/1000 # convert to mm
+    rho_cosima = d_rho_cosima[:, 1]
+
+    ax.scatter(d_cosima, rho_cosima, color='royalblue', marker='>', s=30, label="COSIMA - Hornung et al. (2016)")
 
     # add a dot as a DIM point at (0.9, 250) coor dark green
     ax.scatter(0.9, 250, color='navy', marker='s', s=30, label="DIM - Flanders et al. (2018)", zorder=7)
@@ -3080,10 +3082,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ], dtype=float)
 
     # append the mass_kg and delta_kgm3 to the previous mass_g and rho_kgm3
-    mass_g = np.concatenate((mass_g, mass_kg))
-    rho_kgm3 = np.concatenate((rho_kgm3, delta_kgm3))
+    mass_g_Voj = np.concatenate((mass_g, mass_kg))
+    rho_kgm3_Voj = np.concatenate((rho_kgm3, delta_kgm3))
 
-    ax.scatter(from_mass2size(mass_g, rho_kgm3), rho_kgm3, color='sienna', marker='x', s=70, label="Meteors - Vojáček et al. (2019)", zorder=5)
+    ax.scatter(from_mass2size(mass_g_Voj, rho_kgm3_Voj), rho_kgm3_Voj, color='sienna', marker='x', s=70, label="Meteors - Vojáček et al. (2019)", zorder=5)
     
     ### Radar Meteor Data
 
@@ -3151,10 +3153,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     x_min_mm, x_max_mm = 0.210, 0.375
     x_edges = np.array(sorted([x_min_mm, x_max_mm]))
 
-    y_edges = np.r_[bin_left, bin_right[-1]]
+    y_edges_suttle = np.r_[bin_left, bin_right[-1]]
     Z = weights[:, None]  # one vertical strip
 
-    plt.pcolormesh(x_edges, y_edges, Z, shading="flat", cmap="Oranges", zorder=0)    
+    plt.pcolormesh(x_edges, y_edges_suttle, Z, shading="flat", cmap="Oranges", zorder=0)    
  
     # Micro Meteoroids - Fulle et al. (2016)moccasin
     ax.fill_between([200/1000, 275/1000], 5000, 5800, color='#ff7f0e', alpha=0.2, zorder=0, edgecolor='none', label="G & S-type - Suttle and Folco (2020)") # , edgecolor='none'
@@ -3235,8 +3237,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     a_um = np.logspace(-3, 4, 400)  # ~0.05 to 100 µm
     rho_kgm3 = rho_particle_divine1986(a_um, out="kg/m^3")
     
-    ### bad
-    ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)", zorder=10)    
+    # ### bad
+    # ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)", zorder=10)    
 
     ##########
 
@@ -3257,19 +3259,421 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.close()
 
 
+    ########## Mass vs density plot only ##########
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    print("Creating 2D density plot against mass...")
+
+    _plot_2d_distribution(ax, np.log10(mass_distr), rho_corrected, w)
+    ax.set_xlabel(r"log$_{10}$(Mass [kg])", fontsize=15)
+    ax.set_ylabel(r"$\rho$ [kg/m$^3$]", fontsize=15)
+
+
+    #### Helpers ####
+
+    def size2mass(size_mm, density_kg_m3):
+        """
+        Convert equivalent spherical diameter [mm] and density [kg/m^3]
+        to mass [kg].
+        """
+        d_m = np.asarray(size_mm, dtype=float) / 1000.0
+        rho = np.asarray(density_kg_m3, dtype=float)
+        volume_m3 = (np.pi / 6.0) * d_m**3
+        return rho * volume_m3
+
+    def logmass_from_size(size_mm, density_kg_m3):
+        return np.log10(size2mass(size_mm, density_kg_m3))
+
+    def draw_vertical_strip_in_logmass(ax, size_min_mm, size_max_mm, y_edges, weights,
+                                    cmap, norm=None, alpha=1.0, zorder=0):
+        """
+        Draw a size-range strip in (log10 mass, density) space.
+        Since mass depends on density, each density bin becomes a trapezoid.
+        """
+        y_edges = np.asarray(y_edges, dtype=float)
+        weights = np.asarray(weights, dtype=float)
+
+        if norm is None:
+            norm = mcolors.Normalize(vmin=np.nanmin(weights), vmax=np.nanmax(weights))
+
+        cmap_obj = plt.get_cmap(cmap)
+
+        for i in range(len(weights)):
+            y0, y1 = y_edges[i], y_edges[i+1]
+
+            x0_left  = logmass_from_size(size_min_mm, y0)
+            x0_right = logmass_from_size(size_max_mm, y0)
+            x1_left  = logmass_from_size(size_min_mm, y1)
+            x1_right = logmass_from_size(size_max_mm, y1)
+
+            poly = Polygon(
+                [(x0_left, y0), (x0_right, y0), (x1_right, y1), (x1_left, y1)],
+                closed=True,
+                facecolor=cmap_obj(norm(weights[i])),
+                edgecolor='none',
+                alpha=alpha,
+                zorder=zorder
+            )
+            ax.add_patch(poly)
+
+
+    ####### Stratospheric dust overlays #######
+
+    # --- Love et al. (1994) ---
+    norm_love = mcolors.Normalize(
+        vmin=0.0,
+        vmax=max(arr_w_love1994.max(), arr_w_love1994_island.max())
+    )
+
+    draw_vertical_strip_in_logmass(
+        ax,
+        size_min_love1994, size_max_love1994,
+        np.r_[arr_dens_love1994_left, arr_dens_love1994_right[-1]],
+        arr_w_love1994,
+        cmap="Reds",
+        norm=norm_love,
+        alpha=1.0,
+        zorder=5
+    )
+
+    draw_vertical_strip_in_logmass(
+        ax,
+        size_min_love1994, size_max_love1994,
+        np.r_[arr_dens_love1994_island_left, arr_dens_love1994_island_right[-1]],
+        arr_w_love1994_island,
+        cmap="Reds",
+        norm=norm_love,
+        alpha=1.0,
+        zorder=5
+    )
+
+    proxy_red = Patch(facecolor=plt.cm.Reds(0.7), edgecolor='none',
+                    label="Stratospheric - Love et al. (1994)")
+
+
+    # --- Flynn and Sutton (1990)* ---
+    norm_Flynn = mcolors.Normalize(
+        vmin=0.0,
+        vmax=max(arr_w_Flynn.max(), arr_w_Flynn_1.max())
+    )
+
+    draw_vertical_strip_in_logmass(
+        ax,
+        size_min_mm_Flynn, size_max_mm_Flynn,
+        np.r_[arr_dens_left, arr_dens_right[-1]],
+        arr_w_Flynn,
+        cmap="Purples",
+        norm=norm_Flynn,
+        alpha=0.8,
+        zorder=6
+    )
+
+    draw_vertical_strip_in_logmass(
+        ax,
+        size_min_mm_Flynn, size_max_mm_Flynn,
+        np.array([3375.0, 3625.0]),
+        arr_w_Flynn_1,
+        cmap="Purples",
+        norm=norm_Flynn,
+        alpha=0.8,
+        zorder=6
+    )
+
+    proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none',
+                        label="Stratospheric - Flynn and Sutton (1990)*", alpha=0.8)
+
+
+    # # --- Fulle et al. (2017), GIADA ---
+    # draw_vertical_strip_in_logmass(
+    #     ax,
+    #     x_min_mm_fulle, x_max_mm_fulle,
+    #     y_edges_GIADA,
+    #     weights_GIADA,
+    #     cmap="Blues",
+    #     alpha=1.0,
+    #     zorder=0
+    # )
+    # # it ranges in mass from -9 to -6
+    # plt.pcolormesh(np.array(sorted([np.log10(4*10**(-9)), np.log10(2*10**(-7))])), y_edges_GIADA, Z_GIADA, shading="flat", cmap="Blues", zorder=0) # , alpha=0.5
+
+    # it ranges in mass from -9 to -6
+    plt.pcolormesh(np.array(sorted([-9, -6])), y_edges_GIADA, Z_GIADA, shading="flat", cmap="Blues", zorder=0) # , alpha=0.5
+
+    proxy_blue = Patch(facecolor=plt.cm.Blues(0.7), edgecolor='none', label="GIADA - Fulle et al. (2017)") # alpha=0.5, 
+
+
+    #### Misc papers overlays ####
+
+    # GIADA - Fulle et al. (2015)
+    rho_line = 1.0
+    ax.plot(
+        [logmass_from_size(2.5, rho_line), logmass_from_size(0.2, rho_line)],
+        [rho_line, rho_line],
+        marker='d', color='blue', linewidth=1, linestyle='--',
+        label="GIADA - Fulle et al. (2015)", markersize=6
+    )
+
+    # OSIRIS - Güttler et al. (2017)
+    rho_fill = np.linspace(100, 1000, 200)
+    x_left  = logmass_from_size(0.3, rho_fill)
+    x_right = logmass_from_size(100, rho_fill)
+    ax.fill_betweenx(
+        rho_fill, x_left, x_right,
+        color='teal', alpha=0.1,
+        label="OSIRIS - Güttler et al. (2017)"
+    )
+
+    # COSIMA - Hornung et al. (2016)
+    ax.scatter(
+        np.log10(size2mass(d_cosima, rho_cosima)), rho_cosima,
+        color='royalblue', marker='>', s=30,
+        label="COSIMA - Hornung et al. (2016)"
+    )
+
+    # DIM - Flanders et al. (2018)
+    ax.scatter(
+        np.log10(size2mass(0.9, 250)), 250,
+        color='navy', marker='s', s=30,
+        label="DIM - Flanders et al. (2018)", zorder=7
+    )
+
+    # Vega-2 - Krasnopolsky et al. (1988)
+    ax.plot(
+        [np.log10(10**(-13)), np.log10(10**(-9))],
+        [300, 300],
+        marker='p', color='cyan', linestyle=':', linewidth=1,
+        label="Vega-2 - Krasnopolsky et al. (1988)", markersize=6
+    )
+
+    # Giotto - Fulle et al. (2000)
+    rho_fill = np.linspace(50, 500, 300)
+    x_left  = np.log10(size2mass(from_mass2size(10**(-12), 100), rho_fill))
+    x_right = np.log10(size2mass(from_mass2size(10**(-3), 100), rho_fill))
+    ax.fill_betweenx(
+        rho_fill, x_left, x_right,
+        color='cyan', alpha=0.1,
+        label="Giotto - Fulle et al. (2000)"
+    )
+
+    # Stardust - Iida et al. (2010)
+    ax.scatter(
+        np.log10(size2mass(dp_um, qp_gcm3)), qp_gcm3,
+        color='deepskyblue', marker='v', s=50,
+        label="Stardust - Iida et al. (2010)"
+    )
+
+    # Stardust - Kearsley et al. (2008)**
+    ax.scatter(
+        np.log10(size2mass(impactor_diam_um, rho_gcm3)), rho_gcm3,
+        color='steelblue', marker='^', s=50,
+        label="Stardust - Kearsley et al. (2008)**"
+    )
+
+    # Lunar Microcraters - Nagel et al. (1980)
+    rho_fill = np.linspace(3000, 8000, 200)
+    x_left  = logmass_from_size(0.0001, rho_fill)
+    x_right = logmass_from_size(0.1, rho_fill)
+    ax.fill_betweenx(
+        rho_fill, x_left, x_right,
+        color='lime', alpha=0.1, zorder=0,
+        label="Lunar Microcraters - Nagel et al. (1980)"
+    )
+
+    # Lunar Microcraters - Smith et al. (1974)
+    for i in range(len(deduced_density) - 1):
+        y0 = deduced_density[i]
+        y1 = deduced_density[i+1]
+        rho_mid = 0.5 * (y0 + y1)
+
+        x_left0  = logmass_from_size(deduced_diameter_min[i], y0)
+        x_right0 = logmass_from_size(deduced_diameter_max[i], y0)
+        x_left1  = logmass_from_size(deduced_diameter_min[i+1], y1)
+        x_right1 = logmass_from_size(deduced_diameter_max[i+1], y1)
+
+        poly = Polygon(
+            [(x_left0, y0), (x_right0, y0), (x_right1, y1), (x_left1, y1)],
+            closed=True, facecolor='limegreen', edgecolor='none',
+            alpha=0.2, zorder=0,
+            label="Lunar Microcraters - Smith et al. (1974)" if i == 0 else "_nolegend_"
+        )
+        ax.add_patch(poly)
+
+    # LDEF - Love et al. (1995)***
+    rho_fill = np.linspace(2000, 5000, 300)
+    x_left  = np.log10(size2mass(from_mass2size(10**(-15), 2000), rho_fill))
+    x_right = np.log10(size2mass(from_mass2size(10**(-9), 2400), rho_fill))
+    ax.fill_betweenx(
+        rho_fill, x_left, x_right,
+        color='yellow', alpha=0.1, zorder=0,
+        label="LDEF - Love et al. (1995)***"
+    )
+
+    # LDEF - McDonnell and Gardner (1998)
+    rho_fill = np.linspace(2000, 2400, 200)
+    x_left  = np.log10(size2mass(from_mass2size(10**(-15), 2000), rho_fill))
+    x_right = np.log10(size2mass(from_mass2size(10**(-9), 2400), rho_fill))
+    ax.fill_betweenx(
+        rho_fill, x_left, x_right,
+        color='gold', alpha=0.5, zorder=0,
+        label="LDEF - McDonnell and Gardner (1998)"
+    )
+
+    # Hubble - Moussi et al. (2005)
+    rho_line = 2500.0
+    ax.plot(
+        [logmass_from_size(0.1/1000, rho_line), logmass_from_size(0.35, rho_line)],
+        [rho_line, rho_line],
+        color='yellow', linestyle='--', marker='H',
+        label="Hubble - Moussi et al. (2005)"
+    )
+
+    # Hubble - Kearsley et al. (2024)
+    rho_line = 2700.0
+    ax.plot(
+        [logmass_from_size(50/1000, rho_line), logmass_from_size(296/1000, rho_line)],
+        [rho_line, rho_line],
+        color='gold', linestyle='-.', marker='h',
+        label="Hubble - Kearsley et al. (2024)"
+    )
+
+    # Meteors - Vojáček et al. (2019)
+    ax.scatter(
+        np.log10(mass_g_Voj), rho_kgm3_Voj,
+        color='sienna', marker='x', s=70,
+        label="Meteors - Vojáček et al. (2019)", zorder=5
+    )
+
+    # Radar Meteors - Close et al. (2012)
+    ax.scatter(
+        np.log10(m0_meteor_radar), rho_meteor_radar,
+        color='peru', marker='1', s=50,
+        label="Radar Meteors - Close et al. (2012)", zorder=5, alpha=0.5
+    )
+
+    # Micrometeorites - Kohout et al. (2014)
+    ax.scatter(
+        np.log10(size2mass(size_um, rhoB_gcm3)), rhoB_gcm3,
+        color='darkorange', marker='o', s=50,
+        label="Micrometeorites - Kohout et al. (2014)", alpha=0.7, zorder=5
+    )
+
+    # Fulle et al. (2016) density strip
+    dens_min, dens_max = 1100.0, 4200.0
+    bin_width = 100.0
+    edges = np.arange(dens_min, dens_max + bin_width, bin_width)
+    bin_left = edges[:-1]
+    bin_right = edges[1:]
+    bin_center = 0.5 * (bin_left + bin_right)
+
+    mu_mode   = 2300.0
+    sigma_mode = 180.0
+    mu_tail    = 2900.0
+    sigma_tail = 450.0
+    w_mode = 0.7
+    w_tail = 0.3
+
+    g_mode = np.exp(-0.5 * ((bin_center - mu_mode) / sigma_mode) ** 2)
+    g_tail = np.exp(-0.5 * ((bin_center - mu_tail) / sigma_tail) ** 2)
+    weights_raw = w_mode * g_mode + w_tail * g_tail
+    weights = weights_raw / weights_raw.sum()
+
+    draw_vertical_strip_in_logmass(
+        ax,
+        0.210, 0.375,
+        np.r_[bin_left, bin_right[-1]],
+        weights,
+        cmap="Oranges",
+        alpha=1.0,
+        zorder=0
+    )
+
+    # G & S-type - Suttle and Folco (2020)
+    rho_fill = np.linspace(5000, 5800, 200)
+    x_left  = logmass_from_size(200/1000, rho_fill)
+    x_right = logmass_from_size(275/1000, rho_fill)
+    ax.fill_betweenx(
+        rho_fill, x_left, x_right,
+        color='#ff7f0e', alpha=0.2, zorder=0, edgecolor='none',
+        label="G & S-type - Suttle and Folco (2020)"
+    )
+
+    # I-type - Feng et al. (2005)
+    ax.scatter(
+        np.log10(size2mass(2.0 * r_optical_um / 1000.0, bulk_density_gcm3 * 1000.0)),
+        bulk_density_gcm3 * 1000.0,
+        color='silver', marker='*', s=50,
+        label="I-type - Feng et al. (2005)"
+    )
+
+    # Optional Divine et al. (1986)
+    # a_um is radius, so diameter = 2a
+    # ax.plot(
+    #     np.log10(size2mass(2*a_um/1000, rho_kgm3)),
+    #     rho_kgm3,
+    #     color='darkgreen', linestyle='-.', linewidth=2,
+    #     label="Function - Divine et al. (1986)", zorder=10
+    # )
+
+    ##########
+
+    ax.set_xlim([-18, -1])
+    ax.set_ylim([-100, 8100])
+
+    plt.grid(True, linestyle='--', alpha=0.5)
+
+    handles, labels_plot_mass = ax.get_legend_handles_labels()
+    handles = [proxy_red, proxy_purple, proxy_blue] + handles
+    labels_plot_mass = [proxy_red.get_label(), proxy_purple.get_label(), proxy_blue.get_label()] + labels_plot_mass
+
+    by_label = {l: h for h, l in zip(handles, labels_plot_mass)}
+    ax.legend(by_label.values(), by_label.keys(),
+            loc='upper right', bbox_to_anchor=(1.45, 1), fontsize=10)
+
+    # x limit 15 to -2 kg
+    ax.set_xlim([-15, -2])
+    ax.set_ylim([-100, 8100])
+
+    # put a dashed red line at -9 
+
+    # ax.axvline(x=-9, color='red', linestyle='--', zorder=10) #, label="Mass = 1 ng"
+
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_2D_density_mass_rho_PAPERS.png"),
+        bbox_inches='tight', dpi=300
+    )
+
+    # x limit 15 to -2 kg
+    ax.set_xlim([-9, -2])
+    # delete the legend
+    ax.legend().remove()
+    # make it smaller the window
+    fig.set_size_inches(8, 6)
+
+
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_2D_density_mass_rho_impactSat_PAPERS.png"),
+        bbox_inches='tight', dpi=300
+    )
+
+    plt.close()
+
+
+
+
     ########## plot_Kikwaya only ##########
 
     if plot_Kikwaya:
         fig, ax = plt.subplots(figsize=(8, 6))
         print("Creating 2D density against size plot Kikwaya only...")
         _plot_2d_distribution(ax, mm_size_corrected, rho_corrected, w)
-        ax.set_xlabel("Size [mm]", fontsize=15)
+        ax.set_xlabel("Diameter [mm]", fontsize=15)
         ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
 
         # Meteors - Kikwaya et al. (2009) - Sporadic meteoroids
 
-        # (code, mass_kg, rho_kgm3, Vinf_kms)
         rows = [
+            # (code, mass_kg, rho_kgm3, Vinf_kms)
+
             # 2006
             ("20060430_084301", 7.10e-6, 1450.0, 36.10),
             ("20060430_103000", 6.15e-6,  950.0, 65.20),
@@ -3284,26 +3688,28 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             ("20070422_061849", 2.20e-6,  730.0, 65.50),
             ("20070519_040843", 6.15e-6,  975.0, 54.80),
             ("20070519_075753", 2.80e-5, 1240.0, 69.10),
-
             ("20070519_082713", 6.45e-6,  830.0, 66.90),
+
             ("20070812_062117", 2.10e-6,  710.0, 60.10),
             ("20070812_083450", 2.85e-6,  920.0, 60.10),
             ("20070813_044452", 4.35e-6,  420.0, 59.90),
+            ("20070813_045726", 1.70e-5,  810.0, 59.90),
+            ("20070813_055649", 1.55e-5,  480.0, 61.80),
+            ("20070813_055909", 4.20e-6,  740.0, 59.20),
+            ("20070813_064415", 1.20e-5,  610.0, 59.40),
 
             ("20070813_065047", 4.10e-6,  470.0, 59.60),
             ("20070813_065828", 1.00e-5, 3150.0, 38.80),
             ("20070813_073054", 2.15e-6,  380.0, 59.60),
             ("20070813_075355", 5.20e-6,  670.0, 59.10),
-
             ("20070813_081229", 1.90e-5, 1550.0, 63.10),
             ("20070813_084353", 1.40e-6, 1510.0, 55.60),
             ("20070813_084901", 3.55e-6,  360.0, 59.90),
             ("20070813_085448", 2.40e-6,  590.0, 59.10),
-
             ("20070813_085457", 5.80e-6,  910.0, 59.90),
             ("20070813_085548", 2.30e-6,  640.0, 63.60),
 
-            # 2008-09-10
+            # 2008
             ("20080910_052352", 1.45e-5, 3500.0, 40.70),
             ("20080910_053428", 1.95e-6, 4100.0, 37.60),
             ("20080910_064102", 5.20e-6, 3550.0, 28.20),
@@ -3311,11 +3717,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             ("20080910_075454", 3.40e-6,  730.0, 68.80),
             ("20080910_091403", 4.15e-6,  820.0, 66.30),
 
-            # 2008-09-11
             ("20080911_060638", 7.40e-6, 1095.0, 68.20),
             ("20080911_065211", 5.10e-7,  945.0, 62.50),
             ("20080911_071428", 1.10e-5, 4150.0, 22.80),
-
             ("20080911_075207", 7.20e-7,  980.0, 67.50),
             ("20080911_075323", 2.60e-6, 1070.0, 61.20),
             ("20080911_075846", 3.20e-6, 1070.0, 66.30),
@@ -3325,12 +3729,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             ("20080911_084529", 2.15e-6, 3150.0, 33.50),
             ("20080911_084739", 1.17e-6,  610.0, 60.50),
             ("20080911_085605", 8.35e-7, 1065.0, 67.40),
-
             ("20080911_090242", 1.85e-6,  760.0, 65.30),
             ("20080911_090512", 2.05e-6,  915.0, 65.80),
             ("20080911_093436", 4.90e-6, 1055.0, 59.10),
             ("20080911_094752", 9.95e-7, 1015.0, 58.50),
-
             ("20080911_094844", 1.70e-6, 3470.0, 38.00),
 
             # 2009
@@ -3356,17 +3758,17 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             ("20090825_064646", 1.80e-6,  660.0, 68.90),
             ("20090825_065903", 3.90e-6, 2645.0, 38.60),
             ("20090825_070044", 6.25e-7, 4895.0, 28.10),
-            ("20090825_081927", 7.95e-8, 5425.0, 22.40),
             ("20090825_070933", 3.10e-6, 3215.0, 19.60),
+            ("20090825_081927", 7.95e-8, 5425.0, 22.40),
             ("20090825_085804", 1.80e-6,  620.0, 68.60),
             ("20090826_020835", 1.10e-6, 4780.0, 19.20),
-            ("20090902_084143", 6.25e-6, 1230.0, 26.70),
 
+            ("20090902_084143", 6.25e-6, 1230.0, 26.70),
             ("20090902_085534", 1.55e-6, 4495.0, 50.90),
             ("20090902_085832", 1.55e-6, 1165.0, 39.80),
             ("20090902_092028", 6.40e-7,  725.0, 60.40),
-
             ("20090902_093338", 2.25e-6,  605.0, 71.30),
+
             ("20090909_010643", 2.50e-6, 4910.0, 20.60),
             ("20090909_012810", 2.15e-6, 5010.0, 21.40),
             ("20090909_013647", 4.85e-6, 5030.0, 16.10),
@@ -3375,11 +3777,14 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             ("20090911_030523", 4.80e-6, 3130.0, 38.20),
             ("20090911_034442", 1.65e-6, 4850.0, 23.40),
             ("20090911_035942", 1.35e-6, 3515.0, 20.60),
-
             ("20090911_040233", 6.75e-7, 1460.0, 37.30),
             ("20090911_040433", 2.25e-5, 4010.0, 17.40),
-        ]
 
+            ("20090825_091030", 8.70e-7, 3070.0, 36.10),
+            # not good
+            # ("20090825_090312", 5.90e-7, float("nan"), 59.10),
+            # ("20090902_091711", 1.20e-6, float("nan"), 67.20),
+        ]
 
 
         mass_kg = np.array([row[1] for row in rows], dtype=float)
@@ -3391,7 +3796,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             tau_Hill2005.append(luminous_efficiency_tauI_Hill2005(vel))
         tau_Hill2005 = np.array(tau_Hill2005, dtype=float)
 
-        (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
+        (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
 
         name_ids = [row[0] for row in rows]
         # Now do a tolerant match (±3 s) against your available names
@@ -3411,11 +3816,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 rho_dynesty_JB.append(rho_dynesty)
                 mass_dynesty = file_obs_data_dict_JB[matched_key][12] # m_init_med 12
                 mass_dynesty_JB.append(mass_dynesty)
-                size_JB = from_mass2size(mass_kg[i], rho_JB)
                 size_dynesty = file_obs_data_dict_JB[matched_key][13] # m_init_med 12
                 size_dynesty_JB.append(size_dynesty)
                 tau_dynesty_JB.append(file_obs_data_dict_JB[matched_key][19])
                 avg_speed_JB.append(file_obs_data_dict_JB[matched_key][6])
+                size_JB = from_mass2size(mass_kg[i], rho_JB)
+                ax.scatter(size_JB, rho_JB, facecolors='none', edgecolors='b', s=80, zorder=2)
                 ax.plot([size_JB, size_dynesty], [rho_JB, rho_dynesty],
                         color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
                 
@@ -3426,6 +3832,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             print(foundJB,"Found matching meteoroids from JB (±3 s tolerance).")
             ax.plot([], [], color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8,
                     label="This work vs. Kikwaya et al. (2009)")
+            ax.scatter([], [], facecolors='none', edgecolors='b', s=80, label="Available data from Kikwaya et al. (2009)")
 
         plt.grid(True, linestyle='--', alpha=0.5)
         ax.set_ylim([-100, 8100])
@@ -3441,32 +3848,39 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         fig, ax = plt.subplots(figsize=(8, 6))
 
+        _plot_2d_distribution(ax, np.log10(mass_distr), rho_corrected, w)
+
         name_ids = [row[0] for row in rows]
+        # print(name_ids)
         # Now do a tolerant match (±3 s) against your available names
         if foundJB > 0:
             for i, code in enumerate(name_ids):
             # Try to find an exact-or-close match for this code inside all_names
-                matched_key = find_close_in_list(code, all_names_JB, tol_seconds=3)
+                matched_key = find_close_in_list(code, all_names_JB, tol_seconds=5)
                 if matched_key is not None and (matched_key in file_radiance_rho_dict_JB) and (matched_key in file_obs_data_dict_JB):
-                    ax.plot([mass_kg[i], file_obs_data_dict_JB[matched_key][12]], [rho_kgm3[i], file_radiance_rho_dict_JB[matched_key][2]],
+                    ax.plot([np.log10(mass_kg[i]), np.log10(file_obs_data_dict_JB[matched_key][12])], [rho_kgm3[i], file_radiance_rho_dict_JB[matched_key][2]],
                         color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
-            
+                    ax.scatter(np.log10(mass_kg[i]), rho_kgm3[i], facecolors='none', edgecolors='b', s=80, zorder=2)
+        
+
+        ax.scatter(np.log10(mass_dynesty_JB), rho_dynesty_JB, color='red', marker='+', s=70, zorder=6) 
+        ax.scatter(np.log10(mass_kg), rho_kgm3, color='dodgerblue', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
+
+        if foundJB > 0:
             print(foundJB,"Found matching meteoroids from JB (±3 s tolerance).")
             ax.plot([], [], color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8,
                     label="This work vs. Kikwaya et al. (2009)")
-            
-        ax.scatter(mass_dynesty_JB, rho_dynesty_JB, color='red', marker='+', s=70, zorder=6) 
-        ax.scatter(mass_kg, rho_kgm3, color='dodgerblue', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
+            ax.scatter([], [], facecolors='none', edgecolors='b', s=80, label="Available data from Kikwaya et al. (2009)")
 
         plt.grid(True, linestyle='--', alpha=0.5)
         ax.set_ylabel("$\\rho$ [kg/m$^3$]", fontsize=15)
-        ax.set_xlabel("Mass [kg]", fontsize=15)
-        # ax.set_xlim([2*10**(-6), 4*10**(-2)])
+        ax.set_xlabel("log$_{10}$ ($m_0$ [kg])", fontsize=15)
+        ax.set_xlim([-7.5, -3])
         ax.set_ylim([-100, 8100])
         # put the legend at the right outside the plot after the y axis
         ax.legend(fontsize=14)
         ax.tick_params(axis='both', which='major', labelsize=12)
-        ax.set_xscale("log")
+        # ax.set_xscale("log")
         plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_dens_mass_kikwaya.png"), bbox_inches='tight', dpi=300)
         plt.close()
             
@@ -3489,8 +3903,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         #                 color='red', linestyle='--', linewidth=0.5)
 
         # the color values for these points
-        ax.scatter(tau_dynesty_JB, rho_dynesty_JB, c=avg_speed_JB, cmap='viridis', norm=norm, edgecolors='red', s=70, linewidth=2, label="Meteors - This work", zorder=6) # label="Meteors - This work"
-        ax.scatter(tau_Hill2005, rho_kgm3, c=vel_kms, cmap='viridis', norm=norm, edgecolors='dodgerblue', linewidth=2, s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
+        # print("mass size:", 3**(abs(10+np.log10(mass_dynesty_JB))))
+        ax.scatter(tau_dynesty_JB, rho_dynesty_JB, c=avg_speed_JB, cmap='viridis', norm=norm, edgecolors='red', s=3**abs(10+np.log10(mass_dynesty_JB)), linewidth=2, label="Meteors - This work", zorder=6) # label="Meteors - This work"
+        ax.scatter(tau_Hill2005, rho_kgm3, c=vel_kms, cmap='viridis', norm=norm, edgecolors='dodgerblue', linewidth=2, s=3**abs(10+np.log10(mass_kg)), label="Meteors - Kikwaya et al. (2009)", zorder=5)
 
         # plt.grid(True, linestyle='--', alpha=0.5)
         ax.set_xlabel("$\\tau$ [%]", fontsize=15)
@@ -3722,16 +4137,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # if 'sigma' in var or 'erosion_coeff' in var:
         #     combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
 
+    ### generate the samples
 
-    ### create new directory for rho plots ###
-
-    # create a new folder for the rho plots
-    output_dir_rho = os.path.join(output_dir_show, "rho_plots")
-    os.makedirs(output_dir_rho, exist_ok=True)
-
-    ### JD vs rho plot ###
-
-    print("Distribution plots:")
     # Extract from combined_results
     samples = combined_samples_copy_plot
     # samples = combined_results.samples
@@ -3742,7 +4149,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # do the quantile for the 1 sigma range
     rho_corrected_1sigma_lo, rho_corrected_1sigma_hi = _quantile(rho_corrected, [0.1587, 0.8413], weights=w)
 
-    print("Creating combined plot T_j rho and k_c, 1-sigma range:", rho_corrected_1sigma_lo, rho_corrected_1sigma_hi, "kg/m^3 ...")
+    print("Creating combined plot T_j rho, 1-sigma range:", rho_corrected_1sigma_lo, rho_corrected_1sigma_hi, "kg/m^3 ...")
     
     # print("Creating combined plot T_j rho and mass...")
 
@@ -3784,57 +4191,39 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.close()
     print("Rho distribution plot saved:",os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"))
 
-    # Create figure for mass ############
-    fig = plt.figure(figsize=(8, 6))
-    ax_dist = fig.add_subplot(111)
-
-    idx_arr = np.where(np.asarray(variables) == "m_init")[0]
-    index_m_init = int(idx_arr[0])
-    m_init_vals  = 10**samples[:, index_m_init].astype(float)
-    # print("m_init_vals:", m_init_vals)
-    m_init_lo, m_init_hi = float(np.nanmin(m_init_vals)), float(np.nanmax(m_init_vals))
-    # 95% confidence interval for m_init
-    m_init_lo, m_init_median, m_init_hi = _quantile(m_init_vals, [0.025, 0.5, 0.975], weights=w)
-
-    smooth = 0.02
-    lo_log, hi_log = np.log10(np.min(m_init_vals)), np.log10(np.max(m_init_vals))
-    lo, hi = np.min(m_init_vals), np.max(m_init_vals)
-    nbins = int(round(10. / smooth))
-    # do the log of the m_init_vals for the histogram
-    hist, edges = np.histogram(np.log10(m_init_vals), bins=nbins, weights=w, range=(lo_log, hi_log))
-    hist = norm_kde(hist, 10.0)
-    bin_centers = 0.5 * (edges[:-1] + edges[1:])
-
-    ax_dist.fill_between(bin_centers, hist, color='gold', alpha=0.6)
-
-    # Percentile lines
-    ax_dist.axvline(np.log10(m_init_median), color='gold', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(np.log10(m_init_lo), color='gold', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(np.log10(m_init_hi), color='gold', linestyle='--', linewidth=1.5)
-
-    # Title and formatting
-    plus = m_init_hi - m_init_median
-    minus = m_init_median - m_init_lo
-    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    title = rf"Tot N.{len(tj)} — $m_0$ [kg] = {fmt(m_init_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
-    ax_dist.set_title(title, fontsize=20)
-    # ax_dist.tick_params(axis='x', labelbottom=False)
-    ax_dist.tick_params(axis='y', left=False, labelleft=False)
-    ax_dist.set_ylabel("")
-    ax_dist.set_xlabel(r'log$_{10}$($m_0$ [kg])', fontsize=20)
-    ax_dist.spines['left'].set_visible(False)
-    ax_dist.spines['right'].set_visible(False)
-    ax_dist.spines['top'].set_visible(False)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all.png"), bbox_inches='tight')
-    plt.close()
-    print("Mass distribution plot saved:", os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all.png"))
-
-    # Create figure for rho ############
-    fig = plt.figure(figsize=(8, 6))
-    ax_dist = fig.add_subplot(111)
+    # Create weights ############
 
     # weight of kinetic energy but use it with the rho distribution to see if it changes the distribution shape using kinetic_energy_all and mapping it in rho_corrected
-    weights_kinetic = kinetic_energy_all / np.sum(kinetic_energy_all)
+    weights_kinetic_raw = kinetic_energy_all / np.sum(kinetic_energy_all)
+    # print("Kinetic energy weights normalized:", weights_kinetic_raw)    
+
+    # read the csv file "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\velocity_distribution_values_new.csv" an take the debiased_relative_curve column and use it as weights for the kinetic energy plot
+    velocity_weights_df = pd.read_csv("C:\\Users\\maxiv\\Documents\\UWO\\Papers\\3)Sporadics\\Results\\velocity_distribution_values_new.csv")
+    velocity_bins_weights_raw = velocity_weights_df["velocity_km_s"].values
+    # print("Velocity bins for weights:", velocity_bins_weights_raw)
+    velocity_weights_raw = velocity_weights_df["debiased_relative_curve"].values
+    # print("Velocity weights raw:", velocity_weights_raw)
+
+    # now from the velocity_weights create a new weights_kinetic_velocity by multiplying the weights_kinetic with the velocity_weights and normalizing it
+    idx_arr = np.where(np.asarray(variables) == "v_init")[0]
+    index_v_init = int(idx_arr[0])
+    v_init_vals  = samples[:, index_v_init].astype(float)
+    # print("v_init_vals:", v_init_vals)
+    # for each velocity bin, find the corresponding weight I have way more v_init_vals than velocity_bins_weights_raw, so I will use np.interp to find the corresponding weight for each v_init_val
+    velocity_weights = np.interp(v_init_vals, velocity_bins_weights_raw, velocity_weights_raw, left=0, right=0)
+    # print("Velocity weights normalized before:", (velocity_weights))
+    # normalize the velocity_weights
+    velocity_weights /= np.sum(velocity_weights)
+    # print("Velocity weights normalized:", (velocity_weights))
+    weights_kinetic = weights_kinetic_raw * velocity_weights
+    weights_kinetic /= np.sum(weights_kinetic)
+    # print("Kinetic energy weights after applying velocity weights normalized:", (weights_kinetic))
+
+    # kinetic and velocity weighted distribution
+
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
     rho_corrected_weighted_kinetic = np.histogram(rho_corrected, bins=nbins, weights=weights_kinetic, range=(lo, hi))[0]
     rho_corrected_weighted = norm_kde(rho_corrected_weighted_kinetic, 10.0)
 
@@ -3861,6 +4250,42 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax_dist.spines['right'].set_visible(False)
     ax_dist.spines['top'].set_visible(False)
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy.png"), bbox_inches='tight')
+    plt.close()
+    print("Rho distribution weighted by kinetic energy plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy.png"))
+
+    # only velocity weighted 
+
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
+    rho_corrected_weighted_velocity = np.histogram(rho_corrected, bins=nbins, weights=velocity_weights, range=(lo, hi))[0]
+    rho_corrected_weighted = norm_kde(rho_corrected_weighted_velocity, 10.0)
+
+    ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='gray', alpha=0.6)
+
+    rho_corrected_lo_velocity, rho_corrected_median_velocity, rho_corrected_hi_velocity = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=velocity_weights)
+    # Percentile lines
+    ax_dist.axvline(rho_corrected_median_velocity, color='gray', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo_velocity, color='gray', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi_velocity, color='gray', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = rho_corrected_hi_velocity - rho_corrected_median_velocity
+    minus = rho_corrected_median_velocity - rho_corrected_lo_velocity
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_velocity)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+
+    ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    # ax_dist.set_ylabel("Weighted by Kinetic Energy", fontsize=20)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_velocity.png"), bbox_inches='tight')
+    plt.close()
+    print("Rho distribution weighted by velocity plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_velocity.png"))
 
     # Tau plot ############
     print("Creating combined plot tau...")
@@ -4109,342 +4534,72 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_KintEner_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
-    ### plot of JFC HTC AST ###
 
-    print("Creating JFC, HTC, AST plot...")
+    # Create figure for mass ############
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
 
-    # ---------- Helper to always get a 2D axes array ----------
-    def _ensure_axes_2d(axes, nrows, ncols):
-        """Return axes as a 2D ndarray of shape (nrows, ncols)."""
-        if nrows == 1 and ncols == 1:
-            axes = np.asarray([[axes]])
-        elif nrows == 1:
-            axes = np.asarray([axes])
-        elif ncols == 1:
-            axes = np.asarray([[ax] for ax in axes])
-        return axes
+    idx_arr = np.where(np.asarray(variables) == "m_init")[0]
+    index_m_init = int(idx_arr[0])
+    m_init_vals  = 10**samples[:, index_m_init].astype(float)
+    # print("m_init_vals:", m_init_vals)
+    m_init_lo, m_init_hi = float(np.nanmin(m_init_vals)), float(np.nanmax(m_init_vals))
+    # 95% confidence interval for m_init
+    m_init_lo, m_init_median, m_init_hi = _quantile(m_init_vals, [0.025, 0.5, 0.975], weights=w)
 
-    # =========================
-    # Robust plot_by_cuts_and_vars
-    # Supports BOTH:
-    #  - base_mask: optional per-variable mask in FULL sample space (length Nfull)
-    #  - parent_mask: optional mapping from FULL -> REDUCED sample space
-    #     (use this ONLY if vinfo["values"] was already sliced, e.g. values = full_values[rho_cut])
-    # =========================
+    smooth = 0.02
+    lo_log, hi_log = np.log10(np.min(m_init_vals)), np.log10(np.max(m_init_vals))
+    lo, hi = np.min(m_init_vals), np.max(m_init_vals)
+    nbins = int(round(10. / smooth))
+    # do the log of the m_init_vals for the histogram
+    hist, edges = np.histogram(np.log10(m_init_vals), bins=nbins, weights=w, range=(lo_log, hi_log))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
 
-    def plot_by_cuts_and_vars(
-        vars_list, cuts_list, weights_all,
-        nbins=None, smooth=0.02, figsize=None,
-        bottom_xlabel_per_col=None, tight=True, dpi=300,
-        out_path=None,
-        # NEW:
-        wrap_cols=4,          # how many variables (columns) per band
-        band_gap=0.65,        # vertical gap between bands (in "row units")
-        wspace=0.08,          # horizontal spacing
-        hspace=0.15           # vertical spacing within a band
-    ):
-        """
-        Plot a grid of (cuts x variables) hist panels, but wrap variables into multiple
-        vertical bands to avoid a very wide figure. Example:
-        nvars=8, wrap_cols=4 -> 2 bands stacked vertically, each band is ncuts x 4.
-        """
+    ax_dist.fill_between(bin_centers, hist, color='gold', alpha=0.6)
 
-        if nbins is None:
-            nbins = int(round(10. / smooth))
+    # Percentile lines
+    ax_dist.axvline(np.log10(m_init_median), color='gold', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(np.log10(m_init_lo), color='gold', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(np.log10(m_init_hi), color='gold', linestyle='--', linewidth=1.5)
 
-        def _style(ax, xlim, hide_xticks=True):
-            if np.all(np.isfinite(xlim)):
-                ax.set_xlim(*xlim)
-            ax.tick_params(axis='y', left=False, labelleft=False)
-            ax.set_ylabel("")
-            for sp in ['left', 'right', 'top']:
-                ax.spines[sp].set_visible(False)
-            if hide_xticks:
-                ax.tick_params(axis='x', labelbottom=False)
-
-        def _panel_like_top(ax, var_vals, weights, title_prefix, lo, hi, nbins, xlim,
-                            var_name="", color_plot="black", hide_xticks=True):
-
-            m = np.isfinite(var_vals)
-            if weights is not None:
-                m &= np.isfinite(weights)
-
-            if not np.any(m):
-                ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
-                        ha='center', va='center', fontsize=14, color='black')
-                _style(ax, xlim, hide_xticks=hide_xticks)
-                return
-
-            r = var_vals[m]
-            w = None
-            if weights is not None:
-                w = weights[m].astype(float)
-                s = np.nansum(w)
-                w = (w / s) if s > 0 else None
-
-            hist, edges = np.histogram(r, bins=nbins, weights=w, range=(lo, hi))
-
-            # keep your original kernel span call
-            hist = norm_kde(hist, 10.0)
-            bin_centers = 0.5 * (edges[:-1] + edges[1:])
-
-            # Weighted percentiles
-            if w is not None:
-                q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
-            else:
-                q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
-
-            ax.fill_between(bin_centers, hist, alpha=0.6, color=color_plot)
-            for q in (q_lo, q_med, q_hi):
-                ax.axvline(q, linestyle='--', linewidth=1.5, color=color_plot)
-
-            # If label includes log10, convert for title stats (OPTIONAL; keep your behavior)
-            if "log_{10}" in (var_name):
-                r_lin = 10.0**(r)
-                var_name_lin = str(var_name).replace("$\\log_{10}$", "")
-                if w is not None:
-                    q_lo, q_med, q_hi = _quantile(r_lin, [0.025, 0.5, 0.975], weights=w)
-                else:
-                    q_lo, q_med, q_hi = np.nanpercentile(r_lin, [2.5, 50, 97.5])
-                var_name = var_name_lin
-
-            plus  = q_hi - q_med
-            minus = q_med - q_lo
-            fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-
-            if title_prefix == "":
-                title = (rf"{var_name} = {fmt(q_med)}"
-                        rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
-            else:
-                title = (rf"{title_prefix} — {var_name} = {fmt(q_med)}"
-                        rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
-            ax.set_title(title, fontsize=16)
-
-            _style(ax, xlim, hide_xticks=hide_xticks)
-
-        # -------------------------
-        # Normalize cuts_list input
-        # -------------------------
-        cuts_norm = []
-        for item in cuts_list:
-            if isinstance(item, dict):
-                cuts_norm.append((np.asarray(item["mask"], bool), str(item.get("title", ""))))
-            else:
-                m, t = item
-                cuts_norm.append((np.asarray(m, bool), str(t)))
-        cuts_list = cuts_norm
-
-        # -------------------------
-        # Basic sizes
-        # -------------------------
-        ncuts = len(cuts_list)
-        nvars = len(vars_list)
-
-        if wrap_cols is None or wrap_cols <= 0:
-            wrap_cols = nvars
-
-        nbands = int(math.ceil(nvars / wrap_cols))
-
-        # X labels (per original variable column index)
-        if bottom_xlabel_per_col is None:
-            bottom_xlabel_per_col = [v.get("label", v.get("name", f"var{j}")) for j, v in enumerate(vars_list)]
-
-        # -------------------------
-        # Full-space size
-        # -------------------------
-        Nfull = cuts_list[0][0].shape[0]
-        weights_all = np.asarray(weights_all, float)
-        if weights_all.shape[0] != Nfull:
-            raise RuntimeError(f"weights_all length {weights_all.shape[0]} != cuts length {Nfull}")
-
-        # -------------------------
-        # Sanity checks on vars_list
-        # -------------------------
-        for vinfo in vars_list:
-            vals = np.asarray(vinfo["values"])
-            nvals = vals.shape[0]
-            pm = vinfo.get("parent_mask", None)
-
-            if nvals != Nfull:
-                if pm is None:
-                    raise RuntimeError(
-                        f"Variable '{vinfo.get('name','?')}' has length {nvals} but cuts have length {Nfull}. "
-                        f"Either keep values full-length OR provide parent_mask (full->reduced mapping)."
-                    )
-                pm = np.asarray(pm, bool)
-                if pm.shape[0] != Nfull:
-                    raise RuntimeError(f"parent_mask length mismatch for '{vinfo.get('name','?')}': {pm.shape[0]} vs {Nfull}")
-                if pm.sum() != nvals:
-                    raise RuntimeError(
-                        f"parent_mask.sum()={pm.sum()} but '{vinfo.get('name','?')}' values length is {nvals}."
-                    )
-
-            bm = vinfo.get("base_mask", None)
-            if bm is not None:
-                bm = np.asarray(bm, bool)
-                if bm.shape[0] != Nfull:
-                    raise RuntimeError(f"base_mask length mismatch for '{vinfo.get('name','?')}': {bm.shape[0]} vs {Nfull}")
-
-        # -------------------------
-        # Per-variable xlim defaults
-        # -------------------------
-        for j, vinfo in enumerate(vars_list):
-            vals = np.asarray(vinfo["values"], float)
-            if vinfo.get("xlim") is None:
-                lo = float(np.nanmin(vals))
-                hi = float(np.nanmax(vals))
-                if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
-                    lo, hi = -1.0, 1.0
-                vinfo["xlim"] = (lo, hi)
-
-        # -------------------------
-        # Figure / GridSpec (bands + spacer rows)
-        # -------------------------
-        # Overall rows: nbands blocks of ncuts, with (nbands-1) spacer rows
-        total_rows = nbands * ncuts + (nbands - 1)
-
-        # Height ratios: normal rows = 1, spacer rows = band_gap
-        height_ratios = []
-        for b in range(nbands):
-            height_ratios.extend([1.0] * ncuts)
-            if b != nbands - 1:
-                height_ratios.append(float(band_gap))
-
-        # Default figsize tuned to wrapped layout
-        if figsize is None:
-            cols_effective = min(wrap_cols, nvars)
-            fig_w = cols_effective * 8
-            fig_h = (nbands * ncuts) * 4 + (nbands - 1) * 2
-            figsize = (fig_w, fig_h)
-
-        fig = plt.figure(figsize=figsize)
-        gs = gridspec.GridSpec(
-            nrows=total_rows,
-            ncols=wrap_cols,              # each band uses up to wrap_cols columns
-            figure=fig,
-            height_ratios=height_ratios,
-            hspace=hspace,
-            wspace=wspace
-        )
-
-        # Axes mapping: (band, cut_row, col_in_band) -> ax
-        axes_map = [[ [None]*wrap_cols for _ in range(ncuts) ] for _ in range(nbands)]
-
-        # Create axes only where a variable exists; leave empty columns blank in last band if needed
-        for b in range(nbands):
-            band_row0 = b * (ncuts + 1)  # +1 for spacer row after each band (except last)
-            for i in range(ncuts):
-                for k in range(wrap_cols):
-                    j = b * wrap_cols + k
-                    if j >= nvars:
-                        continue
-                    ax = fig.add_subplot(gs[band_row0 + i, k])
-                    axes_map[b][i][k] = ax
-
-        # -------------------------
-        # Plot panels
-        # -------------------------
-        for i, (cut_mask, cut_title) in enumerate(cuts_list):
-            for j, vinfo in enumerate(vars_list):
-
-                b = j // wrap_cols
-                k = j % wrap_cols
-                ax = axes_map[b][i][k]
-                if ax is None:
-                    continue
-
-                vals = np.asarray(vinfo["values"], float)
-                color = vinfo.get("color", "black")
-                xlim  = vinfo["xlim"]
-                lo, hi = xlim
-
-                # titles only in first column of each band
-                title_here = "" if k != 0 else cut_title
-
-                # 1) build FULL-space mask m_full = cut_mask & base_mask(optional)
-                base = vinfo.get("base_mask", None)
-                if base is None:
-                    m_full = cut_mask
-                else:
-                    base = np.asarray(base, bool)
-                    m_full = cut_mask & base
-
-                # 2) If values are reduced, map m_full to reduced space using parent_mask
-                pm = vinfo.get("parent_mask", None)
-                if vals.shape[0] == Nfull:
-                    v_use = vals[m_full]
-                    w_use = weights_all[m_full] if np.ndim(weights_all) else None
-                else:
-                    pm = np.asarray(pm, bool)
-                    m_red = m_full[pm]
-                    v_use = vals[m_red]
-                    w_use = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
-
-                # show xticks only on the bottom cut-row of each band
-                hide_xticks = (i != ncuts - 1)
-
-                _panel_like_top(
-                    ax,
-                    v_use,
-                    w_use,
-                    title_here,
-                    lo, hi, nbins, xlim,
-                    var_name=vinfo.get("label", vinfo.get("name", "")),
-                    color_plot=color,
-                    hide_xticks=hide_xticks
-                )
-
-                # X labels at bottom cut-row of each band
-                if i == ncuts - 1:
-                    ax.tick_params(axis='x', labelbottom=True)
-                    ax.set_xlabel(bottom_xlabel_per_col[j], fontsize=16)
-
-        # Tick label sizes
-        for b in range(nbands):
-            for i in range(ncuts):
-                for k in range(wrap_cols):
-                    ax = axes_map[b][i][k]
-                    if ax is not None:
-                        ax.tick_params(labelsize=14)
-
-        if out_path:
-            plt.savefig(out_path, bbox_inches='tight' if tight else None, dpi=dpi)
-            plt.close(fig)
+    # Title and formatting
+    plus = m_init_hi - m_init_median
+    minus = m_init_median - m_init_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $m_0$ [kg] = {fmt(m_init_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    # ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.set_xlabel(r'log$_{10}$($m_0$ [kg])', fontsize=20)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all.png"), bbox_inches='tight')
+    plt.close()
+    print("Mass distribution plot saved:", os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all.png"))
 
 
 
-        build_summary_table_latex(
-            cuts_list, vars_list, weights_all,
-            variable_map_plot={v.get("name", f"var{j}"): v.get("label", f"var{j}") for j, v in enumerate(vars_list)},
-            out_path=out_path.replace(".png", "_summary_table.tex") if out_path else None,
-            transpose=True,
-            first_col_name="Parameter",
-            counts_row_label="N"
-        )
+    if plot_class:
+        ### create new directory for rho plots ###
 
-        # ---- column headers ----
-        # col_headers = ["Cut"] + [
-            # variable_map_plot.get(
-            #     vinfo.get("name", f"var{j}"),
-            #     vinfo.get("label", vinfo.get("name", f"var{j}"))
-            # )
-            # for j, vinfo in enumerate(vars_list)
-        # ]
-        
-        return fig, axes
+        # create a new folder for the rho plots
+        output_dir_rho = os.path.join(output_dir_show, "rho_plots")
+        os.makedirs(output_dir_rho, exist_ok=True)
 
+        ### JD vs rho plot ###
 
+        print("Distribution plots:")
 
-    def plot_by_cuts_and_vars_straight(
-        vars_list, cuts_list, weights_all,
-        nbins=None, smooth=0.02, figsize=None,
-        bottom_xlabel_per_col=None, tight=True, dpi=300,
-        out_path=None ):
-        
-        if nbins is None:
-            nbins = int(round(10. / smooth))
+        ### plot of JFC HTC AST ###
 
+        print("Creating JFC, HTC, AST plot...")
+
+        # ---------- Helper to always get a 2D axes array ----------
         def _ensure_axes_2d(axes, nrows, ncols):
+            """Return axes as a 2D ndarray of shape (nrows, ncols)."""
             if nrows == 1 and ncols == 1:
                 axes = np.asarray([[axes]])
             elif nrows == 1:
@@ -4453,1317 +4608,1291 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 axes = np.asarray([[ax] for ax in axes])
             return axes
 
-        def _style(ax, xlim):
-            if np.all(np.isfinite(xlim)):
-                ax.set_xlim(*xlim)
-            ax.tick_params(axis='x', labelbottom=False)
-            ax.tick_params(axis='y', left=False, labelleft=False)
-            ax.set_ylabel("")
-            for sp in ['left', 'right', 'top']:
-                ax.spines[sp].set_visible(False)
+        # =========================
+        # Robust plot_by_cuts_and_vars
+        # Supports BOTH:
+        #  - base_mask: optional per-variable mask in FULL sample space (length Nfull)
+        #  - parent_mask: optional mapping from FULL -> REDUCED sample space
+        #     (use this ONLY if vinfo["values"] was already sliced, e.g. values = full_values[rho_cut])
+        # =========================
 
-        def _panel_like_top(ax, var_vals, weights, title_prefix, lo, hi, nbins, xlim,
-                            var_name="", color_plot="black"):
+        def plot_by_cuts_and_vars(
+            vars_list, cuts_list, weights_all,
+            nbins=None, smooth=0.02, figsize=None,
+            bottom_xlabel_per_col=None, tight=True, dpi=300,
+            out_path=None,
+            # NEW:
+            wrap_cols=4,          # how many variables (columns) per band
+            band_gap=0.65,        # vertical gap between bands (in "row units")
+            wspace=0.08,          # horizontal spacing
+            hspace=0.15):
+            """
+            Plot a grid of (cuts x variables) hist panels, but wrap variables into multiple
+            vertical bands to avoid a very wide figure. Example:
+            nvars=8, wrap_cols=4 -> 2 bands stacked vertically, each band is ncuts x 4.
+            """
 
-            m = np.isfinite(var_vals)
+            if nbins is None:
+                nbins = int(round(10. / smooth))
+
+            def _style(ax, xlim, hide_xticks=True):
+                if np.all(np.isfinite(xlim)):
+                    ax.set_xlim(*xlim)
+                ax.tick_params(axis='y', left=False, labelleft=False)
+                ax.set_ylabel("")
+                for sp in ['left', 'right', 'top']:
+                    ax.spines[sp].set_visible(False)
+                if hide_xticks:
+                    ax.tick_params(axis='x', labelbottom=False)
+
+            def _panel_like_top(ax, var_vals, weights, title_prefix, lo, hi, nbins, xlim,
+                                var_name="", color_plot="black", hide_xticks=True):
+
+                m = np.isfinite(var_vals)
+                if weights is not None:
+                    m &= np.isfinite(weights)
+
+                if not np.any(m):
+                    ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
+                            ha='center', va='center', fontsize=14, color='black')
+                    _style(ax, xlim, hide_xticks=hide_xticks)
+                    return
+
+                r = var_vals[m]
+                w = None
+                if weights is not None:
+                    w = weights[m].astype(float)
+                    s = np.nansum(w)
+                    w = (w / s) if s > 0 else None
+
+                hist, edges = np.histogram(r, bins=nbins, weights=w, range=(lo, hi))
+
+                # keep your original kernel span call
+                hist = norm_kde(hist, 10.0)
+                bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+                # Weighted percentiles
+                if w is not None:
+                    q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
+                else:
+                    q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
+
+                ax.fill_between(bin_centers, hist, alpha=0.6, color=color_plot)
+                for q in (q_lo, q_med, q_hi):
+                    ax.axvline(q, linestyle='--', linewidth=1.5, color=color_plot)
+
+                # If label includes log10, convert for title stats (OPTIONAL; keep your behavior)
+                if "log_{10}" in (var_name):
+                    r_lin = 10.0**(r)
+                    var_name_lin = str(var_name).replace("$\\log_{10}$", "")
+                    if w is not None:
+                        q_lo, q_med, q_hi = _quantile(r_lin, [0.025, 0.5, 0.975], weights=w)
+                    else:
+                        q_lo, q_med, q_hi = np.nanpercentile(r_lin, [2.5, 50, 97.5])
+                    var_name = var_name_lin
+
+                plus  = q_hi - q_med
+                minus = q_med - q_lo
+                fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+
+                if title_prefix == "":
+                    title = (rf"{var_name} = {fmt(q_med)}"
+                            rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+                else:
+                    title = (rf"{title_prefix} — {var_name} = {fmt(q_med)}"
+                            rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+                ax.set_title(title, fontsize=16)
+
+                _style(ax, xlim, hide_xticks=hide_xticks)
+
+            # -------------------------
+            # Normalize cuts_list input
+            # -------------------------
+            cuts_norm = []
+            for item in cuts_list:
+                if isinstance(item, dict):
+                    cuts_norm.append((np.asarray(item["mask"], bool), str(item.get("title", ""))))
+                else:
+                    m, t = item
+                    cuts_norm.append((np.asarray(m, bool), str(t)))
+            cuts_list = cuts_norm
+
+            # -------------------------
+            # Basic sizes
+            # -------------------------
+            ncuts = len(cuts_list)
+            nvars = len(vars_list)
+
+            if wrap_cols is None or wrap_cols <= 0:
+                wrap_cols = nvars
+
+            nbands = int(math.ceil(nvars / wrap_cols))
+
+            # X labels (per original variable column index)
+            if bottom_xlabel_per_col is None:
+                bottom_xlabel_per_col = [v.get("label", v.get("name", f"var{j}")) for j, v in enumerate(vars_list)]
+
+            # -------------------------
+            # Full-space size
+            # -------------------------
+            Nfull = cuts_list[0][0].shape[0]
+            weights_all = np.asarray(weights_all, float)
+            if weights_all.shape[0] != Nfull:
+                raise RuntimeError(f"weights_all length {weights_all.shape[0]} != cuts length {Nfull}")
+
+            # -------------------------
+            # Sanity checks on vars_list
+            # -------------------------
+            for vinfo in vars_list:
+                vals = np.asarray(vinfo["values"])
+                nvals = vals.shape[0]
+                pm = vinfo.get("parent_mask", None)
+
+                if nvals != Nfull:
+                    if pm is None:
+                        raise RuntimeError(
+                            f"Variable '{vinfo.get('name','?')}' has length {nvals} but cuts have length {Nfull}. "
+                            f"Either keep values full-length OR provide parent_mask (full->reduced mapping)."
+                        )
+                    pm = np.asarray(pm, bool)
+                    if pm.shape[0] != Nfull:
+                        raise RuntimeError(f"parent_mask length mismatch for '{vinfo.get('name','?')}': {pm.shape[0]} vs {Nfull}")
+                    if pm.sum() != nvals:
+                        raise RuntimeError(
+                            f"parent_mask.sum()={pm.sum()} but '{vinfo.get('name','?')}' values length is {nvals}."
+                        )
+
+                bm = vinfo.get("base_mask", None)
+                if bm is not None:
+                    bm = np.asarray(bm, bool)
+                    if bm.shape[0] != Nfull:
+                        raise RuntimeError(f"base_mask length mismatch for '{vinfo.get('name','?')}': {bm.shape[0]} vs {Nfull}")
+
+            # -------------------------
+            # Per-variable xlim defaults
+            # -------------------------
+            for j, vinfo in enumerate(vars_list):
+                vals = np.asarray(vinfo["values"], float)
+                if vinfo.get("xlim") is None:
+                    lo = float(np.nanmin(vals))
+                    hi = float(np.nanmax(vals))
+                    if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+                        lo, hi = -1.0, 1.0
+                    vinfo["xlim"] = (lo, hi)
+
+            # -------------------------
+            # Figure / GridSpec (bands + spacer rows)
+            # -------------------------
+            # Overall rows: nbands blocks of ncuts, with (nbands-1) spacer rows
+            total_rows = nbands * ncuts + (nbands - 1)
+
+            # Height ratios: normal rows = 1, spacer rows = band_gap
+            height_ratios = []
+            for b in range(nbands):
+                height_ratios.extend([1.0] * ncuts)
+                if b != nbands - 1:
+                    height_ratios.append(float(band_gap))
+
+            # Default figsize tuned to wrapped layout
+            if figsize is None:
+                cols_effective = min(wrap_cols, nvars)
+                fig_w = cols_effective * 8
+                fig_h = (nbands * ncuts) * 4 + (nbands - 1) * 2
+                figsize = (fig_w, fig_h)
+
+            fig = plt.figure(figsize=figsize)
+            gs = gridspec.GridSpec(
+                nrows=total_rows,
+                ncols=wrap_cols,              # each band uses up to wrap_cols columns
+                figure=fig,
+                height_ratios=height_ratios,
+                hspace=hspace,
+                wspace=wspace
+            )
+
+            # Axes mapping: (band, cut_row, col_in_band) -> ax
+            axes_map = [[ [None]*wrap_cols for _ in range(ncuts) ] for _ in range(nbands)]
+
+            # Create axes only where a variable exists; leave empty columns blank in last band if needed
+            for b in range(nbands):
+                band_row0 = b * (ncuts + 1)  # +1 for spacer row after each band (except last)
+                for i in range(ncuts):
+                    for k in range(wrap_cols):
+                        j = b * wrap_cols + k
+                        if j >= nvars:
+                            continue
+                        ax = fig.add_subplot(gs[band_row0 + i, k])
+                        axes_map[b][i][k] = ax
+
+            # -------------------------
+            # Plot panels
+            # -------------------------
+            for i, (cut_mask, cut_title) in enumerate(cuts_list):
+                for j, vinfo in enumerate(vars_list):
+
+                    b = j // wrap_cols
+                    k = j % wrap_cols
+                    ax = axes_map[b][i][k]
+                    if ax is None:
+                        continue
+
+                    vals = np.asarray(vinfo["values"], float)
+                    color = vinfo.get("color", "black")
+                    xlim  = vinfo["xlim"]
+                    lo, hi = xlim
+
+                    # titles only in first column of each band
+                    title_here = "" if k != 0 else cut_title
+
+                    # 1) build FULL-space mask m_full = cut_mask & base_mask(optional)
+                    base = vinfo.get("base_mask", None)
+                    if base is None:
+                        m_full = cut_mask
+                    else:
+                        base = np.asarray(base, bool)
+                        m_full = cut_mask & base
+
+                    # 2) If values are reduced, map m_full to reduced space using parent_mask
+                    pm = vinfo.get("parent_mask", None)
+                    if vals.shape[0] == Nfull:
+                        v_use = vals[m_full]
+                        w_use = weights_all[m_full] if np.ndim(weights_all) else None
+                    else:
+                        pm = np.asarray(pm, bool)
+                        m_red = m_full[pm]
+                        v_use = vals[m_red]
+                        w_use = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
+
+                    # show xticks only on the bottom cut-row of each band
+                    hide_xticks = (i != ncuts - 1)
+
+                    _panel_like_top(
+                        ax,
+                        v_use,
+                        w_use,
+                        title_here,
+                        lo, hi, nbins, xlim,
+                        var_name=vinfo.get("label", vinfo.get("name", "")),
+                        color_plot=color,
+                        hide_xticks=hide_xticks
+                    )
+
+                    # X labels at bottom cut-row of each band
+                    if i == ncuts - 1:
+                        ax.tick_params(axis='x', labelbottom=True)
+                        ax.set_xlabel(bottom_xlabel_per_col[j], fontsize=16)
+
+            # Tick label sizes
+            for b in range(nbands):
+                for i in range(ncuts):
+                    for k in range(wrap_cols):
+                        ax = axes_map[b][i][k]
+                        if ax is not None:
+                            ax.tick_params(labelsize=14)
+
+            if out_path:
+                plt.savefig(out_path, bbox_inches='tight' if tight else None, dpi=dpi)
+                plt.close(fig)
+
+
+
+            build_summary_table_latex(
+                cuts_list, vars_list, weights_all,
+                variable_map_plot={v.get("name", f"var{j}"): v.get("label", f"var{j}") for j, v in enumerate(vars_list)},
+                out_path=out_path.replace(".png", "_summary_table.tex") if out_path else None,
+                transpose=True,
+                first_col_name="Parameter",
+                counts_row_label="N"
+            )
+
+            # ---- column headers ----
+            # col_headers = ["Cut"] + [
+                # variable_map_plot.get(
+                #     vinfo.get("name", f"var{j}"),
+                #     vinfo.get("label", vinfo.get("name", f"var{j}"))
+                # )
+                # for j, vinfo in enumerate(vars_list)
+            # ]
+            
+            return fig, axes
+
+
+
+        def plot_by_cuts_and_vars_straight(
+            vars_list, cuts_list, weights_all,
+            nbins=None, smooth=0.02, figsize=None,
+            bottom_xlabel_per_col=None, tight=True, dpi=300,
+            out_path=None ):
+            
+            if nbins is None:
+                nbins = int(round(10. / smooth))
+
+            def _ensure_axes_2d(axes, nrows, ncols):
+                if nrows == 1 and ncols == 1:
+                    axes = np.asarray([[axes]])
+                elif nrows == 1:
+                    axes = np.asarray([axes])
+                elif ncols == 1:
+                    axes = np.asarray([[ax] for ax in axes])
+                return axes
+
+            def _style(ax, xlim):
+                if np.all(np.isfinite(xlim)):
+                    ax.set_xlim(*xlim)
+                ax.tick_params(axis='x', labelbottom=False)
+                ax.tick_params(axis='y', left=False, labelleft=False)
+                ax.set_ylabel("")
+                for sp in ['left', 'right', 'top']:
+                    ax.spines[sp].set_visible(False)
+
+            def _panel_like_top(ax, var_vals, weights, title_prefix, lo, hi, nbins, xlim,
+                                var_name="", color_plot="black"):
+
+                m = np.isfinite(var_vals)
+                if weights is not None:
+                    m &= np.isfinite(weights)
+
+                if not np.any(m):
+                    ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
+                            ha='center', va='center', fontsize=14, color='black')
+                    _style(ax, xlim)
+                    return
+
+                r = var_vals[m]
+                w = None
+                if weights is not None:
+                    w = weights[m].astype(float)
+                    s = np.nansum(w)
+                    w = (w / s) if s > 0 else None
+
+                hist, edges = np.histogram(r, bins=nbins, weights=w, range=(lo, hi))
+                hist = norm_kde(hist, 10.0)  # keep your original kernel span
+                bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+                # Weighted percentiles
+                if w is not None:
+                    q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
+                else:
+                    q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
+
+                ax.fill_between(bin_centers, hist, alpha=0.6, color=color_plot)
+                for q in (q_lo, q_med, q_hi):
+                    ax.axvline(q, linestyle='--', linewidth=1.5, color=color_plot)
+
+                # If label includes log10, convert for title stats (OPTIONAL; keep your behavior)
+                if "log_{10}" in (var_name):
+                    r_lin = 10.0**(r)
+                    var_name_lin = str(var_name).replace("$\\log_{10}$", "")
+                    if w is not None:
+                        q_lo, q_med, q_hi = _quantile(r_lin, [0.025, 0.5, 0.975], weights=w)
+                    else:
+                        q_lo, q_med, q_hi = np.nanpercentile(r_lin, [2.5, 50, 97.5])
+                    var_name = var_name_lin
+                plus  = q_hi - q_med
+                minus = q_med - q_lo
+                fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+
+                if title_prefix == "":
+                    title = (rf"{var_name} = {fmt(q_med)}"
+                            rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+                else:
+                    title = (rf"{title_prefix} — {var_name} = {fmt(q_med)}"
+                            rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+                ax.set_title(title, fontsize=16)
+
+                _style(ax, xlim)
+
+            # -------------------------
+            # Normalize cuts_list input
+            # -------------------------
+            cuts_norm = []
+            for item in cuts_list:
+                if isinstance(item, dict):
+                    cuts_norm.append((np.asarray(item["mask"], bool), str(item.get("title", ""))))
+                else:
+                    m, t = item
+                    cuts_norm.append((np.asarray(m, bool), str(t)))
+            cuts_list = cuts_norm
+
+            # -------------------------
+            # Figure / axes
+            # -------------------------
+            nrows = len(cuts_list)
+            ncols = len(vars_list)
+            if figsize is None:
+                figsize = (ncols * 8, nrows * 3)
+
+            fig, axes = plt.subplots(nrows, ncols, figsize=figsize, sharex=False)
+            axes = _ensure_axes_2d(axes, nrows, ncols)
+
+            if bottom_xlabel_per_col is None:
+                bottom_xlabel_per_col = [v.get("label", v.get("name", f"var{j}")) for j, v in enumerate(vars_list)]
+
+            # -------------------------
+            # Full-space size
+            # -------------------------
+            Nfull = cuts_list[0][0].shape[0]
+            weights_all = np.asarray(weights_all, float)
+            if weights_all.shape[0] != Nfull:
+                raise RuntimeError(f"weights_all length {weights_all.shape[0]} != cuts length {Nfull}")
+
+            # -------------------------
+            # Sanity checks on vars_list
+            # -------------------------
+            for vinfo in vars_list:
+                vals = np.asarray(vinfo["values"])
+                nvals = vals.shape[0]
+                pm = vinfo.get("parent_mask", None)
+
+                if nvals != Nfull:
+                    if pm is None:
+                        raise RuntimeError(
+                            f"Variable '{vinfo.get('name','?')}' has length {nvals} but cuts have length {Nfull}. "
+                            f"Either keep values full-length OR provide parent_mask (full->reduced mapping)."
+                        )
+                    pm = np.asarray(pm, bool)
+                    if pm.shape[0] != Nfull:
+                        raise RuntimeError(f"parent_mask length mismatch for '{vinfo.get('name','?')}': {pm.shape[0]} vs {Nfull}")
+                    if pm.sum() != nvals:
+                        raise RuntimeError(
+                            f"parent_mask.sum()={pm.sum()} but '{vinfo.get('name','?')}' values length is {nvals}."
+                        )
+
+                bm = vinfo.get("base_mask", None)
+                if bm is not None:
+                    bm = np.asarray(bm, bool)
+                    if bm.shape[0] != Nfull:
+                        raise RuntimeError(f"base_mask length mismatch for '{vinfo.get('name','?')}': {bm.shape[0]} vs {Nfull}")
+
+            # -------------------------
+            # Per-column xlim defaults
+            # IMPORTANT: compute limits in the *variable's own universe*
+            # -------------------------
+            for j, vinfo in enumerate(vars_list):
+                vals = np.asarray(vinfo["values"], float)
+                if vinfo.get("xlim") is None:
+                    lo = float(np.nanmin(vals))
+                    hi = float(np.nanmax(vals))
+                    if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+                        lo, hi = -1.0, 1.0
+                    vinfo["xlim"] = (lo, hi)
+
+            # =========================
+            # Plot grid
+            # =========================
+            for i, (cut_mask, cut_title) in enumerate(cuts_list):
+                for j, vinfo in enumerate(vars_list):
+                    ax = axes[i, j]
+
+                    vals = np.asarray(vinfo["values"], float)
+                    color = vinfo.get("color", "black")
+                    xlim  = vinfo["xlim"]
+                    lo, hi = xlim
+
+                    # titles only in first column
+                    title_here = "" if j != 0 else cut_title
+
+                    # 1) build FULL-space mask m_full = cut_mask & base_mask(optional)
+                    base = vinfo.get("base_mask", None)
+                    if base is None:
+                        m_full = cut_mask
+                    else:
+                        base = np.asarray(base, bool)
+                        m_full = cut_mask & base
+
+                    # 2) If values are reduced, map m_full to reduced space using parent_mask
+                    pm = vinfo.get("parent_mask", None)
+                    if vals.shape[0] == Nfull:
+                        v_use = vals[m_full]
+                        w_use = weights_all[m_full] if np.ndim(weights_all) else None
+                    else:
+                        pm = np.asarray(pm, bool)  # validated above
+                        m_red = m_full[pm]         # reduced boolean mask
+                        v_use = vals[m_red]
+                        w_use = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
+
+                    _panel_like_top(
+                        ax,
+                        v_use,
+                        w_use,
+                        title_here,
+                        lo, hi, nbins, xlim,
+                        var_name=vinfo.get("label", vinfo.get("name", "")),
+                        color_plot=color
+                    )
+
+            # bottom row labels
+            for j in range(ncols):
+                axes[-1, j].tick_params(axis='x', labelbottom=True)
+                axes[-1, j].set_xlabel(bottom_xlabel_per_col[j], fontsize=16)
+
+            for ax in axes.ravel():
+                ax.tick_params(labelsize=14)
+
+            if out_path:
+                plt.savefig(out_path, bbox_inches='tight' if tight else None, dpi=dpi)
+                plt.close(fig)
+
+            build_summary_table_latex(
+                cuts_list, vars_list, weights_all,
+                variable_map_plot={v.get("name", f"var{j}"): v.get("label", f"var{j}") for j, v in enumerate(vars_list)},
+                out_path=out_path.replace(".png", "_summary_table.tex") if out_path else None,
+                transpose=True,
+                first_col_name="Parameter",
+                counts_row_label="N"
+            )
+
+            # ---- column headers ----
+            # col_headers = ["Cut"] + [
+                # variable_map_plot.get(
+                #     vinfo.get("name", f"var{j}"),
+                #     vinfo.get("label", vinfo.get("name", f"var{j}"))
+                # )
+                # for j, vinfo in enumerate(vars_list)
+            # ]
+            
+            return fig, axes
+
+
+        # =========================
+        def split_cut_title(cut_title: str):
+            """
+            Examples:
+            'Tot N.11 AST (Tj>5)'      -> ('AST (Tj>5)', '11')
+            'Tot N.13 AST (4<Tj<5)'    -> ('AST (4<Tj<5)', '13')
+            """
+            s = str(cut_title).strip()
+            m = re.search(r"Tot\s*N\.(\d+)\s*(.*)$", s)
+            if not m:
+                return (s, "")
+            N = m.group(1)
+            label = m.group(2).strip()
+            return (label, N)
+
+
+        def weighted_quantile(x, q, weights=None):
+            """
+            Weighted quantiles for 1D arrays.
+            q in [0,1] list/array.
+            """
+            x = np.asarray(x, float)
+            q = np.asarray(q, float)
+
+            if weights is None:
+                return np.quantile(x, q)
+
+            w = np.asarray(weights, float)
+            m = np.isfinite(x) & np.isfinite(w)
+            x = x[m]
+            w = w[m]
+            if x.size == 0:
+                return np.array([np.nan] * q.size)
+
+            s = np.sum(w)
+            if not np.isfinite(s) or s <= 0:
+                return np.array([np.nan] * q.size)
+
+            # sort by x
+            idx = np.argsort(x)
+            x = x[idx]
+            w = w[idx]
+
+            cdf = np.cumsum(w) / s
+            # interpolate quantiles on CDF
+            return np.interp(q, cdf, x, left=x[0], right=x[-1])
+
+
+        def fmt_pm(q_lo, q_med, q_hi):
+            plus  = q_hi - q_med
+            minus = q_med - q_lo
+            f = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+            return f"{f(q_med)}$^{{+{f(plus)}}}_{{-{f(minus)}}}$"
+
+
+        # -------------------------
+        # Main table builder
+        # -------------------------
+        def build_summary_table_latex(
+            cuts_list,
+            vars_list,
+            weights_all,
+            variable_map_plot=None,
+            out_path=None,
+            transpose=True,
+            first_col_name="Parameter",
+            counts_row_label="N",):
+            """
+            cuts_list: [(cut_mask(bool array len Nfull), cut_title(str)), ...]
+            vars_list: list of dicts with keys:
+                - "values": array (len Nfull or reduced length)
+                - optional "base_mask": bool array len Nfull
+                - optional "parent_mask": bool array len Nfull (maps full->reduced)
+                - optional "name", "label"
+            weights_all: array len Nfull (or scalar/None). If scalar/ndim==0 treated as no weights.
+            variable_map_plot: dict mapping var "name" -> pretty label (optional)
+            transpose: if True => rows=variables, columns=cuts (with a second header row for N)
+            """
+            if variable_map_plot is None:
+                variable_map_plot = {}
+
+            if not cuts_list:
+                raise ValueError("cuts_list is empty.")
+            if not vars_list:
+                raise ValueError("vars_list is empty.")
+
+            Nfull = cuts_list[0][0].shape[0]
+
+            # Precompute cut labels and counts (for headers)
+            cut_labels = []
+            cut_counts = []
+            for _, cut_title in cuts_list:
+                lab, N = split_cut_title(cut_title)
+                cut_labels.append(lab)
+                cut_counts.append(N)
+
+            # Variable headers (pretty names)
+            var_headers = [
+                variable_map_plot.get(
+                    vinfo.get("name", f"var{j}"),
+                    vinfo.get("label", vinfo.get("name", f"var{j}"))
+                )
+                for j, vinfo in enumerate(vars_list)
+            ]
+
+            # delete $log_{10}$ from var_headers if present, we will add it back in the table stats if needed
+            var_headers = [str(h).replace("$\\log_{10}$", "") for h in var_headers]
+
+            # ----------------------------------------------------------
+            # Build table_data in the ORIGINAL orientation:
+            # rows = cuts, cols = [cut_title] + variables
+            # ----------------------------------------------------------
+            table_data = []
+
+            for (cut_mask, cut_title) in cuts_list:
+                row = [cut_title]
+
+                for vinfo in vars_list:
+                    vals = np.asarray(vinfo["values"], float)
+
+                    # ---- full-space selection mask ----
+                    base = vinfo.get("base_mask", None)
+                    if base is None:
+                        m_full = np.asarray(cut_mask, bool)
+                    else:
+                        m_full = np.asarray(cut_mask, bool) & np.asarray(base, bool)
+
+                    # ---- map to reduced space if needed ----
+                    pm = vinfo.get("parent_mask", None)
+                    if vals.shape[0] == Nfull:
+                        vals_cut = vals[m_full]
+                        w_cut = weights_all[m_full] if (weights_all is not None and np.ndim(weights_all) > 0) else None
+                    else:
+                        if pm is None:
+                            raise ValueError(
+                                f"Variable appears reduced (len={vals.shape[0]} != Nfull={Nfull}) "
+                                "but vinfo has no parent_mask."
+                            )
+                        pm = np.asarray(pm, bool)
+                        m_red = m_full[pm]  # mask in reduced universe
+                        vals_cut = vals[m_red]
+                        if (weights_all is not None) and (np.ndim(weights_all) > 0):
+                            w_cut = weights_all[pm][m_red]
+                        else:
+                            w_cut = None
+
+                    # ---- force arrays + finite filtering ----
+                    vals_cut = np.atleast_1d(np.asarray(vals_cut, float))
+
+                    if w_cut is not None:
+                        w_cut = np.atleast_1d(np.asarray(w_cut, float))
+                        fin = np.isfinite(vals_cut) & np.isfinite(w_cut)
+                        vals_cut = vals_cut[fin]
+                        w_cut = w_cut[fin]
+                        if vals_cut.size == 0:
+                            row.append("---")
+                            continue
+                        s = np.nansum(w_cut)
+                        w_cut = (w_cut / s) if (np.isfinite(s) and s > 0) else None
+                    else:
+                        fin = np.isfinite(vals_cut)
+                        vals_cut = vals_cut[fin]
+                        if vals_cut.size == 0:
+                            row.append("---")
+                            continue
+
+                    # ---- percentiles (log10 aware) ----
+                    label_here = vinfo.get("label", vinfo.get("name", ""))
+
+                    if "log_{10}" in str(label_here):
+                        # table stats in linear space
+                        r_lin = 10.0 ** vals_cut
+                        q_lo, q_med, q_hi = weighted_quantile(r_lin, [0.025, 0.5, 0.975], weights=w_cut)
+                    else:
+                        q_lo, q_med, q_hi = weighted_quantile(vals_cut, [0.025, 0.5, 0.975], weights=w_cut)
+
+                    row.append(fmt_pm(q_lo, q_med, q_hi))
+
+                table_data.append(row)
+
+            # ----------------------------------------------------------
+            # Convert to transposed orientation if requested
+            # ----------------------------------------------------------
+            if transpose:
+                # table_data rows: [cut_title, var1, var2, ...]
+                # want rows: [var_header, cut1, cut2, ...]
+                table_data_T = []
+                for j, vname in enumerate(var_headers):
+                    table_data_T.append([vname] + [table_data[i][j + 1] for i in range(len(table_data))])
+
+                # build LaTeX with 2 header rows:
+                #   1) labels
+                #   2) counts
+                col_headers = [first_col_name] + cut_labels
+
+                latex = ""
+                latex += "\\begin{tabular}{l" + "c" * len(cuts_list) + "}\n"
+                latex += " & ".join(col_headers) + " \\\\\n"
+                latex += f"{counts_row_label} & " + " & ".join(cut_counts) + " \\\\\n"
+                latex += "\\hline\n"
+                for row in table_data_T:
+                    latex += " & ".join(row) + " \\\\\n"
+                latex += "\\end{tabular}\n"
+
+            else:
+                # non-transposed: add two leading columns (label, N) instead of raw cut_title
+                table_data_nt = []
+                for row in table_data:
+                    lab, N = split_cut_title(row[0])
+                    table_data_nt.append([lab, N] + row[1:])
+
+                col_headers = ["Cut", "N"] + var_headers
+
+                latex = ""
+                latex += "\\begin{tabular}{l c" + "c" * len(vars_list) + "}\n"
+                latex += " & ".join(col_headers) + " \\\\\n"
+                latex += "\\hline\n"
+                for row in table_data_nt:
+                    latex += " & ".join(row) + " \\\\\n"
+                latex += "\\end{tabular}\n"
+
+            # ---- save (optional) ----
+            if out_path:
+                # check if has .png extension, if so replace with .tex for the table output
+                if out_path.endswith(".png"):
+                    table_out_path = out_path.replace(".png", "_summary_table.tex")
+                elif out_path.endswith(".tex"):
+                    table_out_path = out_path
+                else:                
+                    table_out_path = out_path + "_summary_table.tex"
+                # # you had .png -> _summary_table.tex, keep that behavior if you like:
+                # table_out_path = out_path.replace(".png", "_summary_table.tex")
+                with open(table_out_path, "w") as f:
+                    f.write(latex)
+            print("Summary table LaTeX:\n", latex)
+
+
+        event_names_like = all_names
+
+        tj = np.asarray(tj, float)  # per-event Tj (same length as event_names_like)
+        if tj.shape[0] != event_names_like.shape[0]:
+            raise RuntimeError("Length mismatch: event_names vs tj.")
+
+        # dict: base_name -> Tj
+        tj_by_name = {str(n): float(v) for n, v in zip(event_names_like, tj)}
+
+        # Ensure per-sample names of length N_samples
+        N_samples = combined_samples.shape[0]
+        all_names = np.asarray(all_names)
+
+        if all_names.shape[0] == N_samples:
+            names_per_sample = all_names.astype(str)
+        elif all_names.shape[0] == len(all_samples):
+            # Expand by repeating each event's name by its sample count
+            names_per_sample = np.concatenate([
+                np.repeat(str(name), arr.shape[0]) for name, arr in zip(all_names, all_samples)
+            ])
+            if names_per_sample.shape[0] != N_samples:
+                raise RuntimeError("Expanded names length does not match combined_samples rows.")
+        else:
+            raise RuntimeError("all_names must be per-sample or per-event (same length as all_samples).")
+
+        # Map each sample's base_name -> Tj (NaN if missing)
+        tj_samples = np.array([tj_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+
+        # ---------- Pull rho_corrected samples & weights ----------
+        rho_samp = np.asarray(rho_corrected, float)
+        if rho_samp.shape[0] != N_samples:
+            # Try to locate rho_corrected column in combined_samples via 'variables'
+            if 'variables' in globals() and ('rho_corrected' in variables):
+                rho_idx = variables.index('rho_corrected')
+                rho_samp = combined_samples[:, rho_idx].astype(float)
+            else:
+                raise RuntimeError("rho_corrected length mismatch and no 'variables' index found.")
+
+        w_all = np.asarray(combined_results.importance_weights(), float)
+        w_all = np.where(np.isfinite(w_all), w_all, 0.0)
+        if np.nansum(w_all) > 0:
+            w_all = w_all / np.nansum(w_all)
+
+        # Global range & plotting params (match your panel)
+        smooth = 0.02
+        lo_all = float(np.nanmin(rho_samp))
+        hi_all = float(np.nanmax(rho_samp))
+        nbins = int(round(10.0 / smooth))
+        xlim = (-100, 8300)
+
+        # ---------- Helper: a panel identical to your top one ----------
+        def _panel_like_top(ax, rho_vals, weights, title_prefix, lo, hi, nbins, xlim, var_name="$\\rho$ [kg/m$^3$]", color_plot='black'):
+            # guard
+            m = np.isfinite(rho_vals)
             if weights is not None:
-                m &= np.isfinite(weights)
-
+                m = m & np.isfinite(weights)
             if not np.any(m):
                 ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
                         ha='center', va='center', fontsize=14, color='black')
                 _style(ax, xlim)
                 return
 
-            r = var_vals[m]
+            r = rho_vals[m]
             w = None
             if weights is not None:
                 w = weights[m].astype(float)
-                s = np.nansum(w)
-                w = (w / s) if s > 0 else None
+                if np.nansum(w) > 0:
+                    w = w / np.nansum(w)
+                else:
+                    w = None
 
             hist, edges = np.histogram(r, bins=nbins, weights=w, range=(lo, hi))
-            hist = norm_kde(hist, 10.0)  # keep your original kernel span
+            hist = norm_kde(hist, 10.0)
             bin_centers = 0.5 * (edges[:-1] + edges[1:])
 
-            # Weighted percentiles
+            # Weighted percentiles (your _quantile)
             if w is not None:
                 q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
             else:
                 q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
 
-            ax.fill_between(bin_centers, hist, alpha=0.6, color=color_plot)
+            # Fill + lines (black)
+            ax.fill_between(bin_centers, hist, color=color_plot, alpha=0.6)
             for q in (q_lo, q_med, q_hi):
-                ax.axvline(q, linestyle='--', linewidth=1.5, color=color_plot)
+                ax.axvline(q, color=color_plot, linestyle='--', linewidth=1.5)
 
-            # If label includes log10, convert for title stats (OPTIONAL; keep your behavior)
-            if "log_{10}" in (var_name):
-                r_lin = 10.0**(r)
-                var_name_lin = str(var_name).replace("$\\log_{10}$", "")
-                if w is not None:
-                    q_lo, q_med, q_hi = _quantile(r_lin, [0.025, 0.5, 0.975], weights=w)
-                else:
-                    q_lo, q_med, q_hi = np.nanpercentile(r_lin, [2.5, 50, 97.5])
-                var_name = var_name_lin
             plus  = q_hi - q_med
             minus = q_med - q_lo
             fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-
-            if title_prefix == "":
-                title = (rf"{var_name} = {fmt(q_med)}"
-                        rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
-            else:
-                title = (rf"{title_prefix} — {var_name} = {fmt(q_med)}"
-                        rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
-            ax.set_title(title, fontsize=16)
+            title = (rf"{title_prefix} — {var_name} = {fmt(q_med)}"
+                    rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
+            ax.set_title(title, fontsize=20)
 
             _style(ax, xlim)
 
-        # -------------------------
-        # Normalize cuts_list input
-        # -------------------------
-        cuts_norm = []
-        for item in cuts_list:
-            if isinstance(item, dict):
-                cuts_norm.append((np.asarray(item["mask"], bool), str(item.get("title", ""))))
-            else:
-                m, t = item
-                cuts_norm.append((np.asarray(m, bool), str(t)))
-        cuts_list = cuts_norm
+        def _style(ax, xlim):
+            ax.set_xlim(*xlim)
+            ax.tick_params(axis='x', labelbottom=False)
+            ax.tick_params(axis='y', left=False, labelleft=False)
+            ax.set_ylabel("")
+            for sp in ['left','right','top']: # 'bottom',
+                ax.spines[sp].set_visible(False)
+
+        # ---------- Class masks at SAMPLE level ----------
+        finite = np.isfinite(rho_samp) & np.isfinite(tj_samples) & np.isfinite(w_all)
+        ast_m = finite & (tj_samples >= 3.0)
+        jfc_m = finite & (tj_samples >= 2.0) & (tj_samples < 3.0) 
+        htc_m = finite & (tj_samples < 2.0)
+
+        # find the number of tj above 3
+        num_tj_above_3 = tj[tj >= 3].shape[0]
+        # find the number of tj in between 2 and 3
+        num_tj_between_2_and_3 = tj[(tj >= 2) & (tj < 3)].shape[0]
+        # find the number of tj below 2
+        num_tj_below_2 = tj[tj < 2].shape[0]
+
+        # ---------- Figure with three stacked panels ----------
+        fig, axes = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
+
+        _panel_like_top(axes[0], rho_samp[ast_m], w_all[ast_m], "Tot N." + str(num_tj_above_3) + " AST", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[jfc_m], w_all[jfc_m], "Tot N." + str(num_tj_between_2_and_3) + " JFC", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[2], rho_samp[htc_m], w_all[htc_m], "Tot N." + str(num_tj_below_2) + " HTC", lo_all, hi_all, nbins, xlim) # "N° " + str(num_tj_below_2) + " HTC"
 
-        # -------------------------
-        # Figure / axes
-        # -------------------------
-        nrows = len(cuts_list)
-        ncols = len(vars_list)
-        if figsize is None:
-            figsize = (ncols * 8, nrows * 3)
-
-        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, sharex=False)
-        axes = _ensure_axes_2d(axes, nrows, ncols)
-
-        if bottom_xlabel_per_col is None:
-            bottom_xlabel_per_col = [v.get("label", v.get("name", f"var{j}")) for j, v in enumerate(vars_list)]
-
-        # -------------------------
-        # Full-space size
-        # -------------------------
-        Nfull = cuts_list[0][0].shape[0]
-        weights_all = np.asarray(weights_all, float)
-        if weights_all.shape[0] != Nfull:
-            raise RuntimeError(f"weights_all length {weights_all.shape[0]} != cuts length {Nfull}")
-
-        # -------------------------
-        # Sanity checks on vars_list
-        # -------------------------
-        for vinfo in vars_list:
-            vals = np.asarray(vinfo["values"])
-            nvals = vals.shape[0]
-            pm = vinfo.get("parent_mask", None)
-
-            if nvals != Nfull:
-                if pm is None:
-                    raise RuntimeError(
-                        f"Variable '{vinfo.get('name','?')}' has length {nvals} but cuts have length {Nfull}. "
-                        f"Either keep values full-length OR provide parent_mask (full->reduced mapping)."
-                    )
-                pm = np.asarray(pm, bool)
-                if pm.shape[0] != Nfull:
-                    raise RuntimeError(f"parent_mask length mismatch for '{vinfo.get('name','?')}': {pm.shape[0]} vs {Nfull}")
-                if pm.sum() != nvals:
-                    raise RuntimeError(
-                        f"parent_mask.sum()={pm.sum()} but '{vinfo.get('name','?')}' values length is {nvals}."
-                    )
-
-            bm = vinfo.get("base_mask", None)
-            if bm is not None:
-                bm = np.asarray(bm, bool)
-                if bm.shape[0] != Nfull:
-                    raise RuntimeError(f"base_mask length mismatch for '{vinfo.get('name','?')}': {bm.shape[0]} vs {Nfull}")
-
-        # -------------------------
-        # Per-column xlim defaults
-        # IMPORTANT: compute limits in the *variable's own universe*
-        # -------------------------
-        for j, vinfo in enumerate(vars_list):
-            vals = np.asarray(vinfo["values"], float)
-            if vinfo.get("xlim") is None:
-                lo = float(np.nanmin(vals))
-                hi = float(np.nanmax(vals))
-                if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
-                    lo, hi = -1.0, 1.0
-                vinfo["xlim"] = (lo, hi)
-
-        # =========================
-        # Plot grid
-        # =========================
-        for i, (cut_mask, cut_title) in enumerate(cuts_list):
-            for j, vinfo in enumerate(vars_list):
-                ax = axes[i, j]
-
-                vals = np.asarray(vinfo["values"], float)
-                color = vinfo.get("color", "black")
-                xlim  = vinfo["xlim"]
-                lo, hi = xlim
-
-                # titles only in first column
-                title_here = "" if j != 0 else cut_title
-
-                # 1) build FULL-space mask m_full = cut_mask & base_mask(optional)
-                base = vinfo.get("base_mask", None)
-                if base is None:
-                    m_full = cut_mask
-                else:
-                    base = np.asarray(base, bool)
-                    m_full = cut_mask & base
-
-                # 2) If values are reduced, map m_full to reduced space using parent_mask
-                pm = vinfo.get("parent_mask", None)
-                if vals.shape[0] == Nfull:
-                    v_use = vals[m_full]
-                    w_use = weights_all[m_full] if np.ndim(weights_all) else None
-                else:
-                    pm = np.asarray(pm, bool)  # validated above
-                    m_red = m_full[pm]         # reduced boolean mask
-                    v_use = vals[m_red]
-                    w_use = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
-
-                _panel_like_top(
-                    ax,
-                    v_use,
-                    w_use,
-                    title_here,
-                    lo, hi, nbins, xlim,
-                    var_name=vinfo.get("label", vinfo.get("name", "")),
-                    color_plot=color
-                )
-
-        # bottom row labels
-        for j in range(ncols):
-            axes[-1, j].tick_params(axis='x', labelbottom=True)
-            axes[-1, j].set_xlabel(bottom_xlabel_per_col[j], fontsize=16)
-
-        for ax in axes.ravel():
-            ax.tick_params(labelsize=14)
-
-        if out_path:
-            plt.savefig(out_path, bbox_inches='tight' if tight else None, dpi=dpi)
-            plt.close(fig)
-
-        build_summary_table_latex(
-            cuts_list, vars_list, weights_all,
-            variable_map_plot={v.get("name", f"var{j}"): v.get("label", f"var{j}") for j, v in enumerate(vars_list)},
-            out_path=out_path.replace(".png", "_summary_table.tex") if out_path else None,
-            transpose=True,
-            first_col_name="Parameter",
-            counts_row_label="N"
-        )
-
-        # ---- column headers ----
-        # col_headers = ["Cut"] + [
-            # variable_map_plot.get(
-            #     vinfo.get("name", f"var{j}"),
-            #     vinfo.get("label", vinfo.get("name", f"var{j}"))
-            # )
-            # for j, vinfo in enumerate(vars_list)
-        # ]
-        
-        return fig, axes
-
-
-    # =========================
-    def split_cut_title(cut_title: str):
-        """
-        Examples:
-        'Tot N.11 AST (Tj>5)'      -> ('AST (Tj>5)', '11')
-        'Tot N.13 AST (4<Tj<5)'    -> ('AST (4<Tj<5)', '13')
-        """
-        s = str(cut_title).strip()
-        m = re.search(r"Tot\s*N\.(\d+)\s*(.*)$", s)
-        if not m:
-            return (s, "")
-        N = m.group(1)
-        label = m.group(2).strip()
-        return (label, N)
-
-
-    def weighted_quantile(x, q, weights=None):
-        """
-        Weighted quantiles for 1D arrays.
-        q in [0,1] list/array.
-        """
-        x = np.asarray(x, float)
-        q = np.asarray(q, float)
-
-        if weights is None:
-            return np.quantile(x, q)
-
-        w = np.asarray(weights, float)
-        m = np.isfinite(x) & np.isfinite(w)
-        x = x[m]
-        w = w[m]
-        if x.size == 0:
-            return np.array([np.nan] * q.size)
-
-        s = np.sum(w)
-        if not np.isfinite(s) or s <= 0:
-            return np.array([np.nan] * q.size)
-
-        # sort by x
-        idx = np.argsort(x)
-        x = x[idx]
-        w = w[idx]
-
-        cdf = np.cumsum(w) / s
-        # interpolate quantiles on CDF
-        return np.interp(q, cdf, x, left=x[0], right=x[-1])
-
-
-    def fmt_pm(q_lo, q_med, q_hi):
-        plus  = q_hi - q_med
-        minus = q_med - q_lo
-        f = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-        return f"{f(q_med)}$^{{+{f(plus)}}}_{{-{f(minus)}}}$"
-
-
-    # -------------------------
-    # Main table builder
-    # -------------------------
-    def build_summary_table_latex(
-        cuts_list,
-        vars_list,
-        weights_all,
-        variable_map_plot=None,
-        out_path=None,
-        transpose=True,
-        first_col_name="Parameter",
-        counts_row_label="N",
-    ):
-        """
-        cuts_list: [(cut_mask(bool array len Nfull), cut_title(str)), ...]
-        vars_list: list of dicts with keys:
-            - "values": array (len Nfull or reduced length)
-            - optional "base_mask": bool array len Nfull
-            - optional "parent_mask": bool array len Nfull (maps full->reduced)
-            - optional "name", "label"
-        weights_all: array len Nfull (or scalar/None). If scalar/ndim==0 treated as no weights.
-        variable_map_plot: dict mapping var "name" -> pretty label (optional)
-        transpose: if True => rows=variables, columns=cuts (with a second header row for N)
-        """
-        if variable_map_plot is None:
-            variable_map_plot = {}
-
-        if not cuts_list:
-            raise ValueError("cuts_list is empty.")
-        if not vars_list:
-            raise ValueError("vars_list is empty.")
-
-        Nfull = cuts_list[0][0].shape[0]
-
-        # Precompute cut labels and counts (for headers)
-        cut_labels = []
-        cut_counts = []
-        for _, cut_title in cuts_list:
-            lab, N = split_cut_title(cut_title)
-            cut_labels.append(lab)
-            cut_counts.append(N)
-
-        # Variable headers (pretty names)
-        var_headers = [
-            variable_map_plot.get(
-                vinfo.get("name", f"var{j}"),
-                vinfo.get("label", vinfo.get("name", f"var{j}"))
-            )
-            for j, vinfo in enumerate(vars_list)
-        ]
-
-        # delete $log_{10}$ from var_headers if present, we will add it back in the table stats if needed
-        var_headers = [str(h).replace("$\\log_{10}$", "") for h in var_headers]
-
-        # ----------------------------------------------------------
-        # Build table_data in the ORIGINAL orientation:
-        # rows = cuts, cols = [cut_title] + variables
-        # ----------------------------------------------------------
-        table_data = []
-
-        for (cut_mask, cut_title) in cuts_list:
-            row = [cut_title]
-
-            for vinfo in vars_list:
-                vals = np.asarray(vinfo["values"], float)
-
-                # ---- full-space selection mask ----
-                base = vinfo.get("base_mask", None)
-                if base is None:
-                    m_full = np.asarray(cut_mask, bool)
-                else:
-                    m_full = np.asarray(cut_mask, bool) & np.asarray(base, bool)
-
-                # ---- map to reduced space if needed ----
-                pm = vinfo.get("parent_mask", None)
-                if vals.shape[0] == Nfull:
-                    vals_cut = vals[m_full]
-                    w_cut = weights_all[m_full] if (weights_all is not None and np.ndim(weights_all) > 0) else None
-                else:
-                    if pm is None:
-                        raise ValueError(
-                            f"Variable appears reduced (len={vals.shape[0]} != Nfull={Nfull}) "
-                            "but vinfo has no parent_mask."
-                        )
-                    pm = np.asarray(pm, bool)
-                    m_red = m_full[pm]  # mask in reduced universe
-                    vals_cut = vals[m_red]
-                    if (weights_all is not None) and (np.ndim(weights_all) > 0):
-                        w_cut = weights_all[pm][m_red]
-                    else:
-                        w_cut = None
-
-                # ---- force arrays + finite filtering ----
-                vals_cut = np.atleast_1d(np.asarray(vals_cut, float))
-
-                if w_cut is not None:
-                    w_cut = np.atleast_1d(np.asarray(w_cut, float))
-                    fin = np.isfinite(vals_cut) & np.isfinite(w_cut)
-                    vals_cut = vals_cut[fin]
-                    w_cut = w_cut[fin]
-                    if vals_cut.size == 0:
-                        row.append("---")
-                        continue
-                    s = np.nansum(w_cut)
-                    w_cut = (w_cut / s) if (np.isfinite(s) and s > 0) else None
-                else:
-                    fin = np.isfinite(vals_cut)
-                    vals_cut = vals_cut[fin]
-                    if vals_cut.size == 0:
-                        row.append("---")
-                        continue
-
-                # ---- percentiles (log10 aware) ----
-                label_here = vinfo.get("label", vinfo.get("name", ""))
-
-                if "log_{10}" in str(label_here):
-                    # table stats in linear space
-                    r_lin = 10.0 ** vals_cut
-                    q_lo, q_med, q_hi = weighted_quantile(r_lin, [0.025, 0.5, 0.975], weights=w_cut)
-                else:
-                    q_lo, q_med, q_hi = weighted_quantile(vals_cut, [0.025, 0.5, 0.975], weights=w_cut)
-
-                row.append(fmt_pm(q_lo, q_med, q_hi))
-
-            table_data.append(row)
-
-        # ----------------------------------------------------------
-        # Convert to transposed orientation if requested
-        # ----------------------------------------------------------
-        if transpose:
-            # table_data rows: [cut_title, var1, var2, ...]
-            # want rows: [var_header, cut1, cut2, ...]
-            table_data_T = []
-            for j, vname in enumerate(var_headers):
-                table_data_T.append([vname] + [table_data[i][j + 1] for i in range(len(table_data))])
-
-            # build LaTeX with 2 header rows:
-            #   1) labels
-            #   2) counts
-            col_headers = [first_col_name] + cut_labels
-
-            latex = ""
-            latex += "\\begin{tabular}{l" + "c" * len(cuts_list) + "}\n"
-            latex += " & ".join(col_headers) + " \\\\\n"
-            latex += f"{counts_row_label} & " + " & ".join(cut_counts) + " \\\\\n"
-            latex += "\\hline\n"
-            for row in table_data_T:
-                latex += " & ".join(row) + " \\\\\n"
-            latex += "\\end{tabular}\n"
-
-        else:
-            # non-transposed: add two leading columns (label, N) instead of raw cut_title
-            table_data_nt = []
-            for row in table_data:
-                lab, N = split_cut_title(row[0])
-                table_data_nt.append([lab, N] + row[1:])
-
-            col_headers = ["Cut", "N"] + var_headers
-
-            latex = ""
-            latex += "\\begin{tabular}{l c" + "c" * len(vars_list) + "}\n"
-            latex += " & ".join(col_headers) + " \\\\\n"
-            latex += "\\hline\n"
-            for row in table_data_nt:
-                latex += " & ".join(row) + " \\\\\n"
-            latex += "\\end{tabular}\n"
-
-        # ---- save (optional) ----
-        if out_path:
-            # check if has .png extension, if so replace with .tex for the table output
-            if out_path.endswith(".png"):
-                table_out_path = out_path.replace(".png", "_summary_table.tex")
-            elif out_path.endswith(".tex"):
-                table_out_path = out_path
-            else:                
-                table_out_path = out_path + "_summary_table.tex"
-            # # you had .png -> _summary_table.tex, keep that behavior if you like:
-            # table_out_path = out_path.replace(".png", "_summary_table.tex")
-            with open(table_out_path, "w") as f:
-                f.write(latex)
-        print("Summary table LaTeX:\n", latex)
-
-
-    event_names_like = all_names
-
-    tj = np.asarray(tj, float)  # per-event Tj (same length as event_names_like)
-    if tj.shape[0] != event_names_like.shape[0]:
-        raise RuntimeError("Length mismatch: event_names vs tj.")
-
-    # dict: base_name -> Tj
-    tj_by_name = {str(n): float(v) for n, v in zip(event_names_like, tj)}
-
-    # Ensure per-sample names of length N_samples
-    N_samples = combined_samples.shape[0]
-    all_names = np.asarray(all_names)
-
-    if all_names.shape[0] == N_samples:
-        names_per_sample = all_names.astype(str)
-    elif all_names.shape[0] == len(all_samples):
-        # Expand by repeating each event's name by its sample count
-        names_per_sample = np.concatenate([
-            np.repeat(str(name), arr.shape[0]) for name, arr in zip(all_names, all_samples)
-        ])
-        if names_per_sample.shape[0] != N_samples:
-            raise RuntimeError("Expanded names length does not match combined_samples rows.")
-    else:
-        raise RuntimeError("all_names must be per-sample or per-event (same length as all_samples).")
-
-    # Map each sample's base_name -> Tj (NaN if missing)
-    tj_samples = np.array([tj_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
-
-    # ---------- Pull rho_corrected samples & weights ----------
-    rho_samp = np.asarray(rho_corrected, float)
-    if rho_samp.shape[0] != N_samples:
-        # Try to locate rho_corrected column in combined_samples via 'variables'
-        if 'variables' in globals() and ('rho_corrected' in variables):
-            rho_idx = variables.index('rho_corrected')
-            rho_samp = combined_samples[:, rho_idx].astype(float)
-        else:
-            raise RuntimeError("rho_corrected length mismatch and no 'variables' index found.")
-
-    w_all = np.asarray(combined_results.importance_weights(), float)
-    w_all = np.where(np.isfinite(w_all), w_all, 0.0)
-    if np.nansum(w_all) > 0:
-        w_all = w_all / np.nansum(w_all)
-
-    # Global range & plotting params (match your panel)
-    smooth = 0.02
-    lo_all = float(np.nanmin(rho_samp))
-    hi_all = float(np.nanmax(rho_samp))
-    nbins = int(round(10.0 / smooth))
-    xlim = (-100, 8300)
-
-    # ---------- Helper: a panel identical to your top one ----------
-    def _panel_like_top(ax, rho_vals, weights, title_prefix, lo, hi, nbins, xlim, var_name="$\\rho$ [kg/m$^3$]", color_plot='black'):
-        # guard
-        m = np.isfinite(rho_vals)
-        if weights is not None:
-            m = m & np.isfinite(weights)
-        if not np.any(m):
-            ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
-                    ha='center', va='center', fontsize=14, color='black')
-            _style(ax, xlim)
-            return
-
-        r = rho_vals[m]
-        w = None
-        if weights is not None:
-            w = weights[m].astype(float)
-            if np.nansum(w) > 0:
-                w = w / np.nansum(w)
-            else:
-                w = None
-
-        hist, edges = np.histogram(r, bins=nbins, weights=w, range=(lo, hi))
-        hist = norm_kde(hist, 10.0)
-        bin_centers = 0.5 * (edges[:-1] + edges[1:])
-
-        # Weighted percentiles (your _quantile)
-        if w is not None:
-            q_lo, q_med, q_hi = _quantile(r, [0.025, 0.5, 0.975], weights=w)
-        else:
-            q_lo, q_med, q_hi = np.nanpercentile(r, [2.5, 50, 97.5])
-
-        # Fill + lines (black)
-        ax.fill_between(bin_centers, hist, color=color_plot, alpha=0.6)
-        for q in (q_lo, q_med, q_hi):
-            ax.axvline(q, color=color_plot, linestyle='--', linewidth=1.5)
-
-        plus  = q_hi - q_med
-        minus = q_med - q_lo
-        fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-        title = (rf"{title_prefix} — {var_name} = {fmt(q_med)}"
-                rf"$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$")
-        ax.set_title(title, fontsize=20)
-
-        _style(ax, xlim)
-
-    def _style(ax, xlim):
-        ax.set_xlim(*xlim)
-        ax.tick_params(axis='x', labelbottom=False)
-        ax.tick_params(axis='y', left=False, labelleft=False)
-        ax.set_ylabel("")
-        for sp in ['left','right','top']: # 'bottom',
-            ax.spines[sp].set_visible(False)
-
-    # ---------- Class masks at SAMPLE level ----------
-    finite = np.isfinite(rho_samp) & np.isfinite(tj_samples) & np.isfinite(w_all)
-    ast_m = finite & (tj_samples >= 3.0)
-    jfc_m = finite & (tj_samples >= 2.0) & (tj_samples < 3.0)
-    htc_m = finite & (tj_samples < 2.0)
-
-    # find the number of tj above 3
-    num_tj_above_3 = tj[tj >= 3].shape[0]
-    # find the number of tj in between 2 and 3
-    num_tj_between_2_and_3 = tj[(tj >= 2) & (tj < 3)].shape[0]
-    # find the number of tj below 2
-    num_tj_below_2 = tj[tj < 2].shape[0]
-
-    # ---------- Figure with three stacked panels ----------
-    fig, axes = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
-
-    _panel_like_top(axes[0], rho_samp[ast_m], w_all[ast_m], "Tot N." + str(num_tj_above_3) + " AST", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[1], rho_samp[jfc_m], w_all[jfc_m], "Tot N." + str(num_tj_between_2_and_3) + " JFC", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[2], rho_samp[htc_m], w_all[htc_m], "Tot N." + str(num_tj_below_2) + " HTC", lo_all, hi_all, nbins, xlim) # "N° " + str(num_tj_below_2) + " HTC"
-
-    # Bottom labels/ticks to match your style
-    axes[2].tick_params(axis='x', labelbottom=True)
-    axes[2].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    axes[2].set_xticks(np.arange(0, 9000, 2000))
-    for ax in axes:
-        ax.tick_params(labelsize=20)
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_Tj_threepanels_weighted.png")
-    plt.savefig(out_path, bbox_inches='tight', dpi=300)
-    plt.close()
-    print("Saved:", out_path)
-
-    # ### rho distribution plot ###
-
-    # Build group masks (any number of groups works)
-    groups = {
-        "AST": ast_m,
-        "JFC": jfc_m,
-        "HTC": htc_m,
-        # e.g., add a 4th group later:
-        # "IEO": ieo_m,
-    }
-
-    tex, results = weighted_tests_table(
-        values=rho_samp,
-        weights=w_all,
-        groups=groups,
-        resample_n=8000,                 # bump up for smoother p-values
-        random_seed=123,
-        caption=r"Pairwise tests on $\rho$ by Tisserand class (weighted posteriors).",
-        label="tab:rho_tj_weighted_tests",
-        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_orbit.tex"),
-    )
-
-    # --- Masks (rows) ---
-    cuts = [
-        (ast_m, f"Tot N.{num_tj_above_3} AST"),
-        (jfc_m, f"Tot N.{num_tj_between_2_and_3} JFC"),
-        (htc_m, f"Tot N.{num_tj_below_2} HTC"),
-    ]
-
-    # --- Column 1: v_init ---
-    idx_arr = np.where(np.asarray(variables) == "v_init")[0]
-    index_v_init = int(idx_arr[0])
-    v_init_vals  = samples[:, index_v_init].astype(float)
-    v_init_lo, v_init_hi = float(np.nanmin(v_init_vals)), float(np.nanmax(v_init_vals))
-    v_init_spec = {
-        "values": v_init_vals,
-        "label":  r"$v_0$ [km/s]",
-        "name":   "v_init",
-        "xlim":   (v_init_lo, v_init_hi),
-        "color":  "orange",
-    }
-    vars_to_plot = [v_init_spec]
-
-    # --- Column 1: m_init ---
-    idx_arr = np.where(np.asarray(variables) == "m_init")[0]
-    index_m_init = int(idx_arr[0])
-    m_init_vals  = samples[:, index_m_init].astype(float)
-    m_init_lo, m_init_hi = float(np.nanmin(m_init_vals)), float(np.nanmax(m_init_vals))
-    m_init_spec = {
-        "values": m_init_vals,
-        "label":  r"$\log_{10}$ $m_0$ [kg]",
-        "name":   "m_init",
-        "xlim":   (m_init_lo, m_init_hi),
-        "color":  "gold",
-    }
-    vars_to_plot = vars_to_plot + [m_init_spec]
-
-    # --- Column 2: rho ---
-    rho_vals = np.asarray(rho_samp, float)
-    rho_lo_all, rho_hi_all = float(np.nanmin(rho_vals)), float(np.nanmax(rho_vals))
-    rho_spec = {
-        "values": rho_vals,
-        "label":  r"$\rho$ [kg/m$^3$]",
-        "name":   "rho",
-        "xlim":   (-100, 8300),   # or (rho_lo, rho_hi)
-        "color":  "black",
-    }
-    vars_to_plot = vars_to_plot + [rho_spec]  
-
-    # ============================================================
-    # HOW TO BUILD vars_to_plot WITH YOUR "rho<4000" EXCEPTION
-    # Two safe patterns:
-    #   Pattern 1 (recommended): keep values FULL length + base_mask=rho_cut
-    #   Pattern 2: keep values REDUCED (already sliced) + parent_mask=rho_cut
-    # ============================================================
-
-    # full-length reference masks
-    rho_vals = np.asarray(rho_samp, float)  # full length Nfull
-    rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
-
-    # --------------------------
-    # Pattern 1 (recommended)
-    # --------------------------
-    # Keep full-length arrays and just apply base_mask in the plotter
-
-    eros_vals_full  = np.asarray(np.log10(eta_corrected*1e6), float)      # FULL
-    sigma_vals_full = np.asarray(sigma_corrected*1e6, float)              # FULL
-    idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
-    index_s = int(idx_arr[0])
-    idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
-    index_ml = int(idx_arr[0])
-    idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
-    index_mu = int(idx_arr[0])
-    s_vals_full     = samples[:, index_s].astype(float)                   # FULL
-    ml_vals_full    = samples[:, index_ml].astype(float)                  # FULL
-    mu_vals_full    = samples[:, index_mu].astype(float)                  # FULL
-
-    eros_spec = {
-        "values": eros_vals_full,
-        "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
-        "name":   "erosion_coeff",
-        "xlim":   (float(np.nanmin(eros_vals_full[rho_cut])), float(np.nanmax(eros_vals_full[rho_cut]))),
-        "color":  "blue",
-        "base_mask": rho_cut,
-    }
-
-    sigma_spec = {
-        "values": sigma_vals_full,
-        "label":  r"$\sigma$ [kg/MJ]",
-        "name":   "sigma",
-        "xlim":   (float(np.nanmin(sigma_vals_full[rho_cut])), float(np.nanmax(sigma_vals_full[rho_cut]))),
-        "color":  "green",
-        "base_mask": rho_cut,
-    }
-
-    s_spec = {
-        "values": s_vals_full,
-        "label":  r"$s$",
-        "name":   "erosion_mass_index",
-        "xlim":   (float(np.nanmin(s_vals_full[rho_cut])), float(np.nanmax(s_vals_full[rho_cut]))),
-        "color":  "red",
-        "base_mask": rho_cut,
-    }
-
-    ml_spec = {
-        "values": ml_vals_full,
-        "label":  r"$\log_{10}$ $m_l$ [kg]",
-        "name":   "erosion_mass_min",
-        "xlim":   (float(np.nanmin(ml_vals_full[rho_cut])), float(np.nanmax(ml_vals_full[rho_cut]))),
-        "color":  "purple",
-        "base_mask": rho_cut,
-    }
-
-    mu_spec = {
-        "values": mu_vals_full,
-        "label":  r"$\log_{10}$ $m_u$ [kg]",
-        "name":   "erosion_mass_max",
-        "xlim":   (float(np.nanmin(mu_vals_full[rho_cut])), float(np.nanmax(mu_vals_full[rho_cut]))),
-        "color":  "violet",
-        "base_mask": rho_cut,
-    }
-
-    vars_to_plot_split1 = vars_to_plot + [eros_spec] 
-    vars_to_plot_split2 = [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
-
-    vars_to_plot = vars_to_plot + [eros_spec] + [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
-
-    # rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
-
-    # eros_vals = np.asarray(np.log10(eta_corrected)*1e6, float)  # full length
-    # eros_spec = {
-    #     "values": eros_vals,
-    #     "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
-    #     "name":   "erosion_coeff",
-    #     "xlim":   (np.nanmin(eros_vals[rho_cut]), np.nanmax(eros_vals[rho_cut])),
-    #     "color":  "blue",
-    #     "base_mask": rho_cut,   # <-- key
-    # }
-
-    # vars_to_plot = vars_to_plot + [rho_spec]
-    # # --- Column 2: erosion_coeff (if present) ---
-
-    # rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
-
-    # eros_vals = np.asarray(np.log10(eta_corrected)*1e6, float)  # full length
-    # eros_spec = {
-    #     "values": eros_vals,
-    #     "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
-    #     "name":   "erosion_coeff",
-    #     "xlim":   (np.nanmin(eros_vals[rho_cut]), np.nanmax(eros_vals[rho_cut])),
-    #     "color":  "blue",
-    #     "base_mask": rho_cut,   # <-- key
-    # }
-
-    # # idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
-    # # if idx_arr.size:
-    # #     index_eros = int(idx_arr[0])
-    # #     # eros_vals  = samples[:, index_eros].astype(float)
-    # #     # eros_vals  = np.asarray(eta_corrected, float)
-    # #     # eros_vals  = np.asarray(np.log10(eta_corrected*1e6), float)
-    # #     eros_vals  = np.asarray(np.log10(eta_corrected[rho_vals<4000])*1e6, float)
-    # #     # eros_vals  = np.log10(samples[:, index_eros].astype(float))
-    # #     eros_lo, eros_hi = float(np.nanmin(eros_vals)), float(np.nanmax(eros_vals))
-    # #     eros_spec = {
-    # #         "values": eros_vals,
-    # #         "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
-    # #         "name":   "erosion_coeff",
-    # #         "xlim":   (eros_lo, eros_hi),
-    # #         "color":  "blue",
-    # #     }
-    # vars_to_plot = vars_to_plot + [eros_spec]
-        
-    # idx_arr = np.where(np.asarray(variables) == "sigma")[0]
-    # if idx_arr.size:
-    #     index_sigma = int(idx_arr[0])
-    #     # sigma_vals  = samples[:, index_sigma].astype(float)
-    #     # sigma_vals  = np.asarray(sigma_corrected*1e6, float)
-    #     sigma_vals  = np.asarray(sigma_corrected[rho_vals<4000]*1e6, float)
-    #     sigma_lo, sigma_hi = float(np.nanmin(sigma_vals)), float(np.nanmax(sigma_vals))
-    #     sigma_spec = {
-    #         "values": sigma_vals,
-    #         "label":  r"$\sigma$ [kg/MJ]",
-    #         "name":   "sigma",
-    #         "xlim":   (sigma_lo, sigma_hi),
-    #         "color":  "green",
-    #     }
-    #     vars_to_plot = vars_to_plot + [sigma_spec]
-
-
-    # # add the mass index
-    # idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
-    # if idx_arr.size:
-    #     index_s = int(idx_arr[0])
-    #     # s_vals  = samples[:, index_s].astype(float)
-    #     s_vals  = samples[rho_vals<4000, index_s].astype(float)
-    #     s_lo, s_hi = float(np.nanmin(s_vals)), float(np.nanmax(s_vals))
-    #     s_spec = {
-    #         "values": s_vals,
-    #         "label":  r"$s$",
-    #         "name":   "erosion_mass_index",
-    #         "xlim":   (s_lo, s_hi),
-    #         "color":  "red",
-    #     }
-    #     vars_to_plot = vars_to_plot + [s_spec]
-
-
-    # # add the mass index
-    # idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
-    # if idx_arr.size:
-    #     index_ml = int(idx_arr[0])
-    #     # ml_vals  = samples[:, index_ml].astype(float)
-    #     ml_vals  = samples[rho_vals<4000, index_ml].astype(float)
-    #     ml_lo, ml_hi = float(np.nanmin(ml_vals)), float(np.nanmax(ml_vals))
-    #     ml_spec = {
-    #         "values": ml_vals,
-    #         "label":   r"$\log_{10}$ $m_{l}$ [kg]",
-    #         "name":   "erosion_mass_min",
-    #         "xlim":   (ml_lo, ml_hi),
-    #         "color":  "purple",
-    #     }
-    #     vars_to_plot = vars_to_plot + [ml_spec]
-
-    # # add the mass index
-    # idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
-    # if idx_arr.size:
-    #     index_mu = int(idx_arr[0])
-    #     # mu_vals  = samples[:, index_mu].astype(float)
-    #     mu_vals  = samples[rho_vals<4000, index_mu].astype(float)
-    #     mu_lo, mu_hi = float(np.nanmin(mu_vals)), float(np.nanmax(mu_vals))
-    #     mu_spec = {
-    #         "values": mu_vals,
-    #         "label":  r"$\log_{10}$ $m_{u}$ [kg]",
-    #         "name":   "erosion_mass_max",
-    #         "xlim":   (mu_lo, mu_hi),
-    #         "color":  "violet",
-    #     }
-    #     vars_to_plot = vars_to_plot + [mu_spec]
-
-    # sigma_vals = np.asarray(sigma_corrected*1e6, float)
-    # sigma_spec["base_mask"] = rho_cut
-
-    # s_vals = samples[:, index_s].astype(float)          # full length
-    # s_spec["base_mask"] = rho_cut
-
-    # ml_vals = samples[:, index_ml].astype(float)        # full length
-    # ml_spec["base_mask"] = rho_cut
-
-    # mu_vals = samples[:, index_mu].astype(float)        # full length
-    # mu_spec["base_mask"] = rho_cut
-
-    # --- Call the plotter ---
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_Tj_grid.png")
-    fig, axes = plot_by_cuts_and_vars(
-        vars_list=vars_to_plot,
-        cuts_list=cuts,
-        weights_all=w_all,
-        nbins=int(round(10.0 / 0.02)),
-        smooth=0.02,
-        out_path=out_path
-    )
-    print("Saved:", out_path)
-    plt.close(fig)
-
-    print("Creating rho plots...")
-
-    # ---------- Class masks at SAMPLE level ----------
-    ast_m5over = finite & (tj_samples >= 4.0)
-    ast_m45 = finite & (tj_samples >= 4.0) & (tj_samples < 5.0)
-    ast_m32 = finite & (tj_samples >= 3.05) & (tj_samples < 4.0)
-    ast_jfc_mix = finite & (tj_samples >= 2.8) & (tj_samples < 3.05)
-    jfc_m = finite & (tj_samples >= 2.0) & (tj_samples < 2.8)
-    htc_m21 = finite & (tj_samples >= 1.0) & (tj_samples < 2.0)
-    htc_m10 = finite & (tj_samples >= 0) & (tj_samples < 1)
-    htc_m0low = finite & (tj_samples < 0)
-
-    # find the number of tj above 5
-    num_tj_above_5 = tj[tj >= 5].shape[0]
-    num_tj_between_4_and_5 = tj[(tj >= 4) & (tj < 5)].shape[0]
-    num_tj_between_3_to_4 = tj[(tj >= 3.05) & (tj < 4)].shape[0]
-    num_tj_between_mix = tj[(tj >= 2.8) & (tj < 3.05)].shape[0]
-    num_tj_between_2_and_3 = tj[(tj >= 2) & (tj < 2.8)].shape[0]
-    num_tj_between_1_and_2 = tj[(tj >= 1) & (tj < 2)].shape[0]
-    num_tj_between_0_and_1 = tj[(tj >= 0) & (tj < 1)].shape[0]    
-    # find the number of tj below 2
-    num_tj_below_2 = tj[tj < 0].shape[0]
-
-    # ---------- Figure with three stacked panels ----------
-    fig, axes = plt.subplots(8, 1, figsize=(8, 22), sharex=True)
-
-    _panel_like_top(axes[0], rho_samp[ast_m5over], w_all[ast_m5over], "Tot N." + str(num_tj_above_5) + " AST (Tj>5)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[1], rho_samp[ast_m45], w_all[ast_m45], "Tot N." + str(num_tj_between_4_and_5) + " AST (4<Tj<5)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[2], rho_samp[ast_m32], w_all[ast_m32], "Tot N." + str(num_tj_between_3_to_4) + " AST (3.05<Tj<4)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[3], rho_samp[ast_jfc_mix], w_all[ast_jfc_mix], "Tot N." + str(num_tj_between_mix) + " mix (2.8<Tj<3.05)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[4], rho_samp[jfc_m], w_all[jfc_m], "Tot N." + str(num_tj_between_2_and_3) + " JFC (2<Tj<2.8)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[5], rho_samp[htc_m21], w_all[htc_m21], "Tot N." + str(num_tj_between_1_and_2) + " HTC (1<Tj<2)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[6], rho_samp[htc_m10], w_all[htc_m10], "Tot N." + str(num_tj_between_0_and_1) + " HTC (0<Tj<1)", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[7], rho_samp[htc_m0low], w_all[htc_m0low], "Tot N." + str(num_tj_below_2) + " HTC (Tj<0)", lo_all, hi_all, nbins, xlim) # "N° " + str(num_tj_below_2) + " HTC"
-    # Bottom labels/ticks to match your style
-    axes[7].tick_params(axis='x', labelbottom=True)
-    axes[7].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    axes[7].set_xticks(np.arange(0, 9000, 2000))
-    for ax in axes:
-        ax.tick_params(labelsize=20)
-    out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_Tj_cuts.png")
-    plt.savefig(out_path, bbox_inches='tight', dpi=300)
-    plt.close()
-    print("Saved:", out_path)
-
-    # ### rho distribution plot ###
-
-    # Build group masks (any number of groups works)
-    groups = {
-        "AST (Tj>5)": ast_m5over,
-        "AST (4<Tj<5)": ast_m45,
-        "AST (3.05<Tj<4)": ast_m32,
-        "mix (2.8<Tj<3.05)": ast_jfc_mix,
-        "JFC (2<Tj<2.8)": jfc_m,
-        "HTC (1<Tj<2)": htc_m21,
-        "HTC (0<Tj<1)": htc_m10,
-        "HTC (Tj<0)": htc_m0low,
-    }
-
-    tex, results = weighted_tests_table(
-        values=rho_samp,
-        weights=w_all,
-        groups=groups,
-        resample_n=8000,                 # bump up for smoother p-values
-        random_seed=123,
-        caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
-        label="tab:rho_dynpres_weighted_tests",
-        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_all_Tj_cut.tex"),
-    )
-
-    # print(tex)  # also written to file if save_path was given
-
-    cuts = [
-        (ast_m5over, f"Tot N.{num_tj_above_5} AST (Tj>5)"),
-        (ast_m45, f"Tot N.{num_tj_between_4_and_5} AST (4<Tj<5)"),
-        (ast_m32, f"Tot N.{num_tj_between_3_to_4} AST (3.05<Tj<4)"),
-        (ast_jfc_mix, f"Tot N.{num_tj_between_mix} mix (2.8<Tj<3.05)"),
-        (jfc_m, f"Tot N.{num_tj_between_2_and_3} JFC (2<Tj<2.8)"),
-        (htc_m21, f"Tot N.{num_tj_between_1_and_2} HTC (1<Tj<2)"),
-        (htc_m10, f"Tot N.{num_tj_between_0_and_1} HTC (0<Tj<1)"),
-        (htc_m0low, f"Tot N.{num_tj_below_2} HTC (Tj<0)"),
-    ]
-
-    # --- Call the plotter ---
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_all_Tj_cut_grid.png")
-    fig, axes = plot_by_cuts_and_vars(
-        vars_list=vars_to_plot,
-        cuts_list=cuts,
-        weights_all=w_all,
-        nbins=int(round(10.0 / 0.02)),
-        smooth=0.02,
-        out_path=out_path
-    )
-    print("Saved:", out_path)
-    plt.close(fig)
-
-
-    ### mass change plots ###
-
-    print("Creating mass change plots for rho...")
-
-    m_init_med = np.asarray(m_init_med, float)  # per-event Tj (same length as event_names_like)
-    if m_init_med.shape[0] != event_names_like.shape[0]:
-        raise RuntimeError("Length mismatch: event_names vs tj.")
-
-    # dict: base_name -> Tj
-    m_init_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, m_init_med)}
-
-    # Map each sample's base_name -> Tj (NaN if missing)
-    m_init_med_samples = np.array([m_init_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
-
-    # # ---------- Class masks at SAMPLE level ----------
-    # finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
-    # big_kg = finite & (m_init_med_samples >= 10**(-4))
-    # medium_b_kg = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
-    # medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
-    # small_kg = finite & (m_init_med_samples < 10**(-5))
-
-    # # find the number of mass
-    # num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
-    # num_medium_b_kg = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
-    # num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
-    # num_small_kg = m_init_med[m_init_med < 10**(-5)].shape[0]
-
-    # ---------- Class masks at SAMPLE level ----------
-    finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
-    big_kg = finite & (m_init_med_samples >= 10**(-4))
-    medium_b_kg = finite & (m_init_med_samples >= 10**(-4.5)) & (m_init_med_samples < 10**(-4))
-    medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 10**(-4.5))
-    small_b_kg = finite & (m_init_med_samples >= 10**(-5.5)) & (m_init_med_samples < 10**(-5))
-    small_kg = finite & (m_init_med_samples < 10**(-5.5))
-
-    # find the number of mass
-    num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
-    num_medium_b_kg = m_init_med[(m_init_med >= 10**(-4.5)) & (m_init_med < 10**(-4))].shape[0]
-    num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 10**(-4.5))].shape[0]
-    num_small_b_kg = m_init_med[(m_init_med >= 10**(-5.5)) & (m_init_med < 10**(-5))].shape[0]
-    num_small_kg = m_init_med[m_init_med < 10**(-5.5)].shape[0]
-
-    # ---------- Figure with three stacked panels ----------
-    fig, axes = plt.subplots(5, 1, figsize=(10, 15), sharex=True)
-
-    _panel_like_top(axes[0], rho_samp[big_kg], w_all[big_kg], "Tot N." + str(num_big_kg) + " above 10$^{-4}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[1], rho_samp[medium_b_kg], w_all[medium_b_kg], "Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 5$\cdot$10$^{-4.5}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[2], rho_samp[medium_s_kg], w_all[medium_s_kg], "Tot N." + str(num_medium_s_kg) + " 10$^{-4.5}$ - 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[3], rho_samp[small_b_kg], w_all[small_b_kg], "Tot N." + str(num_small_b_kg) + " 10$^{-5}$ - 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[4], rho_samp[small_kg], w_all[small_kg], "Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
-
-    # Bottom labels/ticks to match your style
-    axes[4].tick_params(axis='x', labelbottom=True)
-    axes[4].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    axes[4].set_xticks(np.arange(0, 9000, 2000))
-    for ax in axes:
-        ax.tick_params(labelsize=20)
-
-    # Save
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
-    plt.savefig(out_path, bbox_inches='tight', dpi=300)
-    plt.close()
-    print("Saved:", out_path)
-
-    # plot scatter
-    fig, ax = plt.subplots(figsize=(6, 8), constrained_layout=True)  # larger width, auto spacing
-
-    # sc = ax.scatter(rho, log10_m_init, c=np.log10(meteoroid_diameter_mm), cmap='viridis', s=30, norm=Normalize(vmin=np.log10(meteoroid_diameter_mm.min()), vmax=np.log10(meteoroid_diameter_mm.max())), zorder=2)
-    sc = ax.scatter(rho, log10_m_init, c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
-    plt.errorbar(rho, log10_m_init, 
-            xerr=[abs(rho_lo), abs(rho_hi)],
-            # yerr=[abs(meteoroid_diameter_mm_lo)/1.96, abs(meteoroid_diameter_mm_hi)/1.96],
-            elinewidth=0.75, capthick=0.75,
-            fmt='none', ecolor='black', capsize=3, zorder=1)
-    
-    cbar = fig.colorbar(sc, ax=ax, orientation='vertical', pad=0.08)
-    # cbar.set_label("$log_{10}$ Diameter [mm]", fontsize=20)
-    cbar.set_label("$v_{0}$ [km/s]", fontsize=20)
-    cbar.ax.tick_params(labelsize=12)
-        
-    # Guide lines
-    for yline in (np.log10(10**(-4)), np.log10(10**(-4.5)), np.log10(10**(-5)), np.log10(10**(-5.5))):
-        plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='lime')
-
-    # add the label
-    plt.xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    # set x axis lim from (-100, 8300)
-    plt.xlim(-100, 8300)
-    plt.xticks(np.arange(0, 9000, 2000))
-    plt.ylabel('log$_{10}(m_0$ [kg]$)$', fontsize=20)
-    plt.tick_params(labelsize=14)
-    plt.grid(True, alpha=0.2)
-
-    # save the rho vs diameter plot
-    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_v_scatter.png"), bbox_inches='tight', dpi=300)
-    plt.close()
-
-    # ### rho distribution plot ###
-
-    # Build group masks (any number of groups works)
-    groups = {
-        "above 10$^{-4}$ kg": big_kg,
-        "10$^{-4}$ - 5$\cdot$10$^{-5}$ kg": medium_b_kg,
-        "5$\cdot$10$^{-5}$ - 10$^{-5}$ kg": medium_s_kg,
-        "below 10$^{-5}$ kg": small_kg,
-        # e.g., add a 4th group later:
-        # "IEO": ieo_m,
-    }
-
-    tex, results = weighted_tests_table(
-        values=rho_samp,
-        weights=w_all,
-        groups=groups,
-        resample_n=8000,                 # bump up for smoother p-values
-        random_seed=123,
-        caption=r"Pairwise tests on $\rho$ by mass (weighted posteriors).",
-        label="tab:rho_mass_weighted_tests",
-        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_mass.tex"),
-    )
-
-    # mass cuts
-    cuts = [
-        (big_kg, rf"Tot N." + str(num_big_kg) + " above 10$^{-4}$ kg"),
-        (medium_b_kg, rf"Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 10$^{-4.5}$ kg"),
-        (medium_s_kg, rf"Tot N." + str(num_medium_s_kg) + " 10$^{-4.5}$ - 10$^{-5}$ kg"),
-        (small_b_kg, rf"Tot N." + str(num_small_b_kg) + " 10$^{-5}$ - 10$^{-5.5}$ kg"),
-        (small_kg, rf"Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg"),
-    ]
-
-    # --- Call the plotter ---
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_mass_grid.png")
-    fig, axes = plot_by_cuts_and_vars(
-        vars_list=vars_to_plot,
-        cuts_list=cuts,
-        weights_all=w_all,
-        nbins=int(round(10.0 / 0.02)),
-        smooth=0.02,
-        out_path=out_path
-    )
-    print("Saved:", out_path)
-    plt.close(fig)
-
-    ### diameter change plots ###
-
-    print("Creating diameter change plots for rho...")
-
-    # same for meteoroid_diameter_mm
-    meteoroid_diameter_mm = np.asarray(meteoroid_diameter_mm, float) 
-    if meteoroid_diameter_mm.shape[0] != event_names_like.shape[0]:
-        raise RuntimeError("Length mismatch: event_names vs meteoroid_diameter_mm.")
-
-    # dict: base_name -> meteoroid_diameter_mm
-    meteoroid_diameter_mm_by_name = {str(n): float(v) for n, v in zip(event_names_like, meteoroid_diameter_mm)}
-    # Map each sample's base_name -> meteoroid_diameter_mm (NaN if missing)
-    meteoroid_diameter_mm_samples = np.array([meteoroid_diameter_mm_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
-
-    # ---------- Class masks at SAMPLE level ----------
-    finite = np.isfinite(rho_samp) & np.isfinite(meteoroid_diameter_mm_samples) & np.isfinite(w_all)
-    big = finite & (meteoroid_diameter_mm_samples >= 7.5)
-    medium_b = finite & (meteoroid_diameter_mm_samples >= 5) & (meteoroid_diameter_mm_samples < 7.5)
-    medium_s = finite & (meteoroid_diameter_mm_samples >= 2.5) & (meteoroid_diameter_mm_samples < 5)
-    small = finite & (meteoroid_diameter_mm_samples < 2.5)
-
-    # find the number of mass
-    num_big = meteoroid_diameter_mm[meteoroid_diameter_mm >= 7.5].shape[0]
-    num_medium_b = meteoroid_diameter_mm[(meteoroid_diameter_mm >= 5) & (meteoroid_diameter_mm < 7.5)].shape[0]
-    num_medium_s = meteoroid_diameter_mm[(meteoroid_diameter_mm >= 2.5) & (meteoroid_diameter_mm < 5)].shape[0]
-    num_small = meteoroid_diameter_mm[meteoroid_diameter_mm < 2.5].shape[0]
-
-    # ---------- Figure with three stacked panels ----------
-    fig, axes = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
-
-    _panel_like_top(axes[0], rho_samp[big], w_all[big], "Tot N." + str(num_big) + " above 7.5 mm", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[1], rho_samp[medium_b], w_all[medium_b], "Tot N." + str(num_medium_b) + " 5 - 7.5 mm", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[2], rho_samp[medium_s], w_all[medium_s], "Tot N." + str(num_medium_s) + " 2.5 - 5 mm", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[3], rho_samp[small], w_all[small], "Tot N." + str(num_small) + " below 2.5 mm", lo_all, hi_all, nbins, xlim)
-
-    # Bottom labels/ticks to match your style
-    axes[3].tick_params(axis='x', labelbottom=True)
-    axes[3].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    axes[3].set_xticks(np.arange(0, 9000, 2000))
-    for ax in axes:
-        ax.tick_params(labelsize=20)
-
-    # Save
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_threepanels_weighted.png")
-    plt.savefig(out_path, bbox_inches='tight', dpi=300)
-    plt.close()
-    print("Saved:", out_path)
-
-    ### Create scatter plot for rho vs diameter ###
-
-    fig, ax = plt.subplots(figsize=(6, 8), constrained_layout=True)  # larger width, auto spacing
-    # gs = GridSpec(nrows=4, ncols=2, width_ratios=[1.3, 1.0], hspace=0.25, wspace=0.5, figure=fig)
-
-    plt.errorbar(rho, meteoroid_diameter_mm, 
-                xerr=[abs(rho_lo), abs(rho_hi)],
-                yerr=[abs(meteoroid_diameter_mm_lo), abs(meteoroid_diameter_mm_hi)],
-                elinewidth=0.75, capthick=0.75,
-                fmt='none', ecolor='black', capsize=3, zorder=1)
-
-    sc = plt.scatter(rho, meteoroid_diameter_mm,
-                     c=v_init_meteor_median, cmap='viridis',
-                     norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()),
-                     s=30, zorder=2)
-                    # c=log10_m_init, cmap='viridis',
-                    # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
-                    # s=30, zorder=2)
-
-    # Guide lines
-    for yline in (2.5, 5.0, 7.5):
-        plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='lime')
-
-    plt.xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    # set x axis lim from (-100, 8300)
-    plt.xlim(-100, 8300)
-    plt.xticks(np.arange(0, 9000, 2000))
-    plt.ylabel('Meteoroid diameter [mm]', fontsize=20)
-    plt.tick_params(labelsize=14)
-    plt.grid(True, alpha=0.2)
-
-    # Colorbar on the right of scatter only
-    cbar = fig.colorbar(sc, ax=ax, orientation='vertical', pad=0.08)
-    # cbar.set_label(r'$\log_{10}(m_{0}$ [kg]$)$', fontsize=20)
-    cbar.set_label(r'$v_{0}$ [km/s]', fontsize=20)
-    cbar.ax.tick_params(labelsize=12)
-
-    # save the rho vs diameter plot
-    plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_v_scatter.png"), bbox_inches='tight', dpi=300)
-    plt.close()
-
-    # ### rho distribution plot ###
-
-    # Build group masks (any number of groups works)
-    groups = {
-        "above 7.5 mm": big,
-        "5 - 7.5 mm": medium_b,
-        "2.5 - 5 mm": medium_s,
-        "below 2.5 mm": small,
-    }
-
-    tex, results = weighted_tests_table(
-        values=rho_samp,
-        weights=w_all,
-        groups=groups,
-        resample_n=8000,                 # bump up for smoother p-values
-        random_seed=123,
-        caption=r"Pairwise tests on $\rho$ by diameter class (weighted posteriors).",
-        label="tab:rho_diameter_weighted_tests",
-        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_diameter.tex"),
-    )
-
-    # print(tex)  # also written to file if save_path was given
-
-    cuts = [
-        (big, f"Tot N.{num_big} above 7.5 mm"),
-        (medium_b, f"Tot N.{num_medium_b} 5 - 7.5 mm"),
-        (medium_s, f"Tot N.{num_medium_s} 2.5 - 5 mm"),
-        (small, f"Tot N.{num_small} below 2.5 mm"),
-    ]
-
-    # --- Call the plotter ---
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_diameter_grid.png")
-    fig, axes = plot_by_cuts_and_vars(
-        vars_list=vars_to_plot,
-        cuts_list=cuts,
-        weights_all=w_all,
-        nbins=int(round(10.0 / 0.02)),
-        smooth=0.02,
-        out_path=out_path
-    )
-    print("Saved:", out_path)
-    plt.close(fig)
-
-    ### Apex and Antihelion ###
-
-    if apex_mask is not None:
-        print("Apex vs Antihelion plots for rho...")
-        apex_mask = np.asarray(apex_mask, bool)
-        # what is True is False for anti_mask
-        # anti_mask = ~apex_mask
-        anti_mask = np.asarray(antihel_mask, bool)
-
-        apex_num = np.count_nonzero(apex_mask)
-        anti_num = np.count_nonzero(anti_mask)
-        
-        # Dict: event_name -> bool (below / above)
-        apex_by_name = {str(n): bool(b) for n, b in zip(event_names_like, apex_mask)}
-        anti_by_name = {str(n): bool(b) for n, b in zip(event_names_like, anti_mask)}
-
-        # Sample-level boolean flags based on event classification
-        apex_samples = np.array(
-            [apex_by_name.get(n, False) for n in names_per_sample],
-            dtype=bool
-        )
-        anti_samples = np.array(
-            [anti_by_name.get(n, False) for n in names_per_sample],
-            dtype=bool
-        )
-        finite = np.isfinite(rho_samp) & np.isfinite(w_all)
-        apex_class = finite & apex_samples
-        anti_class = finite & anti_samples
-
-        # ---------- Figure with two stacked panels ----------
-        fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
-        _panel_like_top(axes[0], rho_samp[apex_class], w_all[apex_class], "Tot N." + str(apex_num) + " Apex", lo_all, hi_all, nbins, xlim)
-        _panel_like_top(axes[1], rho_samp[anti_class], w_all[anti_class], "Tot N." + str(anti_num) + " Antihelion", lo_all, hi_all, nbins, xlim)
         # Bottom labels/ticks to match your style
-        axes[1].tick_params(axis='x', labelbottom=True)
-        axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-        axes[1].set_xticks(np.arange(0, 9000, 2000))
+        axes[2].tick_params(axis='x', labelbottom=True)
+        axes[2].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[2].set_xticks(np.arange(0, 9000, 2000))
         for ax in axes:
             ax.tick_params(labelsize=20)
-
-        # Save
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_apex_anti_threepanels_weighted.png")
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_Tj_threepanels_weighted.png")
         plt.savefig(out_path, bbox_inches='tight', dpi=300)
         plt.close()
+        print("Saved:", out_path)
 
         # ### rho distribution plot ###
+
+        # Build group masks (any number of groups works)
         groups = {
-            "Apex": apex_class,
-            "Antihelion": anti_class
+            "AST": ast_m,
+            "JFC": jfc_m,
+            "HTC": htc_m,
+            # e.g., add a 4th group later:
+            # "IEO": ieo_m,
         }
+
         tex, results = weighted_tests_table(
             values=rho_samp,
             weights=w_all,
             groups=groups,
             resample_n=8000,                 # bump up for smoother p-values
             random_seed=123,
-            caption=r"Pairwise tests on $\rho$ by Apex/Antihelion class (weighted posteriors).",
-            label="tab:rho_apex_anti_weighted_tests",
-            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_apex_anti.tex"),
+            caption=r"Pairwise tests on $\rho$ by Tisserand class (weighted posteriors).",
+            label="tab:rho_tj_weighted_tests",
+            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_orbit.tex"),
         )
 
+        # --- Masks (rows) ---
         cuts = [
-            (apex_class, f"Tot N.{apex_num} Apex"),
-            (anti_class, f"Tot N.{anti_num} Antihelion"),
+            (ast_m, f"Tot N.{num_tj_above_3} AST"),
+            (jfc_m, f"Tot N.{num_tj_between_2_and_3} JFC"),
+            (htc_m, f"Tot N.{num_tj_below_2} HTC"),
         ]
+
+        # --- Column 1: v_init ---
+        idx_arr = np.where(np.asarray(variables) == "v_init")[0]
+        index_v_init = int(idx_arr[0])
+        v_init_vals  = samples[:, index_v_init].astype(float)
+        v_init_lo, v_init_hi = float(np.nanmin(v_init_vals)), float(np.nanmax(v_init_vals))
+        v_init_spec = {
+            "values": v_init_vals,
+            "label":  r"$v_0$ [km/s]",
+            "name":   "v_init",
+            "xlim":   (v_init_lo, v_init_hi),
+            "color":  "orange",
+        }
+        vars_to_plot = [v_init_spec]
+
+        # --- Column 1: m_init ---
+        idx_arr = np.where(np.asarray(variables) == "m_init")[0]
+        index_m_init = int(idx_arr[0])
+        m_init_vals  = samples[:, index_m_init].astype(float)
+        m_init_lo, m_init_hi = float(np.nanmin(m_init_vals)), float(np.nanmax(m_init_vals))
+        m_init_spec = {
+            "values": m_init_vals,
+            "label":  r"$\log_{10}$ $m_0$ [kg]",
+            "name":   "m_init",
+            "xlim":   (m_init_lo, m_init_hi),
+            "color":  "gold",
+        }
+        vars_to_plot = vars_to_plot + [m_init_spec]
+
+        # --- Column 2: rho ---
+        rho_vals = np.asarray(rho_samp, float)
+        rho_lo_all, rho_hi_all = float(np.nanmin(rho_vals)), float(np.nanmax(rho_vals))
+        rho_spec = {
+            "values": rho_vals,
+            "label":  r"$\rho$ [kg/m$^3$]",
+            "name":   "rho",
+            "xlim":   (-100, 8300),   # or (rho_lo, rho_hi)
+            "color":  "black",
+        }
+        vars_to_plot = vars_to_plot + [rho_spec]  
+
+        # ============================================================
+        # HOW TO BUILD vars_to_plot WITH YOUR "rho<4000" EXCEPTION
+        # Two safe patterns:
+        #   Pattern 1 (recommended): keep values FULL length + base_mask=rho_cut
+        #   Pattern 2: keep values REDUCED (already sliced) + parent_mask=rho_cut
+        # ============================================================
+
+        # full-length reference masks
+        rho_vals = np.asarray(rho_samp, float)  # full length Nfull
+        rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
+
+        # --------------------------
+        # Pattern 1 (recommended)
+        # --------------------------
+        # Keep full-length arrays and just apply base_mask in the plotter
+
+        eros_vals_full  = np.asarray(np.log10(eta_corrected*1e6), float)      # FULL
+        sigma_vals_full = np.asarray(sigma_corrected*1e6, float)              # FULL
+        idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
+        index_s = int(idx_arr[0])
+        idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
+        index_ml = int(idx_arr[0])
+        idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
+        index_mu = int(idx_arr[0])
+        s_vals_full     = samples[:, index_s].astype(float)                   # FULL
+        ml_vals_full    = samples[:, index_ml].astype(float)                  # FULL
+        mu_vals_full    = samples[:, index_mu].astype(float)                  # FULL
+
+        eros_spec = {
+            "values": eros_vals_full,
+            "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
+            "name":   "erosion_coeff",
+            "xlim":   (float(np.nanmin(eros_vals_full[rho_cut])), float(np.nanmax(eros_vals_full[rho_cut]))),
+            "color":  "blue",
+            "base_mask": rho_cut,
+        }
+
+        sigma_spec = {
+            "values": sigma_vals_full,
+            "label":  r"$\sigma$ [kg/MJ]",
+            "name":   "sigma",
+            "xlim":   (float(np.nanmin(sigma_vals_full[rho_cut])), float(np.nanmax(sigma_vals_full[rho_cut]))),
+            "color":  "green",
+            "base_mask": rho_cut,
+        }
+
+        s_spec = {
+            "values": s_vals_full,
+            "label":  r"$s$",
+            "name":   "erosion_mass_index",
+            "xlim":   (float(np.nanmin(s_vals_full[rho_cut])), float(np.nanmax(s_vals_full[rho_cut]))),
+            "color":  "red",
+            "base_mask": rho_cut,
+        }
+
+        ml_spec = {
+            "values": ml_vals_full,
+            "label":  r"$\log_{10}$ $m_l$ [kg]",
+            "name":   "erosion_mass_min",
+            "xlim":   (float(np.nanmin(ml_vals_full[rho_cut])), float(np.nanmax(ml_vals_full[rho_cut]))),
+            "color":  "purple",
+            "base_mask": rho_cut,
+        }
+
+        mu_spec = {
+            "values": mu_vals_full,
+            "label":  r"$\log_{10}$ $m_u$ [kg]",
+            "name":   "erosion_mass_max",
+            "xlim":   (float(np.nanmin(mu_vals_full[rho_cut])), float(np.nanmax(mu_vals_full[rho_cut]))),
+            "color":  "violet",
+            "base_mask": rho_cut,
+        }
+
+        vars_to_plot_split1 = vars_to_plot + [eros_spec] 
+        vars_to_plot_split2 = [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
+
+        vars_to_plot = vars_to_plot + [eros_spec] + [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
+
+        # rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
+
+        # eros_vals = np.asarray(np.log10(eta_corrected)*1e6, float)  # full length
+        # eros_spec = {
+        #     "values": eros_vals,
+        #     "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
+        #     "name":   "erosion_coeff",
+        #     "xlim":   (np.nanmin(eros_vals[rho_cut]), np.nanmax(eros_vals[rho_cut])),
+        #     "color":  "blue",
+        #     "base_mask": rho_cut,   # <-- key
+        # }
+
+        # vars_to_plot = vars_to_plot + [rho_spec]
+        # # --- Column 2: erosion_coeff (if present) ---
+
+        # rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
+
+        # eros_vals = np.asarray(np.log10(eta_corrected)*1e6, float)  # full length
+        # eros_spec = {
+        #     "values": eros_vals,
+        #     "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
+        #     "name":   "erosion_coeff",
+        #     "xlim":   (np.nanmin(eros_vals[rho_cut]), np.nanmax(eros_vals[rho_cut])),
+        #     "color":  "blue",
+        #     "base_mask": rho_cut,   # <-- key
+        # }
+
+        # # idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
+        # # if idx_arr.size:
+        # #     index_eros = int(idx_arr[0])
+        # #     # eros_vals  = samples[:, index_eros].astype(float)
+        # #     # eros_vals  = np.asarray(eta_corrected, float)
+        # #     # eros_vals  = np.asarray(np.log10(eta_corrected*1e6), float)
+        # #     eros_vals  = np.asarray(np.log10(eta_corrected[rho_vals<4000])*1e6, float)
+        # #     # eros_vals  = np.log10(samples[:, index_eros].astype(float))
+        # #     eros_lo, eros_hi = float(np.nanmin(eros_vals)), float(np.nanmax(eros_vals))
+        # #     eros_spec = {
+        # #         "values": eros_vals,
+        # #         "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
+        # #         "name":   "erosion_coeff",
+        # #         "xlim":   (eros_lo, eros_hi),
+        # #         "color":  "blue",
+        # #     }
+        # vars_to_plot = vars_to_plot + [eros_spec]
+            
+        # idx_arr = np.where(np.asarray(variables) == "sigma")[0]
+        # if idx_arr.size:
+        #     index_sigma = int(idx_arr[0])
+        #     # sigma_vals  = samples[:, index_sigma].astype(float)
+        #     # sigma_vals  = np.asarray(sigma_corrected*1e6, float)
+        #     sigma_vals  = np.asarray(sigma_corrected[rho_vals<4000]*1e6, float)
+        #     sigma_lo, sigma_hi = float(np.nanmin(sigma_vals)), float(np.nanmax(sigma_vals))
+        #     sigma_spec = {
+        #         "values": sigma_vals,
+        #         "label":  r"$\sigma$ [kg/MJ]",
+        #         "name":   "sigma",
+        #         "xlim":   (sigma_lo, sigma_hi),
+        #         "color":  "green",
+        #     }
+        #     vars_to_plot = vars_to_plot + [sigma_spec]
+
+
+        # # add the mass index
+        # idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
+        # if idx_arr.size:
+        #     index_s = int(idx_arr[0])
+        #     # s_vals  = samples[:, index_s].astype(float)
+        #     s_vals  = samples[rho_vals<4000, index_s].astype(float)
+        #     s_lo, s_hi = float(np.nanmin(s_vals)), float(np.nanmax(s_vals))
+        #     s_spec = {
+        #         "values": s_vals,
+        #         "label":  r"$s$",
+        #         "name":   "erosion_mass_index",
+        #         "xlim":   (s_lo, s_hi),
+        #         "color":  "red",
+        #     }
+        #     vars_to_plot = vars_to_plot + [s_spec]
+
+
+        # # add the mass index
+        # idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
+        # if idx_arr.size:
+        #     index_ml = int(idx_arr[0])
+        #     # ml_vals  = samples[:, index_ml].astype(float)
+        #     ml_vals  = samples[rho_vals<4000, index_ml].astype(float)
+        #     ml_lo, ml_hi = float(np.nanmin(ml_vals)), float(np.nanmax(ml_vals))
+        #     ml_spec = {
+        #         "values": ml_vals,
+        #         "label":   r"$\log_{10}$ $m_{l}$ [kg]",
+        #         "name":   "erosion_mass_min",
+        #         "xlim":   (ml_lo, ml_hi),
+        #         "color":  "purple",
+        #     }
+        #     vars_to_plot = vars_to_plot + [ml_spec]
+
+        # # add the mass index
+        # idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
+        # if idx_arr.size:
+        #     index_mu = int(idx_arr[0])
+        #     # mu_vals  = samples[:, index_mu].astype(float)
+        #     mu_vals  = samples[rho_vals<4000, index_mu].astype(float)
+        #     mu_lo, mu_hi = float(np.nanmin(mu_vals)), float(np.nanmax(mu_vals))
+        #     mu_spec = {
+        #         "values": mu_vals,
+        #         "label":  r"$\log_{10}$ $m_{u}$ [kg]",
+        #         "name":   "erosion_mass_max",
+        #         "xlim":   (mu_lo, mu_hi),
+        #         "color":  "violet",
+        #     }
+        #     vars_to_plot = vars_to_plot + [mu_spec]
+
+        # sigma_vals = np.asarray(sigma_corrected*1e6, float)
+        # sigma_spec["base_mask"] = rho_cut
+
+        # s_vals = samples[:, index_s].astype(float)          # full length
+        # s_spec["base_mask"] = rho_cut
+
+        # ml_vals = samples[:, index_ml].astype(float)        # full length
+        # ml_spec["base_mask"] = rho_cut
+
+        # mu_vals = samples[:, index_mu].astype(float)        # full length
+        # mu_spec["base_mask"] = rho_cut
+
         # --- Call the plotter ---
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_apex_anti_grid.png")
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_Tj_grid.png")
+        fig, axes = plot_by_cuts_and_vars(
+            vars_list=vars_to_plot,
+            cuts_list=cuts,
+            weights_all=w_all,
+            nbins=int(round(10.0 / 0.02)),
+            smooth=0.02,
+            out_path=out_path
+        )
+        print("Saved:", out_path)
+        plt.close(fig)
+
+        print("Creating rho plots...")
+
+        # ---------- Class masks at SAMPLE level ----------
+        ast_m5over = finite & (tj_samples >= 4.0)
+        ast_m45 = finite & (tj_samples >= 4.0) & (tj_samples < 5.0)
+        ast_m32 = finite & (tj_samples >= 3.05) & (tj_samples < 4.0)
+        ast_jfc_mix = finite & (tj_samples >= 2.8) & (tj_samples < 3.05)
+        jfc_m = finite & (tj_samples >= 2.0) & (tj_samples < 2.8)
+        htc_m21 = finite & (tj_samples >= 1.0) & (tj_samples < 2.0)
+        htc_m10 = finite & (tj_samples >= 0) & (tj_samples < 1)
+        htc_m0low = finite & (tj_samples < 0)
+
+        # find the number of tj above 5
+        num_tj_above_5 = tj[tj >= 5].shape[0]
+        num_tj_between_4_and_5 = tj[(tj >= 4) & (tj < 5)].shape[0]
+        num_tj_between_3_to_4 = tj[(tj >= 3.05) & (tj < 4)].shape[0]
+        num_tj_between_mix = tj[(tj >= 2.8) & (tj < 3.05)].shape[0]
+        num_tj_between_2_and_3 = tj[(tj >= 2) & (tj < 2.8)].shape[0]
+        num_tj_between_1_and_2 = tj[(tj >= 1) & (tj < 2)].shape[0]
+        num_tj_between_0_and_1 = tj[(tj >= 0) & (tj < 1)].shape[0]    
+        # find the number of tj below 2
+        num_tj_below_2 = tj[tj < 0].shape[0]
+
+        # ---------- Figure with three stacked panels ----------
+        fig, axes = plt.subplots(8, 1, figsize=(8, 22), sharex=True)
+
+        _panel_like_top(axes[0], rho_samp[ast_m5over], w_all[ast_m5over], "Tot N." + str(num_tj_above_5) + " AST (Tj>5)", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[ast_m45], w_all[ast_m45], "Tot N." + str(num_tj_between_4_and_5) + " AST (4<Tj<5)", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[2], rho_samp[ast_m32], w_all[ast_m32], "Tot N." + str(num_tj_between_3_to_4) + " AST (3.05<Tj<4)", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[3], rho_samp[ast_jfc_mix], w_all[ast_jfc_mix], "Tot N." + str(num_tj_between_mix) + " mix (2.8<Tj<3.05)", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[4], rho_samp[jfc_m], w_all[jfc_m], "Tot N." + str(num_tj_between_2_and_3) + " JFC (2<Tj<2.8)", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[5], rho_samp[htc_m21], w_all[htc_m21], "Tot N." + str(num_tj_between_1_and_2) + " HTC (1<Tj<2)", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[6], rho_samp[htc_m10], w_all[htc_m10], "Tot N." + str(num_tj_between_0_and_1) + " HTC (0<Tj<1)", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[7], rho_samp[htc_m0low], w_all[htc_m0low], "Tot N." + str(num_tj_below_2) + " HTC (Tj<0)", lo_all, hi_all, nbins, xlim) # "N° " + str(num_tj_below_2) + " HTC"
+        # Bottom labels/ticks to match your style
+        axes[7].tick_params(axis='x', labelbottom=True)
+        axes[7].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[7].set_xticks(np.arange(0, 9000, 2000))
+        for ax in axes:
+            ax.tick_params(labelsize=20)
+        out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_Tj_cuts.png")
+        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        plt.close()
+        print("Saved:", out_path)
+
+        # ### rho distribution plot ###
+
+        # Build group masks (any number of groups works)
+        groups = {
+            "AST (Tj>5)": ast_m5over,
+            "AST (4<Tj<5)": ast_m45,
+            "AST (3.05<Tj<4)": ast_m32,
+            "mix (2.8<Tj<3.05)": ast_jfc_mix,
+            "JFC (2<Tj<2.8)": jfc_m,
+            "HTC (1<Tj<2)": htc_m21,
+            "HTC (0<Tj<1)": htc_m10,
+            "HTC (Tj<0)": htc_m0low,
+        }
+
+        tex, results = weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,                 # bump up for smoother p-values
+            random_seed=123,
+            caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
+            label="tab:rho_dynpres_weighted_tests",
+            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_all_Tj_cut.tex"),
+        )
+
+        # print(tex)  # also written to file if save_path was given
+
+        cuts = [
+            (ast_m5over, f"Tot N.{num_tj_above_5} AST (Tj>5)"),
+            (ast_m45, f"Tot N.{num_tj_between_4_and_5} AST (4<Tj<5)"),
+            (ast_m32, f"Tot N.{num_tj_between_3_to_4} AST (3.05<Tj<4)"),
+            (ast_jfc_mix, f"Tot N.{num_tj_between_mix} mix (2.8<Tj<3.05)"),
+            (jfc_m, f"Tot N.{num_tj_between_2_and_3} JFC (2<Tj<2.8)"),
+            (htc_m21, f"Tot N.{num_tj_between_1_and_2} HTC (1<Tj<2)"),
+            (htc_m10, f"Tot N.{num_tj_between_0_and_1} HTC (0<Tj<1)"),
+            (htc_m0low, f"Tot N.{num_tj_below_2} HTC (Tj<0)"),
+        ]
+
+        # --- Call the plotter ---
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_all_Tj_cut_grid.png")
         fig, axes = plot_by_cuts_and_vars(
             vars_list=vars_to_plot,
             cuts_list=cuts,
@@ -5776,205 +5905,564 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.close(fig)
 
 
-    ### Above below begin height change plots ###
+        ### mass change plots ###
 
-    print("Above & below begin height plots for rho...")
+        print("Creating mass change plots for rho...")
 
-    valid_curve = np.isfinite(h_thr)
+        m_init_med = np.asarray(m_init_med, float)  # per-event Tj (same length as event_names_like)
+        if m_init_med.shape[0] != event_names_like.shape[0]:
+            raise RuntimeError("Length mismatch: event_names vs tj.")
 
-    # Event-level boolean masks
-    below_curve_event = valid_curve & (beg_height <  h_thr)
-    above_curve_event = valid_curve & (beg_height >= h_thr)
+        # dict: base_name -> Tj
+        m_init_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, m_init_med)}
 
-    # (Optional) sanity check
-    if event_names_like.shape[0] != Vg_val.shape[0]:
-        raise RuntimeError("Length mismatch: event_names_like vs Vg_val/beg_height")
+        # Map each sample's base_name -> Tj (NaN if missing)
+        m_init_med_samples = np.array([m_init_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
 
-    # Count events in each class
-    num_below = np.count_nonzero(below_curve_event)
-    num_above = np.count_nonzero(above_curve_event)
+        # # ---------- Class masks at SAMPLE level ----------
+        # finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
+        # big_kg = finite & (m_init_med_samples >= 10**(-4))
+        # medium_b_kg = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
+        # medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
+        # small_kg = finite & (m_init_med_samples < 10**(-5))
 
-    # print(f"Events below curve: {num_below}, above curve: {num_above}")
+        # # find the number of mass
+        # num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
+        # num_medium_b_kg = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
+        # num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
+        # num_small_kg = m_init_med[m_init_med < 10**(-5)].shape[0]
 
-    # =====================================================
-    # 2) Map event-level masks to SAMPLE level
-    # =====================================================
-    # names_per_sample: array of base names (one per posterior sample)
-    # rho_samp: rho samples
-    # w_all: weights for each sample
+        # ---------- Class masks at SAMPLE level ----------
+        finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
+        big_kg = finite & (m_init_med_samples >= 10**(-4))
+        medium_b_kg = finite & (m_init_med_samples >= 10**(-4.5)) & (m_init_med_samples < 10**(-4))
+        medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 10**(-4.5))
+        small_b_kg = finite & (m_init_med_samples >= 10**(-5.5)) & (m_init_med_samples < 10**(-5))
+        small_kg = finite & (m_init_med_samples < 10**(-5.5))
 
-    # Dict: event_name -> bool (below / above)
-    below_by_name = {str(n): bool(b) for n, b in zip(event_names_like, below_curve_event)}
-    above_by_name = {str(n): bool(b) for n, b in zip(event_names_like, above_curve_event)}
+        # find the number of mass
+        num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
+        num_medium_b_kg = m_init_med[(m_init_med >= 10**(-4.5)) & (m_init_med < 10**(-4))].shape[0]
+        num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 10**(-4.5))].shape[0]
+        num_small_b_kg = m_init_med[(m_init_med >= 10**(-5.5)) & (m_init_med < 10**(-5))].shape[0]
+        num_small_kg = m_init_med[m_init_med < 10**(-5.5)].shape[0]
 
-    # Sample-level boolean flags based on event classification
-    below_curve_samples = np.array(
-        [below_by_name.get(n, False) for n in names_per_sample],
-        dtype=bool
-    )
-    above_curve_samples = np.array(
-        [above_by_name.get(n, False) for n in names_per_sample],
-        dtype=bool
-    )
+        # ---------- Figure with three stacked panels ----------
+        fig, axes = plt.subplots(5, 1, figsize=(10, 15), sharex=True)
 
-    # Base “finite” mask at sample level
-    finite = np.isfinite(rho_samp) & np.isfinite(w_all)
+        _panel_like_top(axes[0], rho_samp[big_kg], w_all[big_kg], "Tot N." + str(num_big_kg) + " above 10$^{-4}$ kg", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[medium_b_kg], w_all[medium_b_kg], "Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 5$\cdot$10$^{-4.5}$ kg", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[2], rho_samp[medium_s_kg], w_all[medium_s_kg], "Tot N." + str(num_medium_s_kg) + " 10$^{-4.5}$ - 10$^{-5}$ kg", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[3], rho_samp[small_b_kg], w_all[small_b_kg], "Tot N." + str(num_small_b_kg) + " 10$^{-5}$ - 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[4], rho_samp[small_kg], w_all[small_kg], "Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
 
-    # ---------- Class masks at SAMPLE level ----------
-    # You can think of these like your old 'fragile' / 'sturdy'
-    sturdy = finite & below_curve_samples      # BELOW the v–h curve
-    fragile  = finite & above_curve_samples      # ABOVE (or on) the v–h curve
+        # Bottom labels/ticks to match your style
+        axes[4].tick_params(axis='x', labelbottom=True)
+        axes[4].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[4].set_xticks(np.arange(0, 9000, 2000))
+        for ax in axes:
+            ax.tick_params(labelsize=20)
 
-    # ---------- Figure with three stacked panels ----------
-    fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
+        # Save
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
+        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        plt.close()
+        print("Saved:", out_path)
 
-    _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_above) + " group A", lo_all, hi_all, nbins, xlim)
-    _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_below) + " group C", lo_all, hi_all, nbins, xlim)
+        # plot scatter
+        fig, ax = plt.subplots(figsize=(6, 8), constrained_layout=True)  # larger width, auto spacing
 
-    # Bottom labels/ticks to match your style
-    axes[1].tick_params(axis='x', labelbottom=True)
-    axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    axes[1].set_xticks(np.arange(0, 9000, 2000))
-    for ax in axes:
-        ax.tick_params(labelsize=20)
+        # sc = ax.scatter(rho, log10_m_init, c=np.log10(meteoroid_diameter_mm), cmap='viridis', s=30, norm=Normalize(vmin=np.log10(meteoroid_diameter_mm.min()), vmax=np.log10(meteoroid_diameter_mm.max())), zorder=2)
+        sc = ax.scatter(rho, log10_m_init, c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
+        plt.errorbar(rho, log10_m_init, 
+                xerr=[abs(rho_lo), abs(rho_hi)],
+                # yerr=[abs(meteoroid_diameter_mm_lo)/1.96, abs(meteoroid_diameter_mm_hi)/1.96],
+                elinewidth=0.75, capthick=0.75,
+                fmt='none', ecolor='black', capsize=3, zorder=1)
+        
+        cbar = fig.colorbar(sc, ax=ax, orientation='vertical', pad=0.08)
+        # cbar.set_label("$log_{10}$ Diameter [mm]", fontsize=20)
+        cbar.set_label("$v_{0}$ [km/s]", fontsize=20)
+        cbar.ax.tick_params(labelsize=12)
+            
+        # Guide lines
+        for yline in (np.log10(10**(-4)), np.log10(10**(-4.5)), np.log10(10**(-5)), np.log10(10**(-5.5))):
+            plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='lime')
 
-    # Save
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_dynpres_threepanels_weighted.png")
-    plt.savefig(out_path, bbox_inches='tight', dpi=300)
-    plt.close()
-    print("Saved:", out_path)
+        # add the label
+        plt.xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        # set x axis lim from (-100, 8300)
+        plt.xlim(-100, 8300)
+        plt.xticks(np.arange(0, 9000, 2000))
+        plt.ylabel('log$_{10}(m_0$ [kg]$)$', fontsize=20)
+        plt.tick_params(labelsize=14)
+        plt.grid(True, alpha=0.2)
+
+        # save the rho vs diameter plot
+        plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_v_scatter.png"), bbox_inches='tight', dpi=300)
+        plt.close()
+
+        # ### rho distribution plot ###
+
+        # Build group masks (any number of groups works)
+        groups = {
+            "above 10$^{-4}$ kg": big_kg,
+            "10$^{-4}$ - 5$\cdot$10$^{-5}$ kg": medium_b_kg,
+            "5$\cdot$10$^{-5}$ - 10$^{-5}$ kg": medium_s_kg,
+            "below 10$^{-5}$ kg": small_kg,
+            # e.g., add a 4th group later:
+            # "IEO": ieo_m,
+        }
+
+        tex, results = weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,                 # bump up for smoother p-values
+            random_seed=123,
+            caption=r"Pairwise tests on $\rho$ by mass (weighted posteriors).",
+            label="tab:rho_mass_weighted_tests",
+            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_mass.tex"),
+        )
+
+        # mass cuts
+        cuts = [
+            (big_kg, rf"Tot N." + str(num_big_kg) + " above 10$^{-4}$ kg"),
+            (medium_b_kg, rf"Tot N." + str(num_medium_b_kg) + " 10$^{-4}$ - 10$^{-4.5}$ kg"),
+            (medium_s_kg, rf"Tot N." + str(num_medium_s_kg) + " 10$^{-4.5}$ - 10$^{-5}$ kg"),
+            (small_b_kg, rf"Tot N." + str(num_small_b_kg) + " 10$^{-5}$ - 10$^{-5.5}$ kg"),
+            (small_kg, rf"Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg"),
+        ]
+
+        # --- Call the plotter ---
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_mass_grid.png")
+        fig, axes = plot_by_cuts_and_vars(
+            vars_list=vars_to_plot,
+            cuts_list=cuts,
+            weights_all=w_all,
+            nbins=int(round(10.0 / 0.02)),
+            smooth=0.02,
+            out_path=out_path
+        )
+        print("Saved:", out_path)
+        plt.close(fig)
+
+        ### diameter change plots ###
+
+        print("Creating diameter change plots for rho...")
+
+        # same for meteoroid_diameter_mm
+        meteoroid_diameter_mm = np.asarray(meteoroid_diameter_mm, float) 
+        if meteoroid_diameter_mm.shape[0] != event_names_like.shape[0]:
+            raise RuntimeError("Length mismatch: event_names vs meteoroid_diameter_mm.")
+
+        # dict: base_name -> meteoroid_diameter_mm
+        meteoroid_diameter_mm_by_name = {str(n): float(v) for n, v in zip(event_names_like, meteoroid_diameter_mm)}
+        # Map each sample's base_name -> meteoroid_diameter_mm (NaN if missing)
+        meteoroid_diameter_mm_samples = np.array([meteoroid_diameter_mm_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+
+        # ---------- Class masks at SAMPLE level ----------
+        finite = np.isfinite(rho_samp) & np.isfinite(meteoroid_diameter_mm_samples) & np.isfinite(w_all)
+        big = finite & (meteoroid_diameter_mm_samples >= 7.5)
+        medium_b = finite & (meteoroid_diameter_mm_samples >= 5) & (meteoroid_diameter_mm_samples < 7.5)
+        medium_s = finite & (meteoroid_diameter_mm_samples >= 2.5) & (meteoroid_diameter_mm_samples < 5)
+        small = finite & (meteoroid_diameter_mm_samples < 2.5)
+
+        # find the number of mass
+        num_big = meteoroid_diameter_mm[meteoroid_diameter_mm >= 7.5].shape[0]
+        num_medium_b = meteoroid_diameter_mm[(meteoroid_diameter_mm >= 5) & (meteoroid_diameter_mm < 7.5)].shape[0]
+        num_medium_s = meteoroid_diameter_mm[(meteoroid_diameter_mm >= 2.5) & (meteoroid_diameter_mm < 5)].shape[0]
+        num_small = meteoroid_diameter_mm[meteoroid_diameter_mm < 2.5].shape[0]
+
+        # ---------- Figure with three stacked panels ----------
+        fig, axes = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
+
+        _panel_like_top(axes[0], rho_samp[big], w_all[big], "Tot N." + str(num_big) + " above 7.5 mm", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[medium_b], w_all[medium_b], "Tot N." + str(num_medium_b) + " 5 - 7.5 mm", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[2], rho_samp[medium_s], w_all[medium_s], "Tot N." + str(num_medium_s) + " 2.5 - 5 mm", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[3], rho_samp[small], w_all[small], "Tot N." + str(num_small) + " below 2.5 mm", lo_all, hi_all, nbins, xlim)
+
+        # Bottom labels/ticks to match your style
+        axes[3].tick_params(axis='x', labelbottom=True)
+        axes[3].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[3].set_xticks(np.arange(0, 9000, 2000))
+        for ax in axes:
+            ax.tick_params(labelsize=20)
+
+        # Save
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_threepanels_weighted.png")
+        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        plt.close()
+        print("Saved:", out_path)
+
+        ### Create scatter plot for rho vs diameter ###
+
+        fig, ax = plt.subplots(figsize=(6, 8), constrained_layout=True)  # larger width, auto spacing
+        # gs = GridSpec(nrows=4, ncols=2, width_ratios=[1.3, 1.0], hspace=0.25, wspace=0.5, figure=fig)
+
+        plt.errorbar(rho, meteoroid_diameter_mm, 
+                    xerr=[abs(rho_lo), abs(rho_hi)],
+                    yerr=[abs(meteoroid_diameter_mm_lo), abs(meteoroid_diameter_mm_hi)],
+                    elinewidth=0.75, capthick=0.75,
+                    fmt='none', ecolor='black', capsize=3, zorder=1)
+
+        sc = plt.scatter(rho, meteoroid_diameter_mm,
+                        c=v_init_meteor_median, cmap='viridis',
+                        norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()),
+                        s=30, zorder=2)
+                        # c=log10_m_init, cmap='viridis',
+                        # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
+                        # s=30, zorder=2)
+
+        # Guide lines
+        for yline in (2.5, 5.0, 7.5):
+            plt.axhline(yline, linestyle=':', linewidth=1, alpha=0.5, color='lime')
+
+        plt.xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        # set x axis lim from (-100, 8300)
+        plt.xlim(100, 8300)
+        # plt.xticks(np.arange(0, 9000, 2000))
+        plt.ylabel('Meteoroid diameter [mm]', fontsize=20)
+        plt.tick_params(labelsize=14)
+        plt.grid(True, alpha=0.2)
+        # make the y and x axis log scale
+        plt.yscale('log')
+        plt.xscale('log')
+
+        # Colorbar on the right of scatter only
+        cbar = fig.colorbar(sc, ax=ax, orientation='vertical', pad=0.08)
+        # cbar.set_label(r'$\log_{10}(m_{0}$ [kg]$)$', fontsize=20)
+        cbar.set_label(r'$v_{0}$ [km/s]', fontsize=20)
+        cbar.ax.tick_params(labelsize=12)
+
+        # save the rho vs diameter plot
+        plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_v_scatter.png"), bbox_inches='tight', dpi=300)
+        plt.close()
+
+        # ### rho distribution plot ###
+
+        # Build group masks (any number of groups works)
+        groups = {
+            "above 7.5 mm": big,
+            "5 - 7.5 mm": medium_b,
+            "2.5 - 5 mm": medium_s,
+            "below 2.5 mm": small,
+        }
+
+        tex, results = weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,                 # bump up for smoother p-values
+            random_seed=123,
+            caption=r"Pairwise tests on $\rho$ by diameter class (weighted posteriors).",
+            label="tab:rho_diameter_weighted_tests",
+            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_diameter.tex"),
+        )
+
+        # print(tex)  # also written to file if save_path was given
+
+        cuts = [
+            (big, f"Tot N.{num_big} above 7.5 mm"),
+            (medium_b, f"Tot N.{num_medium_b} 5 - 7.5 mm"),
+            (medium_s, f"Tot N.{num_medium_s} 2.5 - 5 mm"),
+            (small, f"Tot N.{num_small} below 2.5 mm"),
+        ]
+
+        # --- Call the plotter ---
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_diameter_grid.png")
+        fig, axes = plot_by_cuts_and_vars(
+            vars_list=vars_to_plot,
+            cuts_list=cuts,
+            weights_all=w_all,
+            nbins=int(round(10.0 / 0.02)),
+            smooth=0.02,
+            out_path=out_path
+        )
+        print("Saved:", out_path)
+        plt.close(fig)
+
+        ### Apex and Antihelion ###
+
+        if apex_mask is not None:
+            print("Apex vs Antihelion plots for rho...")
+            apex_mask = np.asarray(apex_mask, bool)
+            # what is True is False for anti_mask
+            # anti_mask = ~apex_mask
+            anti_mask = np.asarray(antihel_mask, bool)
+
+            apex_num = np.count_nonzero(apex_mask)
+            anti_num = np.count_nonzero(anti_mask)
+            
+            # Dict: event_name -> bool (below / above)
+            apex_by_name = {str(n): bool(b) for n, b in zip(event_names_like, apex_mask)}
+            anti_by_name = {str(n): bool(b) for n, b in zip(event_names_like, anti_mask)}
+
+            # Sample-level boolean flags based on event classification
+            apex_samples = np.array(
+                [apex_by_name.get(n, False) for n in names_per_sample],
+                dtype=bool
+            )
+            anti_samples = np.array(
+                [anti_by_name.get(n, False) for n in names_per_sample],
+                dtype=bool
+            )
+            finite = np.isfinite(rho_samp) & np.isfinite(w_all)
+            apex_class = finite & apex_samples
+            anti_class = finite & anti_samples
+
+            # ---------- Figure with two stacked panels ----------
+            fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
+            _panel_like_top(axes[0], rho_samp[apex_class], w_all[apex_class], "Tot N." + str(apex_num) + " Apex", lo_all, hi_all, nbins, xlim)
+            _panel_like_top(axes[1], rho_samp[anti_class], w_all[anti_class], "Tot N." + str(anti_num) + " Antihelion", lo_all, hi_all, nbins, xlim)
+            # Bottom labels/ticks to match your style
+            axes[1].tick_params(axis='x', labelbottom=True)
+            axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+            axes[1].set_xticks(np.arange(0, 9000, 2000))
+            for ax in axes:
+                ax.tick_params(labelsize=20)
+
+            # Save
+            out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_apex_anti_threepanels_weighted.png")
+            plt.savefig(out_path, bbox_inches='tight', dpi=300)
+            plt.close()
+
+            # ### rho distribution plot ###
+            groups = {
+                "Apex": apex_class,
+                "Antihelion": anti_class
+            }
+            tex, results = weighted_tests_table(
+                values=rho_samp,
+                weights=w_all,
+                groups=groups,
+                resample_n=8000,                 # bump up for smoother p-values
+                random_seed=123,
+                caption=r"Pairwise tests on $\rho$ by Apex/Antihelion class (weighted posteriors).",
+                label="tab:rho_apex_anti_weighted_tests",
+                save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_apex_anti.tex"),
+            )
+
+            cuts = [
+                (apex_class, f"Tot N.{apex_num} Apex"),
+                (anti_class, f"Tot N.{anti_num} Antihelion"),
+            ]
+            # --- Call the plotter ---
+            out_path = os.path.join(output_dir_rho, f"{shower_name}_by_apex_anti_grid.png")
+            fig, axes = plot_by_cuts_and_vars(
+                vars_list=vars_to_plot,
+                cuts_list=cuts,
+                weights_all=w_all,
+                nbins=int(round(10.0 / 0.02)),
+                smooth=0.02,
+                out_path=out_path
+            )
+            print("Saved:", out_path)
+            plt.close(fig)
 
 
-    # ### rho distribution plot ###
+        ### Above below begin height change plots ###
 
-    # Build group masks (any number of groups works)
-    groups = {
-        "group A": fragile,
-        "group C": sturdy
-    }
+        print("Above & below begin height plots for rho...")
 
-    tex, results = weighted_tests_table(
-        values=rho_samp,
-        weights=w_all,
-        groups=groups,
-        resample_n=8000,                 # bump up for smoother p-values
-        random_seed=123,
-        caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
-        label="tab:rho_dynpres_weighted_tests",
-        save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_hbeg.tex"),
-    )
+        valid_curve = np.isfinite(h_thr)
 
-    # print(tex)  # also written to file if save_path was given
+        # Event-level boolean masks
+        below_curve_event = valid_curve & (beg_height <  h_thr)
+        above_curve_event = valid_curve & (beg_height >= h_thr)
 
-    cuts = [
-        (fragile, f"Tot N.{num_above} group A"),
-        (sturdy, f"Tot N.{num_below} group C"),
-    ]
+        # (Optional) sanity check
+        if event_names_like.shape[0] != Vg_val.shape[0]:
+            raise RuntimeError("Length mismatch: event_names_like vs Vg_val/beg_height")
 
-    # --- Call the plotter ---
-    out_path = os.path.join(output_dir_rho, f"{shower_name}_by_hbeg_grid.png")
-    fig, axes = plot_by_cuts_and_vars(
-        vars_list=vars_to_plot,
-        cuts_list=cuts,
-        weights_all=w_all,
-        nbins=int(round(10.0 / 0.02)),
-        smooth=0.02,
-        out_path=out_path
-    )
-    print("Saved:", out_path)
-    plt.close(fig)
+        # Count events in each class
+        num_below = np.count_nonzero(below_curve_event)
+        num_above = np.count_nonzero(above_curve_event)
 
+        # print(f"Events below curve: {num_below}, above curve: {num_above}")
 
-    # ### dyn press change plots ###
+        # =====================================================
+        # 2) Map event-level masks to SAMPLE level
+        # =====================================================
+        # names_per_sample: array of base names (one per posterior sample)
+        # rho_samp: rho samples
+        # w_all: weights for each sample
 
-    # print("Dyn press change plots for rho...")
+        # Dict: event_name -> bool (below / above)
+        below_by_name = {str(n): bool(b) for n, b in zip(event_names_like, below_curve_event)}
+        above_by_name = {str(n): bool(b) for n, b in zip(event_names_like, above_curve_event)}
 
-    # # --- Dynamic pressure two-class overlay (NO gradient) ---
-    # logq = np.log10(erosion_beg_dyn_press)
-    # # thr = 3.2  # log10 Pa  (≈ 1.58 kPa)
+        # Sample-level boolean flags based on event classification
+        below_curve_samples = np.array(
+            [below_by_name.get(n, False) for n in names_per_sample],
+            dtype=bool
+        )
+        above_curve_samples = np.array(
+            [above_by_name.get(n, False) for n in names_per_sample],
+            dtype=bool
+        )
 
-    # # mask_hi = logq >= thr
-    # # mask_lo = ~mask_hi
+        # Base “finite” mask at sample level
+        finite = np.isfinite(rho_samp) & np.isfinite(w_all)
 
-    # # same for meteoroid_diameter_mm
-    # logq = np.asarray(logq, float) 
-    # if logq.shape[0] != event_names_like.shape[0]:
-    #     raise RuntimeError("Length mismatch: event_names vs meteoroid_diameter_mm.")
+        # ---------- Class masks at SAMPLE level ----------
+        # You can think of these like your old 'fragile' / 'sturdy'
+        sturdy = finite & below_curve_samples      # BELOW the v–h curve
+        fragile  = finite & above_curve_samples      # ABOVE (or on) the v–h curve
 
-    # # dict: base_name -> meteoroid_diameter_mm
-    # logq_by_name = {str(n): float(v) for n, v in zip(event_names_like, logq)}
-    # # Map each sample's base_name -> meteoroid_diameter_mm (NaN if missing)
-    # logq_samples = np.array([logq_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+        # ---------- Figure with three stacked panels ----------
+        fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
 
-    # # ---------- Class masks at SAMPLE level ----------
-    # finite = np.isfinite(rho_samp) & np.isfinite(logq_samples) & np.isfinite(w_all)
-    # sturdy = finite & (logq_samples >= thr)
-    # fragile = finite & (logq_samples < thr)
+        _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_above) + " group C", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_below) + " group A", lo_all, hi_all, nbins, xlim)
 
-    # # find the number of mass
-    # num_sturdy = logq[logq >= thr].shape[0]
-    # num_fragile = logq[logq < thr].shape[0]
+        # Bottom labels/ticks to match your style
+        axes[1].tick_params(axis='x', labelbottom=True)
+        axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[1].set_xticks(np.arange(0, 9000, 2000))
+        for ax in axes:
+            ax.tick_params(labelsize=20)
 
-    # # ---------- Figure with three stacked panels ----------
-    # fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
-
-    # _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_fragile) + " below " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
-    # _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_sturdy) + " above " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
-
-    # # Bottom labels/ticks to match your style
-    # axes[1].tick_params(axis='x', labelbottom=True)
-    # axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    # axes[1].set_xticks(np.arange(0, 9000, 2000))
-    # for ax in axes:
-    #     ax.tick_params(labelsize=20)
-
-    # # Save
-    # out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_dynpres_threepanels_weighted.png")
-    # plt.savefig(out_path, bbox_inches='tight', dpi=300)
-    # plt.close()
-    # print("Saved:", out_path)
+        # Save
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_dynpres_threepanels_weighted.png")
+        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        plt.close()
+        print("Saved:", out_path)
 
 
-    # # ### rho distribution plot ###
+        # ### rho distribution plot ###
 
-    # # Build group masks (any number of groups works)
-    # groups = {
-    #     "below " + str(10**thr)+" Pa": fragile,
-    #     "above " + str(10**thr)+" Pa": sturdy
-    # }
+        # Build group masks (any number of groups works)
+        groups = {
+            "group C": fragile,
+            "group A": sturdy
+        }
 
-    # tex, results = weighted_tests_table(
-    #     values=rho_samp,
-    #     weights=w_all,
-    #     groups=groups,
-    #     resample_n=8000,                 # bump up for smoother p-values
-    #     random_seed=123,
-    #     caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
-    #     label="tab:rho_dynpres_weighted_tests",
-    #     save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_dynpres.tex"),
-    # )
+        tex, results = weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,                 # bump up for smoother p-values
+            random_seed=123,
+            caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
+            label="tab:rho_dynpres_weighted_tests",
+            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_hbeg.tex"),
+        )
 
-    # # print(tex)  # also written to file if save_path was given
+        # print(tex)  # also written to file if save_path was given
 
-    # cuts = [
-    #     (fragile, f"Tot N.{num_fragile} below {np.round(10**thr)} Pa"),
-    #     (sturdy, f"Tot N.{num_sturdy} above {np.round(10**thr)} Pa"),
-    # ]
+        cuts = [
+            (fragile, f"Tot N.{num_above} group C"),
+            (sturdy, f"Tot N.{num_below} group A"),
+        ]
 
-    # # --- Call the plotter ---
-    # out_path = os.path.join(output_dir_rho, f"{shower_name}_by_dynampres_grid.png")
-    # fig, axes = plot_by_cuts_and_vars(
-    #     vars_list=vars_to_plot,
-    #     cuts_list=cuts,
-    #     weights_all=w_all,
-    #     nbins=int(round(10.0 / 0.02)),
-    #     smooth=0.02,
-    #     out_path=out_path
-    # )
-    # print("Saved:", out_path)
-    # plt.close(fig)
+        # --- Call the plotter ---
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_hbeg_grid.png")
+        fig, axes = plot_by_cuts_and_vars(
+            vars_list=vars_to_plot,
+            cuts_list=cuts,
+            weights_all=w_all,
+            nbins=int(round(10.0 / 0.02)),
+            smooth=0.02,
+            out_path=out_path
+        )
+        print("Saved:", out_path)
+        plt.close(fig)
+
+
+        # ### dyn press change plots ###
+
+        # print("Dyn press change plots for rho...")
+
+        # # --- Dynamic pressure two-class overlay (NO gradient) ---
+        # logq = np.log10(erosion_beg_dyn_press)
+        # # thr = 3.2  # log10 Pa  (≈ 1.58 kPa)
+
+        # # mask_hi = logq >= thr
+        # # mask_lo = ~mask_hi
+
+        # # same for meteoroid_diameter_mm
+        # logq = np.asarray(logq, float) 
+        # if logq.shape[0] != event_names_like.shape[0]:
+        #     raise RuntimeError("Length mismatch: event_names vs meteoroid_diameter_mm.")
+
+        # # dict: base_name -> meteoroid_diameter_mm
+        # logq_by_name = {str(n): float(v) for n, v in zip(event_names_like, logq)}
+        # # Map each sample's base_name -> meteoroid_diameter_mm (NaN if missing)
+        # logq_samples = np.array([logq_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+
+        # # ---------- Class masks at SAMPLE level ----------
+        # finite = np.isfinite(rho_samp) & np.isfinite(logq_samples) & np.isfinite(w_all)
+        # sturdy = finite & (logq_samples >= thr)
+        # fragile = finite & (logq_samples < thr)
+
+        # # find the number of mass
+        # num_sturdy = logq[logq >= thr].shape[0]
+        # num_fragile = logq[logq < thr].shape[0]
+
+        # # ---------- Figure with three stacked panels ----------
+        # fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
+
+        # _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_fragile) + " below " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
+        # _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_sturdy) + " above " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
+
+        # # Bottom labels/ticks to match your style
+        # axes[1].tick_params(axis='x', labelbottom=True)
+        # axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        # axes[1].set_xticks(np.arange(0, 9000, 2000))
+        # for ax in axes:
+        #     ax.tick_params(labelsize=20)
+
+        # # Save
+        # out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_dynpres_threepanels_weighted.png")
+        # plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        # plt.close()
+        # print("Saved:", out_path)
+
+
+        # # ### rho distribution plot ###
+
+        # # Build group masks (any number of groups works)
+        # groups = {
+        #     "below " + str(10**thr)+" Pa": fragile,
+        #     "above " + str(10**thr)+" Pa": sturdy
+        # }
+
+        # tex, results = weighted_tests_table(
+        #     values=rho_samp,
+        #     weights=w_all,
+        #     groups=groups,
+        #     resample_n=8000,                 # bump up for smoother p-values
+        #     random_seed=123,
+        #     caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
+        #     label="tab:rho_dynpres_weighted_tests",
+        #     save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_dynpres.tex"),
+        # )
+
+        # # print(tex)  # also written to file if save_path was given
+
+        # cuts = [
+        #     (fragile, f"Tot N.{num_fragile} below {np.round(10**thr)} Pa"),
+        #     (sturdy, f"Tot N.{num_sturdy} above {np.round(10**thr)} Pa"),
+        # ]
+
+        # # --- Call the plotter ---
+        # out_path = os.path.join(output_dir_rho, f"{shower_name}_by_dynampres_grid.png")
+        # fig, axes = plot_by_cuts_and_vars(
+        #     vars_list=vars_to_plot,
+        #     cuts_list=cuts,
+        #     weights_all=w_all,
+        #     nbins=int(round(10.0 / 0.02)),
+        #     smooth=0.02,
+        #     out_path=out_path
+        # )
+        # print("Saved:", out_path)
+        # plt.close(fig)
 
     ##################### DISTRIBUTION PLOTS #####################
+
+    print("Creating complete distribution plots...")
+
     # Plot grid settings
     ndim = samples.shape[1]
     # ncols = 5
@@ -6058,308 +6546,6 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.close(fig)
     
     
-
-    ################ Grun debiased dataset based on the mass flux of the meteoroids, using the formula from Grun et al. (1985) ################
-
-    # ---------------------------
-    # Grün (1985) cumulative flux F(>m) in m^-2 yr^-1
-    # m must be in grams
-    # ---------------------------
-    def grun_F_cum_m2yr(m_g: np.ndarray) -> np.ndarray:
-        """
-        Grün cumulative flux F(>m) [m^-2 yr^-1], with m in grams.
-        ESABASE2 technical description / Grün-like fit.
-        """
-        m_g = np.asarray(m_g, dtype=float)
-        m_g = np.maximum(m_g, 1e-300)  # avoid zeros
-
-        c0 = 3.156e7
-        c1 = 2.2e3
-        c2 = 15.0
-        c3 = 1.3e-9
-        c4 = 1.0e11
-        c5 = 1.0e27
-        c6 = 1.3e-16
-        c7 = 1.0e6
-
-        term1 = (c1 * (m_g ** 0.306) + c2) ** (-4.38)
-        term2 = (m_g + c4 * (m_g ** 2) + c5 * (m_g ** 4)) ** (-0.36)
-        term3 = (m_g + c7 * (m_g ** 2)) ** (-0.85)
-
-        return c0 * (term1 + c3 * term2 + c6 * term3)
-
-
-    def grun_pdf_log10m(m_kg: np.ndarray, mmin_kg: float, mmax_kg: float) -> np.ndarray:
-        """
-        Target PDF proportional to -dF/dlog10(m) on [mmin, mmax], evaluated at sample masses (kg).
-
-        Returns p_target(log10 m) values (NOT normalized over R, but normalized over window).
-        """
-        m_kg = np.asarray(m_kg, dtype=float)
-
-        # Window in grams
-        mmin_g = 1e3 * float(mmin_kg)
-        mmax_g = 1e3 * float(mmax_kg)
-
-        # Evaluate cumulative flux at window endpoints
-        Fmin = grun_F_cum_m2yr(mmin_g)
-        Fmax = grun_F_cum_m2yr(mmax_g)
-        norm = (Fmin - Fmax)
-        if not np.isfinite(norm) or norm <= 0:
-            raise ValueError("Bad Grün normalization: check mmin_kg < mmax_kg and ranges are sensible.")
-
-        # For each mass, compute -dF/dlog10m via numerical derivative in log-space
-        # Work in grams internally.
-        m_g = 1e3 * m_kg
-        m_g = np.clip(m_g, mmin_g, mmax_g)
-
-        x = np.log10(m_g)
-
-        # step in log10 space; small but not too small (stability)
-        dx = 1e-3
-
-        m1 = 10 ** (x - dx)
-        m2 = 10 ** (x + dx)
-
-        F1 = grun_F_cum_m2yr(m1)
-        F2 = grun_F_cum_m2yr(m2)
-
-        dFdx = (F2 - F1) / (2 * dx)  # derivative w.r.t. log10(m_g)
-        phi = -dFdx                  # phi = -dF/dlog10m
-
-        # Normalize to become a proper PDF over the window:
-        # integral phi dx = F(mmin)-F(mmax)
-        p = phi / norm
-
-        # Avoid zeros for later ratios
-        return np.maximum(p, 1e-300)
-
-
-    # ---------------------------
-    # Reweighting function
-    # ---------------------------
-    def reweight_to_target_mass_pdf(
-        m_kg: np.ndarray,
-        w: np.ndarray | None = None,
-        *,
-        mmin_kg: float | None = None,
-        mmax_kg: float | None = None,
-        nbins: int = 80,
-        smooth: float = 0.02,
-        clip_ratio: float = 1e3,
-    ) -> dict:
-        """
-        Reweight samples so their weighted mass distribution matches Grün (1985)
-        within [mmin_kg, mmax_kg].
-
-        Inputs
-        ------
-        m_kg : array
-            Sample masses in kg (e.g., posterior samples or per-event point estimates).
-        w : array or None
-            Current weights (same length). If None, uses uniform weights.
-        mmin_kg, mmax_kg : float
-            Mass window for normalization. If None, uses min/max of m_kg.
-            (You should usually set this to your physically relevant / completeness window.)
-        nbins : int
-            Histogram bins in log10(m) for estimating p_empirical.
-        smooth : float
-            Gaussian smoothing (in bins). 0 disables smoothing.
-        clip_ratio : float
-            Caps importance ratios to limit weight explosion (stability).
-
-        Returns
-        -------
-        dict with:
-            w_new : normalized reweighted weights
-            ratio : applied importance ratios (before normalization)
-            ess   : effective sample size after reweighting
-            mmin_kg, mmax_kg used
-        """
-        m_kg = np.asarray(m_kg, dtype=float)
-        if w is None:
-            w = np.ones_like(m_kg, dtype=float)
-        else:
-            w = np.asarray(w, dtype=float)
-
-        if m_kg.shape != w.shape:
-            raise ValueError("m_kg and w must have the same shape.")
-        if np.any(m_kg <= 0):
-            raise ValueError("All masses must be > 0.")
-
-        # Window defaults
-        if mmin_kg is None:
-            mmin_kg = float(np.min(m_kg))
-        if mmax_kg is None:
-            mmax_kg = float(np.max(m_kg))
-        if not (mmin_kg < mmax_kg):
-            raise ValueError("Require mmin_kg < mmax_kg.")
-
-        # Work in log10 mass
-        x = np.log10(np.clip(m_kg, mmin_kg, mmax_kg))
-
-        # Estimate empirical p(x) from weighted histogram (density in x=log10m)
-        edges = np.linspace(np.log10(mmin_kg), np.log10(mmax_kg), nbins + 1)
-        counts, _ = np.histogram(x, bins=edges, weights=w)
-
-        # Convert counts to a density over x (log10 m)
-        bin_width = edges[1] - edges[0]
-        p_emp = counts / (np.sum(counts) * bin_width + 1e-300)
-
-        # Optional smoothing in bin-space (simple Gaussian kernel)
-        if smooth and smooth > 0:
-            # build kernel
-            radius = int(max(3, np.ceil(4 * smooth)))
-            kx = np.arange(-radius, radius + 1)
-            ker = np.exp(-0.5 * (kx / smooth) ** 2)
-            ker /= np.sum(ker)
-            p_emp = np.convolve(p_emp, ker, mode="same")
-            # renormalize to be safe
-            p_emp = np.maximum(p_emp, 1e-300)
-            p_emp /= (np.sum(p_emp) * bin_width)
-
-        # Map each sample to its bin density
-        bin_idx = np.clip(np.digitize(x, edges) - 1, 0, nbins - 1)
-        p_emp_i = p_emp[bin_idx]
-
-        # Target Grün pdf in x=log10(m)
-        p_tar_i = grun_pdf_log10m(m_kg, mmin_kg=mmin_kg, mmax_kg=mmax_kg)
-
-        # Importance ratios
-        ratio = p_tar_i / np.maximum(p_emp_i, 1e-300)
-
-        # Cap extreme ratios to prevent a few samples dominating
-        if clip_ratio is not None and clip_ratio > 0:
-            ratio = np.clip(ratio, 1.0 / clip_ratio, clip_ratio)
-
-        # New weights
-        w_new = w * ratio
-        w_new = np.maximum(w_new, 0.0)
-        w_new_sum = np.sum(w_new)
-        if w_new_sum <= 0 or not np.isfinite(w_new_sum):
-            raise RuntimeError("Reweighting failed: weights collapsed. Try larger window/bins/smoothing/clip_ratio.")
-        w_new /= w_new_sum
-
-        # Effective sample size
-        ess = 1.0 / np.sum(w_new ** 2)
-
-        return {
-            "w_new": w_new,
-            "ratio": ratio,
-            "ess": ess,
-            "mmin_kg": mmin_kg,
-            "mmax_kg": mmax_kg,
-        }
-
-
-    # ---------------------------
-    # Helper: compute weighted PDF or weighted quantiles of any parameter
-    # ---------------------------
-    def weighted_quantile(values, quantiles, sample_weight):
-        values = np.asarray(values, float)
-        quantiles = np.asarray(quantiles, float)
-        w = np.asarray(sample_weight, float)
-
-        sorter = np.argsort(values)
-        v = values[sorter]
-        w = w[sorter]
-
-        cdf = np.cumsum(w)
-        cdf /= cdf[-1]
-        return np.interp(quantiles, cdf, v)
-
-    # w_all = np.asarray(combined_results.importance_weights(), float)
-    # w_all = np.where(np.isfinite(w_all), w_all, 0.0)
-    # if np.nansum(w_all) > 0:
-    #     w_all = w_all / np.nansum(w_all)
-
-    masscredible_interval= weighted_quantile(mass_distr, [0.025, 0.5, 0.975], sample_weight=w_all)
-
-    # smooth = 0.02
-    # # lo, hi = np.min(rho_kgm3), np.max(rho_kgm3)
-    # nbins = int(round(10. / smooth))
-
-    idx_arr = np.where(np.asarray(variables) == "m_init")[0]
-    index_m_init = int(idx_arr[0])
-    m_init_vals  = 10**samples[:, index_m_init].astype(float)
-
-    # new_w = reweight_to_target_mass_pdf(m_kg=mass_distr, w=w_all, mmin_kg=np.min(mass_distr), mmax_kg=np.max(mass_distr), nbins=nbins, smooth=smooth, clip_ratio=1e3)
-    new_w = reweight_to_target_mass_pdf(m_kg=m_init_vals, w=w_all, mmin_kg=masscredible_interval[0], mmax_kg=masscredible_interval[2], nbins=nbins, smooth=smooth, clip_ratio=1e3)
-
-    # Create figure for mass ############
-    fig = plt.figure(figsize=(8, 6))
-    ax_dist = fig.add_subplot(111)
-
-
-    # print("m_init_vals:", m_init_vals)
-    m_init_lo, m_init_hi = float(np.nanmin(m_init_vals)), float(np.nanmax(m_init_vals))
-    # 95% confidence interval for m_init
-    m_init_lo, m_init_median, m_init_hi = _quantile(m_init_vals, [0.025, 0.5, 0.975], weights=new_w['w_new'])
-
-    smooth = 0.02
-    lo_log, hi_log = np.log10(np.min(m_init_vals)), np.log10(np.max(m_init_vals))
-    lo, hi = np.min(m_init_vals), np.max(m_init_vals)
-    nbins = int(round(10. / smooth))
-    # do the log of the m_init_vals for the histogram
-    hist, edges = np.histogram(np.log10(m_init_vals), bins=nbins, weights=new_w['w_new'], range=(lo_log, hi_log))
-    hist = norm_kde(hist, 10.0)
-    bin_centers = 0.5 * (edges[:-1] + edges[1:])
-
-    ax_dist.fill_between(bin_centers, hist, color='gold', alpha=0.6)
-
-    # Percentile lines
-    ax_dist.axvline(np.log10(m_init_median), color='gold', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(np.log10(m_init_lo), color='gold', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(np.log10(m_init_hi), color='gold', linestyle='--', linewidth=1.5)
-
-    # Title and formatting
-    plus = m_init_hi - m_init_median
-    minus = m_init_median - m_init_lo
-    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    title = rf"Tot N.{len(tj)} — $m_0$ [kg] = {fmt(m_init_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
-    ax_dist.set_title(title, fontsize=20)
-    # ax_dist.tick_params(axis='x', labelbottom=False)
-    ax_dist.tick_params(axis='y', left=False, labelleft=False)
-    ax_dist.set_ylabel("")
-    ax_dist.set_xlabel(r'log$_{10}$($m_0$ [kg])', fontsize=20)
-    ax_dist.spines['left'].set_visible(False)
-    ax_dist.spines['right'].set_visible(False)
-    ax_dist.spines['top'].set_visible(False)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all_reweighted.png"), bbox_inches='tight')
-    plt.close()
-    print("Mass distribution plot reweighted saved:", os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all_reweighted.png"))
-
-    # now do the same for rho_corrected
-
-    fig = plt.figure(figsize=(8, 6))
-    ax_dist = fig.add_subplot(111)
-    rho_corrected_lo, rho_corrected_hi = float(np.nanmin(rho_corrected)), float(np.nanmax(rho_corrected))
-    rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=new_w['w_new'])
-    smooth = 0.02
-    lo, hi = np.min(rho_corrected), np.max(rho_corrected)
-    nbins = int(round(10. / smooth))
-    hist, edges = np.histogram(rho_corrected, bins=nbins, weights=new_w['w_new'], range=(lo, hi))
-    hist = norm_kde(hist, 10.0)
-    bin_centers = 0.5 * (edges[:-1] + edges[1:])
-    ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
-    ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
-    plus = rho_corrected_hi - rho_corrected_median
-    minus = rho_corrected_median - rho_corrected_lo
-
-    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
-    ax_dist.set_title(title, fontsize=20)   
-    ax_dist.tick_params(axis='y', left=False, labelleft=False)
-    ax_dist.set_ylabel("")
-    ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    ax_dist.spines['left'].set_visible(False)
-    ax_dist.spines['right'].set_visible(False)
-    ax_dist.spines['top'].set_visible(False)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_all_reweighted.png"), bbox_inches='tight')
-    plt.close()
-    print("Rho distribution plot reweighted saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_all_reweighted.png"))
 
     ### CORNER PLOT ###
     # takes forever, so run it last
@@ -6770,8 +6956,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-                            
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\Results\ORI-wake_ht",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -6810,7 +6995,7 @@ if __name__ == "__main__":
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, 
      file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, 
-     mm_size_corrected, mass_distr, kinetic_energy_all)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
+     mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
     
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all,
-                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict,
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class = False) # cml_args.radiance_plot cml_args.correl_plot

@@ -1758,39 +1758,43 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 rho_lo = (rho - rho_lo) #/1.96
                 rho_hi = (rho_hi - rho) #/1.96
                 rho_corrected.append(x_valid_rho)
-                # if backup_file is not None:
-                #     mass_at_erosion_change_now = []
-                #     const_backups = backup_small['dynesty']['const_backups']
-                #     for const in const_backups:
-                #         if const is not None:
-                #             mass_at_erosion_change_now.append(const["mass_at_erosion_change"])
-                #     # for mass_er_ch in mass_at_erosion_change_now:
-                #     #     if mass_er_ch is None:
-                #     #         idx = np.nanargmin(np.abs(h_raw - erosion_height_change))
-                #     #         mass_at_erosion_change = mass[idx]
-                #     # print(f"Mass at erosion change from backup: {mass_at_erosion_change_now}")
-                #     # # print the number of values in mass_at_erosion_change_now
-                #     # mass_at_erosion_change_now = np.array(mass_at_erosion_change_now)
-                #     # print(f"Number of values in mass_at_erosion_change_now: {len(mass_at_erosion_change_now)}")
-                #     # # number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float)
-                #     # print(f"Number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float): {len(samples[:, variables_sing.index('erosion_coeff')].astype(float))}")
+                try:
+                    if backup_file is not None:
+                        mass_at_erosion_change_now = []
+                        const_backups = backup_small['dynesty']['const_backups']
+                        for const in const_backups:
+                            if const is not None:
+                                mass_at_erosion_change_now.append(const["mass_at_erosion_change"])
+                        # for mass_er_ch in mass_at_erosion_change_now:
+                        #     if mass_er_ch is None:
+                        #         idx = np.nanargmin(np.abs(h_raw - erosion_height_change))
+                        #         mass_at_erosion_change = mass[idx]
+                        # print(f"Mass at erosion change from backup: {mass_at_erosion_change_now}")
+                        # # print the number of values in mass_at_erosion_change_now
+                        # mass_at_erosion_change_now = np.array(mass_at_erosion_change_now)
+                        # print(f"Number of values in mass_at_erosion_change_now: {len(mass_at_erosion_change_now)}")
+                        # # number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float)
+                        # print(f"Number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float): {len(samples[:, variables_sing.index('erosion_coeff')].astype(float))}")
 
-                #     x_valid_eta = samples[:, variables_sing.index('erosion_coeff')].astype(float)*(abs(samp\les[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_coeff_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
-                #     eta_lo, eta, eta_hi = _quantile(x_valid_eta, [0.025, 0.5, 0.975], weights=w)
-                # else:
-                #     x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
-                x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
+                        x_valid_eta = samples[:, variables_sing.index('erosion_coeff')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_coeff_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
+                        eta_lo, eta, eta_hi = _quantile(x_valid_eta, [0.025, 0.5, 0.975], weights=w)
+                    else:
+                        x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
+                except:
+                    x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
                 eta_lo = (eta - eta_lo) #/1.96
                 eta_hi = (eta_hi - eta) #/1.96
                 eta_corrected.append(x_valid_eta)
 
                 # erosion_sigma_change
-                # if backup_file is not None:
-                #     x_valid_sigma = samples[:, variables_sing.index('sigma')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_sigma_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
-                #     sigma_lo, sigma, sigma_hi = _quantile(x_valid_sigma, [0.025, 0.5, 0.975], weights=w)
-                # else:
-                #     x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
-                x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
+                try:
+                    if backup_file is not None:
+                        x_valid_sigma = samples[:, variables_sing.index('sigma')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_sigma_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
+                        sigma_lo, sigma, sigma_hi = _quantile(x_valid_sigma, [0.025, 0.5, 0.975], weights=w)
+                    else:
+                        x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
+                except:
+                    x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
                 sigma_lo = (sigma - sigma_lo) #/1.96
                 sigma_hi = (sigma_hi - sigma) #/1.96
                 sigma_corrected.append(x_valid_sigma)
@@ -1897,15 +1901,28 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             if backup_file is not None:
                 const_backups = backup_small['dynesty']['const_backups']
                 for const in const_backups:
-                    energy_per_cs_before_erosion_backup.append(const["energy_per_cs_before_erosion"])
-                    energy_per_mass_before_erosion_backup.append(const["energy_per_mass_before_erosion"])
+                    energy_per_cs_before_erosion_backup.append(const["energy_per_cs_before_erosion"]) # / 1e6   convert to MJ/m^2)
+                    print("energy_per_cs_before_erosion_backup", energy_per_cs_before_erosion_backup)
+                    energy_per_mass_before_erosion_backup.append(const["energy_per_mass_before_erosion"]) # / 1e6   convert to MJ/kg)
+                    print("energy_per_mass_before_erosion_backup", energy_per_mass_before_erosion_backup)
                     erosion_beg_vel_backup.append(const["erosion_beg_vel"])
-                    erosion_beg_mass_backup.append(const["erosion_beg_mas"])
+                    print("erosion_beg_vel_backup", erosion_beg_vel_backup)
+                    # check if erosion_beg_mass exist if not use erosion_beg_mas
+                    if "erosion_beg_mass" in const:
+                        erosion_beg_mass_backup.append(const["erosion_beg_mass"])
+                    else:                        
+                        erosion_beg_mass_backup.append(const["erosion_beg_mas"])
+                    print("erosion_beg_mass_backup", erosion_beg_mass_backup)
                     erosion_beg_dyn_press_backup.append(const["erosion_beg_dyn_press"])
+                    print("erosion_beg_dyn_press_backup", erosion_beg_dyn_press_backup)
                     mass_at_erosion_change_backup.append(const["mass_at_erosion_change"])
+                    print("mass_at_erosion_change_backup", mass_at_erosion_change_backup)
                     dyn_press_at_erosion_change_backup.append(const["dyn_press_at_erosion_change"])
+                    print("dyn_press_at_erosion_change_backup", dyn_press_at_erosion_change_backup) 
                     main_mass_exhaustion_ht_backup.append(const["main_mass_exhaustion_ht"])
+                    print("main_mass_exhaustion_ht_backup", main_mass_exhaustion_ht_backup)
                     main_bottom_ht_backup.append(const["main_bottom_ht"])
+                    print("main_bottom_ht_backup", main_bottom_ht_backup)
             else:
                 # fill with None for as may values like np.full(shape=5, fill_value=None) in samples[:, variables_sing.index('erosion_coeff')].astype(float)
                 energy_per_cs_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
@@ -7186,7 +7203,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\test", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

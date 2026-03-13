@@ -1164,7 +1164,7 @@ def _worker_simulate_and_interp(sample_equal_row):
         "rho_mass_weighted": rho_mass_weighted,
         "rho_volume_weighted": rho_volume_weighted,
         "erosion_beg_vel": const_saved.erosion_beg_vel if hasattr(const_saved, 'erosion_beg_vel') else None,
-        "erosion_beg_mas": const_saved.erosion_beg_mas if hasattr(const_saved, 'erosion_beg_mas') else None,
+        "erosion_beg_mass": const_saved.erosion_beg_mass if hasattr(const_saved, 'erosion_beg_mass') else None,
         "erosion_beg_dyn_press": const_saved.erosion_beg_dyn_press if hasattr(const_saved, 'erosion_beg_dyn_press') else None,
         "mass_at_erosion_change": mass_at_erosion_change,
         "dyn_press_at_erosion_change": erosion_dyn_press_change,

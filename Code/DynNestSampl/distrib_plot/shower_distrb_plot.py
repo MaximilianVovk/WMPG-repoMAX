@@ -43,6 +43,8 @@ from types import SimpleNamespace
 import matplotlib.gridspec as gridspec
 from matplotlib.colors import PowerNorm
 from matplotlib.patches import Patch, Polygon
+from matplotlib.collections import LineCollection
+import matplotlib.colors as mcolors
 
 # try to resolve dynesty's internal _hist2d no matter how it's imported
 try:
@@ -426,6 +428,364 @@ def _effective_sample_size(weights):
     s1 = np.sum(w)
     s2 = np.sum(w*w)
     return (s1*s1) / s2 if s2 > 0 else 0.0
+
+
+def delete_var_and_substitute(samples, variables, var_to_delete, var_to_correct, values_to_add):
+    """Delete a variable from samples and correct another variable."""
+    idx_delete = variables.index(var_to_delete) if var_to_delete in variables else None
+    idx_correct = variables.index(var_to_correct) if var_to_correct in variables else None
+    
+    if idx_delete is not None:
+        # Remove the variable to delete
+        samples = np.delete(samples, idx_delete, axis=1)
+        variables.pop(idx_delete)
+        print(f"Deleted variable '{var_to_delete}' at index {idx_delete}.")
+        
+    if idx_correct is not None:
+        # Correct the target variable by adding the extracted values
+        samples[:, idx_correct] = values_to_add
+        print(f"Corrected variable '{var_to_correct}' at index {idx_correct} by adding new values.")
+    
+    return samples, variables
+
+def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, name=''):
+
+    ndim = len(variables_corr)
+    labels_plot_copy_plot = [variable_map[variable] for variable in variables_corr]
+
+    # find all from each of the combined combined_samples_cov_plot all the values that are None or np.nan and remove them from the combined_samples_cov_plot and the combined_weights
+    print(f"Before removing NaNs/Infs: {combined_samples_cov_plot.shape[0]} samples available for correlation plotting.")
+    mask_valid = np.ones(combined_samples_cov_plot.shape[0], dtype=bool)
+    for i in range(combined_samples_cov_plot.shape[1]): 
+        mask_valid &= np.isfinite(combined_samples_cov_plot[:, i])
+    combined_samples_cov_plot = combined_samples_cov_plot[mask_valid]
+    combined_weights = combined_weights[mask_valid]
+    print(f"After removing NaNs/Infs: {combined_samples_cov_plot.shape[0]} valid samples remain for correlation plotting.")
+
+    # check the size of combined_samples_cov_plot the labels_plot_copy_plot, the ndim and combined_weights
+    print(f"combined_samples_cov_plot shape: {combined_samples_cov_plot.shape}, ndim: {ndim}, labels length: {len(labels_plot_copy_plot)}, combined_weights length: {len(combined_weights)}")
+
+    print('Calculating correlation...')
+    combined_results_units = CombinedResults(combined_samples_cov_plot, combined_weights)
+
+    # Ensure output folder
+    cov_dir = os.path.join(output_dir_show, "Covariance"+name)
+    os.makedirs(cov_dir, exist_ok=True)
+
+    # for i, variable in enumerate(variables):
+    #     if 'log' in flags_dict_total[variable]:  
+    #         labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
+
+    # --- utils functions --- ##########################################################################################
+
+    def _sanitize_labels(labels, ndim):
+        # coerce to strings, strip, and fill blanks
+        labels = [str(x).strip() if str(x).strip() else f"p{i}" for i, x in enumerate(labels)]
+        # enforce uniqueness by suffixing duplicates
+        seen = {}
+        out = []
+        for lbl in labels:
+            if lbl not in seen:
+                seen[lbl] = 1
+                out.append(lbl)
+            else:
+                seen[lbl] += 1
+                out.append(f"{lbl} ({seen[lbl]})")
+        # pad/truncate to match ndim if needed
+        if len(out) < ndim:
+            out.extend([f"p{i}" for i in range(len(out), ndim)])
+        return out[:ndim]
+
+    def weighted_corr(x, y, w):
+        """Weighted Pearson correlation of x and y with weights w."""
+        w = np.asarray(w)
+        x = np.asarray(x)
+        y = np.asarray(y)
+        w_sum = w.sum()
+        x_mean = (w * x).sum() / w_sum
+        y_mean = (w * y).sum() / w_sum
+        cov_xy = (w * (x - x_mean) * (y - y_mean)).sum() / w_sum
+        var_x  = (w * (x - x_mean)**2).sum() / w_sum
+        var_y  = (w * (y - y_mean)**2).sum() / w_sum
+        return cov_xy / np.sqrt(var_x * var_y)
+
+    def plot_correlation_func(combined_results_units, ndim, labels, shower_name, cov_dir):
+        """Simple Gaussian smoothing of a histogram."""
+        # … your existing prep code …
+        fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
+        axes = axes.reshape((ndim, ndim))
+
+        # call dynesty’s cornerplot
+        fg, ax = dyplot.cornerplot(
+            combined_results_units, 
+            color='blue',
+            show_titles=True,
+            max_n_ticks=3,
+            quantiles=None,
+            labels=labels,
+            label_kwargs={"fontsize": 10},
+            title_kwargs={"fontsize": 12},
+            title_fmt='.2e',
+            fig=(fig, axes[:, :ndim])
+        )
+
+        # # supertitle, tick formatting, saving …
+        # fg.suptitle(shower_name, fontsize=16, fontweight='bold')
+
+        for ax_row in ax:
+            for ax_ in ax_row:
+                if ax_ is None:
+                    continue
+                ax_.tick_params(axis='both', labelsize=8, direction='in')
+                for lbl in ax_.get_xticklabels(): lbl.set_rotation(0)
+                for lbl in ax_.get_yticklabels(): lbl.set_rotation(45)
+                if len(ax_.xaxis.get_majorticklocs())>0:
+                    ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
+                if len(ax_.yaxis.get_majorticklocs())>0:
+                    ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
+
+        for i in range(ndim):
+            for j in range(ndim):
+                if ax[i, j] is None:
+                    continue
+                if j != 0:
+                    ax[i, j].set_yticklabels([])
+                if i != ndim - 1:
+                    ax[i, j].set_xticklabels([])
+
+        # Overlay weighted correlations in the upper triangle
+        samples = combined_results_units['samples'].T  # shape (ndim, nsamps)
+        weights = combined_results_units.importance_weights()
+
+        cmap = plt.colormaps['coolwarm']
+        norm = Normalize(vmin=-1, vmax=1)
+
+        for i in range(ndim):
+            for j in range(ndim):
+                if j <= i or ax[i, j] is None:
+                    continue
+
+                panel = ax[i, j]
+                x = samples[j]
+                y = samples[i]
+                corr_w = weighted_corr(x, y, weights)
+
+                color = cmap(norm(corr_w))
+                # paint the background patch
+                panel.patch.set_facecolor(color)
+                panel.patch.set_alpha(1.0)
+
+                # fallback rectangle if needed
+                panel.add_patch(
+                    plt.Rectangle(
+                        (0,0), 1, 1,
+                        transform=panel.transAxes,
+                        facecolor=color,
+                        zorder=0
+                    )
+                )
+
+                panel.text(
+                    0.5, 0.5,
+                    f"{corr_w:.2f}",
+                    transform=panel.transAxes,
+                    ha='center', va='center',
+                    fontsize=25, color='black'
+                )
+                panel.set_xticks([]); panel.set_yticks([])
+                for spine in panel.spines.values():
+                    spine.set_visible(False)
+
+        # final adjustments & save
+        # fg.subplots_adjust(wspace=0.1, hspace=0.3)
+        fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
+        plt.savefig(os.path.join(cov_dir, f"{shower_name}_correlation_plot.png"),
+                    bbox_inches='tight', dpi=300)
+        plt.close(fig)
+
+        print('saving correlation matrix...')
+
+        # Build the NxN matrix of weigh_corr_ij
+        corr_mat = np.zeros((ndim, ndim))
+        for i in range(ndim):
+            for j in range(ndim):
+                corr_mat[i, j] = weighted_corr(samples[i], samples[j], weights)
+
+        # Wrap it in a DataFrame (so you get row/column labels)
+        df_corr = pd.DataFrame(
+            corr_mat,
+            index=labels,
+            columns=labels
+        )
+
+        df_corr = pd.DataFrame(corr_mat, index=labels_clean, columns=labels_clean)
+
+        # Save the full matrix
+        outpath = os.path.join(cov_dir, f"{shower_name}_weighted_globalCorr_matrix.csv")
+        df_corr.to_csv(outpath, float_format="%.4f")
+        print(f"Saved weighted correlation matrix to:\n  {outpath}")
+
+        # Upper-triangle only (exclude diagonal)
+        mask = np.triu(np.ones(df_corr.shape, dtype=bool), k=1)
+        upper = df_corr.where(mask)
+
+        # Turn into a *DataFrame* so both columns always print (no MultiIndex collapse)
+        pairs_df = (
+            upper
+            .stack()                      # drop NaNs from the lower triangle
+            .rename("corr")
+            .reset_index()
+            .rename(columns={"level_0": "param_i", "level_1": "param_j"})
+        )
+
+        # Sort by absolute correlation and print clean tables
+        pairs_df["abs_corr"] = pairs_df["corr"].abs()
+
+        top10 = pairs_df.sort_values("abs_corr", ascending=False).head(10)
+        bottom10 = pairs_df.sort_values("abs_corr", ascending=True).head(10)
+
+        pd.set_option("display.max_colwidth", None)
+        print("\nTop 10: highest correlations:")
+        print(top10[["param_i", "param_j", "corr"]].to_string(index=False))
+
+        print("\nBottom 10: lowest correlations:")
+        print(bottom10[["param_i", "param_j", "corr"]].to_string(index=False))
+
+        return df_corr, pairs_df, top10, bottom10
+
+
+
+    def _safe_name(s):
+        s = re.sub(r"\$|\\[a-zA-Z]+|[\{\}\^\_]", "", str(s))
+        s = re.sub(r"[^A-Za-z0-9\-\.]+", "_", s).strip("_")
+        return s or "param"
+
+    def plot_top_covariances(results,
+                            top_pairs,            # DataFrame with columns param_i,param_j,corr OR list of tuples
+                            labels,          # labels in the SAME order as results['samples'] columns
+                            shower_name_plot,
+                            output_dir_show,
+                            span_frac=0.98,
+                            pad_frac=0.05,
+                            smooth_frac=0.02,
+                            levels=None,
+                            figsize=(4.5, 4.0)):
+
+        # Extract weighted samples EXACTLY like your cornerplot
+        samples = results['samples']
+        weights = results.importance_weights()
+        samples = np.atleast_1d(samples)
+        if len(samples.shape) == 1:
+            samples = np.atleast_2d(samples)
+        else:
+            assert len(samples.shape) == 2, "Samples must be 1- or 2-D."
+            samples = samples.T
+        assert samples.shape[0] <= samples.shape[1], "More dimensions than samples!"
+        ndim, nsamps = samples.shape
+        assert weights.ndim == 1 and weights.shape[0] == nsamps, "Weights/samples mismatch."
+
+        # Map label -> dimension index (use the SAME labels you used for df_corr)
+        label_to_idx = {}
+        for i, lbl in enumerate(labels):
+            s = str(lbl)
+            # first occurrence wins; if duplicates exist, later ones get suffix in labels_clean
+            if s not in label_to_idx:
+                label_to_idx[s] = i
+
+        # Ensure output folder
+        cov_dir = os.path.join(output_dir_show, "Covariance")
+        os.makedirs(cov_dir, exist_ok=True)
+
+        # Normalize input to a list of tuples
+        if hasattr(top_pairs, "iterrows"):  # pairs_df
+            iterable = [(r["param_i"], r["param_j"], r["corr"]) for _, r in top_pairs.iterrows()]
+        else:
+            iterable = list(top_pairs)
+
+        if levels is None:
+            levels = [0.1, 0.4, 0.65, 0.85]
+
+        for rank, (li, lj, corr_val) in enumerate(iterable, start=1):
+            # if a label isn't found due to prior duplication/cleaning, fail loudly with context
+            if str(li) not in label_to_idx or str(lj) not in label_to_idx:
+                raise KeyError(f"Label not found in labels: {li} or {lj}. "
+                            f"Pass labels_clean here (the ones used in df_corr).")
+
+            si = label_to_idx[str(li)]   # y-axis
+            sj = label_to_idx[str(lj)]   # x-axis
+
+            x = samples[sj]
+            y = samples[si]
+            w = weights
+
+            qlo = (1.0 - span_frac)/2.0
+            qhi = 1.0 - qlo
+            xlo, xhi = _weighted_quantile(x, [qlo, qhi], w)
+            ylo, yhi = _weighted_quantile(y, [qlo, qhi], w)
+
+            xr = (xhi - xlo) or 1.0
+            yr = (yhi - ylo) or 1.0
+            xspan = [xlo - pad_frac*xr, xhi + pad_frac*xr]
+            yspan = [ylo - pad_frac*yr, yhi + pad_frac*yr]
+
+            sx = smooth_frac
+            sy = smooth_frac
+
+            fig, ax = plt.subplots(figsize=figsize)
+            _HIST2D(x, y,
+                    ax=ax,
+                    span=[xspan, yspan],
+                    weights=w,
+                    color='black',
+                    smooth=[sx, sy],
+                    levels=levels,
+                    fill_contours=True,
+                    plot_contours=True)
+
+            ax.set_xlim(xspan); ax.set_ylim(yspan)
+            ax.xaxis.set_major_locator(MaxNLocator(5, prune="lower"))
+            ax.yaxis.set_major_locator(MaxNLocator(5, prune="lower"))
+            ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=False))
+            ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
+            ax.set_xlabel(str(lj))
+            ax.set_ylabel(str(li))
+            ax.set_title(f"{shower_name_plot} corr = {(float(corr_val)):.3f}", fontsize=10)
+
+            fname = f"{rank:02d}_{_safe_name(lj)}__{_safe_name(li)}.png"
+            fpath = os.path.join(cov_dir, fname)
+            fig.tight_layout()
+            fig.savefig(fpath, dpi=200)
+            plt.close(fig)
+
+        print(f"Saved {len(iterable)} covariance plots in:\n  {cov_dir}")
+    
+    # --- utils functions end --- ######################################################################################
+    
+    labels_clean = _sanitize_labels(labels_plot_copy_plot, ndim)
+
+    df_corr, pairs_df, top10, bottom10 = plot_correlation_func(
+        combined_results_units,
+        ndim=ndim,
+        labels=labels_clean,
+        shower_name=shower_name_short,
+        cov_dir=cov_dir)
+
+    ### Call the correlation plot function ###
+
+    print("Plotting top covariances 1vs1...")
+    # Top-50 by absolute correlation (as you already computed)
+    top50_df = pairs_df.sort_values("abs_corr", ascending=False).head(50)
+
+    plot_top_covariances(
+        results=combined_results_units,   # <<< was `results=`; use your combined_results object
+        top_pairs=top50_df,
+        shower_name_plot=shower_name_short,
+        labels=labels_clean,   # <<< use the SAME cleaned labels used for df_corr
+        output_dir_show=output_dir_show,
+        span_frac=0.98,
+        pad_frac=0.05,
+        smooth_frac=0.02
+    )
 
 # ---------- Main: run weighted tests for any number of groups ----------
 def weighted_tests_table(
@@ -1537,27 +1897,26 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             if backup_file is not None:
                 const_backups = backup_small['dynesty']['const_backups']
                 for const in const_backups:
-                    if const is not None:
-                        energy_per_cs_before_erosion_backup.append(const["energy_per_cs_before_erosion"])
-                        energy_per_mass_before_erosion_backup.append(const["energy_per_mass_before_erosion"])
-                        erosion_beg_vel_backup.append(const["erosion_beg_vel"])
-                        erosion_beg_mass_backup.append(const["erosion_beg_mas"])
-                        erosion_beg_dyn_press_backup.append(const["erosion_beg_dyn_press"])
-                        mass_at_erosion_change_backup.append(const["mass_at_erosion_change"])
-                        dyn_press_at_erosion_change_backup.append(const["dyn_press_at_erosion_change"])
-                        main_mass_exhaustion_ht_backup.append(const["main_mass_exhaustion_ht"])
-                        main_bottom_ht_backup.append(const["main_bottom_ht"])
-                    else:
-                        # fill with None for as may values like np.full(shape=5, fill_value=None) in samples[:, variables_sing.index('erosion_coeff')].astype(float)
-                        energy_per_cs_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                        energy_per_mass_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                        erosion_beg_vel_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                        erosion_beg_mass_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                        erosion_beg_dyn_press_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                        mass_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                        dyn_press_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                        main_mass_exhaustion_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                        main_bottom_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                    energy_per_cs_before_erosion_backup.append(const["energy_per_cs_before_erosion"])
+                    energy_per_mass_before_erosion_backup.append(const["energy_per_mass_before_erosion"])
+                    erosion_beg_vel_backup.append(const["erosion_beg_vel"])
+                    erosion_beg_mass_backup.append(const["erosion_beg_mas"])
+                    erosion_beg_dyn_press_backup.append(const["erosion_beg_dyn_press"])
+                    mass_at_erosion_change_backup.append(const["mass_at_erosion_change"])
+                    dyn_press_at_erosion_change_backup.append(const["dyn_press_at_erosion_change"])
+                    main_mass_exhaustion_ht_backup.append(const["main_mass_exhaustion_ht"])
+                    main_bottom_ht_backup.append(const["main_bottom_ht"])
+            else:
+                # fill with None for as may values like np.full(shape=5, fill_value=None) in samples[:, variables_sing.index('erosion_coeff')].astype(float)
+                energy_per_cs_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                energy_per_mass_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                erosion_beg_vel_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                erosion_beg_mass_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                erosion_beg_dyn_press_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                mass_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                dyn_press_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                main_mass_exhaustion_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                main_bottom_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
 
 
             ### SAVE DATA ###
@@ -1575,8 +1934,6 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
             file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, kinetic_energy_median, kinetic_energy_lo, kinetic_energy_hi, tau_median, tau_low95, tau_high95)
             file_phys_data_dict[base_name] = (eta_meteor_begin, eta, eta_lo, eta_hi, sigma_meteor_begin, sigma, sigma_lo, sigma_hi, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi)
-
-            file_extra_param_dict[base_name] = (energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup)
 
             find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
             find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
@@ -1635,25 +1992,25 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
         # save all in a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
         with open(input_dirfile + os.sep + "shower_distrb_plot_data.pkl", "wb") as f:
-            pickle.dump((variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict), f)
+            pickle.dump((variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup), f)
         print(f"Saved shower distrb plot data to: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
 
-    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
 def load_shower_distrb_plot_data(input_dirfile):
     # load all from a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
     with open(input_dirfile, "rb") as f:
-        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict) = pickle.load(f)
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup) = pickle.load(f)
     print(f"Loaded shower distrb plot data from: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
-    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict) # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup) # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
 
 
 
 
-def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
     # check if there are variables in the flags_dict that are not in the variable_map
@@ -1750,6 +2107,23 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     mass_distr = np.concatenate(mass_distr)
     tau_corrected = np.concatenate(tau_corrected)
     kinetic_energy_all = np.concatenate(kinetic_energy_all)
+    energy_per_cs_before_erosion_backup = np.concatenate(energy_per_cs_before_erosion_backup)
+    energy_per_mass_before_erosion_backup = np.concatenate(energy_per_mass_before_erosion_backup)
+    erosion_beg_vel_backup = np.concatenate(erosion_beg_vel_backup)
+    erosion_beg_mass_backup = np.concatenate(erosion_beg_mass_backup)
+    erosion_beg_dyn_press_backup = np.concatenate(erosion_beg_dyn_press_backup)
+    mass_at_erosion_change_backup = np.concatenate(mass_at_erosion_change_backup)
+    dyn_press_at_erosion_change_backup = np.concatenate(dyn_press_at_erosion_change_backup)
+    main_mass_exhaustion_ht_backup = np.concatenate(main_mass_exhaustion_ht_backup)
+    main_bottom_ht_backup = np.concatenate(main_bottom_ht_backup)
+
+    # print('all energy_per_cs_before_erosion_backup',energy_per_cs_before_erosion_backup)
+    # if np.all(np.isfinite(combined_samples_cov_plot_class)):
+    #     print('all None')
+    # print('all energy_per_mass_before_erosion_backup',energy_per_mass_before_erosion_backup)
+    # if np.all(np.isfinite(energy_per_mass_before_erosion_backup)):
+    #     print('all None') 
+
     # if plot_correl_flag == True:
     #     erosion_energy_per_unit_cross_section_corrected = np.concatenate(erosion_energy_per_unit_cross_section_corrected)
     #     erosion_energy_per_unit_mass_corrected = np.concatenate(erosion_energy_per_unit_mass_corrected)
@@ -3240,6 +3614,58 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # ### bad
     # ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)", zorder=10)    
 
+
+    # add a line that is colored based on the sample distribution
+    idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
+    ml_vals = np.array([])
+    if idx_arr.size:
+        index_ml = int(idx_arr[0])
+        ml_vals = combined_samples[:, index_ml].astype(float)
+
+    idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
+    mu_vals = np.array([])
+    if idx_arr.size:
+        index_mu = int(idx_arr[0])
+        mu_vals = combined_samples[:, index_mu].astype(float)
+
+    # combine both distributions
+    m_grains = np.concatenate((ml_vals, mu_vals))
+
+    if m_grains.size:
+        # remove invalid values
+        m_grains = m_grains[np.isfinite(m_grains) & (m_grains > 0)]
+
+        if m_grains.size > 1:
+            # convert mass to size once
+            xvals = from_mass2size(m_grains, 3000)
+
+            # histogram in x-space
+            nbins = 200
+            counts, edges = np.histogram(xvals, bins=nbins)
+
+            # line segments
+            x0 = edges[:-1]
+            x1 = edges[1:]
+            y0 = np.full_like(x0, 3000.0)
+            y1 = np.full_like(x1, 3000.0)
+
+            segments = np.stack(
+                [np.column_stack([x0, y0]), np.column_stack([x1, y1])],
+                axis=1
+            )
+
+            # color by counts
+            norm = mcolors.Normalize(vmin=0, vmax=counts.max())
+            lc = LineCollection(
+                segments,
+                cmap="Greys",
+                norm=norm,
+                linewidths=4,
+                zorder=10
+            )
+            lc.set_array(counts)
+            ax.add_collection(lc)
+
     ##########
 
     ax.set_xlim([10**(-3), 10])
@@ -3614,6 +4040,39 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     #     label="Function - Divine et al. (1986)", zorder=10
     # )
 
+
+    if m_grains.size:
+        if m_grains.size > 1:
+            # convert mass to size once
+            xvals = np.log10(m_grains)
+
+            # histogram in x-space
+            nbins = 200
+            counts, edges = np.histogram(xvals, bins=nbins)
+
+            # line segments
+            x0 = edges[:-1]
+            x1 = edges[1:]
+            y0 = np.full_like(x0, 3000.0)
+            y1 = np.full_like(x1, 3000.0)
+
+            segments = np.stack(
+                [np.column_stack([x0, y0]), np.column_stack([x1, y1])],
+                axis=1
+            )
+
+            # color by counts
+            norm = mcolors.Normalize(vmin=0, vmax=counts.max())
+            lc = LineCollection(
+                segments,
+                cmap="Greys",
+                norm=norm,
+                linewidths=4,
+                zorder=10
+            )
+            lc.set_array(counts)
+            ax.add_collection(lc)
+
     ##########
 
     ax.set_xlim([-18, -1])
@@ -3796,7 +4255,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             tau_Hill2005.append(luminous_efficiency_tauI_Hill2005(vel))
         tau_Hill2005 = np.array(tau_Hill2005, dtype=float)
 
-        (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
+        (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
 
         name_ids = [row[0] for row in rows]
         # Now do a tolerant match (±3 s) against your available names
@@ -4249,6 +4708,41 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax_dist.spines['left'].set_visible(False)
     ax_dist.spines['right'].set_visible(False)
     ax_dist.spines['top'].set_visible(False)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy_vel.png"), bbox_inches='tight')
+    plt.close()
+    print("Rho distribution weighted by kinetic energy plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy_vel.png"))
+
+
+    # kinetic weighted distribution
+
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
+    rho_corrected_weighted_kinetic = np.histogram(rho_corrected, bins=nbins, weights=weights_kinetic_raw, range=(lo, hi))[0]
+    rho_corrected_weighted = norm_kde(rho_corrected_weighted_kinetic, 10.0)
+
+    ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='darkseagreen', alpha=0.6)
+
+    rho_corrected_lo_kinetic, rho_corrected_median_kinetic, rho_corrected_hi_kinetic = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=weights_kinetic_raw)
+    # Percentile lines
+    ax_dist.axvline(rho_corrected_median_kinetic, color='darkseagreen', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo_kinetic, color='darkseagreen', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi_kinetic, color='darkseagreen', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = rho_corrected_hi_kinetic - rho_corrected_median_kinetic
+    minus = rho_corrected_median_kinetic - rho_corrected_lo_kinetic
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_kinetic)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+
+    ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    # ax_dist.set_ylabel("Weighted by Kinetic Energy", fontsize=20)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy.png"), bbox_inches='tight')
     plt.close()
     print("Rho distribution weighted by kinetic energy plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy.png"))
@@ -4261,13 +4755,13 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     rho_corrected_weighted_velocity = np.histogram(rho_corrected, bins=nbins, weights=velocity_weights, range=(lo, hi))[0]
     rho_corrected_weighted = norm_kde(rho_corrected_weighted_velocity, 10.0)
 
-    ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='gray', alpha=0.6)
+    ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='lightsteelblue', alpha=0.6)
 
     rho_corrected_lo_velocity, rho_corrected_median_velocity, rho_corrected_hi_velocity = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=velocity_weights)
     # Percentile lines
-    ax_dist.axvline(rho_corrected_median_velocity, color='gray', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_lo_velocity, color='gray', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_hi_velocity, color='gray', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_median_velocity, color='lightsteelblue', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo_velocity, color='lightsteelblue', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi_velocity, color='lightsteelblue', linestyle='--', linewidth=1.5)
 
     # Title and formatting
     plus = rho_corrected_hi_velocity - rho_corrected_median_velocity
@@ -4588,6 +5082,84 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # create a new folder for the rho plots
         output_dir_rho = os.path.join(output_dir_show, "rho_plots")
         os.makedirs(output_dir_rho, exist_ok=True)
+
+        ### CORNER PLOT ###
+        # takes forever, so run it last
+        combined_samples_cov_plot_class = combined_samples.copy()
+        # labels_plot_copy_plot = labels.copy()
+        for j, var in enumerate(variables):
+            if np.all(np.isnan(combined_samples_cov_plot_class[:, j])):
+                continue
+            if var in ['v_init', 'erosion_height_start', 'erosion_height_change']:
+                combined_samples_cov_plot_class[:, j] = combined_samples_cov_plot_class[:, j] / 1000.0
+            if var in ['sigma', 'erosion_sigma_change','erosion_coeff', 'erosion_coeff_change']:
+                combined_samples_cov_plot_class[:, j] = combined_samples_cov_plot_class[:, j] * 1e6
+
+        variables_corr = variables.copy()
+
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='erosion_rho_change',
+            var_to_correct='rho',
+            values_to_add=rho_corrected
+        )
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='erosion_coeff_change',
+            var_to_correct='erosion_coeff',
+            values_to_add=eta_corrected * 1e6
+        )
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='erosion_sigma_change',
+            var_to_correct='sigma',
+            values_to_add=sigma_corrected * 1e6
+        )
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='noise_lag',
+            var_to_correct='',
+            values_to_add=None
+        )
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='noise_lum',
+            var_to_correct='',
+            values_to_add=None
+        )
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='erosion_mass_index',
+            var_to_correct='',
+            values_to_add=None
+        )
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='erosion_mass_min',
+            var_to_correct='',
+            values_to_add=None
+        )
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='erosion_mass_max',
+            var_to_correct='',
+            values_to_add=None
+        )
+
+        # check if all the values in energy_per_cs_before_erosion_backup are not None
+        if np.all(np.isfinite(combined_samples_cov_plot_class)):
+            # add them to the distribution energy_per_cs_before_erosion_backup
+            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='',
+            var_to_correct='energy_per_cs_before_erosion_backup',
+            values_to_add=energy_per_cs_before_erosion_backup)
+            # add them to the distribution energy_per_mass_before_erosion_backup
+            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='',
+            var_to_correct='energy_per_mass_before_erosion_backup',
+            values_to_add=energy_per_mass_before_erosion_backup)
 
         ### JD vs rho plot ###
 
@@ -6579,24 +7151,6 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         else:
             shower_name_short = ""
 
-        def delete_var_and_substitute(samples, variables, var_to_delete, var_to_correct, values_to_add):
-            """Delete a variable from samples and correct another variable."""
-            idx_delete = variables.index(var_to_delete) if var_to_delete in variables else None
-            idx_correct = variables.index(var_to_correct) if var_to_correct in variables else None
-            
-            if idx_delete is not None:
-                # Remove the variable to delete
-                samples = np.delete(samples, idx_delete, axis=1)
-                variables.pop(idx_delete)
-                print(f"Deleted variable '{var_to_delete}' at index {idx_delete}.")
-                
-                if idx_correct is not None:
-                    # Correct the target variable by adding the extracted values
-                    samples[:, idx_correct] = values_to_add
-                    print(f"Corrected variable '{var_to_correct}' at index {idx_correct} by adding new values.")
-            
-            return samples, variables
-
         if shower_name_short != "":
             combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
                 combined_samples_cov_plot, variables_corr,
@@ -6617,334 +7171,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 values_to_add=sigma_corrected * 1e6
             )
 
-        ndim = len(variables_corr)
-        labels_plot_copy_plot = [variable_map[variable] for variable in variables_corr]
 
-        # check the size of combined_samples_cov_plot the labels_plot_copy_plot, the ndim and combined_weights
-        print(f"combined_samples_cov_plot shape: {combined_samples_cov_plot.shape}, ndim: {ndim}, labels length: {len(labels_plot_copy_plot)}, combined_weights length: {len(combined_weights)}")
-
-        print('Calculating correlation...')
-        combined_results_units = CombinedResults(combined_samples_cov_plot, combined_weights)
-
-        # Ensure output folder
-        cov_dir = os.path.join(output_dir_show, "Covariance")
-        os.makedirs(cov_dir, exist_ok=True)
-
-        # for i, variable in enumerate(variables):
-        #     if 'log' in flags_dict_total[variable]:  
-        #         labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
-
-        # --- utils functions --- ##########################################################################################
-
-        def _sanitize_labels(labels, ndim):
-            # coerce to strings, strip, and fill blanks
-            labels = [str(x).strip() if str(x).strip() else f"p{i}" for i, x in enumerate(labels)]
-            # enforce uniqueness by suffixing duplicates
-            seen = {}
-            out = []
-            for lbl in labels:
-                if lbl not in seen:
-                    seen[lbl] = 1
-                    out.append(lbl)
-                else:
-                    seen[lbl] += 1
-                    out.append(f"{lbl} ({seen[lbl]})")
-            # pad/truncate to match ndim if needed
-            if len(out) < ndim:
-                out.extend([f"p{i}" for i in range(len(out), ndim)])
-            return out[:ndim]
-
-        def weighted_corr(x, y, w):
-            """Weighted Pearson correlation of x and y with weights w."""
-            w = np.asarray(w)
-            x = np.asarray(x)
-            y = np.asarray(y)
-            w_sum = w.sum()
-            x_mean = (w * x).sum() / w_sum
-            y_mean = (w * y).sum() / w_sum
-            cov_xy = (w * (x - x_mean) * (y - y_mean)).sum() / w_sum
-            var_x  = (w * (x - x_mean)**2).sum() / w_sum
-            var_y  = (w * (y - y_mean)**2).sum() / w_sum
-            return cov_xy / np.sqrt(var_x * var_y)
-
-        def plot_correlation_func(combined_results_units, ndim, labels, shower_name, cov_dir):
-            """Simple Gaussian smoothing of a histogram."""
-            # … your existing prep code …
-            fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
-            axes = axes.reshape((ndim, ndim))
-
-            # call dynesty’s cornerplot
-            fg, ax = dyplot.cornerplot(
-                combined_results_units, 
-                color='blue',
-                show_titles=True,
-                max_n_ticks=3,
-                quantiles=None,
-                labels=labels,
-                label_kwargs={"fontsize": 10},
-                title_kwargs={"fontsize": 12},
-                title_fmt='.2e',
-                fig=(fig, axes[:, :ndim])
-            )
-
-            # # supertitle, tick formatting, saving …
-            # fg.suptitle(shower_name, fontsize=16, fontweight='bold')
-
-            for ax_row in ax:
-                for ax_ in ax_row:
-                    if ax_ is None:
-                        continue
-                    ax_.tick_params(axis='both', labelsize=8, direction='in')
-                    for lbl in ax_.get_xticklabels(): lbl.set_rotation(0)
-                    for lbl in ax_.get_yticklabels(): lbl.set_rotation(45)
-                    if len(ax_.xaxis.get_majorticklocs())>0:
-                        ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
-                    if len(ax_.yaxis.get_majorticklocs())>0:
-                        ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
-
-            for i in range(ndim):
-                for j in range(ndim):
-                    if ax[i, j] is None:
-                        continue
-                    if j != 0:
-                        ax[i, j].set_yticklabels([])
-                    if i != ndim - 1:
-                        ax[i, j].set_xticklabels([])
-
-            # Overlay weighted correlations in the upper triangle
-            samples = combined_results_units['samples'].T  # shape (ndim, nsamps)
-            weights = combined_results_units.importance_weights()
-
-            cmap = plt.colormaps['coolwarm']
-            norm = Normalize(vmin=-1, vmax=1)
-
-            for i in range(ndim):
-                for j in range(ndim):
-                    if j <= i or ax[i, j] is None:
-                        continue
-
-                    panel = ax[i, j]
-                    x = samples[j]
-                    y = samples[i]
-                    corr_w = weighted_corr(x, y, weights)
-
-                    color = cmap(norm(corr_w))
-                    # paint the background patch
-                    panel.patch.set_facecolor(color)
-                    panel.patch.set_alpha(1.0)
-
-                    # fallback rectangle if needed
-                    panel.add_patch(
-                        plt.Rectangle(
-                            (0,0), 1, 1,
-                            transform=panel.transAxes,
-                            facecolor=color,
-                            zorder=0
-                        )
-                    )
-
-                    panel.text(
-                        0.5, 0.5,
-                        f"{corr_w:.2f}",
-                        transform=panel.transAxes,
-                        ha='center', va='center',
-                        fontsize=25, color='black'
-                    )
-                    panel.set_xticks([]); panel.set_yticks([])
-                    for spine in panel.spines.values():
-                        spine.set_visible(False)
-
-            # final adjustments & save
-            # fg.subplots_adjust(wspace=0.1, hspace=0.3)
-            fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
-            plt.savefig(os.path.join(cov_dir, f"{shower_name}_correlation_plot.png"),
-                        bbox_inches='tight', dpi=300)
-            plt.close(fig)
-
-            print('saving correlation matrix...')
-
-            # Build the NxN matrix of weigh_corr_ij
-            corr_mat = np.zeros((ndim, ndim))
-            for i in range(ndim):
-                for j in range(ndim):
-                    corr_mat[i, j] = weighted_corr(samples[i], samples[j], weights)
-
-            # Wrap it in a DataFrame (so you get row/column labels)
-            df_corr = pd.DataFrame(
-                corr_mat,
-                index=labels,
-                columns=labels
-            )
-
-            df_corr = pd.DataFrame(corr_mat, index=labels_clean, columns=labels_clean)
-
-            # Save the full matrix
-            outpath = os.path.join(cov_dir, f"{shower_name}_weighted_globalCorr_matrix.csv")
-            df_corr.to_csv(outpath, float_format="%.4f")
-            print(f"Saved weighted correlation matrix to:\n  {outpath}")
-
-            # Upper-triangle only (exclude diagonal)
-            mask = np.triu(np.ones(df_corr.shape, dtype=bool), k=1)
-            upper = df_corr.where(mask)
-
-            # Turn into a *DataFrame* so both columns always print (no MultiIndex collapse)
-            pairs_df = (
-                upper
-                .stack()                      # drop NaNs from the lower triangle
-                .rename("corr")
-                .reset_index()
-                .rename(columns={"level_0": "param_i", "level_1": "param_j"})
-            )
-
-            # Sort by absolute correlation and print clean tables
-            pairs_df["abs_corr"] = pairs_df["corr"].abs()
-
-            top10 = pairs_df.sort_values("abs_corr", ascending=False).head(10)
-            bottom10 = pairs_df.sort_values("abs_corr", ascending=True).head(10)
-
-            pd.set_option("display.max_colwidth", None)
-            print("\nTop 10: highest correlations:")
-            print(top10[["param_i", "param_j", "corr"]].to_string(index=False))
-
-            print("\nBottom 10: lowest correlations:")
-            print(bottom10[["param_i", "param_j", "corr"]].to_string(index=False))
-
-            return df_corr, pairs_df, top10, bottom10
+        correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, shower_name, rho_corrected, eta_corrected, sigma_corrected, output_dir_show)
 
 
-
-        def _safe_name(s):
-            s = re.sub(r"\$|\\[a-zA-Z]+|[\{\}\^\_]", "", str(s))
-            s = re.sub(r"[^A-Za-z0-9\-\.]+", "_", s).strip("_")
-            return s or "param"
-
-        def plot_top_covariances(results,
-                                top_pairs,            # DataFrame with columns param_i,param_j,corr OR list of tuples
-                                labels,          # labels in the SAME order as results['samples'] columns
-                                shower_name_plot,
-                                output_dir_show,
-                                span_frac=0.98,
-                                pad_frac=0.05,
-                                smooth_frac=0.02,
-                                levels=None,
-                                figsize=(4.5, 4.0)):
-
-            # Extract weighted samples EXACTLY like your cornerplot
-            samples = results['samples']
-            weights = results.importance_weights()
-            samples = np.atleast_1d(samples)
-            if len(samples.shape) == 1:
-                samples = np.atleast_2d(samples)
-            else:
-                assert len(samples.shape) == 2, "Samples must be 1- or 2-D."
-                samples = samples.T
-            assert samples.shape[0] <= samples.shape[1], "More dimensions than samples!"
-            ndim, nsamps = samples.shape
-            assert weights.ndim == 1 and weights.shape[0] == nsamps, "Weights/samples mismatch."
-
-            # Map label -> dimension index (use the SAME labels you used for df_corr)
-            label_to_idx = {}
-            for i, lbl in enumerate(labels):
-                s = str(lbl)
-                # first occurrence wins; if duplicates exist, later ones get suffix in labels_clean
-                if s not in label_to_idx:
-                    label_to_idx[s] = i
-
-            # Ensure output folder
-            cov_dir = os.path.join(output_dir_show, "Covariance")
-            os.makedirs(cov_dir, exist_ok=True)
-
-            # Normalize input to a list of tuples
-            if hasattr(top_pairs, "iterrows"):  # pairs_df
-                iterable = [(r["param_i"], r["param_j"], r["corr"]) for _, r in top_pairs.iterrows()]
-            else:
-                iterable = list(top_pairs)
-
-            if levels is None:
-                levels = [0.1, 0.4, 0.65, 0.85]
-
-            for rank, (li, lj, corr_val) in enumerate(iterable, start=1):
-                # if a label isn't found due to prior duplication/cleaning, fail loudly with context
-                if str(li) not in label_to_idx or str(lj) not in label_to_idx:
-                    raise KeyError(f"Label not found in labels: {li} or {lj}. "
-                                f"Pass labels_clean here (the ones used in df_corr).")
-
-                si = label_to_idx[str(li)]   # y-axis
-                sj = label_to_idx[str(lj)]   # x-axis
-
-                x = samples[sj]
-                y = samples[si]
-                w = weights
-
-                qlo = (1.0 - span_frac)/2.0
-                qhi = 1.0 - qlo
-                xlo, xhi = _weighted_quantile(x, [qlo, qhi], w)
-                ylo, yhi = _weighted_quantile(y, [qlo, qhi], w)
-
-                xr = (xhi - xlo) or 1.0
-                yr = (yhi - ylo) or 1.0
-                xspan = [xlo - pad_frac*xr, xhi + pad_frac*xr]
-                yspan = [ylo - pad_frac*yr, yhi + pad_frac*yr]
-
-                sx = smooth_frac
-                sy = smooth_frac
-
-                fig, ax = plt.subplots(figsize=figsize)
-                _HIST2D(x, y,
-                        ax=ax,
-                        span=[xspan, yspan],
-                        weights=w,
-                        color='black',
-                        smooth=[sx, sy],
-                        levels=levels,
-                        fill_contours=True,
-                        plot_contours=True)
-
-                ax.set_xlim(xspan); ax.set_ylim(yspan)
-                ax.xaxis.set_major_locator(MaxNLocator(5, prune="lower"))
-                ax.yaxis.set_major_locator(MaxNLocator(5, prune="lower"))
-                ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=False))
-                ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
-                ax.set_xlabel(str(lj))
-                ax.set_ylabel(str(li))
-                ax.set_title(f"{shower_name_plot} corr = {(float(corr_val)):.3f}", fontsize=10)
-
-                fname = f"{rank:02d}_{_safe_name(lj)}__{_safe_name(li)}.png"
-                fpath = os.path.join(cov_dir, fname)
-                fig.tight_layout()
-                fig.savefig(fpath, dpi=200)
-                plt.close(fig)
-
-            print(f"Saved {len(iterable)} covariance plots in:\n  {cov_dir}")
-        
-        # --- utils functions end --- ######################################################################################
-        
-        labels_clean = _sanitize_labels(labels_plot_copy_plot, ndim)
-
-        df_corr, pairs_df, top10, bottom10 = plot_correlation_func(
-            combined_results_units,
-            ndim=ndim,
-            labels=labels_clean,
-            shower_name=shower_name_short,
-            cov_dir=cov_dir
-        )
-
-        ### Call the correlation plot function ###
-
-        print("Plotting top covariances 1vs1...")
-        # Top-50 by absolute correlation (as you already computed)
-        top50_df = pairs_df.sort_values("abs_corr", ascending=False).head(50)
-
-        plot_top_covariances(
-            results=combined_results_units,   # <<< was `results=`; use your combined_results object
-            top_pairs=top50_df,
-            shower_name_plot=shower_name_short,
-            labels=labels_clean,   # <<< use the SAME cleaned labels used for df_corr
-            output_dir_show=output_dir_show,
-            span_frac=0.98,
-            pad_frac=0.05,
-            smooth_frac=0.02
-        )
 
 
 
@@ -6995,7 +7225,9 @@ if __name__ == "__main__":
 
     (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, 
      file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, 
-     mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
+     mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, 
+     erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, 
+     dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
     
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict,
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup,
                        radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class = False) # cml_args.radiance_plot cml_args.correl_plot

@@ -59,6 +59,7 @@ except ImportError:
     DYNESTY_FOUND = False
 
 from wmpl.MetSim.GUI import FragmentationEntry, SimulationResults, loadConstants, saveConstants, loadWakeFile, plotWakeOverview, WakeContainter
+from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
 from wmpl.MetSim.MetSimErosion import Constants, runSimulation, zenithAngleAtSimulationBegin
 from wmpl.MetSim.ML.GenerateSimulations import MetParam, generateErosionSim, saveProcessedList
 from wmpl.Utils.Math import lineFunc, meanAngle, mergeClosePoints
@@ -1154,6 +1155,10 @@ def _worker_simulate_and_interp(sample_equal_row):
             rho_mass_weighted = const_saved.rho
             rho_volume_weighted = const_saved.rho
             erosion_dyn_press_change = None
+            mass_at_erosion_change = const_saved.mass_at_erosion_change
+        
+        # compute the erosion energy per surface and per mass because by default const_saved.energy_per_cs_before_erosion and const_saved.energy_per_mass_before_erosion are empty 
+        eeucs_best, eeum_best = energyReceivedBeforeErosion(const_saved)
 
         const_backup = {
         "rho_mass_weighted": rho_mass_weighted,
@@ -1161,10 +1166,10 @@ def _worker_simulate_and_interp(sample_equal_row):
         "erosion_beg_vel": const_saved.erosion_beg_vel if hasattr(const_saved, 'erosion_beg_vel') else None,
         "erosion_beg_mas": const_saved.erosion_beg_mas if hasattr(const_saved, 'erosion_beg_mas') else None,
         "erosion_beg_dyn_press": const_saved.erosion_beg_dyn_press if hasattr(const_saved, 'erosion_beg_dyn_press') else None,
-        "mass_at_erosion_change": const_saved.mass_at_erosion_change if hasattr(const_saved, 'mass_at_erosion_change') else None,
+        "mass_at_erosion_change": mass_at_erosion_change,
         "dyn_press_at_erosion_change": erosion_dyn_press_change,
-        "energy_per_cs_before_erosion": const_saved.energy_per_cs_before_erosion if hasattr(const_saved, 'energy_per_cs_before_erosion') else None,
-        "energy_per_mass_before_erosion": const_saved.energy_per_mass_before_erosion if hasattr(const_saved, 'energy_per_mass_before_erosion') else None,
+        "energy_per_cs_before_erosion": eeucs_best,
+        "energy_per_mass_before_erosion": eeum_best,
         "main_mass_exhaustion_ht": const_saved.main_mass_exhaustion_ht if hasattr(const_saved, 'main_mass_exhaustion_ht') else None,
         "main_bottom_ht": const_saved.main_bottom_ht if hasattr(const_saved, 'main_bottom_ht') else None
         }

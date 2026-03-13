@@ -448,7 +448,7 @@ def delete_var_and_substitute(samples, variables, var_to_delete, var_to_correct,
     
     return samples, variables
 
-def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, name=''):
+def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, name='', shower_name_short=''):
 
     ndim = len(variables_corr)
     labels_plot_copy_plot = [variable_map[variable] for variable in variables_corr]
@@ -7189,7 +7189,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             )
 
 
-        correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, shower_name, rho_corrected, eta_corrected, sigma_corrected, output_dir_show)
+        correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, shower_name, rho_corrected, eta_corrected, sigma_corrected, output_dir_show, shower_name_short)
 
 
 

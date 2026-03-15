@@ -1151,18 +1151,23 @@ def _worker_simulate_and_interp(sample_equal_row):
             rho_volume_weighted = const_saved.m_init/((abs(const_saved.m_init-mass_at_erosion_change)/const_saved.rho) + (mass_at_erosion_change/erosion_rho_change))
             # print(f"rho_mass_weighted: {rho_mass_weighted} rho_volume_weighted: {rho_volume_weighted} and rho: {const_saved.rho}")
             erosion_dyn_press_change = sim.leading_frag_dyn_press_arr[np.nanargmin(np.abs(h_raw - erosion_height_change))]
+            erosion_coeff_mass_weighted = const_saved.erosion_coeff*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + const_saved.erosion_coeff_change*(mass_at_erosion_change/const_saved.m_init)
+            sigma_mass_weighted = const_saved.sigma*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + const_saved.erosion_sigma_change*(mass_at_erosion_change/const_saved.m_init)
         else:
             rho_mass_weighted = const_saved.rho
             rho_volume_weighted = const_saved.rho
             erosion_dyn_press_change = None
             mass_at_erosion_change = const_saved.mass_at_erosion_change
-        
+            erosion_coeff_mass_weighted = const_saved.erosion_coeff
+            sigma_mass_weighted = const_saved.sigma
         # compute the erosion energy per surface and per mass because by default const_saved.energy_per_cs_before_erosion and const_saved.energy_per_mass_before_erosion are empty 
         eeucs_best, eeum_best = energyReceivedBeforeErosion(const_saved)
 
         const_backup = {
         "rho_mass_weighted": rho_mass_weighted,
         "rho_volume_weighted": rho_volume_weighted,
+        "erosion_coeff_mass_weighted": erosion_coeff_mass_weighted,
+        "sigma_mass_weighted": sigma_mass_weighted,
         "erosion_beg_vel": const_saved.erosion_beg_vel if hasattr(const_saved, 'erosion_beg_vel') else None,
         "erosion_beg_mass": const_saved.erosion_beg_mass if hasattr(const_saved, 'erosion_beg_mass') else None,
         "erosion_beg_dyn_press": const_saved.erosion_beg_dyn_press if hasattr(const_saved, 'erosion_beg_dyn_press') else None,

@@ -1174,6 +1174,13 @@ def _worker_simulate_and_interp(sample_equal_row):
         "main_bottom_ht": const_saved.main_bottom_ht if hasattr(const_saved, 'main_bottom_ht') else None
         }
 
+        # add to const_backup also all variables
+        for var in variables:
+            # print(f"Checking variable {var} in const_saved...")
+            if hasattr(const_saved, var):
+                # print(f"Adding {var} to const_backup with value {getattr(const_saved, var)}")
+                const_backup[var] = getattr(const_saved, var)
+
         return lum_hl, mag_hl, vel_hv, lag_hv, const_backup
     except Exception:
         return None

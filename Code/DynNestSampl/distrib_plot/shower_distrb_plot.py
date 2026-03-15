@@ -91,6 +91,15 @@ variable_map = {
     'grain_mass_min': r"$m_{l}$ [kg]",
     'grain_mass_max': r"$m_{u}$ [kg]",
     'mass_index': r"$s$",
+    'energy_per_cs_before_erosion_backup': r"$E_S$ [MJ]",
+    'energy_per_mass_before_erosion_backup': r"$E_V$ [MJ/kg]",
+    'erosion_beg_vel_backup': r"$v_{e1}$ [m/s]",
+    'erosion_beg_mass_backup': r"$m_{e1}$ [kg]",
+    'erosion_beg_dyn_press_backup': r"$P_{e1}$ [Pa]",
+    'mass_at_erosion_change_backup': r"$m_{e2}$ [kg]",
+    'dyn_press_at_erosion_change_backup': r"$P_{e2}$ [Pa]",
+    'main_mass_exhaustion_ht_backup': r"$h_{end}$ [km]",
+    'main_bottom_ht_backup': r"$h_{bot}$ [km]",
     'noise_lag': r"$\sigma_{lag}$ [m]",
     'noise_lum': r"$\sigma_{lum}$ [W]"
 }
@@ -124,6 +133,15 @@ variable_map_plot = {
     'grain_mass_min': r"$m_{l}$ [kg]",
     'grain_mass_max': r"$m_{u}$ [kg]",
     'mass_index': r"$s$",
+    'energy_per_cs_before_erosion_backup': r"$E_S$ [MJ]",
+    'energy_per_mass_before_erosion_backup': r"$E_V$ [MJ/kg]",
+    'erosion_beg_vel_backup': r"$v_{e1}$ [m/s]",
+    'erosion_beg_mass_backup': r"$m_{e1}$ [kg]",
+    'erosion_beg_dyn_press_backup': r"$P_{e1}$ [Pa]",
+    'mass_at_erosion_change_backup': r"$m_{e2}$ [kg]",
+    'dyn_press_at_erosion_change_backup': r"$P_{e2}$ [Pa]",
+    'main_mass_exhaustion_ht_backup': r"$h_{end}$ [km]",
+    'main_bottom_ht_backup': r"$h_{bot}$ [km]",
     'noise_lag': r"$\sigma_{lag}$ [m]",
     'noise_lum': r"$\sigma_{lum}$ [W]"
 }
@@ -156,6 +174,15 @@ fmt_kind = {
     'grain_mass_min': "sci",
     'grain_mass_max': "sci",
     'mass_index': "fixed2",
+    'energy_per_cs_before_erosion_backup': "sci",
+    'energy_per_mass_before_erosion_backup': "sci",
+    'erosion_beg_vel_backup': "fixed2",
+    'erosion_beg_mass_backup': "sci",
+    'erosion_beg_dyn_press_backup': "sci",
+    'mass_at_erosion_change_backup': "sci",
+    'dyn_press_at_erosion_change_backup': "sci",
+    'main_mass_exhaustion_ht_backup': "fixed2",
+    'main_bottom_ht_backup': "fixed2",
     'noise_lag': "sci",
     'noise_lum': "sci"
 }
@@ -448,76 +475,159 @@ def delete_var_and_substitute(samples, variables, var_to_delete, var_to_correct,
     
     return samples, variables
 
-def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, name='', shower_name_short=''):
 
+
+def _safe_name(s):
+    s = re.sub(r"\$|\\[a-zA-Z]+|[\{\}\^\_]", "", str(s))
+    s = re.sub(r"[^A-Za-z0-9\-\.]+", "_", s).strip("_")
+    return s or "param"
+
+
+def _sanitize_labels(labels, ndim):
+    labels = [str(x).strip() if str(x).strip() else f"p{i}" for i, x in enumerate(labels)]
+    seen = {}
+    out = []
+    for lbl in labels:
+        if lbl not in seen:
+            seen[lbl] = 1
+            out.append(lbl)
+        else:
+            seen[lbl] += 1
+            out.append(f"{lbl} ({seen[lbl]})")
+    if len(out) < ndim:
+        out.extend([f"p{i}" for i in range(len(out), ndim)])
+    return out[:ndim]
+
+
+def weighted_corr_matrix(samples, weights):
+    """
+    Vectorized weighted Pearson correlation matrix.
+
+    samples: shape (ndim, nsamps)
+    weights: shape (nsamps,)
+    """
+    w = np.asarray(weights, dtype=float)
+    w = w / np.sum(w)
+
+    X = np.asarray(samples, dtype=float)  # (ndim, nsamps)
+    mu = np.sum(X * w[None, :], axis=1, keepdims=True)
+    Xc = X - mu
+
+    cov = (Xc * w[None, :]) @ Xc.T
+    var = np.diag(cov)
+    std = np.sqrt(np.maximum(var, 1e-300))
+
+    corr = cov / np.outer(std, std)
+    corr = np.clip(corr, -1.0, 1.0)
+    return corr
+
+
+def _plot_single_covariance(task):
+    """
+    Worker for one covariance plot.
+    Must be top-level for Windows multiprocessing.
+    """
+    (
+        rank, li, lj, corr_val,
+        si, sj,
+        samples, weights,
+        shower_name_plot, cov_dir,
+        span_frac, pad_frac, smooth_frac,
+        levels, figsize
+    ) = task
+
+    # Import here if needed by worker process
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator, ScalarFormatter
+
+    x = samples[sj]
+    y = samples[si]
+    w = weights
+
+    qlo = (1.0 - span_frac) / 2.0
+    qhi = 1.0 - qlo
+
+    xlo, xhi = _weighted_quantile(x, [qlo, qhi], w)
+    ylo, yhi = _weighted_quantile(y, [qlo, qhi], w)
+
+    xr = (xhi - xlo) or 1.0
+    yr = (yhi - ylo) or 1.0
+    xspan = [xlo - pad_frac * xr, xhi + pad_frac * xr]
+    yspan = [ylo - pad_frac * yr, yhi + pad_frac * yr]
+
+    sx = smooth_frac
+    sy = smooth_frac
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    _HIST2D(
+        x, y,
+        ax=ax,
+        span=[xspan, yspan],
+        weights=w,
+        color='black',
+        smooth=[sx, sy],
+        levels=levels,
+        fill_contours=True,
+        plot_contours=True
+    )
+
+    ax.set_xlim(xspan)
+    ax.set_ylim(yspan)
+    ax.xaxis.set_major_locator(MaxNLocator(5, prune="lower"))
+    ax.yaxis.set_major_locator(MaxNLocator(5, prune="lower"))
+    ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=False))
+    ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
+    ax.set_xlabel(str(lj))
+    ax.set_ylabel(str(li))
+    ax.set_title(f"{shower_name_plot} corr = {float(corr_val):.3f}", fontsize=10)
+
+    fname = f"{rank:02d}_{_safe_name(lj)}__{_safe_name(li)}.png"
+    fpath = os.path.join(cov_dir, fname)
+
+    fig.tight_layout()
+    fig.savefig(fpath, dpi=200)
+    plt.close(fig)
+
+    return fpath
+
+def correlation_plots_all(
+    combined_samples_cov_plot,
+    variables_corr,
+    combined_weights,
+    output_dir_show,
+    shower_name_short='',
+    name='',
+    n_jobs=None
+):
     ndim = len(variables_corr)
     labels_plot_copy_plot = [variable_map[variable] for variable in variables_corr]
 
-    # find all from each of the combined combined_samples_cov_plot all the values that are None or np.nan and remove them from the combined_samples_cov_plot and the combined_weights
     print(f"Before removing NaNs/Infs: {combined_samples_cov_plot.shape[0]} samples available for correlation plotting.")
     mask_valid = np.ones(combined_samples_cov_plot.shape[0], dtype=bool)
-    for i in range(combined_samples_cov_plot.shape[1]): 
+    for i in range(combined_samples_cov_plot.shape[1]):
         mask_valid &= np.isfinite(combined_samples_cov_plot[:, i])
+
     combined_samples_cov_plot = combined_samples_cov_plot[mask_valid]
     combined_weights = combined_weights[mask_valid]
     print(f"After removing NaNs/Infs: {combined_samples_cov_plot.shape[0]} valid samples remain for correlation plotting.")
 
-    # check the size of combined_samples_cov_plot the labels_plot_copy_plot, the ndim and combined_weights
     print(f"combined_samples_cov_plot shape: {combined_samples_cov_plot.shape}, ndim: {ndim}, labels length: {len(labels_plot_copy_plot)}, combined_weights length: {len(combined_weights)}")
 
     print('Calculating correlation...')
     combined_results_units = CombinedResults(combined_samples_cov_plot, combined_weights)
 
-    # Ensure output folder
-    cov_dir = os.path.join(output_dir_show, "Covariance"+name)
+    cov_dir = os.path.join(output_dir_show, "Covariance" + name)
     os.makedirs(cov_dir, exist_ok=True)
 
-    # for i, variable in enumerate(variables):
-    #     if 'log' in flags_dict_total[variable]:  
-    #         labels_plot[i] =r"$\log_{10}$(" +labels_plot[i]+")"
-
-    # --- utils functions --- ##########################################################################################
-
-    def _sanitize_labels(labels, ndim):
-        # coerce to strings, strip, and fill blanks
-        labels = [str(x).strip() if str(x).strip() else f"p{i}" for i, x in enumerate(labels)]
-        # enforce uniqueness by suffixing duplicates
-        seen = {}
-        out = []
-        for lbl in labels:
-            if lbl not in seen:
-                seen[lbl] = 1
-                out.append(lbl)
-            else:
-                seen[lbl] += 1
-                out.append(f"{lbl} ({seen[lbl]})")
-        # pad/truncate to match ndim if needed
-        if len(out) < ndim:
-            out.extend([f"p{i}" for i in range(len(out), ndim)])
-        return out[:ndim]
-
-    def weighted_corr(x, y, w):
-        """Weighted Pearson correlation of x and y with weights w."""
-        w = np.asarray(w)
-        x = np.asarray(x)
-        y = np.asarray(y)
-        w_sum = w.sum()
-        x_mean = (w * x).sum() / w_sum
-        y_mean = (w * y).sum() / w_sum
-        cov_xy = (w * (x - x_mean) * (y - y_mean)).sum() / w_sum
-        var_x  = (w * (x - x_mean)**2).sum() / w_sum
-        var_y  = (w * (y - y_mean)**2).sum() / w_sum
-        return cov_xy / np.sqrt(var_x * var_y)
+    labels_clean = _sanitize_labels(labels_plot_copy_plot, ndim)
 
     def plot_correlation_func(combined_results_units, ndim, labels, shower_name, cov_dir):
-        """Simple Gaussian smoothing of a histogram."""
-        # … your existing prep code …
         fig, axes = plt.subplots(ndim, ndim, figsize=(35, 15))
         axes = axes.reshape((ndim, ndim))
 
-        # call dynesty’s cornerplot
         fg, ax = dyplot.cornerplot(
-            combined_results_units, 
+            combined_results_units,
             color='blue',
             show_titles=True,
             max_n_ticks=3,
@@ -529,19 +639,18 @@ def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_we
             fig=(fig, axes[:, :ndim])
         )
 
-        # # supertitle, tick formatting, saving …
-        # fg.suptitle(shower_name, fontsize=16, fontweight='bold')
-
         for ax_row in ax:
             for ax_ in ax_row:
                 if ax_ is None:
                     continue
                 ax_.tick_params(axis='both', labelsize=8, direction='in')
-                for lbl in ax_.get_xticklabels(): lbl.set_rotation(0)
-                for lbl in ax_.get_yticklabels(): lbl.set_rotation(45)
-                if len(ax_.xaxis.get_majorticklocs())>0:
+                for lbl in ax_.get_xticklabels():
+                    lbl.set_rotation(0)
+                for lbl in ax_.get_yticklabels():
+                    lbl.set_rotation(45)
+                if len(ax_.xaxis.get_majorticklocs()) > 0:
                     ax_.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
-                if len(ax_.yaxis.get_majorticklocs())>0:
+                if len(ax_.yaxis.get_majorticklocs()) > 0:
                     ax_.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4g'))
 
         for i in range(ndim):
@@ -553,9 +662,12 @@ def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_we
                 if i != ndim - 1:
                     ax[i, j].set_xticklabels([])
 
-        # Overlay weighted correlations in the upper triangle
-        samples = combined_results_units['samples'].T  # shape (ndim, nsamps)
+        # Samples in shape (ndim, nsamps)
+        samples = combined_results_units['samples'].T
         weights = combined_results_units.importance_weights()
+
+        # Vectorized correlation matrix
+        corr_mat = weighted_corr_matrix(samples, weights)
 
         cmap = plt.colormaps['coolwarm']
         norm = Normalize(vmin=-1, vmax=1)
@@ -566,19 +678,15 @@ def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_we
                     continue
 
                 panel = ax[i, j]
-                x = samples[j]
-                y = samples[i]
-                corr_w = weighted_corr(x, y, weights)
-
+                corr_w = corr_mat[i, j]
                 color = cmap(norm(corr_w))
-                # paint the background patch
+
                 panel.patch.set_facecolor(color)
                 panel.patch.set_alpha(1.0)
 
-                # fallback rectangle if needed
                 panel.add_patch(
                     plt.Rectangle(
-                        (0,0), 1, 1,
+                        (0, 0), 1, 1,
                         transform=panel.transAxes,
                         facecolor=color,
                         zorder=0
@@ -592,53 +700,35 @@ def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_we
                     ha='center', va='center',
                     fontsize=25, color='black'
                 )
-                panel.set_xticks([]); panel.set_yticks([])
+                panel.set_xticks([])
+                panel.set_yticks([])
                 for spine in panel.spines.values():
                     spine.set_visible(False)
 
-        # final adjustments & save
-        # fg.subplots_adjust(wspace=0.1, hspace=0.3)
-        fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978) # Increase spacing between plots
-        plt.savefig(os.path.join(cov_dir, f"{shower_name}_correlation_plot.png"),
-                    bbox_inches='tight', dpi=300)
+        fg.subplots_adjust(wspace=0.1, hspace=0.3, top=0.978)
+
+        out_png = os.path.join(cov_dir, f"{shower_name}_correlation_plot.png")
+        plt.savefig(out_png, bbox_inches='tight', dpi=300)
         plt.close(fig)
 
         print('saving correlation matrix...')
 
-        # Build the NxN matrix of weigh_corr_ij
-        corr_mat = np.zeros((ndim, ndim))
-        for i in range(ndim):
-            for j in range(ndim):
-                corr_mat[i, j] = weighted_corr(samples[i], samples[j], weights)
+        df_corr = pd.DataFrame(corr_mat, index=labels, columns=labels)
 
-        # Wrap it in a DataFrame (so you get row/column labels)
-        df_corr = pd.DataFrame(
-            corr_mat,
-            index=labels,
-            columns=labels
-        )
-
-        df_corr = pd.DataFrame(corr_mat, index=labels_clean, columns=labels_clean)
-
-        # Save the full matrix
         outpath = os.path.join(cov_dir, f"{shower_name}_weighted_globalCorr_matrix.csv")
         df_corr.to_csv(outpath, float_format="%.4f")
         print(f"Saved weighted correlation matrix to:\n  {outpath}")
 
-        # Upper-triangle only (exclude diagonal)
         mask = np.triu(np.ones(df_corr.shape, dtype=bool), k=1)
         upper = df_corr.where(mask)
 
-        # Turn into a *DataFrame* so both columns always print (no MultiIndex collapse)
         pairs_df = (
-            upper
-            .stack()                      # drop NaNs from the lower triangle
+            upper.stack()
             .rename("corr")
             .reset_index()
             .rename(columns={"level_0": "param_i", "level_1": "param_j"})
         )
 
-        # Sort by absolute correlation and print clean tables
         pairs_df["abs_corr"] = pairs_df["corr"].abs()
 
         top10 = pairs_df.sort_values("abs_corr", ascending=False).head(10)
@@ -653,51 +743,43 @@ def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_we
 
         return df_corr, pairs_df, top10, bottom10
 
-
-
-    def _safe_name(s):
-        s = re.sub(r"\$|\\[a-zA-Z]+|[\{\}\^\_]", "", str(s))
-        s = re.sub(r"[^A-Za-z0-9\-\.]+", "_", s).strip("_")
-        return s or "param"
-
-    def plot_top_covariances(results,
-                            top_pairs,            # DataFrame with columns param_i,param_j,corr OR list of tuples
-                            labels,          # labels in the SAME order as results['samples'] columns
-                            shower_name_plot,
-                            output_dir_show,
-                            span_frac=0.98,
-                            pad_frac=0.05,
-                            smooth_frac=0.02,
-                            levels=None,
-                            figsize=(4.5, 4.0)):
-
-        # Extract weighted samples EXACTLY like your cornerplot
+    def plot_top_covariances_parallel(
+        results,
+        top_pairs,
+        labels,
+        shower_name_plot,
+        output_dir_show,
+        span_frac=0.98,
+        pad_frac=0.05,
+        smooth_frac=0.02,
+        levels=None,
+        figsize=(4.5, 4.0),
+        n_jobs=None
+    ):
         samples = results['samples']
         weights = results.importance_weights()
+
         samples = np.atleast_1d(samples)
         if len(samples.shape) == 1:
             samples = np.atleast_2d(samples)
         else:
             assert len(samples.shape) == 2, "Samples must be 1- or 2-D."
             samples = samples.T
+
         assert samples.shape[0] <= samples.shape[1], "More dimensions than samples!"
         ndim, nsamps = samples.shape
         assert weights.ndim == 1 and weights.shape[0] == nsamps, "Weights/samples mismatch."
 
-        # Map label -> dimension index (use the SAME labels you used for df_corr)
         label_to_idx = {}
         for i, lbl in enumerate(labels):
             s = str(lbl)
-            # first occurrence wins; if duplicates exist, later ones get suffix in labels_clean
             if s not in label_to_idx:
                 label_to_idx[s] = i
 
-        # Ensure output folder
-        cov_dir = os.path.join(output_dir_show, "Covariance")
+        cov_dir = os.path.join(output_dir_show, "Covariance" + name)
         os.makedirs(cov_dir, exist_ok=True)
 
-        # Normalize input to a list of tuples
-        if hasattr(top_pairs, "iterrows"):  # pairs_df
+        if hasattr(top_pairs, "iterrows"):
             iterable = [(r["param_i"], r["param_j"], r["corr"]) for _, r in top_pairs.iterrows()]
         else:
             iterable = list(top_pairs)
@@ -705,87 +787,65 @@ def correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_we
         if levels is None:
             levels = [0.1, 0.4, 0.65, 0.85]
 
+        tasks = []
         for rank, (li, lj, corr_val) in enumerate(iterable, start=1):
-            # if a label isn't found due to prior duplication/cleaning, fail loudly with context
             if str(li) not in label_to_idx or str(lj) not in label_to_idx:
-                raise KeyError(f"Label not found in labels: {li} or {lj}. "
-                            f"Pass labels_clean here (the ones used in df_corr).")
+                raise KeyError(
+                    f"Label not found in labels: {li} or {lj}. "
+                    f"Pass labels_clean here."
+                )
 
-            si = label_to_idx[str(li)]   # y-axis
-            sj = label_to_idx[str(lj)]   # x-axis
+            si = label_to_idx[str(li)]
+            sj = label_to_idx[str(lj)]
 
-            x = samples[sj]
-            y = samples[si]
-            w = weights
+            tasks.append((
+                rank, li, lj, corr_val,
+                si, sj,
+                samples, weights,
+                shower_name_plot, cov_dir,
+                span_frac, pad_frac, smooth_frac,
+                levels, figsize
+            ))
 
-            qlo = (1.0 - span_frac)/2.0
-            qhi = 1.0 - qlo
-            xlo, xhi = _weighted_quantile(x, [qlo, qhi], w)
-            ylo, yhi = _weighted_quantile(y, [qlo, qhi], w)
+        if n_jobs is None:
+            n_jobs = max(1, mp.cpu_count() - 1)
 
-            xr = (xhi - xlo) or 1.0
-            yr = (yhi - ylo) or 1.0
-            xspan = [xlo - pad_frac*xr, xhi + pad_frac*xr]
-            yspan = [ylo - pad_frac*yr, yhi + pad_frac*yr]
+        print(f"Saving {len(tasks)} covariance plots using {n_jobs} processes...")
 
-            sx = smooth_frac
-            sy = smooth_frac
+        saved = []
+        with ProcessPoolExecutor(max_workers=n_jobs) as ex:
+            futures = [ex.submit(_plot_single_covariance, task) for task in tasks]
+            for fut in as_completed(futures):
+                saved.append(fut.result())
 
-            fig, ax = plt.subplots(figsize=figsize)
-            _HIST2D(x, y,
-                    ax=ax,
-                    span=[xspan, yspan],
-                    weights=w,
-                    color='black',
-                    smooth=[sx, sy],
-                    levels=levels,
-                    fill_contours=True,
-                    plot_contours=True)
-
-            ax.set_xlim(xspan); ax.set_ylim(yspan)
-            ax.xaxis.set_major_locator(MaxNLocator(5, prune="lower"))
-            ax.yaxis.set_major_locator(MaxNLocator(5, prune="lower"))
-            ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=False))
-            ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
-            ax.set_xlabel(str(lj))
-            ax.set_ylabel(str(li))
-            ax.set_title(f"{shower_name_plot} corr = {(float(corr_val)):.3f}", fontsize=10)
-
-            fname = f"{rank:02d}_{_safe_name(lj)}__{_safe_name(li)}.png"
-            fpath = os.path.join(cov_dir, fname)
-            fig.tight_layout()
-            fig.savefig(fpath, dpi=200)
-            plt.close(fig)
-
-        print(f"Saved {len(iterable)} covariance plots in:\n  {cov_dir}")
-    
-    # --- utils functions end --- ######################################################################################
-    
-    labels_clean = _sanitize_labels(labels_plot_copy_plot, ndim)
+        print(f"Saved {len(saved)} covariance plots in:\n  {cov_dir}")
 
     df_corr, pairs_df, top10, bottom10 = plot_correlation_func(
         combined_results_units,
         ndim=ndim,
         labels=labels_clean,
         shower_name=shower_name_short,
-        cov_dir=cov_dir)
-
-    ### Call the correlation plot function ###
+        cov_dir=cov_dir
+    )
 
     print("Plotting top covariances 1vs1...")
-    # Top-50 by absolute correlation (as you already computed)
     top50_df = pairs_df.sort_values("abs_corr", ascending=False).head(50)
 
-    plot_top_covariances(
-        results=combined_results_units,   # <<< was `results=`; use your combined_results object
+    plot_top_covariances_parallel(
+        results=combined_results_units,
         top_pairs=top50_df,
         shower_name_plot=shower_name_short,
-        labels=labels_clean,   # <<< use the SAME cleaned labels used for df_corr
+        labels=labels_clean,
         output_dir_show=output_dir_show,
         span_frac=0.98,
         pad_frac=0.05,
-        smooth_frac=0.02
+        smooth_frac=0.02,
+        n_jobs=n_jobs
     )
+
+    return df_corr, pairs_df, top10, bottom10
+
+
 
 # ---------- Main: run weighted tests for any number of groups ----------
 def weighted_tests_table(
@@ -1489,7 +1549,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
     if os.path.exists(input_dirfile + os.sep + "shower_distrb_plot_data.pkl"):
         print("Found shower_distrb_plot_data.pkl, loading data...")
         # load the pickle data
-        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict)=load_shower_distrb_plot_data(input_dirfile + os.sep + "shower_distrb_plot_data.pkl")
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup)=load_shower_distrb_plot_data(input_dirfile + os.sep + "shower_distrb_plot_data.pkl")
 
     else:
 
@@ -1758,43 +1818,43 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 rho_lo = (rho - rho_lo) #/1.96
                 rho_hi = (rho_hi - rho) #/1.96
                 rho_corrected.append(x_valid_rho)
-                try:
-                    if backup_file is not None:
-                        mass_at_erosion_change_now = []
-                        const_backups = backup_small['dynesty']['const_backups']
-                        for const in const_backups:
-                            if const is not None:
-                                mass_at_erosion_change_now.append(const["mass_at_erosion_change"])
-                        # for mass_er_ch in mass_at_erosion_change_now:
-                        #     if mass_er_ch is None:
-                        #         idx = np.nanargmin(np.abs(h_raw - erosion_height_change))
-                        #         mass_at_erosion_change = mass[idx]
-                        # print(f"Mass at erosion change from backup: {mass_at_erosion_change_now}")
-                        # # print the number of values in mass_at_erosion_change_now
-                        # mass_at_erosion_change_now = np.array(mass_at_erosion_change_now)
-                        # print(f"Number of values in mass_at_erosion_change_now: {len(mass_at_erosion_change_now)}")
-                        # # number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float)
-                        # print(f"Number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float): {len(samples[:, variables_sing.index('erosion_coeff')].astype(float))}")
+                # try:
+                #     if backup_file is not None:
+                #         mass_at_erosion_change_now = []
+                #         const_backups = backup_small['dynesty']['const_backups']
+                #         for const in const_backups:
+                #             if const is not None:
+                #                 mass_at_erosion_change_now.append(const["mass_at_erosion_change"])
+                #         # for mass_er_ch in mass_at_erosion_change_now:
+                #         #     if mass_er_ch is None:
+                #         #         idx = np.nanargmin(np.abs(h_raw - erosion_height_change))
+                #         #         mass_at_erosion_change = mass[idx]
+                #         # print(f"Mass at erosion change from backup: {mass_at_erosion_change_now}")
+                #         # # print the number of values in mass_at_erosion_change_now
+                #         # mass_at_erosion_change_now = np.array(mass_at_erosion_change_now)
+                #         # print(f"Number of values in mass_at_erosion_change_now: {len(mass_at_erosion_change_now)}")
+                #         # # number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float)
+                #         # print(f"Number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float): {len(samples[:, variables_sing.index('erosion_coeff')].astype(float))}")
 
-                        x_valid_eta = samples[:, variables_sing.index('erosion_coeff')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_coeff_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
-                        eta_lo, eta, eta_hi = _quantile(x_valid_eta, [0.025, 0.5, 0.975], weights=w)
-                    else:
-                        x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
-                except:
-                    x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
+                #         x_valid_eta = samples[:, variables_sing.index('erosion_coeff')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_coeff_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
+                #         eta_lo, eta, eta_hi = _quantile(x_valid_eta, [0.025, 0.5, 0.975], weights=w)
+                #     else:
+                #         x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
+                # except:
+                x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
                 eta_lo = (eta - eta_lo) #/1.96
                 eta_hi = (eta_hi - eta) #/1.96
                 eta_corrected.append(x_valid_eta)
 
                 # erosion_sigma_change
-                try:
-                    if backup_file is not None:
-                        x_valid_sigma = samples[:, variables_sing.index('sigma')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_sigma_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
-                        sigma_lo, sigma, sigma_hi = _quantile(x_valid_sigma, [0.025, 0.5, 0.975], weights=w)
-                    else:
-                        x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
-                except:
-                    x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
+                # try:
+                #     if backup_file is not None:
+                #         x_valid_sigma = samples[:, variables_sing.index('sigma')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_sigma_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
+                #         sigma_lo, sigma, sigma_hi = _quantile(x_valid_sigma, [0.025, 0.5, 0.975], weights=w)
+                #     else:
+                #         x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
+                # except:
+                x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
                 sigma_lo = (sigma - sigma_lo) #/1.96
                 sigma_hi = (sigma_hi - sigma) #/1.96
                 sigma_corrected.append(x_valid_sigma)
@@ -1902,27 +1962,30 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 const_backups = backup_small['dynesty']['const_backups']
                 for const in const_backups:
                     energy_per_cs_before_erosion_backup.append(const["energy_per_cs_before_erosion"]) # / 1e6   convert to MJ/m^2)
-                    print("energy_per_cs_before_erosion_backup", energy_per_cs_before_erosion_backup)
+                    # print("energy_per_cs_before_erosion_backup", energy_per_cs_before_erosion_backup)
                     energy_per_mass_before_erosion_backup.append(const["energy_per_mass_before_erosion"]) # / 1e6   convert to MJ/kg)
-                    print("energy_per_mass_before_erosion_backup", energy_per_mass_before_erosion_backup)
+                    # print("energy_per_mass_before_erosion_backup", energy_per_mass_before_erosion_backup)
                     erosion_beg_vel_backup.append(const["erosion_beg_vel"])
-                    print("erosion_beg_vel_backup", erosion_beg_vel_backup)
+                    # print("erosion_beg_vel_backup", erosion_beg_vel_backup)
                     # check if erosion_beg_mass exist if not use erosion_beg_mas
                     if "erosion_beg_mass" in const:
                         erosion_beg_mass_backup.append(const["erosion_beg_mass"])
                     else:                        
                         erosion_beg_mass_backup.append(const["erosion_beg_mas"])
-                    print("erosion_beg_mass_backup", erosion_beg_mass_backup)
+                    # print("erosion_beg_mass_backup", erosion_beg_mass_backup)
                     erosion_beg_dyn_press_backup.append(const["erosion_beg_dyn_press"])
-                    print("erosion_beg_dyn_press_backup", erosion_beg_dyn_press_backup)
+                    # print("erosion_beg_dyn_press_backup", erosion_beg_dyn_press_backup)
                     mass_at_erosion_change_backup.append(const["mass_at_erosion_change"])
-                    print("mass_at_erosion_change_backup", mass_at_erosion_change_backup)
+                    # print("mass_at_erosion_change_backup", mass_at_erosion_change_backup)
                     dyn_press_at_erosion_change_backup.append(const["dyn_press_at_erosion_change"])
-                    print("dyn_press_at_erosion_change_backup", dyn_press_at_erosion_change_backup) 
+                    # print("dyn_press_at_erosion_change_backup", dyn_press_at_erosion_change_backup)
                     main_mass_exhaustion_ht_backup.append(const["main_mass_exhaustion_ht"])
-                    print("main_mass_exhaustion_ht_backup", main_mass_exhaustion_ht_backup)
+                    # print("main_mass_exhaustion_ht_backup", main_mass_exhaustion_ht_backup)
                     main_bottom_ht_backup.append(const["main_bottom_ht"])
-                    print("main_bottom_ht_backup", main_bottom_ht_backup)
+                    # print("main_bottom_ht_backup", main_bottom_ht_backup)
+                    
+                    # w_eq = np.ones(samples_eq.shape[0], dtype=float)
+                    # w_eq /= w_eq.sum()
             else:
                 # fill with None for as may values like np.full(shape=5, fill_value=None) in samples[:, variables_sing.index('erosion_coeff')].astype(float)
                 energy_per_cs_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
@@ -2124,15 +2187,37 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     mass_distr = np.concatenate(mass_distr)
     tau_corrected = np.concatenate(tau_corrected)
     kinetic_energy_all = np.concatenate(kinetic_energy_all)
-    energy_per_cs_before_erosion_backup = np.concatenate(energy_per_cs_before_erosion_backup)
-    energy_per_mass_before_erosion_backup = np.concatenate(energy_per_mass_before_erosion_backup)
-    erosion_beg_vel_backup = np.concatenate(erosion_beg_vel_backup)
-    erosion_beg_mass_backup = np.concatenate(erosion_beg_mass_backup)
-    erosion_beg_dyn_press_backup = np.concatenate(erosion_beg_dyn_press_backup)
-    mass_at_erosion_change_backup = np.concatenate(mass_at_erosion_change_backup)
-    dyn_press_at_erosion_change_backup = np.concatenate(dyn_press_at_erosion_change_backup)
-    main_mass_exhaustion_ht_backup = np.concatenate(main_mass_exhaustion_ht_backup)
-    main_bottom_ht_backup = np.concatenate(main_bottom_ht_backup)
+    
+    energy_per_cs_before_erosion_backup = np.array(energy_per_cs_before_erosion_backup)/1e6
+    energy_per_mass_before_erosion_backup = np.array(energy_per_mass_before_erosion_backup)/1e6
+    erosion_beg_vel_backup = np.array(erosion_beg_vel_backup)/1000
+    erosion_beg_mass_backup = np.array(erosion_beg_mass_backup)
+    erosion_beg_dyn_press_backup = np.array(erosion_beg_dyn_press_backup)
+    mass_at_erosion_change_backup = np.array(mass_at_erosion_change_backup)
+    dyn_press_at_erosion_change_backup = np.array(dyn_press_at_erosion_change_backup)
+    main_mass_exhaustion_ht_backup = np.array(main_mass_exhaustion_ht_backup) /1000   # convert to km
+    main_bottom_ht_backup = np.array(main_bottom_ht_backup) /1000   # convert to km
+
+    # erosion_beg_mass_backup = erosion_beg_mass_backup
+    # print('energy_per_cs_before_erosion_backup',energy_per_cs_before_erosion_backup)
+    # print('energy_per_mass_before_erosion_backup',energy_per_mass_before_erosion_backup)
+    # print('erosion_beg_vel_backup',erosion_beg_vel_backup)
+    # print('erosion_beg_mass_backup',erosion_beg_mass_backup)
+    # print('erosion_beg_dyn_press_backup',erosion_beg_dyn_press_backup)
+    # print('mass_at_erosion_change_backup',mass_at_erosion_change_backup)
+    # print('dyn_press_at_erosion_change_backup',dyn_press_at_erosion_change_backup)
+    # print('main_mass_exhaustion_ht_backup',main_mass_exhaustion_ht_backup)
+    # print('main_bottom_ht_backup',main_bottom_ht_backup)
+    
+    # energy_per_cs_before_erosion_backup = np.concatenate(energy_per_cs_before_erosion_backup)
+    # energy_per_mass_before_erosion_backup = np.concatenate(energy_per_mass_before_erosion_backup)
+    # erosion_beg_vel_backup = np.concatenate(erosion_beg_vel_backup)
+    # erosion_beg_mass_backup = np.concatenate(erosion_beg_mass_backup)
+    # erosion_beg_dyn_press_backup = np.concatenate(erosion_beg_dyn_press_backup)
+    # mass_at_erosion_change_backup = np.concatenate(mass_at_erosion_change_backup)
+    # dyn_press_at_erosion_change_backup = np.concatenate(dyn_press_at_erosion_change_backup)
+    # main_mass_exhaustion_ht_backup = np.concatenate(main_mass_exhaustion_ht_backup)
+    # main_bottom_ht_backup = np.concatenate(main_bottom_ht_backup)
 
     # print('all energy_per_cs_before_erosion_backup',energy_per_cs_before_erosion_backup)
     # if np.all(np.isfinite(combined_samples_cov_plot_class)):
@@ -2222,6 +2307,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
     plt.ylabel("Kinetic Energy [kJ]", fontsize=15)
     plt.yscale("log")
+    plt.xscale("log")
     # grid on
     plt.grid(True)
 
@@ -2364,6 +2450,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.ylabel("log$_{10}$ Dynamic Pressure [Pa]", fontsize=15)
         # plot the thr line
         plt.axhline(y=thr, color='gray', linestyle='--', linewidth=1)
+        plt.xscale("log")
         # plt.yscale("log")
         # grid on
         plt.grid(True)
@@ -2420,6 +2507,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.colorbar(scatter, label='Tisserand parameter (T$_j$)')
     plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$
     plt.ylabel("e", fontsize=15)
+    plt.xscale("log")
     # plt.yscale("log")
     # grid on
     plt.grid(True)
@@ -2477,6 +2565,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax1.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
     ax1.set_ylabel("Perihelion [AU]", fontsize=15)
     ax1.set_yscale("log")
+    ax1.set_xscale("log")
     # add the grid
     ax1.grid(True)
 
@@ -2497,6 +2586,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax2.set_xlabel("$\\rho$ [kg/m³]", fontsize=15)
     ax2.set_ylabel("Aphelion [AU]", fontsize=15)
     ax2.set_yscale("log")
+    ax2.set_xscale("log")
     ax2.grid(True)
 
     # shared colorbar
@@ -3638,50 +3728,80 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     if idx_arr.size:
         index_ml = int(idx_arr[0])
         ml_vals = combined_samples[:, index_ml].astype(float)
+        ml_smallest = np.min(ml_vals)
+        print('smallest fragment', ml_smallest)
 
     idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
     mu_vals = np.array([])
     if idx_arr.size:
         index_mu = int(idx_arr[0])
         mu_vals = combined_samples[:, index_mu].astype(float)
+        mu_biggest = np.max(mu_vals)
+        print('biggest fragment', mu_biggest)
 
-    # combine both distributions
-    m_grains = np.concatenate((ml_vals, mu_vals))
+    # if mu_vals.size
+    # plot a black line from ml_smallest to mu_biggest
+    ax.plot(from_mass2size(np.array([ml_smallest,mu_biggest]), np.array([3000,3000])),[3000,3000],'k', linewidth=2)
 
-    if m_grains.size:
-        # remove invalid values
-        m_grains = m_grains[np.isfinite(m_grains) & (m_grains > 0)]
+    # idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
+    # s_val = np.array([])
+    # if idx_arr.size:
+    #     index_mu = int(idx_arr[0])
+    #     s_val = combined_samples[:, index_mu].astype(float)
 
-        if m_grains.size > 1:
-            # convert mass to size once
-            xvals = from_mass2size(m_grains, 3000)
+    # # combine both distributions
+    # # m_grains = np.concatenate((ml_vals, mu_vals))
+    # # take 5 values of mass between ml_vals and mu_vals and give a wheight of m**-s_val for each value of mass
 
-            # histogram in x-space
-            nbins = 200
-            counts, edges = np.histogram(xvals, bins=nbins)
+    # # pick the smallest and the biggest 
 
-            # line segments
-            x0 = edges[:-1]
-            x1 = edges[1:]
-            y0 = np.full_like(x0, 3000.0)
-            y1 = np.full_like(x1, 3000.0)
+    # valid = (
+    #     np.isfinite(ml_vals) &
+    #     np.isfinite(mu_vals) &
+    #     np.isfinite(s_val) &
+    #     (ml_vals > 0) &
+    #     (mu_vals > ml_vals) &
+    #     (s_val > 0)
+    # )
 
-            segments = np.stack(
-                [np.column_stack([x0, y0]), np.column_stack([x1, y1])],
-                axis=1
-            )
+    # ml = ml_vals[valid]
+    # mu = mu_vals[valid]
+    # s  = s_val[valid]
 
-            # color by counts
-            norm = mcolors.Normalize(vmin=0, vmax=counts.max())
-            lc = LineCollection(
-                segments,
-                cmap="Greys",
-                norm=norm,
-                linewidths=4,
-                zorder=10
-            )
-            lc.set_array(counts)
-            ax.add_collection(lc)
+    # m_mid = np.sqrt(ml * mu)
+    # # sample other points
+    # m_2 = np.sqrt(ml * m_mid)
+    # m_3 = np.sqrt(m_mid * mu)
+
+    # m_grains = np.concatenate([ml, m_2, m_mid, m_3, mu])
+    # w_grains = np.concatenate([ml**(-s), m_2**(-s), m_mid**(-s), m_3**(-s), mu**(-s)])
+    # w_grains = w_grains / w_grains.sum()  # normalize weights
+
+    # xvals = from_mass2size(m_grains, 3000)
+    # counts, edges = np.histogram(xvals, bins=200, weights=w_grains)
+
+    # # build colored line
+    # x0 = x_edges[:-1]
+    # x1 = x_edges[1:]
+    # y0 = np.full_like(x0, 3000.0)
+    # y1 = np.full_like(x1, 3000.0)
+
+    # segments = np.stack(
+    #     [np.column_stack([x0, y0]), np.column_stack([x1, y1])],
+    #     axis=1
+    # )
+
+    # norm = mcolors.Normalize(vmin=0, vmax=counts.max() if counts.max() > 0 else 1)
+
+    # lc = LineCollection(
+    #     segments,
+    #     cmap="Greys",
+    #     norm=norm,
+    #     linewidths=4,
+    #     zorder=10
+    # )
+    # lc.set_array(counts)
+    # ax.add_collection(lc)
 
     ##########
 
@@ -3776,7 +3896,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         cmap="Reds",
         norm=norm_love,
         alpha=1.0,
-        zorder=5
+        zorder=2
     )
 
     draw_vertical_strip_in_logmass(
@@ -3787,7 +3907,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         cmap="Reds",
         norm=norm_love,
         alpha=1.0,
-        zorder=5
+        zorder=2
     )
 
     proxy_red = Patch(facecolor=plt.cm.Reds(0.7), edgecolor='none',
@@ -3808,7 +3928,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         cmap="Purples",
         norm=norm_Flynn,
         alpha=0.8,
-        zorder=6
+        zorder=3
     )
 
     draw_vertical_strip_in_logmass(
@@ -3819,7 +3939,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         cmap="Purples",
         norm=norm_Flynn,
         alpha=0.8,
-        zorder=6
+        zorder=3
     )
 
     proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none',
@@ -3902,14 +4022,14 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax.scatter(
         np.log10(size2mass(dp_um, qp_gcm3)), qp_gcm3,
         color='deepskyblue', marker='v', s=50,
-        label="Stardust - Iida et al. (2010)"
+        label="Stardust - Iida et al. (2010)", zorder=6
     )
 
     # Stardust - Kearsley et al. (2008)**
     ax.scatter(
         np.log10(size2mass(impactor_diam_um, rho_gcm3)), rho_gcm3,
         color='steelblue', marker='^', s=50,
-        label="Stardust - Kearsley et al. (2008)**"
+        label="Stardust - Kearsley et al. (2008)**", zorder=6
     )
 
     # Lunar Microcraters - Nagel et al. (1980)
@@ -4057,38 +4177,40 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     #     label="Function - Divine et al. (1986)", zorder=10
     # )
 
+    # plot a black line from ml_smallest to mu_biggest
+    ax.plot([np.log10(ml_smallest),np.log10(mu_biggest)],[3000,3000],'k', linewidth=2)
 
-    if m_grains.size:
-        if m_grains.size > 1:
-            # convert mass to size once
-            xvals = np.log10(m_grains)
+    # if m_grains.size:
+    #     if m_grains.size > 1:
+    #         # convert mass to size once
+    #         xvals = np.log10(m_grains)
 
-            # histogram in x-space
-            nbins = 200
-            counts, edges = np.histogram(xvals, bins=nbins)
+    #         # histogram in x-space
+    #         nbins = 200
+    #         counts, edges = np.histogram(xvals, bins=nbins, weights=w_grains) # , density=False
 
-            # line segments
-            x0 = edges[:-1]
-            x1 = edges[1:]
-            y0 = np.full_like(x0, 3000.0)
-            y1 = np.full_like(x1, 3000.0)
+    #         # line segments
+    #         x0 = edges[:-1]
+    #         x1 = edges[1:]
+    #         y0 = np.full_like(x0, 3000.0)
+    #         y1 = np.full_like(x1, 3000.0)
 
-            segments = np.stack(
-                [np.column_stack([x0, y0]), np.column_stack([x1, y1])],
-                axis=1
-            )
+    #         segments = np.stack(
+    #             [np.column_stack([x0, y0]), np.column_stack([x1, y1])],
+    #             axis=1
+    #         )
 
-            # color by counts
-            norm = mcolors.Normalize(vmin=0, vmax=counts.max())
-            lc = LineCollection(
-                segments,
-                cmap="Greys",
-                norm=norm,
-                linewidths=4,
-                zorder=10
-            )
-            lc.set_array(counts)
-            ax.add_collection(lc)
+    #         # color by counts
+    #         norm = mcolors.Normalize(vmin=0, vmax=counts.max())
+    #         lc = LineCollection(
+    #             segments,
+    #             cmap="Greys",
+    #             norm=norm,
+    #             linewidths=4,
+    #             zorder=10
+    #         )
+    #         lc.set_array(counts)
+    #         ax.add_collection(lc)
 
     ##########
 
@@ -4381,7 +4503,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # the color values for these points
         # print("mass size:", 3**(abs(10+np.log10(mass_dynesty_JB))))
         ax.scatter(tau_dynesty_JB, rho_dynesty_JB, c=avg_speed_JB, cmap='viridis', norm=norm, edgecolors='red', s=3**abs(10+np.log10(mass_dynesty_JB)), linewidth=2, label="Meteors - This work", zorder=6) # label="Meteors - This work"
-        ax.scatter(tau_Hill2005, rho_kgm3, c=vel_kms, cmap='viridis', norm=norm, edgecolors='dodgerblue', linewidth=2, s=3**abs(10+np.log10(mass_kg)), label="Meteors - Kikwaya et al. (2009)", zorder=5)
+        ax.scatter(tau_Hill2005, rho_kgm3, c=vel_kms, cmap='viridis', marker='s',norm=norm, edgecolors='dodgerblue', linewidth=2, s=3**abs(10+np.log10(mass_kg)), label="Meteors - Kikwaya et al. (2009)", zorder=5)
 
         # plt.grid(True, linestyle='--', alpha=0.5)
         ax.set_xlabel("$\\tau$ [%]", fontsize=15)
@@ -4613,13 +4735,133 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # if 'sigma' in var or 'erosion_coeff' in var:
         #     combined_samples_copy_plot[:, j] = combined_samples_copy_plot[:, j] * 1e6
 
-    ### generate the samples
+
+    ##############################################################################################################################
+    ### generate the samples #####################################################################################################
+    ##############################################################################################################################
 
     # Extract from combined_results
     samples = combined_samples_copy_plot
     # samples = combined_results.samples
     weights = combined_results.importance_weights()
     w = weights / np.sum(weights)
+
+    # check how much the second mass is infuential for the total
+    # try:
+    idx_arr = np.where(np.asarray(variables) == "m_init")[0]
+    m_init_vals_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+
+    idx_arr = np.where(np.asarray(variables) == "rho")[0]
+    rho_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+
+    idx_arr = np.where(np.asarray(variables) == "erosion_rho_change")[0]
+    rho_change_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+
+    idx_arr = np.where(np.asarray(variables) == "sigma")[0]
+    sigma_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+
+    idx_arr = np.where(np.asarray(variables) == "erosion_sigma_change")[0]
+    sigma_change_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+
+    idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
+    erosion_coeff_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+
+    idx_arr = np.where(np.asarray(variables) == "erosion_coeff_change")[0]
+    erosion_coeff_change_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+
+    # percent left after 2 fragmentation mass_at_erosion_change_backup
+    mass_percent_2frag = mass_at_erosion_change_backup/(10**m_init_vals_all) * 100
+    print("Mass percent left after 2nd fragmentation (mass_at_erosion_change_backup / m_init) * 100:")
+    print(10**m_init_vals_all)
+    print(mass_at_erosion_change_backup)
+    print(mass_percent_2frag)
+
+    # create a mask for values above 100 in mass_percent_2frag
+    mask = mass_percent_2frag > 100
+    print("Number of samples with mass percent left after 2nd fragmentation above 100%:", np.sum(mask), "out of", len(mass_percent_2frag))
+    # if there are some, set them to 100
+    if np.any(mask):
+        mass_percent_2frag[mask] = 100
+
+    def plot_color_2diffMass(initial_var, change_var, mass_percent_2frag, w,
+                            label_initial_var, label_change_var, output_dir_show, shower_name):
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        print("creating distribution plot for the 2 fragmentation...")
+
+        # make sure contour and scatter use same x/y convention
+        _plot_2d_distribution(ax, change_var, initial_var, w)
+
+        ax.set_xlabel(label_initial_var, fontsize=15)
+        ax.set_ylabel(label_change_var, fontsize=15)
+
+        # keep only finite values
+        mask = (
+            np.isfinite(initial_var) &
+            np.isfinite(change_var) &
+            np.isfinite(mass_percent_2frag)
+        )
+
+        x_plot = np.asarray(change_var)[mask]
+        y_plot = np.asarray(initial_var)[mask]
+        c_plot = np.asarray(mass_percent_2frag)[mask]
+
+        # optional downsample
+        max_points = 50000
+        if len(x_plot) > max_points:
+            idx = np.random.choice(len(x_plot), max_points, replace=False)
+            x_plot = x_plot[idx]
+            y_plot = y_plot[idx]
+            c_plot = c_plot[idx]
+
+        # use log scale only if all kept color values are positive and non-constant
+        positive_mask = c_plot > 0
+
+
+        x_log = x_plot[positive_mask]
+        y_log = y_plot[positive_mask]
+        c_log = c_plot[positive_mask]
+
+
+        # order them base on the highest c_log to the lowest
+        c_log_order = np.argsort(c_log)
+        x_log = x_log[c_log_order]
+        y_log = y_log[c_log_order]
+        c_log = c_log[c_log_order]
+
+        # # make the log of the color scale more visible by using a power norm with gamma < 1
+        # c_log = np.log10(c_log)
+
+        vmin = np.nanmin(c_log)
+        vmax = np.nanmax(c_log)
+
+        # if vmax > vmin:
+        sc = ax.scatter(
+            x_log, y_log,
+            c=c_log,
+            s=4,
+            cmap='plasma_r',
+            marker='.',
+            linewidths=0,
+            edgecolors='none',
+            rasterized=True,
+            norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax)#,mcolors.LogNorm(vmin=vmin, vmax=vmax) # Normalize(vmin=vmin,vmax=vmax)#
+        )
+
+        cbar = plt.colorbar(sc, ax=ax)
+        cbar.set_label('Mass percent left after 2nd fragmentation [%]', fontsize=14)
+
+        ax.grid(True, linestyle='--', alpha=0.5)
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_masspercent2frag.png"),
+                    bbox_inches='tight', dpi=300)
+        plt.close()
+    
+    plot_color_2diffMass(rho_all, rho_change_all, mass_percent_2frag, w, r'$\rho$ [kg/m$^3$]', r"$\rho_{2}$ [kg/m$^3$]", output_dir_show, shower_name+'_rho')
+    plot_color_2diffMass(sigma_all, sigma_change_all, mass_percent_2frag, w, r'$\sigma$ [Pa]', r"$\sigma_{2}$ [Pa]", output_dir_show, shower_name+'_sigma')
+    plot_color_2diffMass(erosion_coeff_all, erosion_coeff_change_all, mass_percent_2frag, w, r'$\Lambda$ [kg/m$^3$ s]', r"$\Lambda_{2}$ [kg/m$^3$ s]", output_dir_show, shower_name+'_erosion_coeff')
+
+
+    ###
 
     rho_corrected_lo, rho_corrected_median, rho_corrected_hi = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=w)
     # do the quantile for the 1 sigma range
@@ -4970,6 +5212,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     ax_dist.fill_between(bin_centers, hist, color='dimgray', alpha=0.6)
 
+    rho_corrected_lo_kinetic, rho_corrected_median_kinetic, rho_corrected_hi_kinetic = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=weights_kinetic)
+
     # Percentile lines
     ax_dist.axvline(rho_corrected_median_kinetic, color='dimgray', linestyle='--', linewidth=1.5)
     ax_dist.axvline(rho_corrected_lo_kinetic, color='dimgray', linestyle='--', linewidth=1.5)
@@ -5100,83 +5344,83 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         output_dir_rho = os.path.join(output_dir_show, "rho_plots")
         os.makedirs(output_dir_rho, exist_ok=True)
 
-        ### CORNER PLOT ###
-        # takes forever, so run it last
-        combined_samples_cov_plot_class = combined_samples.copy()
-        # labels_plot_copy_plot = labels.copy()
-        for j, var in enumerate(variables):
-            if np.all(np.isnan(combined_samples_cov_plot_class[:, j])):
-                continue
-            if var in ['v_init', 'erosion_height_start', 'erosion_height_change']:
-                combined_samples_cov_plot_class[:, j] = combined_samples_cov_plot_class[:, j] / 1000.0
-            if var in ['sigma', 'erosion_sigma_change','erosion_coeff', 'erosion_coeff_change']:
-                combined_samples_cov_plot_class[:, j] = combined_samples_cov_plot_class[:, j] * 1e6
+        # ### CORNER PLOT ###
+        # # takes forever, so run it last
+        # combined_samples_cov_plot_class = combined_samples.copy()
+        # # labels_plot_copy_plot = labels.copy()
+        # for j, var in enumerate(variables):
+        #     if np.all(np.isnan(combined_samples_cov_plot_class[:, j])):
+        #         continue
+        #     if var in ['v_init', 'erosion_height_start', 'erosion_height_change']:
+        #         combined_samples_cov_plot_class[:, j] = combined_samples_cov_plot_class[:, j] / 1000.0
+        #     if var in ['sigma', 'erosion_sigma_change','erosion_coeff', 'erosion_coeff_change']:
+        #         combined_samples_cov_plot_class[:, j] = combined_samples_cov_plot_class[:, j] * 1e6
 
-        variables_corr = variables.copy()
+        # variables_corr = variables.copy()
 
-        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='erosion_rho_change',
-            var_to_correct='rho',
-            values_to_add=rho_corrected
-        )
-        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='erosion_coeff_change',
-            var_to_correct='erosion_coeff',
-            values_to_add=eta_corrected * 1e6
-        )
-        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='erosion_sigma_change',
-            var_to_correct='sigma',
-            values_to_add=sigma_corrected * 1e6
-        )
-        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='noise_lag',
-            var_to_correct='',
-            values_to_add=None
-        )
-        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='noise_lum',
-            var_to_correct='',
-            values_to_add=None
-        )
-        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='erosion_mass_index',
-            var_to_correct='',
-            values_to_add=None
-        )
-        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='erosion_mass_min',
-            var_to_correct='',
-            values_to_add=None
-        )
-        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='erosion_mass_max',
-            var_to_correct='',
-            values_to_add=None
-        )
+        # combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='erosion_rho_change',
+        #     var_to_correct='rho',
+        #     values_to_add=rho_corrected
+        # )
+        # combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='erosion_coeff_change',
+        #     var_to_correct='erosion_coeff',
+        #     values_to_add=eta_corrected * 1e6
+        # )
+        # combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='erosion_sigma_change',
+        #     var_to_correct='sigma',
+        #     values_to_add=sigma_corrected * 1e6
+        # )
+        # combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='noise_lag',
+        #     var_to_correct='',
+        #     values_to_add=None
+        # )
+        # combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='noise_lum',
+        #     var_to_correct='',
+        #     values_to_add=None
+        # )
+        # combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='erosion_mass_index',
+        #     var_to_correct='',
+        #     values_to_add=None
+        # )
+        # combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='erosion_mass_min',
+        #     var_to_correct='',
+        #     values_to_add=None
+        # )
+        # combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='erosion_mass_max',
+        #     var_to_correct='',
+        #     values_to_add=None
+        # )
 
-        # check if all the values in energy_per_cs_before_erosion_backup are not None
-        if np.all(np.isfinite(combined_samples_cov_plot_class)):
-            # add them to the distribution energy_per_cs_before_erosion_backup
-            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='',
-            var_to_correct='energy_per_cs_before_erosion_backup',
-            values_to_add=energy_per_cs_before_erosion_backup)
-            # add them to the distribution energy_per_mass_before_erosion_backup
-            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-            combined_samples_cov_plot, variables_corr,
-            var_to_delete='',
-            var_to_correct='energy_per_mass_before_erosion_backup',
-            values_to_add=energy_per_mass_before_erosion_backup)
+        # # check if all the values in energy_per_cs_before_erosion_backup are not None
+        # if np.all(np.isfinite(combined_samples_cov_plot_class)):
+        #     # add them to the distribution energy_per_cs_before_erosion_backup
+        #     combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='',
+        #     var_to_correct='energy_per_cs_before_erosion_backup',
+        #     values_to_add=energy_per_cs_before_erosion_backup)
+        #     # add them to the distribution energy_per_mass_before_erosion_backup
+        #     combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #     combined_samples_cov_plot, variables_corr,
+        #     var_to_delete='',
+        #     var_to_correct='energy_per_mass_before_erosion_backup',
+        #     values_to_add=energy_per_mass_before_erosion_backup)
 
         ### JD vs rho plot ###
 
@@ -5198,7 +5442,6 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             return axes
 
         # =========================
-        # Robust plot_by_cuts_and_vars
         # Supports BOTH:
         #  - base_mask: optional per-variable mask in FULL sample space (length Nfull)
         #  - parent_mask: optional mapping from FULL -> REDUCED sample space
@@ -6194,13 +6437,20 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         rho_vals = np.asarray(rho_samp, float)  # full length Nfull
         rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
 
+        # check if rho_cut are all False so all are above 4000
+        if not np.any(rho_cut):
+            print("Warning: rho_cut has no True values, all samples have rho >= 4000. Check your data and cut logic.")
+            rho_cut = np.isfinite(rho_vals)  # just filter finite values
+
         # --------------------------
         # Pattern 1 (recommended)
         # --------------------------
         # Keep full-length arrays and just apply base_mask in the plotter
 
         eros_vals_full  = np.asarray(np.log10(eta_corrected*1e6), float)      # FULL
+        print("Eros vals full length max:", np.nanmax(eros_vals_full), "min:", np.nanmin(eros_vals_full))
         sigma_vals_full = np.asarray(sigma_corrected*1e6, float)              # FULL
+        print("Sigma vals full length max:", np.nanmax(sigma_vals_full), "min:", np.nanmin(sigma_vals_full))
         idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
         index_s = int(idx_arr[0])
         idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
@@ -6770,7 +7020,82 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         )
         print("Saved:", out_path)
         plt.close(fig)
+        
+        ### Eccentricity change plots ###
 
+        print("Creating eccentricity change plots for rho...")
+        # same for eccentricity e_val cuts at above 0.8, between 0.6 and 0.8, and between 0.6 and 0.4, and below 0.4
+        e_val = np.asarray(e_val, float)
+        if e_val.shape[0] != event_names_like.shape[0]:
+            raise RuntimeError("Length mismatch: event_names vs e_val.")   
+        # dict: base_name -> e_val
+        e_val_by_name = {str(n): float(v) for n, v in zip(event_names_like, e_val)}
+        # Map each sample's base_name -> e_val (NaN if missing)
+        e_val_samples = np.array([e_val_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+        # ---------- Class masks at SAMPLE level ----------
+        finite = np.isfinite(rho_samp) & np.isfinite(e_val_samples)
+        e_high = finite & (e_val_samples >= 0.8)
+        e_medium_high = finite & (e_val_samples >= 0.6) & (e_val_samples < 0.8)
+        e_medium_low = finite & (e_val_samples >= 0.4) & (e_val_samples < 0.6)
+        e_low = finite & (e_val_samples < 0.4)
+        # find the number of eccentricity
+        num_e_high = e_val[e_val >= 0.8].shape[0]
+        num_e_medium_high = e_val[(e_val >= 0.6) & (e_val < 0.8)].shape[0]
+        num_e_medium_low = e_val[(e_val >= 0.4) & (e_val < 0.6)].shape[0]
+        num_e_low = e_val[e_val < 0.4].shape[0]
+        # ---------- Figure with three stacked panels ----------
+        fig, axes = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
+        _panel_like_top(axes[0], rho_samp[e_high], w_all[e_high], "Tot N." + str(num_e_high) + " above 0.8", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[e_medium_high], w_all[e_medium_high], "Tot N." + str(num_e_medium_high) + " 0.6 - 0.8", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[2], rho_samp[e_medium_low], w_all[e_medium_low], "Tot N." + str(num_e_medium_low) + " 0.4 - 0.6", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[3], rho_samp[e_low], w_all[e_low], "Tot N." + str(num_e_low) + " below 0.4", lo_all, hi_all, nbins, xlim)
+        # Bottom labels/ticks to match your style
+        axes[3].tick_params(axis='x', labelbottom=True)
+        axes[3].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[3].set_xticks(np.arange(0, 9000, 2000))
+        for ax in axes:
+            ax.tick_params(labelsize=20)
+        # Save
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_eccentricity_threepanels_weighted.png")
+        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        plt.close()
+        print("Saved:", out_path)
+
+        groups = {
+            "above 0.8": e_high,
+            "0.6 - 0.8": e_medium_high,
+            "0.4 - 0.6": e_medium_low,
+            "below 0.4": e_low,
+        }
+        tex, results = weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,                 # bump up for smoother p-values
+            random_seed=123,
+            caption=r"Pairwise tests on $\rho$ by eccentricity class (weighted posteriors).",
+            label="tab:rho_eccentricity_weighted_tests",
+            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_eccentricity.tex"),
+        )
+
+        cuts = [
+            (e_high, f"Tot N.{num_e_high} above 0.8"),
+            (e_medium_high, f"Tot N.{num_e_medium_high} 0.6 - 0.8"),
+            (e_medium_low, f"Tot N.{num_e_medium_low} 0.4 - 0.6"),
+            (e_low, f"Tot N.{num_e_low} below 0.4"),
+        ]   
+        # --- Call the plotter ---
+        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_eccentricity_grid.png")
+        fig, axes = plot_by_cuts_and_vars(
+            vars_list=vars_to_plot,
+            cuts_list=cuts,
+            weights_all=w_all,
+            nbins=int(round(10.0 / 0.02)),
+            smooth=0.02,
+            out_path=out_path
+        )
+        print("Saved:", out_path)
+        plt.close(fig)
         ### Apex and Antihelion ###
 
         if apex_mask is not None:
@@ -7168,28 +7493,63 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         else:
             shower_name_short = ""
 
-        if shower_name_short != "":
-            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-                combined_samples_cov_plot, variables_corr,
-                var_to_delete='erosion_rho_change',
-                var_to_correct='rho',
-                values_to_add=rho_corrected
-            )
-            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-                combined_samples_cov_plot, variables_corr,
-                var_to_delete='erosion_coeff_change',
-                var_to_correct='erosion_coeff',
-                values_to_add=eta_corrected * 1e6
-            )
-            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-                combined_samples_cov_plot, variables_corr,
-                var_to_delete='erosion_sigma_change',
-                var_to_correct='sigma',
-                values_to_add=sigma_corrected * 1e6
-            )
+        # if shower_name_short != "":
+        #     combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #         combined_samples_cov_plot, variables_corr,
+        #         var_to_delete='erosion_rho_change',
+        #         var_to_correct='rho',
+        #         values_to_add=rho_corrected
+        #     )
+        #     combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #         combined_samples_cov_plot, variables_corr,
+        #         var_to_delete='erosion_coeff_change',
+        #         var_to_correct='erosion_coeff',
+        #         values_to_add=eta_corrected * 1e6
+        #     )
+        #     combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+        #         combined_samples_cov_plot, variables_corr,
+        #         var_to_delete='erosion_sigma_change',
+        #         var_to_correct='sigma',
+        #         values_to_add=sigma_corrected * 1e6
+        #     )
 
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='noise_lag',
+            var_to_correct='',
+            values_to_add=None
+        )
+        combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+            combined_samples_cov_plot, variables_corr,
+            var_to_delete='noise_lum',
+            var_to_correct='',
+            values_to_add=None
+        )
 
-        correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, shower_name, rho_corrected, eta_corrected, sigma_corrected, output_dir_show, shower_name_short)
+        try:
+            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+                combined_samples_cov_plot, variables_corr,
+                var_to_delete='',
+                var_to_correct='energy_per_cs_before_erosion_backup',
+                values_to_add=energy_per_cs_before_erosion_backup
+            )
+            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
+                combined_samples_cov_plot, variables_corr,
+                var_to_delete='',
+                var_to_correct='energy_per_mass_before_erosion_backup',
+                values_to_add=energy_per_mass_before_erosion_backup
+            )
+        except:
+            print("energy_per_cs_before_erosion_backup or energy_per_mass_before_erosion_backup not found, skipping adding them to the correlation plot.")
+
+        # correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, shower_name_short)
+        correlation_plots_all(
+        combined_samples_cov_plot,
+        variables_corr,
+        combined_weights,
+        output_dir_show,
+        shower_name_short=shower_name_short
+        )
 
 
 
@@ -7203,7 +7563,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\test", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -7246,5 +7606,5 @@ if __name__ == "__main__":
      erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, 
      dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
     
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, file_extra_param_dict, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup,
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class = False) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup,
+                       radiance_plot_flag=False, plot_correl_flag=True, plot_Kikwaya=False, plot_class = False) # cml_args.radiance_plot cml_args.correl_plot

@@ -4746,6 +4746,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     weights = combined_results.importance_weights()
     w = weights / np.sum(weights)
 
+    samples_eq = dynesty.utils.resample_equal(samples, w)
+
     # check how much the second mass is infuential for the total
     # try:
     idx_arr = np.where(np.asarray(variables) == "m_init")[0]

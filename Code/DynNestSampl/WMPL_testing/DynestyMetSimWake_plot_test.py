@@ -782,15 +782,15 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
     if not wake_containers:
         raise RuntimeError("No wake containers loaded (all wid files rejected or unreadable).")
 
+    # create the plot directory
+    os.makedirs(plot_dir, exist_ok=True)
+
     out_json = wake_containers_to_json(
         wake_containers,
         os.path.join(plot_dir, f"{event_name}_wakes.json"),
         metadata={"event": event_name}
     )
     print("Saved:", out_json)
-
-    # create the plot directory
-    os.makedirs(plot_dir, exist_ok=True)
 
     per_alt, overall_noise = compute_wake_noise_by_altitude(
         wake_containers,
@@ -831,7 +831,7 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
             const.dens_co = np.array(const.dens_co)
             const.wake_psf = [5] # PSF width in meters
 
-            const.wake_heights = [102000, 101000, 100000]
+            const.wake_heights = None # [102000, 101000, 100000]
 
             # Run the simulation
             frag_main, results_list, wake_results = runSimulation(const, compute_wake=True)
@@ -855,7 +855,6 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
     #     metadata={"event": event_name},
     #     include_fragments=True
     # )
-
 
     # If sr provided, reuse WMPL plotWakeOverview directly
     if sr is not None:
@@ -888,8 +887,8 @@ def make_wake_overview_png(input_dir, plot_dir=None, event_name=None, sr=None,
 # ============================================================
 
 if __name__ == "__main__":
-    input_dir = r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test\20191023_091225_combined"
-    output_dir = r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\test_plots"
+    input_dir = r"C:\Users\maxiv\Desktop\wake_test_for_now"
+    output_dir = r"C:\Users\maxiv\Desktop\wake_test_plots"
     # extract the name of the event from the folder name
     name = os.path.basename(os.path.normpath(input_dir))
     out_png = make_wake_overview_png(

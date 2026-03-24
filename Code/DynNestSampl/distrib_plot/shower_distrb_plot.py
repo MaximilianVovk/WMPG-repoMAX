@@ -91,13 +91,16 @@ variable_map = {
     'grain_mass_min': r"$m_{l}$ [kg]",
     'grain_mass_max': r"$m_{u}$ [kg]",
     'mass_index': r"$s$",
-    'energy_per_cs_before_erosion_backup': r"$E_S$ [MJ]",
+    'k_c': r"$k_c$ [km]",
+    'mass_left_first_percent': r"$m_{left,1}$ [%]",
+    'mass_left_second_percent': r"$m_{left,2}$ [%]",
+    'energy_per_cs_before_erosion_backup': r"$E_S$ [MJ/m$^2$]",
     'energy_per_mass_before_erosion_backup': r"$E_V$ [MJ/kg]",
     'erosion_beg_vel_backup': r"$v_{e1}$ [m/s]",
     'erosion_beg_mass_backup': r"$m_{e1}$ [kg]",
-    'erosion_beg_dyn_press_backup': r"$P_{e1}$ [Pa]",
+    'erosion_beg_dyn_press_backup': r"$P_{e1}$ [kPa]",
     'mass_at_erosion_change_backup': r"$m_{e2}$ [kg]",
-    'dyn_press_at_erosion_change_backup': r"$P_{e2}$ [Pa]",
+    'dyn_press_at_erosion_change_backup': r"$P_{e2}$ [kPa]",
     'main_mass_exhaustion_ht_backup': r"$h_{end}$ [km]",
     'main_bottom_ht_backup': r"$h_{bot}$ [km]",
     'noise_lag': r"$\sigma_{lag}$ [m]",
@@ -126,6 +129,7 @@ variable_map_plot = {
     'disruption_mass_max_ratio': r"$m_{max}/m_{disr}$",
     'disruption_mass_grain_ratio': r"$m_{gr}/m_{disr}$",
     'height': r"$h$ [m]",
+    'k_c': r"$k_c$ [km]",
     'mass_percent': r"$m_{percent}$ [\%]",
     'number': r"$N$",
     'sigma': r"$\sigma$ [kg/J]",
@@ -133,13 +137,15 @@ variable_map_plot = {
     'grain_mass_min': r"$m_{l}$ [kg]",
     'grain_mass_max': r"$m_{u}$ [kg]",
     'mass_index': r"$s$",
-    'energy_per_cs_before_erosion_backup': r"$E_S$ [MJ]",
+    'mass_left_first_percent': r"$m_{left,1}$ [%]",
+    'mass_left_second_percent': r"$m_{left,2}$ [%]",
+    'energy_per_cs_before_erosion_backup': r"$E_S$ [MJ/m$^2$]",
     'energy_per_mass_before_erosion_backup': r"$E_V$ [MJ/kg]",
     'erosion_beg_vel_backup': r"$v_{e1}$ [m/s]",
     'erosion_beg_mass_backup': r"$m_{e1}$ [kg]",
-    'erosion_beg_dyn_press_backup': r"$P_{e1}$ [Pa]",
+    'erosion_beg_dyn_press_backup': r"$P_{e1}$ [kPa]",
     'mass_at_erosion_change_backup': r"$m_{e2}$ [kg]",
-    'dyn_press_at_erosion_change_backup': r"$P_{e2}$ [Pa]",
+    'dyn_press_at_erosion_change_backup': r"$P_{e2}$ [kPa]",
     'main_mass_exhaustion_ht_backup': r"$h_{end}$ [km]",
     'main_bottom_ht_backup': r"$h_{bot}$ [km]",
     'noise_lag': r"$\sigma_{lag}$ [m]",
@@ -174,6 +180,9 @@ fmt_kind = {
     'grain_mass_min': "sci",
     'grain_mass_max': "sci",
     'mass_index': "fixed2",
+    'k_c': "fixed2",
+    'mass_left_first_percent': "fixed2",
+    'mass_left_second_percent': "fixed2",
     'energy_per_cs_before_erosion_backup': "sci",
     'energy_per_mass_before_erosion_backup': "sci",
     'erosion_beg_vel_backup': "fixed2",
@@ -597,9 +606,10 @@ def correlation_plots_all(
     combined_weights,
     output_dir_show,
     shower_name_short='',
-    name='',
-    n_jobs=None
-):
+    name_covar_fold='',
+    needed_1vs1cov = False,
+    n_jobs=None):
+
     ndim = len(variables_corr)
     labels_plot_copy_plot = [variable_map[variable] for variable in variables_corr]
 
@@ -617,7 +627,7 @@ def correlation_plots_all(
     print('Calculating correlation...')
     combined_results_units = CombinedResults(combined_samples_cov_plot, combined_weights)
 
-    cov_dir = os.path.join(output_dir_show, "Covariance" + name)
+    cov_dir = os.path.join(output_dir_show, "Covariance" + name_covar_fold)
     os.makedirs(cov_dir, exist_ok=True)
 
     labels_clean = _sanitize_labels(labels_plot_copy_plot, ndim)
@@ -776,7 +786,7 @@ def correlation_plots_all(
             if s not in label_to_idx:
                 label_to_idx[s] = i
 
-        cov_dir = os.path.join(output_dir_show, "Covariance" + name)
+        cov_dir = os.path.join(output_dir_show, "Covariance" + shower_name_plot)
         os.makedirs(cov_dir, exist_ok=True)
 
         if hasattr(top_pairs, "iterrows"):
@@ -828,20 +838,21 @@ def correlation_plots_all(
         cov_dir=cov_dir
     )
 
-    print("Plotting top covariances 1vs1...")
-    top50_df = pairs_df.sort_values("abs_corr", ascending=False).head(50)
+    if needed_1vs1cov == True:
+        print("Plotting top covariances 1vs1...")
+        top50_df = pairs_df.sort_values("abs_corr", ascending=False).head(50)
 
-    plot_top_covariances_parallel(
-        results=combined_results_units,
-        top_pairs=top50_df,
-        shower_name_plot=shower_name_short,
-        labels=labels_clean,
-        output_dir_show=output_dir_show,
-        span_frac=0.98,
-        pad_frac=0.05,
-        smooth_frac=0.02,
-        n_jobs=n_jobs
-    )
+        plot_top_covariances_parallel(
+            results=combined_results_units,
+            top_pairs=top50_df,
+            shower_name_plot=shower_name_short,
+            labels=labels_clean,
+            output_dir_show=output_dir_show,
+            span_frac=0.98,
+            pad_frac=0.05,
+            smooth_frac=0.02,
+            n_jobs=n_jobs
+        )
 
     return df_corr, pairs_df, top10, bottom10
 
@@ -1549,7 +1560,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
     if os.path.exists(input_dirfile + os.sep + "shower_distrb_plot_data.pkl"):
         print("Found shower_distrb_plot_data.pkl, loading data...")
         # load the pickle data
-        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup)=load_shower_distrb_plot_data(input_dirfile + os.sep + "shower_distrb_plot_data.pkl")
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all)=load_shower_distrb_plot_data(input_dirfile + os.sep + "shower_distrb_plot_data.pkl")
 
     else:
 
@@ -1625,6 +1636,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
         # corrected rho
         rho_corrected = []
         eta_corrected = []
+        kc_all = []
         sigma_corrected = []
         kinetic_energy_all = []
         tau_corrected = []
@@ -1736,6 +1748,12 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             max_lum_height = obs_data.height_lum[np.argmax(obs_data.luminosity)]
             F_par = (beg_height - max_lum_height) / (beg_height - end_height)
             kc_par = beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables_sing.index('v_init')]))/0.0612
+            kc_lo = abs(kc_par - (beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Low95'].values[variables_sing.index('v_init')]))/0.0612))
+            kc_hi = abs((beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['High95'].values[variables_sing.index('v_init')]))/0.0612) - kc_par)
+            print(f"kc_par: {kc_par:.3f} km (+{kc_hi:.3f}/-{kc_lo:.3f} km)")
+            kc_all.append(beg_height/1000 + (2.86 - 2*np.log10(samples[:, variables_sing.index('v_init')].astype(float)/1000))/0.0612)
+            kc_par_eros_height = summary_df_meteor['Median'].values[variables_sing.index('erosion_height_start')] + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables_sing.index('v_init')]))/0.0612
+            # print(f"F_par: {F_par}, kc_par: {kc_par}, kc_par_eros_height: {kc_par_eros_height}, erosion_height_start: {summary_df_meteor['Median'].values[variables_sing.index('erosion_height_start')]} km")
             time_tot = obs_data.time_lum[-1] - obs_data.time_lum[0]
             avg_vel = np.mean(obs_data.velocities)
             init_mag = obs_data.absolute_magnitudes[0]
@@ -1774,12 +1792,33 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             if obs_data.v_kill < 0:
                 obs_data.v_kill = 1
 
-            best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
+            # best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
+
+            const_nominal = build_const(guess, obs_data, variables_sing, fixed_values)
+
+            eeucs_curr, eeum_curr = energyReceivedBeforeErosion(const_nominal)
+            tot_energy = eeum_curr*const_nominal.m_init
+
+            # Run the simulation
+            frag_main, results_list, wake_results = runSimulation(const_nominal, compute_wake=False)
+            best_guess_obj_plot = SimulationResults(const_nominal, frag_main, results_list, wake_results)
 
             heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
             mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+            # print(f"Initial mass: {mass_best[0]} kg final mass: {mass_best[-1]} kg")
             erosion_beg_dyn_press = best_guess_obj_plot.const.erosion_beg_dyn_press
             print(f"Dynamic pressure at erosion onset: {erosion_beg_dyn_press} Pa")
+            mass_at_erosion_change = best_guess_obj_plot.const.mass_at_erosion_change
+            erosion_height_change = best_guess_obj_plot.const.erosion_height_change
+            # if mass_before is None use the old method
+            if mass_at_erosion_change is None:
+                mass_at_erosion_change = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+            # percentage of mass left at the erosion change
+            mass_left_second_erosion_perc = mass_at_erosion_change / mass_best[0] * 100
+            mass_left_first_erosion_perc = best_guess_obj_plot.const.erosion_beg_mass / mass_best[0] * 100
+            final_mass_perc = mass_best[-1] / mass_best[0] * 100
+            print(f"Eros. mass left percentage he: {mass_left_first_erosion_perc:.2f}% he2: {mass_left_second_erosion_perc:.2f}% Final: {final_mass_perc:.2f}%")
+
 
             # check if a file that ends in _posterior_backup.pkl.gz is in the folder
             output_dir = os.path.dirname(dynesty_file)
@@ -1791,121 +1830,174 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                     with gzip.open(os.path.join(output_dir, backup_file), "rb") as f:
                         backup_small = pickle.load(f)
                     break
+            
+            if backup_file is not None:
+                # change the weight to the equivalet weights
+                w_eq = np.ones(samples.shape[0], dtype=float)
+                w_eq /= w_eq.sum()
 
-            if flag_total_rho:
-                
-                # find erosion change height
-                if 'erosion_height_change' in variables_sing:
-                    erosion_height_change = guess[variables_sing.index('erosion_height_change')]
-                if 'm_init' in variables_sing:
-                    m_init = guess[variables_sing.index('m_init')]
+                x_valid_rho = []
+                x_valid_eta = []
+                x_valid_sigma = []
 
-                old_mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-                mass_before = best_guess_obj_plot.const.mass_at_erosion_change
-                print(f"Mass before erosion change: {mass_before} kg, old mass before: {old_mass_before} kg")
-                # check if mass_before is None if so use old_mass_before
-                if mass_before is None:
-                    print("Using old mass before erosion change, the new one is none!")
-                    mass_before = old_mass_before
+                # make it as big as the number of samples in samples_aligned with as many rows and columns as the variables in variables_sing and fill it with np.nan
+                samples_new_equal = np.full(shape=(samples_aligned.shape[0], len(variables_sing)), fill_value=np.nan)
+                const_backups = backup_small['dynesty']['const_backups']
+                for jj, const in enumerate(const_backups):
 
-                if backup_file is not None:
-                    x_valid_rho = backup_small['dynesty']['rho_array']
-                    rho, rho_lo, rho_hi = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
+                    x_valid_rho.append(const["rho_mass_weighted"])
+                    x_valid_eta.append(const["erosion_coeff_mass_weighted"])
+                    x_valid_sigma.append(const["sigma_mass_weighted"])
 
-                else:
+                    # energy_per_cs_low95, energy_per_cs_med, energy_per_cs_high95 = _quantile(const["energy_per_cs_before_erosion"], [0.025, 0.5, 0.975], weights=weights_aligned)
+                    energy_per_cs_before_erosion_backup.append(const["energy_per_cs_before_erosion"])
+                    # print("energy_per_cs_before_erosion_backup", energy_per_cs_before_erosion_backup)
+                    # energy_per_mass_low95, energy_per_mass_med, energy_per_mass_high95 = _quantile(const["energy_per_mass_before_erosion"], [0.025, 0.5, 0.975], weights=weights_aligned)
+                    energy_per_mass_before_erosion_backup.append(const["energy_per_mass_before_erosion"])
+                    # print("energy_per_mass_before_erosion_backup", energy_per_mass_before_erosion_backup)
+                    erosion_beg_vel_backup.append(const["erosion_beg_vel"])
+                    # print("erosion_beg_vel_backup", erosion_beg_vel_backup)
+                    erosion_beg_mass_backup.append(const["erosion_beg_mass"])
+                    # print("erosion_beg_mass_backup", erosion_beg_mass_backup)
+                    erosion_beg_dyn_press_backup.append(const["erosion_beg_dyn_press"])
+                    # print("erosion_beg_dyn_press_backup", erosion_beg_dyn_press_backup)
+                    mass_at_erosion_change_backup.append(const["mass_at_erosion_change"])
+                    # print("mass_at_erosion_change_backup", mass_at_erosion_change_backup)
+                    dyn_press_at_erosion_change_backup.append(const["dyn_press_at_erosion_change"])
+                    # print("dyn_press_at_erosion_change_backup", dyn_press_at_erosion_change_backup)
+                    main_mass_exhaustion_ht_backup.append(const["main_mass_exhaustion_ht"])
+                    # print("main_mass_exhaustion_ht_backup", main_mass_exhaustion_ht_backup)
+                    main_bottom_ht_backup.append(const["main_bottom_ht"])
+                    # print("main_bottom_ht_backup", main_bottom_ht_backup, kc_all)
 
-                    x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
+                    # extract all the variables in variables_sing and change the values in samples_aligned
+                    flag_toreweight = True
+                    num_var_found = 0
+                    for i, variable_re_do in enumerate(variables_sing):
+                        if variable_re_do in const:
+                            num_var_found += 1
+                            # add the variable to the samples_new_equal list
+                            samples_new_equal[jj, i] = const[variable_re_do]
+
+                        # # double check if they are the same size as samples_aligned[:, i]
+                        # if len(const[variable_re_do]) != samples_aligned[:, i].shape[0]:
+                        #     print(f"Warning: variable {variable_re_do} in const has a different size than samples_aligned[:, {i}]")
+                        #     continue
+                        # samples_aligned[:, i] = const[variable_re_do]
+                    if num_var_found == 0 or num_var_found != len(variables_sing):
+                        flag_toreweight = False
+                            
+                    
+                    # w_eq = np.ones(samples_eq.shape[0], dtype=float)
+                    # w_eq /= w_eq.sum()
+                x_valid_rho = np.array(x_valid_rho)
+                x_valid_eta = np.array(x_valid_eta)
+                x_valid_sigma = np.array(x_valid_sigma)
+
+                rho_corrected.append(x_valid_rho)
+                rho_lo, rho, rho_hi = _quantile(x_valid_rho, [0.025, 0.5, 0.975], weights=w_eq)
                 rho_lo = (rho - rho_lo) #/1.96
                 rho_hi = (rho_hi - rho) #/1.96
-                rho_corrected.append(x_valid_rho)
-                # try:
-                #     if backup_file is not None:
-                #         mass_at_erosion_change_now = []
-                #         const_backups = backup_small['dynesty']['const_backups']
-                #         for const in const_backups:
-                #             if const is not None:
-                #                 mass_at_erosion_change_now.append(const["mass_at_erosion_change"])
-                #         # for mass_er_ch in mass_at_erosion_change_now:
-                #         #     if mass_er_ch is None:
-                #         #         idx = np.nanargmin(np.abs(h_raw - erosion_height_change))
-                #         #         mass_at_erosion_change = mass[idx]
-                #         # print(f"Mass at erosion change from backup: {mass_at_erosion_change_now}")
-                #         # # print the number of values in mass_at_erosion_change_now
-                #         # mass_at_erosion_change_now = np.array(mass_at_erosion_change_now)
-                #         # print(f"Number of values in mass_at_erosion_change_now: {len(mass_at_erosion_change_now)}")
-                #         # # number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float)
-                #         # print(f"Number of values in samples[:, variables_sing.index('erosion_coeff')].astype(float): {len(samples[:, variables_sing.index('erosion_coeff')].astype(float))}")
-
-                #         x_valid_eta = samples[:, variables_sing.index('erosion_coeff')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_coeff_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
-                #         eta_lo, eta, eta_hi = _quantile(x_valid_eta, [0.025, 0.5, 0.975], weights=w)
-                #     else:
-                #         x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
-                # except:
-                x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
+                eta_corrected.append(x_valid_eta)
+                eta_lo, eta, eta_hi = _quantile(x_valid_eta, [0.025, 0.5, 0.975], weights=w_eq)
                 eta_lo = (eta - eta_lo) #/1.96
                 eta_hi = (eta_hi - eta) #/1.96
-                eta_corrected.append(x_valid_eta)
-
-                # erosion_sigma_change
-                # try:
-                #     if backup_file is not None:
-                #         x_valid_sigma = samples[:, variables_sing.index('sigma')].astype(float)*(abs(samples[:, variables_sing.index('m_init')].astype(float)-mass_at_erosion_change_now)/samples[:, variables_sing.index('m_init')].astype(float)) + samples[:, variables_sing.index('erosion_sigma_change')].astype(float)*(mass_at_erosion_change_now/samples[:, variables_sing.index('m_init')].astype(float))
-                #         sigma_lo, sigma, sigma_hi = _quantile(x_valid_sigma, [0.025, 0.5, 0.975], weights=w)
-                #     else:
-                #         x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
-                # except:
-                x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
+                sigma_corrected.append(x_valid_sigma)
+                sigma_lo, sigma, sigma_hi = _quantile(x_valid_sigma, [0.025, 0.5, 0.975], weights=w_eq)
                 sigma_lo = (sigma - sigma_lo) #/1.96
                 sigma_hi = (sigma_hi - sigma) #/1.96
-                sigma_corrected.append(x_valid_sigma)
 
-                # x = samples[:, variables_sing.index('rho')].astype(float)*(abs(m_init-mass_before) / m_init) + samples[:, variables_sing.index('erosion_rho_change')].astype(float) * (mass_before / m_init)
-                # mask = ~np.isnan(x)
-                # x_valid = x[mask]
-                # w_valid = w[mask]
-
-                # # renormalize
-                # w_valid /= np.sum(w_valid)
-
-                # # weighted quantiles
-                # rho_lo, rho, rho_hi = _quantile(x_valid, [0.025, 0.5, 0.975], weights=w_valid)
-                # rho_lo = (rho - rho_lo) #/1.96
-                # rho_hi = (rho_hi - rho) #/1.96
-                # rho_total = x_valid
-                # rho_total 
+                if flag_toreweight:
+                    weights_aligned = w_eq.copy()
+                    print("Reweighting with equal weights")
+                    # take every column that is not nan and fill the samples_aligned with those values
+                    for i in range(samples_aligned.shape[1]):
+                        if not np.isnan(samples_new_equal[:, i]).all():
+                            samples_aligned[:, i] = np.array(samples_new_equal[:, i])
 
             else:
-                rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
-                rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
-                # rho_lo = summary_df_meteor['Low95'].values[variables.index('rho')]
-                # rho_hi = summary_df_meteor['High95'].values[variables.index('rho')]
-                rho = summary_df_meteor['Median'].values[variables.index('rho')]
+                # fill with None for as may values like np.full(shape=5, fill_value=None) in samples[:, variables_sing.index('erosion_coeff')].astype(float)
+                energy_per_cs_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                energy_per_mass_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                erosion_beg_vel_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                erosion_beg_mass_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                erosion_beg_dyn_press_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                mass_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                dyn_press_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                main_mass_exhaustion_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
+                main_bottom_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
 
-                x = samples[:, variables_sing.index('rho')].astype(float)
-                mask = ~np.isnan(x)
-                x_valid_rho = x[mask] 
+                if flag_total_rho:
+                    
+                    # find erosion change height
+                    if 'erosion_height_change' in variables_sing:
+                        erosion_height_change = guess[variables_sing.index('erosion_height_change')]
+                    if 'm_init' in variables_sing:
+                        m_init = guess[variables_sing.index('m_init')]
 
-                rho_corrected.append(x_valid_rho)
+                    old_mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+                    mass_before = best_guess_obj_plot.const.mass_at_erosion_change
+                    print(f"Mass before erosion change: {mass_before} kg, old mass before: {old_mass_before} kg")
+                    # check if mass_before is None if so use old_mass_before
+                    if mass_before is None:
+                        print("Using old mass before erosion change, the new one is none!")
+                        mass_before = old_mass_before
 
-                eta_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
-                eta_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
-                eta = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+                    if backup_file is not None:
+                        x_valid_rho = backup_small['dynesty']['rho_array']
+                        rho, rho_lo, rho_hi = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
 
-                x = samples[:, variables_sing.index('erosion_coeff')].astype(float)
-                mask = ~np.isnan(x)
-                x_valid_eta = x[mask]
+                    else:
 
-                eta_corrected.append(x_valid_eta)
+                        x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
+                    rho_lo = (rho - rho_lo) #/1.96
+                    rho_hi = (rho_hi - rho) #/1.96
+                    rho_corrected.append(x_valid_rho)
+                    
+                    x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
+                    eta_lo = (eta - eta_lo) #/1.96
+                    eta_hi = (eta_hi - eta) #/1.96
+                    eta_corrected.append(x_valid_eta)
 
-                sigma_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
-                sigma_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
-                sigma = summary_df_meteor['Median'].values[variables.index('sigma')]
+                    # erosion_sigma_change
+                    x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
+                    sigma_lo = (sigma - sigma_lo) #/1.96
+                    sigma_hi = (sigma_hi - sigma) #/1.96
+                    sigma_corrected.append(x_valid_sigma)
 
-                x = samples[:, variables_sing.index('sigma')].astype(float)
-                mask = ~np.isnan(x)
-                x_valid_sigma = x[mask]
 
-                sigma_corrected.append(x_valid_sigma)
+                else:
+                    rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
+                    rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
+                    # rho_lo = summary_df_meteor['Low95'].values[variables.index('rho')]
+                    # rho_hi = summary_df_meteor['High95'].values[variables.index('rho')]
+                    rho = summary_df_meteor['Median'].values[variables.index('rho')]
+
+                    x = samples[:, variables_sing.index('rho')].astype(float)
+                    mask = ~np.isnan(x)
+                    x_valid_rho = x[mask] 
+
+                    rho_corrected.append(x_valid_rho)
+
+                    eta_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
+                    eta_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+                    eta = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+
+                    x = samples[:, variables_sing.index('erosion_coeff')].astype(float)
+                    mask = ~np.isnan(x)
+                    x_valid_eta = x[mask]
+
+                    eta_corrected.append(x_valid_eta)
+
+                    sigma_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
+                    sigma_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
+                    sigma = summary_df_meteor['Median'].values[variables.index('sigma')]
+
+                    x = samples[:, variables_sing.index('sigma')].astype(float)
+                    mask = ~np.isnan(x)
+                    x_valid_sigma = x[mask]
+
+                    sigma_corrected.append(x_valid_sigma)
 
             # rho_corrected.append(x_valid)
             # sigma_corrected.append(np.std(x_valid))
@@ -1931,6 +2023,55 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             m_init_meteor_lo = summary_df_meteor['Median'].values[variables.index('m_init')] - summary_df_meteor['Low95'].values[variables.index('m_init')]
             m_init_meteor_hi = summary_df_meteor['High95'].values[variables.index('m_init')] - summary_df_meteor['Median'].values[variables.index('m_init')]
 
+            v_init_meteor_median = summary_df_meteor['Median'].values[variables.index('v_init')]
+            v_init_meteor_lo = summary_df_meteor['Median'].values[variables.index('v_init')] - summary_df_meteor['Low95'].values[variables.index('v_init')]
+            v_init_meteor_hi = summary_df_meteor['High95'].values[variables.index('v_init')] - summary_df_meteor['Median'].values[variables.index('v_init')]
+
+            rho_meteor_begin_median = summary_df_meteor['Median'].values[variables.index('rho')]
+            rho_meteor_begin_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
+            rho_meteor_begin_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
+
+            rho_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_rho_change')]
+            rho_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_rho_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_rho_change')]
+            rho_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_rho_change')] - summary_df_meteor['Median'].values[variables.index('erosion_rho_change')]
+
+            eta_meteor_begin_median = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+            eta_meteor_begin_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
+            eta_meteor_begin_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+
+            sigma_meteor_begin_median = summary_df_meteor['Median'].values[variables.index('sigma')]
+            sigma_meteor_begin_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
+            sigma_meteor_begin_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
+
+            eta_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')]
+            eta_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff_change')]
+            eta_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff_change')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')]
+
+            sigma_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')]
+            sigma_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_sigma_change')]
+            sigma_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_sigma_change')] - summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')]
+
+            erosion_height_start_median = summary_df_meteor['Median'].values[variables.index('erosion_height_start')]
+            erosion_height_start_lo = summary_df_meteor['Median'].values[variables.index('erosion_height_start')] - summary_df_meteor['Low95'].values[variables.index('erosion_height_start')]
+            erosion_height_start_hi = summary_df_meteor['High95'].values[variables.index('erosion_height_start')] - summary_df_meteor['Median'].values[variables.index('erosion_height_start')]
+
+            erosion_height_change_median = summary_df_meteor['Median'].values[variables.index('erosion_height_change')]
+            erosion_height_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_height_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_height_change')]
+            erosion_height_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_height_change')] - summary_df_meteor['Median'].values[variables.index('erosion_height_change')]
+
+            erosion_mass_index_median = summary_df_meteor['Median'].values[variables.index('erosion_mass_index')]
+            erosion_mass_index_lo = summary_df_meteor['Median'].values[variables.index('erosion_mass_index')] - summary_df_meteor['Low95'].values[variables.index('erosion_mass_index')]
+            erosion_mass_index_hi = summary_df_meteor['High95'].values[variables.index('erosion_mass_index')] - summary_df_meteor['Median'].values[variables.index('erosion_mass_index')]
+
+            erosion_mass_min_median = summary_df_meteor['Median'].values[variables.index('erosion_mass_min')]
+            erosion_mass_min_lo = summary_df_meteor['Median'].values[variables.index('erosion_mass_min')] - summary_df_meteor['Low95'].values[variables.index('erosion_mass_min')]
+            erosion_mass_min_hi = summary_df_meteor['High95'].values[variables.index('erosion_mass_min')] - summary_df_meteor['Median'].values[variables.index('erosion_mass_min')]
+
+            erosion_mass_max_median = summary_df_meteor['Median'].values[variables.index('erosion_mass_max')]
+            erosion_mass_max_lo = summary_df_meteor['Median'].values[variables.index('erosion_mass_max')] - summary_df_meteor['Low95'].values[variables.index('erosion_mass_max')]
+            erosion_mass_max_hi = summary_df_meteor['High95'].values[variables.index('erosion_mass_max')] - summary_df_meteor['Median'].values[variables.index('erosion_mass_max')]
+
+            v_init_meteor_median = summary_df_meteor['Median'].values[variables.index('v_init')]
             eta_meteor_begin = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
             sigma_meteor_begin = summary_df_meteor['Median'].values[variables.index('sigma')]
             v_init_meteor_median = summary_df_meteor['Median'].values[variables.index('v_init')]
@@ -1958,46 +2099,6 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             # print(f"sigma: {sigma} kg/m^3, 95% CI = [{sigma_lo}, {sigma_hi}]")
 
 
-            if backup_file is not None:
-                const_backups = backup_small['dynesty']['const_backups']
-                for const in const_backups:
-                    energy_per_cs_before_erosion_backup.append(const["energy_per_cs_before_erosion"]) # / 1e6   convert to MJ/m^2)
-                    # print("energy_per_cs_before_erosion_backup", energy_per_cs_before_erosion_backup)
-                    energy_per_mass_before_erosion_backup.append(const["energy_per_mass_before_erosion"]) # / 1e6   convert to MJ/kg)
-                    # print("energy_per_mass_before_erosion_backup", energy_per_mass_before_erosion_backup)
-                    erosion_beg_vel_backup.append(const["erosion_beg_vel"])
-                    # print("erosion_beg_vel_backup", erosion_beg_vel_backup)
-                    # check if erosion_beg_mass exist if not use erosion_beg_mas
-                    if "erosion_beg_mass" in const:
-                        erosion_beg_mass_backup.append(const["erosion_beg_mass"])
-                    else:                        
-                        erosion_beg_mass_backup.append(const["erosion_beg_mas"])
-                    # print("erosion_beg_mass_backup", erosion_beg_mass_backup)
-                    erosion_beg_dyn_press_backup.append(const["erosion_beg_dyn_press"])
-                    # print("erosion_beg_dyn_press_backup", erosion_beg_dyn_press_backup)
-                    mass_at_erosion_change_backup.append(const["mass_at_erosion_change"])
-                    # print("mass_at_erosion_change_backup", mass_at_erosion_change_backup)
-                    dyn_press_at_erosion_change_backup.append(const["dyn_press_at_erosion_change"])
-                    # print("dyn_press_at_erosion_change_backup", dyn_press_at_erosion_change_backup)
-                    main_mass_exhaustion_ht_backup.append(const["main_mass_exhaustion_ht"])
-                    # print("main_mass_exhaustion_ht_backup", main_mass_exhaustion_ht_backup)
-                    main_bottom_ht_backup.append(const["main_bottom_ht"])
-                    # print("main_bottom_ht_backup", main_bottom_ht_backup)
-                    
-                    # w_eq = np.ones(samples_eq.shape[0], dtype=float)
-                    # w_eq /= w_eq.sum()
-            else:
-                # fill with None for as may values like np.full(shape=5, fill_value=None) in samples[:, variables_sing.index('erosion_coeff')].astype(float)
-                energy_per_cs_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                energy_per_mass_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                erosion_beg_vel_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                erosion_beg_mass_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                erosion_beg_dyn_press_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                mass_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                dyn_press_at_erosion_change_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                main_mass_exhaustion_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-                main_bottom_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
-
 
             ### SAVE DATA ###
 
@@ -2012,8 +2113,8 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
             file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vg_val, Q_val, q_val, a_val, e_val)
             # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
-            file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, kinetic_energy_median, kinetic_energy_lo, kinetic_energy_hi, tau_median, tau_low95, tau_high95)
-            file_phys_data_dict[base_name] = (eta_meteor_begin, eta, eta_lo, eta_hi, sigma_meteor_begin, sigma, sigma_lo, sigma_hi, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi)
+            file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, kinetic_energy_median, kinetic_energy_lo, kinetic_energy_hi, tau_median, tau_low95, tau_high95, kc_par_eros_height, eeucs_curr, eeum_curr, tot_energy, mass_left_first_erosion_perc, mass_left_second_erosion_perc, final_mass_perc, kc_lo, kc_hi)
+            file_phys_data_dict[base_name] = (eta_meteor_begin, eta, eta_lo, eta_hi, sigma_meteor_begin, sigma, sigma_lo, sigma_hi, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi, v_init_meteor_median, v_init_meteor_lo, v_init_meteor_hi, rho_meteor_begin_median, rho_meteor_begin_lo, rho_meteor_begin_hi, rho_meteor_change_median, rho_meteor_change_lo, rho_meteor_change_hi, eta_meteor_begin_median, eta_meteor_begin_lo, eta_meteor_begin_hi, sigma_meteor_begin_median, sigma_meteor_begin_lo, sigma_meteor_begin_hi, eta_meteor_change_median, eta_meteor_change_lo, eta_meteor_change_hi, sigma_meteor_change_median, sigma_meteor_change_lo, sigma_meteor_change_hi, erosion_height_start_median, erosion_height_start_lo, erosion_height_start_hi, erosion_height_change_median, erosion_height_change_lo, erosion_height_change_hi, erosion_mass_index_median, erosion_mass_index_lo, erosion_mass_index_hi, erosion_mass_min_median, erosion_mass_min_lo, erosion_mass_min_hi, erosion_mass_max_median, erosion_mass_max_lo, erosion_mass_max_hi)
 
             find_worst_lag[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lag')]
             find_worst_lum[base_name] = summary_df_meteor['Median'].values[variables.index('noise_lum')]
@@ -2072,25 +2173,25 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
         # save all in a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
         with open(input_dirfile + os.sep + "shower_distrb_plot_data.pkl", "wb") as f:
-            pickle.dump((variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup), f)
+            pickle.dump((variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all), f)
         print(f"Saved shower distrb plot data to: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
 
-    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all) # erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
 def load_shower_distrb_plot_data(input_dirfile):
     # load all from a pickle file in cml_args.input_dir : variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr
     with open(input_dirfile, "rb") as f:
-        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup) = pickle.load(f)
+        (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all) = pickle.load(f)
     print(f"Loaded shower distrb plot data from: {input_dirfile + os.sep + 'shower_distrb_plot_data.pkl'}")
-    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup) # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+    return (variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all) # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
 
 
 
 
-def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
+def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
 
     # check if there are variables in the flags_dict that are not in the variable_map
@@ -2161,6 +2262,15 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     tau_median = np.array([v[19] for v in file_obs_data_dict.values()])
     tau_low95 = np.array([v[20] for v in file_obs_data_dict.values()])
     tau_high95 = np.array([v[21] for v in file_obs_data_dict.values()])
+    kc_par_eros_height = np.array([v[22] for v in file_obs_data_dict.values()])
+    eeucs_event = np.array([v[23] for v in file_obs_data_dict.values()])
+    eeum_event = np.array([v[24] for v in file_obs_data_dict.values()])
+    tot_energy = np.array([v[25] for v in file_obs_data_dict.values()])
+    mass_left_first_erosion_perc = np.array([v[26] for v in file_obs_data_dict.values()])
+    mass_left_second_erosion_perc = np.array([v[27] for v in file_obs_data_dict.values()])
+    final_mass_perc = np.array([v[28] for v in file_obs_data_dict.values()])
+    kc_lo = np.array([v[29] for v in file_obs_data_dict.values()])
+    kc_hi = np.array([v[30] for v in file_obs_data_dict.values()])
 
     eta_meteor_begin = np.array([v[0] for v in file_phys_data_dict.values()])
     eta_corr = np.array([v[1] for v in file_phys_data_dict.values()])
@@ -2176,6 +2286,42 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     m_init_meteor_median = np.array([v[11] for v in file_phys_data_dict.values()])
     m_init_meteor_lo = np.array([v[12] for v in file_phys_data_dict.values()])
     m_init_meteor_hi = np.array([v[13] for v in file_phys_data_dict.values()])
+    v_init_meteor_median = np.array([v[14] for v in file_phys_data_dict.values()])
+    v_init_meteor_lo = np.array([v[15] for v in file_phys_data_dict.values()])
+    v_init_meteor_hi = np.array([v[16] for v in file_phys_data_dict.values()])
+    rho_meteor_begin_median = np.array([v[17] for v in file_phys_data_dict.values()])   
+    rho_meteor_begin_lo = np.array([v[18] for v in file_phys_data_dict.values()])
+    rho_meteor_begin_hi = np.array([v[19] for v in file_phys_data_dict.values()])
+    rho_meteor_change_median = np.array([v[20] for v in file_phys_data_dict.values()])
+    rho_meteor_change_lo = np.array([v[21] for v in file_phys_data_dict.values()])
+    rho_meteor_change_hi = np.array([v[22] for v in file_phys_data_dict.values()])
+    eta_meteor_begin_median = np.array([v[23] for v in file_phys_data_dict.values()])
+    eta_meteor_begin_lo = np.array([v[24] for v in file_phys_data_dict.values()])
+    eta_meteor_begin_hi = np.array([v[25] for v in file_phys_data_dict.values()])
+    sigma_meteor_begin_median = np.array([v[26] for v in file_phys_data_dict.values()])
+    sigma_meteor_begin_lo = np.array([v[27] for v in file_phys_data_dict.values()])
+    sigma_meteor_begin_hi = np.array([v[28] for v in file_phys_data_dict.values()])
+    eta_meteor_change_median = np.array([v[29] for v in file_phys_data_dict.values()])
+    eta_meteor_change_lo = np.array([v[30] for v in file_phys_data_dict.values()])
+    eta_meteor_change_hi = np.array([v[31] for v in file_phys_data_dict.values()])
+    sigma_meteor_change_median = np.array([v[32] for v in file_phys_data_dict.values()])
+    sigma_meteor_change_lo = np.array([v[33] for v in file_phys_data_dict.values()])
+    sigma_meteor_change_hi = np.array([v[34] for v in file_phys_data_dict.values()])
+    erosion_height_start_median = np.array([v[35] for v in file_phys_data_dict.values()])
+    erosion_height_start_lo = np.array([v[36] for v in file_phys_data_dict.values()])
+    erosion_height_start_hi = np.array([v[37] for v in file_phys_data_dict.values()])
+    erosion_height_change_median = np.array([v[38] for v in file_phys_data_dict.values()])
+    erosion_height_change_lo = np.array([v[39] for v in file_phys_data_dict.values()])
+    erosion_height_change_hi = np.array([v[40] for v in file_phys_data_dict.values()])
+    erosion_mass_index_median = np.array([v[41] for v in file_phys_data_dict.values()])
+    erosion_mass_index_lo = np.array([v[42] for v in file_phys_data_dict.values()])
+    erosion_mass_index_hi = np.array([v[43] for v in file_phys_data_dict.values()])
+    erosion_mass_min_median = np.array([v[44] for v in file_phys_data_dict.values()])
+    erosion_mass_min_lo = np.array([v[45] for v in file_phys_data_dict.values()])
+    erosion_mass_min_hi = np.array([v[46] for v in file_phys_data_dict.values()])
+    erosion_mass_max_median = np.array([v[47] for v in file_phys_data_dict.values()])
+    erosion_mass_max_lo = np.array([v[48] for v in file_phys_data_dict.values()])
+    erosion_mass_max_hi = np.array([v[49] for v in file_phys_data_dict.values()])
 
     leng_coszen = lenght_par * np.cos(zenith_angle * np.pi / 180)
 
@@ -2187,14 +2333,15 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     mass_distr = np.concatenate(mass_distr)
     tau_corrected = np.concatenate(tau_corrected)
     kinetic_energy_all = np.concatenate(kinetic_energy_all)
+    kc_all = np.concatenate(kc_all)
     
     energy_per_cs_before_erosion_backup = np.array(energy_per_cs_before_erosion_backup)/1e6
     energy_per_mass_before_erosion_backup = np.array(energy_per_mass_before_erosion_backup)/1e6
     erosion_beg_vel_backup = np.array(erosion_beg_vel_backup)/1000
     erosion_beg_mass_backup = np.array(erosion_beg_mass_backup)
-    erosion_beg_dyn_press_backup = np.array(erosion_beg_dyn_press_backup)
+    erosion_beg_dyn_press_backup = np.array(erosion_beg_dyn_press_backup)/1000
     mass_at_erosion_change_backup = np.array(mass_at_erosion_change_backup)
-    dyn_press_at_erosion_change_backup = np.array(dyn_press_at_erosion_change_backup)
+    dyn_press_at_erosion_change_backup = np.array(dyn_press_at_erosion_change_backup)/1000
     main_mass_exhaustion_ht_backup = np.array(main_mass_exhaustion_ht_backup) /1000   # convert to km
     main_bottom_ht_backup = np.array(main_bottom_ht_backup) /1000   # convert to km
 
@@ -2207,7 +2354,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # print('mass_at_erosion_change_backup',mass_at_erosion_change_backup)
     # print('dyn_press_at_erosion_change_backup',dyn_press_at_erosion_change_backup)
     # print('main_mass_exhaustion_ht_backup',main_mass_exhaustion_ht_backup)
-    # print('main_bottom_ht_backup',main_bottom_ht_backup)
+    # print('main_bottom_ht_backup',main_bottom_ht_backup, kc_all)
     
     # energy_per_cs_before_erosion_backup = np.concatenate(energy_per_cs_before_erosion_backup)
     # energy_per_mass_before_erosion_backup = np.concatenate(energy_per_mass_before_erosion_backup)
@@ -2217,7 +2364,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # mass_at_erosion_change_backup = np.concatenate(mass_at_erosion_change_backup)
     # dyn_press_at_erosion_change_backup = np.concatenate(dyn_press_at_erosion_change_backup)
     # main_mass_exhaustion_ht_backup = np.concatenate(main_mass_exhaustion_ht_backup)
-    # main_bottom_ht_backup = np.concatenate(main_bottom_ht_backup)
+    # main_bottom_ht_backup = np.concatenate(main_bottom_ht_backup, kc_all)
 
     # print('all energy_per_cs_before_erosion_backup',energy_per_cs_before_erosion_backup)
     # if np.all(np.isfinite(combined_samples_cov_plot_class)):
@@ -2427,10 +2574,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         fig = plt.figure(figsize=(6, 4), constrained_layout=True)
 
         
-        scatter_d = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+        scatter_d = plt.scatter(rho, (erosion_beg_dyn_press)/1000, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=60, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
         plt.colorbar(scatter_d, label='log$_{10}$ Diameter [mm]')
-        scatter = plt.scatter(rho, np.log10(erosion_beg_dyn_press), c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
-        plt.errorbar(rho, np.log10(erosion_beg_dyn_press),
+        scatter = plt.scatter(rho, (erosion_beg_dyn_press)/1000, c=v_init_meteor_median, cmap='viridis', s=30, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
+        plt.errorbar(rho, (erosion_beg_dyn_press)/1000,
                     xerr=[abs(rho_lo), abs(rho_hi)],
                     elinewidth=0.75,
                 capthick=0.75,
@@ -2447,11 +2594,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.gca().invert_yaxis()
         plt.colorbar(scatter, label='v$_{0}$ [km/s]')
         plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
-        plt.ylabel("log$_{10}$ Dynamic Pressure [Pa]", fontsize=15)
+        plt.ylabel("P [kPa]", fontsize=15)
         # plot the thr line
-        plt.axhline(y=thr, color='gray', linestyle='--', linewidth=1)
+        plt.axhline(y=10**thr, color='gray', linestyle='--', linewidth=1)
         plt.xscale("log")
-        # plt.yscale("log")
+        plt.yscale("log")
         # grid on
         plt.grid(True)
 
@@ -2538,6 +2685,43 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_eta.png"), bbox_inches='tight', dpi=300)
 
+    ### PLOT rho and error against eta pressure color by speed ###
+
+    fig = plt.figure(figsize=(6, 4), constrained_layout=True)
+
+    # scatter = plt.scatter(v_init_meteor_median, kc_par, c=np.log10(eta_corr*1e6), cmap='viridis', s=60, norm=Normalize(vmin=np.log10(eta_corr*1e6).min(), vmax=np.log10(eta_corr*1e6).max()), zorder=2)
+    # scatter = plt.scatter(v_init_meteor_median, kc_par, c=np.log10(m_init_meteor_median/(eta_corr*1e6)), cmap='plasma', s=60, norm=Normalize(vmin=np.log10(m_init_meteor_median/(eta_corr*1e6)).min(), vmax=np.log10(m_init_meteor_median/(eta_corr*1e6)).max()), zorder=2)
+    # scatter_rho = plt.scatter(v_init_meteor_median, kc_par, c=(rho), cmap='YlGn_r', s=20, norm=PowerNorm(gamma=0.5, vmin=np.nanmin(rho), vmax=np.nanmax(rho)), zorder=3)
+    # scatter_rho = plt.scatter(v_init_meteor_median, kc_par, c=(sigma_corr*1e6), cmap='plasma', s=20, norm=Normalize(vmin=sigma_corr.min()*1e6, vmax=sigma_corr.max()*1e6), zorder=3) #PowerNorm(gamma=0.5, vmin=np.nanmin(rho), vmax=np.nanmax(rho)), zorder=3)
+    scatter = plt.scatter(rho, kc_par, c=v_init_meteor_median, cmap='plasma', s=60, norm=Normalize(vmin=v_init_meteor_median.min(), vmax=v_init_meteor_median.max()), zorder=2)
+
+    # add uncertanty bars
+    plt.errorbar(rho, kc_par,
+                xerr=[abs(rho_lo), abs(rho_hi)],
+                yerr=[abs(kc_lo), abs(kc_hi)],
+                fmt='none',
+                ecolor='black',
+                elinewidth=0.75,
+                capsize=3,
+                zorder=1
+            )
+
+    # plt.xlabel("v$_{0}$ [km/s]", fontsize=15)
+    plt.xlabel("$\\rho$ [kg/m$^3$]", fontsize=15)
+    plt.ylabel("$k_c$ [km]", fontsize=15) # log$_{10}$
+    # plt.colorbar(scatter, label="log$_{10}$ $\eta$ [kg/MJ]")
+    # plt.colorbar(scatter, label="log$_{10}$ $m_0$/$\eta$ [MJ]")
+    # plt.colorbar(scatter, label="log$_{10}$ $\sigma$/$\eta$ [-]")
+    # plt.colorbar(scatter, label="$\\rho$ [kg/m$^3$]")
+    plt.colorbar(scatter, label="v$_{0}$ [km/s]")
+    plt.xscale("log")
+    # grid on
+    plt.grid(True)
+
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_kc_vs_v_init_eta.png"), bbox_inches='tight', dpi=300)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_kc_vs_rho_v_init.png"), bbox_inches='tight', dpi=300)
+
+
     ### PLOT rho and error of rho agaist Q ###
 
     fig = plt.figure(figsize=(10, 6), constrained_layout=True)
@@ -2603,16 +2787,39 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     log10_m_init= np.log10(m_init_med)
 
-    # Define your observable names and corresponding data arrays
+    # Define your observable names and corresponding data arrays  # erosion_beg_dyn_press # 
     observable_names = [
-        "$v_{avg}$ [km/s]", "$T$ [s]", "log$_{10}$($m_0$) [kg]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
-        "$k_c$", "$F$", "$T_j$", "$z_c$ [deg]", "$M_{peak}$"
+        "$k_c$ [km]", "$\eta$ [MJ/kg]", "$\sigma$ [MJ/kg]", "$h_e$ [km]", "$h_{beg}$ [km]",
+        "$E_S$ [MJ/m$^2$]", "$E_V$ [MJ/kg]", "$P$ [kPa]", "$m_l$ [kg]", "$m_u$ [kg]"
     ]
 
     observable_arrays = [
-        avg_vel, time_tot, log10_m_init, beg_height, end_height,
-        kc_par, F_par, tj, zenith_angle, max_mag
+        kc_par, eta_corr*1e6, sigma_corr*1e6, erosion_height_start_median, beg_height,
+        eeucs_event/1e6, eeum_event/1e6, erosion_beg_dyn_press/1000, erosion_mass_min_median, erosion_mass_max_median
     ]
+
+    # observable_names = [
+    #     "$v_{avg}$ [km/s]", "$T$ [s]", "log$_{10}$($m_0$) [kg]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
+    #     "$k_c$", "$E_S$ [MJ/m^2]", "$E_V$ [MJ/kg]", "$F$", "$T_j$"#, "$M_{peak}$"
+    # ]
+
+    # observable_arrays = [
+    #     avg_vel, time_tot, log10_m_init, beg_height, end_height,
+    #     kc_par, eeucs_event/1e6, eeum_event/1e6, F_par, tj, max_mag
+    # ]
+
+    # # Define your observable names and corresponding data arrays
+    # observable_names = [
+    #     "$v_{avg}$ [km/s]", "$T$ [s]", "log$_{10}$($m_0$) [kg]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
+    #     "$k_c$", "Diameter [mm]", "$F$", "$T_j$", "$M_{peak}$"
+    # ]
+
+    # observable_arrays = [
+    #     avg_vel, time_tot, log10_m_init, beg_height, end_height,
+    #     kc_par, meteoroid_diameter_mm, F_par, tj, max_mag
+    # ]
+
+    # kc_par_eros_height , "$k_{c\,h_e}$"
 
     # observable_names = [
     #     "$v_{avg}$ [km/s]", "$T$ [s]", "$L$ [km]", "$h_{beg}$ [km]", "$h_{end}$ [km]",
@@ -2632,7 +2839,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ax = axes[i]
         
         # Plot scatter of observable vs. rho_corrected
-        ax.scatter(obs, rho, alpha=0.7, s=40, edgecolor='k', linewidth=0.3, color='blue')
+        ax.scatter(obs, rho, alpha=0.7, s=40, edgecolor='k', linewidth=0.3, color='green')
+
+        if name == "$\eta$ [MJ/kg]" or name == "$\sigma$ [MJ/kg]" or name == "$P$ [kPa]" or name == r"$\rho$ [kg/m$^3$]" or name == "$E_S$ [MJ/m$^2$]" or name == "$E_V$ [MJ/kg]" or name == "$m_l$ [kg]" or name == "$m_u$ [kg]":
+            ax.set_xscale("log")
+        ax.set_yscale("log")
 
         # Compute and annotate correlation coefficient
         corr = np.corrcoef(obs, rho)[0, 1]
@@ -2640,7 +2851,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # put a line of best fit
         z = np.polyfit(obs, rho, 1)
         p = np.poly1d(z)
-        ax.plot(obs, p(obs), color='red', linewidth=1, label=f'corr: {corr:.2f}')
+        # ax.plot(obs, p(obs), color='red', linewidth=1, label=f'corr: {corr:.2f}')
 
         ax.set_xlabel(f'{name}', fontsize=12)
         ax.set_ylabel(r'$\rho$ [kg/m$^3$]' if i in [0, 5] else '', fontsize=12)
@@ -2654,6 +2865,153 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_observables_grid.png"), dpi=300, bbox_inches='tight')
     plt.close()
 
+
+
+    ### CORELATION OBSERVABLE PLOT ###
+    print('Creating Correlation plot for the kc and the rho...')
+
+    # Define your observable names and corresponding data arrays  # erosion_beg_dyn_press # 
+    observable_names = [
+        r"$\rho$ [kg/m$^3$]", "$\eta$ [MJ/kg]", "$\sigma$ [MJ/kg]", "$h_e$ [km]", "$h_{beg}$ [km]",
+        "$E_S$ [MJ/m$^2$]", "$E_V$ [MJ/kg]", "$P$ [kPa]", "$m_l$ [kg]", "$m_u$ [kg]"
+    ]
+
+    observable_arrays = [
+        rho, eta_corr*1e6, sigma_corr*1e6, erosion_height_start_median, beg_height,
+        eeucs_event/1e6, eeum_event/1e6,  erosion_beg_dyn_press/1000, erosion_mass_min_median, erosion_mass_max_median
+    ]
+
+    # Create figure with 2 rows and 5 columns
+    fig, axes = plt.subplots(2, 5, figsize=(15, 5))
+    axes = axes.flatten()  # flatten to easily index 0-9
+
+    for i, (name, obs) in enumerate(zip(observable_names, observable_arrays)):
+        ax = axes[i]
+        
+        # Plot scatter of observable vs. rho_corrected
+        ax.scatter(obs, kc_par, alpha=0.7, s=40, edgecolor='k', linewidth=0.3, color='coral')
+
+        if name == "$\eta$ [MJ/kg]" or name == "$\sigma$ [MJ/kg]" or name == "$P$ [kPa]" or name == r"$\rho$ [kg/m$^3$]" or name == "$E_S$ [MJ/m$^2$]" or name == "$E_V$ [MJ/kg]" or name == "$m_l$ [kg]" or name == "$m_u$ [kg]":
+            ax.set_xscale("log")
+        # ax.set_xscale("log")
+
+        # Compute and annotate correlation coefficient
+        corr = np.corrcoef(obs, kc_par)[0, 1]
+        ax.set_title(f'corr: {corr:.2f}', fontsize=15)
+        # put a line of best fit
+        z = np.polyfit(obs, kc_par, 1)
+        p = np.poly1d(z)
+        # ax.plot(obs, p(obs), color='red', linewidth=1, label=f'corr: {corr:.2f}')
+
+        ax.set_xlabel(f'{name}', fontsize=12)
+        ax.set_ylabel(r'$k_c$ [km]' if i in [0, 5] else '', fontsize=12)
+        # # if $M_{peak}$ in the name invert the x axis
+        # if 'M_{peak}' in name:
+        #     ax.set_xlim(ax.get_xlim()[::-1])
+        ax.grid(True)
+
+
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_kc_grid.png"), dpi=300, bbox_inches='tight')
+    plt.close()
+
+
+    ### CORELATION OBSERVABLE PLOT ###
+    print('Creating Correlation plot for the Energy and the rho...')
+
+    # Define your observable names and corresponding data arrays  # erosion_beg_dyn_press # 
+    observable_names = [
+        r"$\rho$ [kg/m$^3$]", "$\eta$ [MJ/kg]", "$\sigma$ [MJ/kg]", "$h_e$ [km]", "$h_{beg}$ [km]",
+         "$E_S$ [MJ/m$^2$]", "$k_c$ [km]", "$P$ [kPa]", "$m_l$ [kg]", "$m_u$ [kg]"
+    ]
+
+    observable_arrays = [
+        rho, eta_corr*1e6, sigma_corr*1e6, erosion_height_start_median, beg_height,
+        eeucs_event/1e6, kc_par,  erosion_beg_dyn_press/1000, erosion_mass_min_median, erosion_mass_max_median
+    ]
+
+    # Create figure with 2 rows and 5 columns
+    fig, axes = plt.subplots(2, 5, figsize=(15, 5))
+    axes = axes.flatten()  # flatten to easily index 0-9
+
+    for i, (name, obs) in enumerate(zip(observable_names, observable_arrays)):
+        ax = axes[i]
+        
+        # Plot scatter of observable vs. rho_corrected
+        ax.scatter(obs, eeum_event/1e6, alpha=0.7, s=40, edgecolor='k', linewidth=0.3, color='violet')
+
+        if name == "$\eta$ [MJ/kg]" or name == "$\sigma$ [MJ/kg]" or name == "$P$ [kPa]" or name == r"$\rho$ [kg/m$^3$]" or name == "$E_S$ [MJ/m$^2$]" or name == "$E_V$ [MJ/kg]" or name == "$m_l$ [kg]" or name == "$m_u$ [kg]":
+            ax.set_xscale("log")
+        ax.set_yscale("log")
+
+        # Compute and annotate correlation coefficient
+        corr = np.corrcoef(obs, eeum_event/1e6)[0, 1]
+        ax.set_title(f'corr: {corr:.2f}', fontsize=15)
+        # put a line of best fit
+        z = np.polyfit(obs, eeum_event/1e6, 1)
+        p = np.poly1d(z)
+        # ax.plot(obs, p(obs), color='red', linewidth=1, label=f'corr: {corr:.2f}')
+
+        ax.set_xlabel(f'{name}', fontsize=12)
+        ax.set_ylabel(r'$E_V$ [MJ/kg]' if i in [0, 5] else '', fontsize=12)
+        # # if $M_{peak}$ in the name invert the x axis
+        # if 'M_{peak}' in name:
+        #     ax.set_xlim(ax.get_xlim()[::-1])
+        ax.grid(True)
+
+
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_E_V_grid.png"), dpi=300, bbox_inches='tight')
+    plt.close()
+
+
+    ### CORELATION OBSERVABLE PLOT ###
+    print('Creating Correlation plot for the orbit and the rho...')
+
+    # Define your observable names and corresponding data arrays
+    observable_names = [
+        "$a$ [AU]", "$e$ [-]", "$i$ [deg]", "$Q$ [AU]", "$q$ [AU]"
+    ]
+
+    observable_arrays = [
+        a_val, e_val, inclin_val, Q_val, q_val
+    ]
+
+    # Create figure with 1 row and 5 columns
+    fig, axes = plt.subplots(1, 5, figsize=(15, 3))
+    axes = axes.flatten()  # flatten to easily index 0-9
+
+    for i, (name, obs) in enumerate(zip(observable_names, observable_arrays)):
+        ax = axes[i]
+        
+        # Plot scatter of observable vs. rho_corrected
+        ax.scatter(obs, rho, alpha=0.7, s=40, edgecolor='k', linewidth=0.3, color='green')
+
+        if name == "$Q$ [AU]" or name == "$q$ [AU]" or name == "$a$ [AU]":
+            ax.set_xscale("log")
+
+        # Compute and annotate correlation coefficient
+        corr = np.corrcoef(obs, rho)[0, 1]
+        ax.set_title(f'corr: {corr:.2f}', fontsize=15)
+        # put a line of best fit
+        z = np.polyfit(obs, rho, 1)
+        p = np.poly1d(z)
+        # ax.plot(obs, p(obs), color='red', linewidth=1, label=f'corr: {corr:.2f}')
+
+        ax.set_xlabel(f'{name}', fontsize=12)
+        ax.set_ylabel(r'$\rho$ [kg/m$^3$]' if i in [0, 5] else '', fontsize=12)
+        # # if $M_{peak}$ in the name invert the x axis
+        # if 'M_{peak}' in name:
+        #     ax.set_xlim(ax.get_xlim()[::-1])
+        ax.grid(True)
+
+
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_vs_orbit_grid.png"), dpi=300, bbox_inches='tight')
+    plt.close()
 
 
     ### RADIANCE PLOT ###
@@ -3637,10 +3995,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     y_edges_suttle = np.r_[bin_left, bin_right[-1]]
     Z = weights[:, None]  # one vertical strip
 
-    plt.pcolormesh(x_edges, y_edges_suttle, Z, shading="flat", cmap="Oranges", zorder=0)    
+    plt.pcolormesh(x_edges, y_edges_suttle, Z, shading="flat", cmap="Oranges", zorder=1)    
  
     # Micro Meteoroids - Fulle et al. (2016)moccasin
-    ax.fill_between([200/1000, 275/1000], 5000, 5800, color='#ff7f0e', alpha=0.2, zorder=0, edgecolor='none', label="G & S-type - Suttle and Folco (2020)") # , edgecolor='none'
+    ax.fill_between([200/1000, 275/1000], 5000, 5800, color='#ff7f0e', alpha=0.2, zorder=1, edgecolor='none', label="G & S-type - Suttle and Folco (2020)") # , edgecolor='none'
 
     ###### Feng et al. (2005) I-type micrometeorites
 
@@ -3729,7 +4087,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         index_ml = int(idx_arr[0])
         ml_vals = combined_samples[:, index_ml].astype(float)
         ml_smallest = np.min(ml_vals)
-        print('smallest fragment', ml_smallest)
+        # print('smallest fragment', ml_smallest)
 
     idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
     mu_vals = np.array([])
@@ -3737,7 +4095,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         index_mu = int(idx_arr[0])
         mu_vals = combined_samples[:, index_mu].astype(float)
         mu_biggest = np.max(mu_vals)
-        print('biggest fragment', mu_biggest)
+        # print('biggest fragment', mu_biggest)
 
     # if mu_vals.size
     # plot a black line from ml_smallest to mu_biggest
@@ -4394,7 +4752,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             tau_Hill2005.append(luminous_efficiency_tauI_Hill2005(vel))
         tau_Hill2005 = np.array(tau_Hill2005, dtype=float)
 
-        (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
+        (_, _, file_radiance_rho_dict_JB, _, _, file_obs_data_dict_JB, _, all_names_JB, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = open_all_shower_data(r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif",r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_rhoUnif","JB_rhoUnif")
 
         name_ids = [row[0] for row in rows]
         # Now do a tolerant match (±3 s) against your available names
@@ -4423,7 +4781,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 ax.plot([size_JB, size_dynesty], [rho_JB, rho_dynesty],
                         color='red', linestyle='--', linewidth=0.5, marker='+', markersize=8)
                 
-        ax.scatter(size_dynesty_JB, rho_dynesty_JB, color='red', marker='+', s=70, zorder=6) 
+        ax.scatter(size_dynesty_JB, rho_dynesty_JB, color='red', marker='+', s=70, zorder=3) 
         ax.scatter(from_mass2size(mass_kg, rho_kgm3), rho_kgm3, color='dodgerblue', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5) 
 
         if foundJB > 0:
@@ -4461,7 +4819,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     ax.scatter(np.log10(mass_kg[i]), rho_kgm3[i], facecolors='none', edgecolors='b', s=80, zorder=2)
         
 
-        ax.scatter(np.log10(mass_dynesty_JB), rho_dynesty_JB, color='red', marker='+', s=70, zorder=6) 
+        ax.scatter(np.log10(mass_dynesty_JB), rho_dynesty_JB, color='red', marker='+', s=70, zorder=3) 
         ax.scatter(np.log10(mass_kg), rho_kgm3, color='dodgerblue', marker='+', s=70, label="Meteors - Kikwaya et al. (2009)", zorder=5)
 
         if foundJB > 0:
@@ -4746,37 +5104,44 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     weights = combined_results.importance_weights()
     w = weights / np.sum(weights)
 
-    samples_eq = dynesty.utils.resample_equal(samples, w)
+    # samples_eq = dynesty.utils.resample_equal(samples, w)
 
     # check how much the second mass is infuential for the total
     # try:
     idx_arr = np.where(np.asarray(variables) == "m_init")[0]
-    m_init_vals_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+    m_init_vals_all  = samples[:, int(idx_arr[0])].astype(float)
+
+    idx_arr = np.where(np.asarray(variables) == "v_init")[0]
+    v_init_vals_all  = samples[:, int(idx_arr[0])].astype(float)
+
+    idx_arr = np.where(np.asarray(variables) == "erosion_height_start")[0]
+    erosion_height_start_all  = samples[:, int(idx_arr[0])].astype(float)
 
     idx_arr = np.where(np.asarray(variables) == "rho")[0]
-    rho_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+    rho_all  = samples[:, int(idx_arr[0])].astype(float)
 
     idx_arr = np.where(np.asarray(variables) == "erosion_rho_change")[0]
-    rho_change_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+    rho_change_all  = samples[:, int(idx_arr[0])].astype(float)
 
     idx_arr = np.where(np.asarray(variables) == "sigma")[0]
-    sigma_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+    sigma_all  = samples[:, int(idx_arr[0])].astype(float)
 
     idx_arr = np.where(np.asarray(variables) == "erosion_sigma_change")[0]
-    sigma_change_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+    sigma_change_all  = samples[:, int(idx_arr[0])].astype(float)
 
     idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
-    erosion_coeff_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+    erosion_coeff_all  = samples[:, int(idx_arr[0])].astype(float)
 
     idx_arr = np.where(np.asarray(variables) == "erosion_coeff_change")[0]
-    erosion_coeff_change_all  = samples_eq[:, int(idx_arr[0])].astype(float)
+    erosion_coeff_change_all  = samples[:, int(idx_arr[0])].astype(float)
 
     # percent left after 2 fragmentation mass_at_erosion_change_backup
     mass_percent_2frag = mass_at_erosion_change_backup/(10**m_init_vals_all) * 100
+    mass_percent_1frag = erosion_beg_mass_backup/(10**m_init_vals_all) * 100
     print("Mass percent left after 2nd fragmentation (mass_at_erosion_change_backup / m_init) * 100:")
-    print(10**m_init_vals_all)
-    print(mass_at_erosion_change_backup)
-    print(mass_percent_2frag)
+    # print(10**m_init_vals_all)
+    # print(mass_at_erosion_change_backup)
+    # print(mass_percent_2frag)
 
     # create a mask for values above 100 in mass_percent_2frag
     mask = mass_percent_2frag > 100
@@ -4786,7 +5151,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         mass_percent_2frag[mask] = 100
 
     def plot_color_2diffMass(initial_var, change_var, mass_percent_2frag, w,
-                            label_initial_var, label_change_var, output_dir_show, shower_name):
+                            label_initial_var, label_change_var, barplot_var, output_dir_show, shower_name, initial_var_small=[], change_var_small=[], mass_percent_2frag_small=[]):
 
         fig, ax = plt.subplots(figsize=(8, 6))
         print("creating distribution plot for the 2 fragmentation...")
@@ -4794,36 +5159,52 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # make sure contour and scatter use same x/y convention
         _plot_2d_distribution(ax, change_var, initial_var, w)
 
-        ax.set_xlabel(label_initial_var, fontsize=15)
-        ax.set_ylabel(label_change_var, fontsize=15)
+        ax.set_xlabel(label_change_var, fontsize=15)
+        ax.set_ylabel(label_initial_var, fontsize=15)
 
-        # keep only finite values
-        mask = (
-            np.isfinite(initial_var) &
-            np.isfinite(change_var) &
-            np.isfinite(mass_percent_2frag)
-        )
+        if len(initial_var_small) > 0 and len(change_var_small) > 0 and len(mass_percent_2frag_small) > 0:
+            size=60
+            x_log = change_var_small
+            y_log = initial_var_small
+            c_log = mass_percent_2frag_small
+            x_plot = change_var_small
+            y_plot = initial_var_small
+            c_plot = mass_percent_2frag_small
 
-        x_plot = np.asarray(change_var)[mask]
-        y_plot = np.asarray(initial_var)[mask]
-        c_plot = np.asarray(mass_percent_2frag)[mask]
+        else: 
+            size= 4
+            # keep only finite values
+            mask = (
+                np.isfinite(initial_var) &
+                np.isfinite(change_var) &
+                np.isfinite(mass_percent_2frag)
+            )
 
-        # optional downsample
-        max_points = 50000
-        if len(x_plot) > max_points:
-            idx = np.random.choice(len(x_plot), max_points, replace=False)
-            x_plot = x_plot[idx]
-            y_plot = y_plot[idx]
-            c_plot = c_plot[idx]
+            x_plot = np.asarray(change_var)[mask]
+            y_plot = np.asarray(initial_var)[mask]
+            c_plot = np.asarray(mass_percent_2frag)[mask]
 
-        # use log scale only if all kept color values are positive and non-constant
-        positive_mask = c_plot > 0
+            # optional downsample
+            max_points = 50000
+            if len(x_plot) > max_points:
+                idx = np.random.choice(len(x_plot), max_points, replace=False)
+                x_plot = x_plot[idx]
+                y_plot = y_plot[idx]
+                c_plot = c_plot[idx]
 
+        # check if there are egative values in c_plot
+        if np.any(c_plot < 0):
+            print("Warning: There are negative values in the color variable (mass_percent_2frag). These will be ignored in the log scale plot.")
+            x_log = x_plot
+            y_log = y_plot
+            c_log = c_plot
+        else:
+            # use log scale only if all kept color values are positive and non-constant
+            positive_mask = c_plot > 0
 
-        x_log = x_plot[positive_mask]
-        y_log = y_plot[positive_mask]
-        c_log = c_plot[positive_mask]
-
+            x_log = x_plot[positive_mask]
+            y_log = y_plot[positive_mask]
+            c_log = c_plot[positive_mask]
 
         # order them base on the highest c_log to the lowest
         c_log_order = np.argsort(c_log)
@@ -4837,31 +5218,46 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         vmin = np.nanmin(c_log)
         vmax = np.nanmax(c_log)
 
-        # if vmax > vmin:
-        sc = ax.scatter(
-            x_log, y_log,
-            c=c_log,
-            s=4,
-            cmap='plasma_r',
-            marker='.',
-            linewidths=0,
-            edgecolors='none',
-            rasterized=True,
-            norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax)#,mcolors.LogNorm(vmin=vmin, vmax=vmax) # Normalize(vmin=vmin,vmax=vmax)#
-        )
+        if np.any(c_plot < 0):
+            sc = ax.scatter(
+                x_log, y_log,
+                c=c_log,
+                s=size,
+                cmap='plasma',
+                marker='.',
+                linewidths=0,
+                edgecolors='none',
+                rasterized=True,
+                norm=Normalize(vmin=vmin,vmax=vmax)#
+            )
+
+        else:
+            sc = ax.scatter(
+                x_log, y_log,
+                c=c_log,
+                s=size,
+                cmap='plasma',
+                marker='.',
+                linewidths=0,
+                edgecolors='none',
+                rasterized=True,
+                norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax)#,mcolors.LogNorm(vmin=vmin, vmax=vmax) # Normalize(vmin=vmin,vmax=vmax)#
+            )
 
         cbar = plt.colorbar(sc, ax=ax)
-        cbar.set_label('Mass percent left after 2nd fragmentation [%]', fontsize=14)
+        cbar.set_label(barplot_var, fontsize=14)
 
         ax.grid(True, linestyle='--', alpha=0.5)
-        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_masspercent2frag.png"),
+        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_masspercent2frag.png"), # 20190726_052141, 
                     bbox_inches='tight', dpi=300)
         plt.close()
     
-    plot_color_2diffMass(rho_all, rho_change_all, mass_percent_2frag, w, r'$\rho$ [kg/m$^3$]', r"$\rho_{2}$ [kg/m$^3$]", output_dir_show, shower_name+'_rho')
-    plot_color_2diffMass(sigma_all, sigma_change_all, mass_percent_2frag, w, r'$\sigma$ [Pa]', r"$\sigma_{2}$ [Pa]", output_dir_show, shower_name+'_sigma')
-    plot_color_2diffMass(erosion_coeff_all, erosion_coeff_change_all, mass_percent_2frag, w, r'$\Lambda$ [kg/m$^3$ s]', r"$\Lambda_{2}$ [kg/m$^3$ s]", output_dir_show, shower_name+'_erosion_coeff')
+    plot_color_2diffMass(rho_all, rho_change_all, mass_percent_2frag, w, r'$\rho$ [kg/m$^3$]', r"$\rho_{2}$ [kg/m$^3$]", 'Mass percent left after 2nd fragmentation [%]',output_dir_show, shower_name+'_rho', initial_var_small=rho_meteor_begin_median, change_var_small=rho_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
+    plot_color_2diffMass(sigma_all, sigma_change_all, mass_percent_2frag, w, r'$\sigma$ [kg/MJ]', r"$\sigma_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_sigma', initial_var_small=sigma_meteor_begin_median, change_var_small=sigma_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
+    plot_color_2diffMass(erosion_coeff_all, erosion_coeff_change_all, mass_percent_2frag, w, r'log$_{10}$ $\eta$ [kg/MJ]', r"log$_{10}$ $\eta_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_erosion_coeff', initial_var_small=np.log10(eta_meteor_begin_median), change_var_small=np.log10(eta_meteor_change_median), mass_percent_2frag_small=mass_left_second_erosion_perc)
 
+
+    # plot_color_2diffMass(erosion_height_start_all, v_init_vals_all, np.log10(eta_corrected*1e6), w, r"$h_{e}$ [km]", r'$v_{\text{init}}$ [km/s]', r"log$_{10}$ $\eta$ [kg/MJ]", output_dir_show, shower_name+'_vel_erosionheightstart')
 
     ###
 
@@ -4973,74 +5369,77 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.close()
     print("Rho distribution weighted by kinetic energy plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy_vel.png"))
 
+    #### neede to see whic one contributes the most
 
-    # kinetic weighted distribution
+    # # kinetic weighted distribution
 
-    fig = plt.figure(figsize=(8, 6))
-    ax_dist = fig.add_subplot(111)
+    # fig = plt.figure(figsize=(8, 6))
+    # ax_dist = fig.add_subplot(111)
 
-    rho_corrected_weighted_kinetic = np.histogram(rho_corrected, bins=nbins, weights=weights_kinetic_raw, range=(lo, hi))[0]
-    rho_corrected_weighted = norm_kde(rho_corrected_weighted_kinetic, 10.0)
+    # rho_corrected_weighted_kinetic = np.histogram(rho_corrected, bins=nbins, weights=weights_kinetic_raw, range=(lo, hi))[0]
+    # rho_corrected_weighted = norm_kde(rho_corrected_weighted_kinetic, 10.0)
 
-    ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='darkseagreen', alpha=0.6)
+    # ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='darkseagreen', alpha=0.6)
 
-    rho_corrected_lo_kinetic, rho_corrected_median_kinetic, rho_corrected_hi_kinetic = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=weights_kinetic_raw)
-    # Percentile lines
-    ax_dist.axvline(rho_corrected_median_kinetic, color='darkseagreen', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_lo_kinetic, color='darkseagreen', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_hi_kinetic, color='darkseagreen', linestyle='--', linewidth=1.5)
+    # rho_corrected_lo_kinetic, rho_corrected_median_kinetic, rho_corrected_hi_kinetic = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=weights_kinetic_raw)
+    # # Percentile lines
+    # ax_dist.axvline(rho_corrected_median_kinetic, color='darkseagreen', linestyle='--', linewidth=1.5)
+    # ax_dist.axvline(rho_corrected_lo_kinetic, color='darkseagreen', linestyle='--', linewidth=1.5)
+    # ax_dist.axvline(rho_corrected_hi_kinetic, color='darkseagreen', linestyle='--', linewidth=1.5)
 
-    # Title and formatting
-    plus = rho_corrected_hi_kinetic - rho_corrected_median_kinetic
-    minus = rho_corrected_median_kinetic - rho_corrected_lo_kinetic
-    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_kinetic)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
-    ax_dist.set_title(title, fontsize=20)
+    # # Title and formatting
+    # plus = rho_corrected_hi_kinetic - rho_corrected_median_kinetic
+    # minus = rho_corrected_median_kinetic - rho_corrected_lo_kinetic
+    # fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    # title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_kinetic)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    # ax_dist.set_title(title, fontsize=20)
 
-    ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    # ax_dist.set_ylabel("Weighted by Kinetic Energy", fontsize=20)
-    ax_dist.tick_params(axis='y', left=False, labelleft=False)
-    ax_dist.set_ylabel("")
-    ax_dist.spines['left'].set_visible(False)
-    ax_dist.spines['right'].set_visible(False)
-    ax_dist.spines['top'].set_visible(False)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy.png"), bbox_inches='tight')
-    plt.close()
-    print("Rho distribution weighted by kinetic energy plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy.png"))
+    # ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    # # ax_dist.set_ylabel("Weighted by Kinetic Energy", fontsize=20)
+    # ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    # ax_dist.set_ylabel("")
+    # ax_dist.spines['left'].set_visible(False)
+    # ax_dist.spines['right'].set_visible(False)
+    # ax_dist.spines['top'].set_visible(False)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy.png"), bbox_inches='tight')
+    # plt.close()
+    # print("Rho distribution weighted by kinetic energy plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy.png"))
 
-    # only velocity weighted 
+    # # only velocity weighted 
 
-    fig = plt.figure(figsize=(8, 6))
-    ax_dist = fig.add_subplot(111)
+    # fig = plt.figure(figsize=(8, 6))
+    # ax_dist = fig.add_subplot(111)
 
-    rho_corrected_weighted_velocity = np.histogram(rho_corrected, bins=nbins, weights=velocity_weights, range=(lo, hi))[0]
-    rho_corrected_weighted = norm_kde(rho_corrected_weighted_velocity, 10.0)
+    # rho_corrected_weighted_velocity = np.histogram(rho_corrected, bins=nbins, weights=velocity_weights, range=(lo, hi))[0]
+    # rho_corrected_weighted = norm_kde(rho_corrected_weighted_velocity, 10.0)
 
-    ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='lightsteelblue', alpha=0.6)
+    # ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='lightsteelblue', alpha=0.6)
 
-    rho_corrected_lo_velocity, rho_corrected_median_velocity, rho_corrected_hi_velocity = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=velocity_weights)
-    # Percentile lines
-    ax_dist.axvline(rho_corrected_median_velocity, color='lightsteelblue', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_lo_velocity, color='lightsteelblue', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_hi_velocity, color='lightsteelblue', linestyle='--', linewidth=1.5)
+    # rho_corrected_lo_velocity, rho_corrected_median_velocity, rho_corrected_hi_velocity = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=velocity_weights)
+    # # Percentile lines
+    # ax_dist.axvline(rho_corrected_median_velocity, color='lightsteelblue', linestyle='--', linewidth=1.5)
+    # ax_dist.axvline(rho_corrected_lo_velocity, color='lightsteelblue', linestyle='--', linewidth=1.5)
+    # ax_dist.axvline(rho_corrected_hi_velocity, color='lightsteelblue', linestyle='--', linewidth=1.5)
 
-    # Title and formatting
-    plus = rho_corrected_hi_velocity - rho_corrected_median_velocity
-    minus = rho_corrected_median_velocity - rho_corrected_lo_velocity
-    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_velocity)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
-    ax_dist.set_title(title, fontsize=20)
+    # # Title and formatting
+    # plus = rho_corrected_hi_velocity - rho_corrected_median_velocity
+    # minus = rho_corrected_median_velocity - rho_corrected_lo_velocity
+    # fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    # title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_velocity)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    # ax_dist.set_title(title, fontsize=20)
 
-    ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    # ax_dist.set_ylabel("Weighted by Kinetic Energy", fontsize=20)
-    ax_dist.tick_params(axis='y', left=False, labelleft=False)
-    ax_dist.set_ylabel("")
-    ax_dist.spines['left'].set_visible(False)
-    ax_dist.spines['right'].set_visible(False)
-    ax_dist.spines['top'].set_visible(False)
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_velocity.png"), bbox_inches='tight')
-    plt.close()
-    print("Rho distribution weighted by velocity plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_velocity.png"))
+    # ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    # # ax_dist.set_ylabel("Weighted by Kinetic Energy", fontsize=20)
+    # ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    # ax_dist.set_ylabel("")
+    # ax_dist.spines['left'].set_visible(False)
+    # ax_dist.spines['right'].set_visible(False)
+    # ax_dist.spines['top'].set_visible(False)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_velocity.png"), bbox_inches='tight')
+    # plt.close()
+    # print("Rho distribution weighted by velocity plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_velocity.png"))
+
+    #### neede to see whic one contributes the most
 
     # Tau plot ############
     print("Creating combined plot tau...")
@@ -5343,7 +5742,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ### create new directory for rho plots ###
 
         # create a new folder for the rho plots
-        output_dir_rho = os.path.join(output_dir_show, "rho_plots")
+        output_dir_rho = os.path.join(output_dir_show, "classes")
         os.makedirs(output_dir_rho, exist_ok=True)
 
         # ### CORNER PLOT ###
@@ -5661,7 +6060,20 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             # -------------------------
             # Plot panels
             # -------------------------
+            # take the directory where the file is supposed to be
+            output_folder = os.path.dirname(out_path) if out_path else None
+            all_variables = []
+            # from vars_list get the name and put in list
+            for vinfo in vars_list:
+                all_variables.append(vinfo["name"])
+            
             for i, (cut_mask, cut_title) in enumerate(cuts_list):
+                # how many are true in (cut_mask)
+                True_count = np.sum(cut_mask)
+                if True_count != 0:
+                    # make the array_for_cov with as many columns as array_for_cov and as many rows as the one flagged in cut_mask
+                    array_for_cov = np.full((True_count, len(vars_list)), np.nan, float)
+
                 for j, vinfo in enumerate(vars_list):
 
                     b = j // wrap_cols
@@ -5697,6 +6109,16 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         v_use = vals[m_red]
                         w_use = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
 
+                    try:
+                        if np.any(v_use):
+                            array_for_cov[:, j] = v_use  # for covariance later
+                    except:
+                        if np.any(v_use):
+                            print(f"Warning: variable '{vinfo.get('name','?')}' has {len(v_use)} values but array_for_cov has {array_for_cov.shape[0]} rows. Resizing array_for_cov to fit.")
+                            # increase or decreease the number of rows in array_for_cov to match v_use
+                            array_for_cov = np.resize(array_for_cov, (len(v_use), len(vars_list)))
+                            array_for_cov[:, j] = v_use  # for covariance later
+
                     # show xticks only on the bottom cut-row of each band
                     hide_xticks = (i != ncuts - 1)
 
@@ -5715,6 +6137,23 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     if i == ncuts - 1:
                         ax.tick_params(axis='x', labelbottom=True)
                         ax.set_xlabel(bottom_xlabel_per_col[j], fontsize=16)
+
+                # # use regex to get from Tot N.30 the rest so get rid of the Tot N.numbers part
+                # regex = r"Tot N\.\d+\s*[-—]?\s*"
+                # title_cov_new = re.sub(regex, "", cut_title).strip()
+                # # check if title_cov_new has forbidden characte for windows and delete them
+                title_cov_new = re.sub(r'[<>:"/\\|?*]', '', cut_title)
+                if np.any(v_use):
+                    print(f"  Plotting correlation for cut '{cut_title}' with {len(v_use)} points...")
+                    # correlation plots all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, shower_name_short)
+                    correlation_plots_all(
+                    array_for_cov,
+                    all_variables,  
+                    w_use,
+                    output_folder,
+                    shower_name_short=title_cov_new,
+                    name_covar_fold=title_cov_new
+                    )
 
             # Tick label sizes
             for b in range(nbands):
@@ -5738,7 +6177,6 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 first_col_name="Parameter",
                 counts_row_label="N"
             )
-
             # ---- column headers ----
             # col_headers = ["Cut"] + [
                 # variable_map_plot.get(
@@ -6328,6 +6766,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             for sp in ['left','right','top']: # 'bottom',
                 ax.spines[sp].set_visible(False)
 
+        out_path = os.path.join(output_dir_rho, f"Tj_class")
+        # create the folder if does not exist
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
+
         # ---------- Class masks at SAMPLE level ----------
         finite = np.isfinite(rho_samp) & np.isfinite(tj_samples) & np.isfinite(w_all)
         ast_m = finite & (tj_samples >= 3.0)
@@ -6354,10 +6797,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         axes[2].set_xticks(np.arange(0, 9000, 2000))
         for ax in axes:
             ax.tick_params(labelsize=20)
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_Tj_threepanels_weighted.png")
-        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_Tj_threepanels_weighted.png")
+        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
         plt.close()
-        print("Saved:", out_path)
+        print("Saved:", out_path_rho)
 
         # ### rho distribution plot ###
 
@@ -6378,7 +6821,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             random_seed=123,
             caption=r"Pairwise tests on $\rho$ by Tisserand class (weighted posteriors).",
             label="tab:rho_tj_weighted_tests",
-            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_orbit.tex"),
+            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_orbit.tex"),
         )
 
         # --- Masks (rows) ---
@@ -6388,19 +6831,19 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             (htc_m, f"Tot N.{num_tj_below_2} HTC"),
         ]
 
-        # --- Column 1: v_init ---
-        idx_arr = np.where(np.asarray(variables) == "v_init")[0]
-        index_v_init = int(idx_arr[0])
-        v_init_vals  = samples[:, index_v_init].astype(float)
-        v_init_lo, v_init_hi = float(np.nanmin(v_init_vals)), float(np.nanmax(v_init_vals))
-        v_init_spec = {
-            "values": v_init_vals,
-            "label":  r"$v_0$ [km/s]",
-            "name":   "v_init",
-            "xlim":   (v_init_lo, v_init_hi),
-            "color":  "orange",
-        }
-        vars_to_plot = [v_init_spec]
+        # # --- Column 1: v_init ---
+        # idx_arr = np.where(np.asarray(variables) == "v_init")[0]
+        # index_v_init = int(idx_arr[0])
+        # v_init_vals  = samples[:, index_v_init].astype(float)
+        # v_init_lo, v_init_hi = float(np.nanmin(v_init_vals)), float(np.nanmax(v_init_vals))
+        # v_init_spec = {
+        #     "values": v_init_vals,
+        #     "label":  r"$v_0$ [km/s]",
+        #     "name":   "v_init",
+        #     "xlim":   (v_init_lo, v_init_hi),
+        #     "color":  "orange",
+        # }
+        # vars_to_plot = [v_init_spec]
 
         # --- Column 1: m_init ---
         idx_arr = np.where(np.asarray(variables) == "m_init")[0]
@@ -6414,7 +6857,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             "xlim":   (m_init_lo, m_init_hi),
             "color":  "gold",
         }
-        vars_to_plot = vars_to_plot + [m_init_spec]
+        # vars_to_plot = vars_to_plot + [m_init_spec]
+        vars_to_plot = [m_init_spec]
 
         # --- Column 2: rho ---
         rho_vals = np.asarray(rho_samp, float)
@@ -6449,37 +6893,130 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # --------------------------
         # Keep full-length arrays and just apply base_mask in the plotter
 
-        eros_vals_full  = np.asarray(np.log10(eta_corrected*1e6), float)      # FULL
-        print("Eros vals full length max:", np.nanmax(eros_vals_full), "min:", np.nanmin(eros_vals_full))
-        sigma_vals_full = np.asarray(sigma_corrected*1e6, float)              # FULL
-        print("Sigma vals full length max:", np.nanmax(sigma_vals_full), "min:", np.nanmin(sigma_vals_full))
+        eros_vals_full_weight  = np.asarray(np.log10(eta_corrected*1e6), float)      # FULL
+        print("Eros vals full length max:", np.nanmax(eros_vals_full_weight), "min:", np.nanmin(eros_vals_full_weight))
+        sigma_vals_full_weight = np.asarray(sigma_corrected*1e6, float)              # FULL
+        print("Sigma vals full length max:", np.nanmax(sigma_vals_full_weight), "min:", np.nanmin(sigma_vals_full_weight))
         idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
         index_s = int(idx_arr[0])
         idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
         index_ml = int(idx_arr[0])
         idx_arr = np.where(np.asarray(variables) == "erosion_mass_max")[0]
         index_mu = int(idx_arr[0])
+        idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
+        index_ero = int(idx_arr[0])
+        idx_arr = np.where(np.asarray(variables) == "erosion_coeff_change")[0]
+        index_ero_ch = int(idx_arr[0])
+        idx_arr = np.where(np.asarray(variables) == "sigma")[0]
+        index_sig = int(idx_arr[0])
+        idx_arr = np.where(np.asarray(variables) == "erosion_sigma_change")[0]
+        index_sig_ch = int(idx_arr[0])
         s_vals_full     = samples[:, index_s].astype(float)                   # FULL
         ml_vals_full    = samples[:, index_ml].astype(float)                  # FULL
         mu_vals_full    = samples[:, index_mu].astype(float)                  # FULL
+        ero_vals_full   = samples[:, index_ero].astype(float)                 # FULL
+        ero_ch_vals_full= samples[:, index_ero_ch].astype(float)              # FULL
+        sig_vals_full   = samples[:, index_sig].astype(float)                 # FULL
+        sig_ch_vals_full= samples[:, index_sig_ch].astype(float)              # FULL
+
+        energy_surf = {
+            "values": energy_per_cs_before_erosion_backup,
+            "label":  r"$E_{S}$ [MJ/m$^2$]",
+            "name":   "energy_per_cs_before_erosion_backup",
+            "xlim":   (float(np.nanmin(energy_per_cs_before_erosion_backup)), float(np.nanmax(energy_per_cs_before_erosion_backup))),
+            "color":  "brown",
+        }
+
+        energy_kg = {
+            "values": energy_per_mass_before_erosion_backup,
+            "label":  r"$E_{V}$ [MJ/kg]",
+            "name":   "energy_per_mass_before_erosion_backup",
+            "xlim":   (float(np.nanmin(energy_per_mass_before_erosion_backup)), float(np.nanmax(energy_per_mass_before_erosion_backup))),
+            "color":  "olive",
+        }
+
+        dynpress = {
+            "values": erosion_beg_dyn_press_backup,
+            "label":  r"$P_{e1}$ [kPa]",
+            "name":   "erosion_beg_dyn_press_backup",
+            "xlim":   (float(np.nanmin(erosion_beg_dyn_press_backup)), float(np.nanmax(erosion_beg_dyn_press_backup))),
+            "color":  "cyan",
+        }
+
+        mass_left1 = {
+            "values": mass_percent_1frag,
+            "label":  r"$m_{left,1}$ [%]",
+            "name":   "mass_left_first_percent",
+            "xlim":   (float(np.nanmin(mass_percent_1frag)), float(np.nanmax(mass_percent_1frag))),
+            "color":  "magenta",
+        }
+
+        mass_left2 = {
+            "values": mass_percent_2frag,
+            "label":  r"$m_{left,2}$ [%]",
+            "name":   "mass_left_second_percent",
+            "xlim":   (float(np.nanmin(mass_percent_2frag)), float(np.nanmax(mass_percent_2frag))),
+            "color":  "pink",
+        }
 
         eros_spec = {
-            "values": eros_vals_full,
+            "values": eros_vals_full_weight,
             "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
             "name":   "erosion_coeff",
-            "xlim":   (float(np.nanmin(eros_vals_full[rho_cut])), float(np.nanmax(eros_vals_full[rho_cut]))),
+            "xlim":   (float(np.nanmin(eros_vals_full_weight[rho_cut])), float(np.nanmax(eros_vals_full_weight[rho_cut]))),
             "color":  "blue",
             "base_mask": rho_cut,
         }
 
+        eros_spec1 = {
+            "values": ero_vals_full,
+            "label":  r"$\log_{10}$ $\eta$ [kg/MJ]",
+            "name":   "erosion_coeff",
+            "xlim":   (float(np.nanmin(ero_vals_full[rho_cut])), float(np.nanmax(ero_vals_full[rho_cut]))),
+            "color":  "blue",
+            "base_mask": rho_cut,
+        }
+
+        eros_spec2 = {
+            "values": ero_ch_vals_full,
+            "label":  r"$\log_{10}$ $\eta_{2}$ [kg/MJ]",
+            "name":   "erosion_coeff_change",
+            "xlim":   (float(np.nanmin(ero_ch_vals_full[rho_cut])), float(np.nanmax(ero_ch_vals_full[rho_cut]))),
+            "color":  "dodgerblue",
+            "base_mask": rho_cut,
+        }
+
         sigma_spec = {
-            "values": sigma_vals_full,
+            "values": sigma_vals_full_weight,
             "label":  r"$\sigma$ [kg/MJ]",
             "name":   "sigma",
-            "xlim":   (float(np.nanmin(sigma_vals_full[rho_cut])), float(np.nanmax(sigma_vals_full[rho_cut]))),
+            "xlim":   (float(np.nanmin(sigma_vals_full_weight[rho_cut])), float(np.nanmax(sigma_vals_full_weight[rho_cut]))),
             "color":  "green",
             "base_mask": rho_cut,
         }
+
+        sigma_spec1 = {
+            "values": sig_vals_full,
+            "label":  r"$\sigma$ [kg/MJ]",
+            "name":   "sigma",
+            "xlim":   (float(np.nanmin(sig_vals_full[rho_cut])), float(np.nanmax(sig_vals_full[rho_cut]))),
+            "color":  "green",
+            "base_mask": rho_cut,
+        }
+
+        sigma_spec2 = {
+            "values": sig_ch_vals_full,
+            "label":  r"$\sigma_{2}$ [kg/MJ]",
+            "name":   "erosion_sigma_change",
+            "xlim":   (float(np.nanmin(sig_ch_vals_full[rho_cut])), float(np.nanmax(sig_ch_vals_full[rho_cut]))),
+            "color":  "limegreen",
+            "base_mask": rho_cut,
+        }
+
+
+
+
+        # not vary
 
         s_spec = {
             "values": s_vals_full,
@@ -6508,10 +7045,16 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             "base_mask": rho_cut,
         }
 
-        vars_to_plot_split1 = vars_to_plot + [eros_spec] 
-        vars_to_plot_split2 = [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
+        ####################################
 
-        vars_to_plot = vars_to_plot + [eros_spec] + [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
+        # vars_to_plot_split1 = vars_to_plot + [eros_spec] 
+        # vars_to_plot_split2 = [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
+
+        # vars_to_plot = vars_to_plot + [eros_spec] + [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
+        # vars_to_plot = vars_to_plot + [energy_surf, mass_left, eros_spec, eros_spec2, sigma_spec, sigma_spec2]
+        vars_to_plot = vars_to_plot + [eros_spec1, sigma_spec1, energy_kg, dynpress, eros_spec2, sigma_spec2] #, eros_spec2, sigma_spec2, s_spec, ml_spec, mu_spec
+
+        ####################################
 
         # rho_cut = (rho_vals < 4000) & np.isfinite(rho_vals)
 
@@ -6637,7 +7180,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # mu_spec["base_mask"] = rho_cut
 
         # --- Call the plotter ---
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_Tj_grid.png")
+        out_path = os.path.join(out_path, f"{shower_name}_by_Tj_grid.png")
         fig, axes = plot_by_cuts_and_vars(
             vars_list=vars_to_plot,
             cuts_list=cuts,
@@ -6649,7 +7192,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         print("Saved:", out_path)
         plt.close(fig)
 
-        print("Creating rho plots...")
+        print("Creating more Tj cuts plots...")
+
+        out_path = os.path.join(output_dir_rho, f"Tj_all_class")
+        # create the folder if does not exist
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
 
         # ---------- Class masks at SAMPLE level ----------
         ast_m5over = finite & (tj_samples >= 4.0)
@@ -6689,10 +7237,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         axes[7].set_xticks(np.arange(0, 9000, 2000))
         for ax in axes:
             ax.tick_params(labelsize=20)
-        out_path = os.path.join(output_dir_show, f"{shower_name}_rho_by_Tj_cuts.png")
-        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_Tj_cuts.png")
+        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
         plt.close()
-        print("Saved:", out_path)
+        print("Saved:", out_path_rho)
 
         # ### rho distribution plot ###
 
@@ -6716,7 +7264,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             random_seed=123,
             caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
             label="tab:rho_dynpres_weighted_tests",
-            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_all_Tj_cut.tex"),
+            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_all_Tj_cut.tex"),
         )
 
         # print(tex)  # also written to file if save_path was given
@@ -6733,7 +7281,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ]
 
         # --- Call the plotter ---
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_all_Tj_cut_grid.png")
+        out_path = os.path.join(out_path, f"{shower_name}_by_all_Tj_cut_grid.png")
         fig, axes = plot_by_cuts_and_vars(
             vars_list=vars_to_plot,
             cuts_list=cuts,
@@ -6749,6 +7297,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ### mass change plots ###
 
         print("Creating mass change plots for rho...")
+
+        out_path = os.path.join(output_dir_rho, f"mass_class")
+        # create the folder if does not exist
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
 
         m_init_med = np.asarray(m_init_med, float)  # per-event Tj (same length as event_names_like)
         if m_init_med.shape[0] != event_names_like.shape[0]:
@@ -6805,10 +7358,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             ax.tick_params(labelsize=20)
 
         # Save
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
-        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
+        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
         plt.close()
-        print("Saved:", out_path)
+        print("Saved:", out_path_rho)
 
         # plot scatter
         fig, ax = plt.subplots(figsize=(6, 8), constrained_layout=True)  # larger width, auto spacing
@@ -6840,7 +7393,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.grid(True, alpha=0.2)
 
         # save the rho vs diameter plot
-        plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_mass_v_scatter.png"), bbox_inches='tight', dpi=300)
+        plt.savefig(os.path.join(out_path, f"{shower_name}_rho_by_mass_v_scatter.png"), bbox_inches='tight', dpi=300)
         plt.close()
 
         # ### rho distribution plot ###
@@ -6863,7 +7416,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             random_seed=123,
             caption=r"Pairwise tests on $\rho$ by mass (weighted posteriors).",
             label="tab:rho_mass_weighted_tests",
-            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_mass.tex"),
+            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_mass.tex"),
         )
 
         # mass cuts
@@ -6876,7 +7429,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ]
 
         # --- Call the plotter ---
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_mass_grid.png")
+        out_path = os.path.join(out_path, f"{shower_name}_by_mass_grid.png")
         fig, axes = plot_by_cuts_and_vars(
             vars_list=vars_to_plot,
             cuts_list=cuts,
@@ -6891,6 +7444,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ### diameter change plots ###
 
         print("Creating diameter change plots for rho...")
+
+        out_path = os.path.join(output_dir_rho, f"diameter_class")
+        # create the folder if does not exist
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
 
         # same for meteoroid_diameter_mm
         meteoroid_diameter_mm = np.asarray(meteoroid_diameter_mm, float) 
@@ -6931,10 +7489,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             ax.tick_params(labelsize=20)
 
         # Save
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_threepanels_weighted.png")
-        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_diameter_threepanels_weighted.png")
+        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
         plt.close()
-        print("Saved:", out_path)
+        print("Saved:", out_path_rho)
 
         ### Create scatter plot for rho vs diameter ###
 
@@ -6977,7 +7535,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         cbar.ax.tick_params(labelsize=12)
 
         # save the rho vs diameter plot
-        plt.savefig(os.path.join(output_dir_rho, f"{shower_name}_rho_by_diameter_v_scatter.png"), bbox_inches='tight', dpi=300)
+        plt.savefig(os.path.join(out_path, f"{shower_name}_rho_by_diameter_v_scatter.png"), bbox_inches='tight', dpi=300)
         plt.close()
 
         # ### rho distribution plot ###
@@ -6998,7 +7556,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             random_seed=123,
             caption=r"Pairwise tests on $\rho$ by diameter class (weighted posteriors).",
             label="tab:rho_diameter_weighted_tests",
-            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_diameter.tex"),
+            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_diameter.tex"),
         )
 
         # print(tex)  # also written to file if save_path was given
@@ -7011,7 +7569,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ]
 
         # --- Call the plotter ---
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_diameter_grid.png")
+        out_path = os.path.join(out_path, f"{shower_name}_by_diameter_grid.png")
         fig, axes = plot_by_cuts_and_vars(
             vars_list=vars_to_plot,
             cuts_list=cuts,
@@ -7026,6 +7584,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ### Eccentricity change plots ###
 
         print("Creating eccentricity change plots for rho...")
+        out_path = os.path.join(output_dir_rho, f"eccentricity_class")
+        # create the folder if does not exist
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)   
+
         # same for eccentricity e_val cuts at above 0.8, between 0.6 and 0.8, and between 0.6 and 0.4, and below 0.4
         e_val = np.asarray(e_val, float)
         if e_val.shape[0] != event_names_like.shape[0]:
@@ -7047,10 +7610,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         num_e_low = e_val[e_val < 0.4].shape[0]
         # ---------- Figure with three stacked panels ----------
         fig, axes = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
-        _panel_like_top(axes[0], rho_samp[e_high], w_all[e_high], "Tot N." + str(num_e_high) + " above 0.8", lo_all, hi_all, nbins, xlim)
-        _panel_like_top(axes[1], rho_samp[e_medium_high], w_all[e_medium_high], "Tot N." + str(num_e_medium_high) + " 0.6 - 0.8", lo_all, hi_all, nbins, xlim)
-        _panel_like_top(axes[2], rho_samp[e_medium_low], w_all[e_medium_low], "Tot N." + str(num_e_medium_low) + " 0.4 - 0.6", lo_all, hi_all, nbins, xlim)
-        _panel_like_top(axes[3], rho_samp[e_low], w_all[e_low], "Tot N." + str(num_e_low) + " below 0.4", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[0], rho_samp[e_high], w_all[e_high], "Tot N." + str(num_e_high) + " e above 0.8", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[e_medium_high], w_all[e_medium_high], "Tot N." + str(num_e_medium_high) + "  e 0.6 - 0.8", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[2], rho_samp[e_medium_low], w_all[e_medium_low], "Tot N." + str(num_e_medium_low) + " e 0.4 - 0.6", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[3], rho_samp[e_low], w_all[e_low], "Tot N." + str(num_e_low) + " e below 0.4", lo_all, hi_all, nbins, xlim)
         # Bottom labels/ticks to match your style
         axes[3].tick_params(axis='x', labelbottom=True)
         axes[3].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
@@ -7058,10 +7621,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         for ax in axes:
             ax.tick_params(labelsize=20)
         # Save
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_eccentricity_threepanels_weighted.png")
-        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_eccentricity_threepanels_weighted.png")
+        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
         plt.close()
-        print("Saved:", out_path)
+        print("Saved:", out_path_rho)
 
         groups = {
             "above 0.8": e_high,
@@ -7077,7 +7640,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             random_seed=123,
             caption=r"Pairwise tests on $\rho$ by eccentricity class (weighted posteriors).",
             label="tab:rho_eccentricity_weighted_tests",
-            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_eccentricity.tex"),
+            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_eccentricity.tex"),
         )
 
         cuts = [
@@ -7087,7 +7650,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             (e_low, f"Tot N.{num_e_low} below 0.4"),
         ]   
         # --- Call the plotter ---
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_eccentricity_grid.png")
+        out_path = os.path.join(out_path, f"{shower_name}_by_eccentricity_grid.png")
         fig, axes = plot_by_cuts_and_vars(
             vars_list=vars_to_plot,
             cuts_list=cuts,
@@ -7098,9 +7661,100 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         )
         print("Saved:", out_path)
         plt.close(fig)
+
+        ### kc parameter change plots ###
+
+
+        print("Creating k_c change plots for rho...")
+        out_path = os.path.join(output_dir_rho, f"k_c_class")
+        # create the folder if does not exist kc_par
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)   
+
+        # kc_par cuts between kc 85-91 km, between kc 95 and 100 km, and kc between 91 and 95 km, above 100 km
+        kc_par = np.asarray(kc_par, float)
+        if kc_par.shape[0] != event_names_like.shape[0]:
+            raise RuntimeError("Length mismatch: event_names vs kc_par.")   
+        # dict: base_name -> kc_par
+        kc_par_by_name = {str(n): float(v) for n, v in zip(event_names_like, kc_par)}
+        # Map each sample's base_name -> kc_par (NaN if missing)
+        kc_par_samples = np.array([kc_par_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+        # ---------- Class masks at SAMPLE level ----------
+        finite = np.isfinite(rho_samp) & np.isfinite(kc_par_samples)
+        kc_high = finite & (kc_par_samples >= 100)
+        kc_high_low = finite & (kc_par_samples >= 95) & (kc_par_samples < 100)
+        kc_medium_high = finite & (kc_par_samples >= 91) & (kc_par_samples < 95)
+        kc_medium_low = finite & (kc_par_samples >= 85) & (kc_par_samples < 91)
+        # kc_low = finite & (kc_par_samples < 85)
+        # find the number of kc_par
+        num_kc_high = kc_par[kc_par >= 100].shape[0]
+        num_kc_high_low = kc_par[(kc_par >= 95) & (kc_par < 100)].shape[0]
+        num_kc_medium_high = kc_par[(kc_par >= 91) & (kc_par < 95)].shape[0]
+        num_kc_medium_low = kc_par[(kc_par >= 85) & (kc_par < 91)].shape[0]
+        # ---------- Figure with three stacked panels ----------
+        fig, axes = plt.subplots(4, 1, figsize=(10, 13), sharex=True)
+        _panel_like_top(axes[0], rho_samp[kc_high], w_all[kc_high], "Tot N." + str(num_kc_high) + " $k_c$ above 100", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[kc_high_low], w_all[kc_high_low], "Tot N." + str(num_kc_high_low) + " $k_c$ 95 - 100", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[2], rho_samp[kc_medium_high], w_all[kc_medium_high], "Tot N." + str(num_kc_medium_high) + " $k_c$ 91 - 95", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[3], rho_samp[kc_medium_low], w_all[kc_medium_low], "Tot N." + str(num_kc_medium_low) + " $k_c$ 85 - 91", lo_all, hi_all, nbins, xlim)
+        # Bottom labels/ticks to match your style
+        axes[3].tick_params(axis='x', labelbottom=True)
+        axes[3].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[3].set_xticks(np.arange(0, 9000, 2000))
+        for ax in axes:
+            ax.tick_params(labelsize=20)
+        # Save
+        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_eccentricity_threepanels_weighted.png")
+        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
+        plt.close()
+        print("Saved:", out_path_rho)
+
+        groups = {
+            "$k_c$ above 100": kc_high,
+            "$k_c$ 95 - 100": kc_high_low,
+            "$k_c$ 91 - 95": kc_medium_high,
+            "$k_c$ 85 - 91": kc_medium_low,
+        }
+        tex, results = weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,                 # bump up for smoother p-values
+            random_seed=123,
+            caption=r"Pairwise tests on $\rho$ by kc class (weighted posteriors).",
+            label="tab:rho_kc_weighted_tests",
+            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_kc.tex"),
+        )
+
+        cuts = [
+            (kc_high, f"Tot N.{num_kc_high} $k_c$ above 100"),
+            (kc_high_low, f"Tot N.{num_kc_high_low} $k_c$ 95 - 100"),
+            (kc_medium_high, f"Tot N.{num_kc_medium_high} $k_c$ 91 - 95"),
+            (kc_medium_low, f"Tot N.{num_kc_medium_low} $k_c$ 85 - 91"),
+        ]   
+        # --- Call the plotter ---
+        out_path = os.path.join(out_path, f"{shower_name}_by_k_c_grid.png")
+        fig, axes = plot_by_cuts_and_vars(
+            vars_list=vars_to_plot,
+            cuts_list=cuts,
+            weights_all=w_all,
+            nbins=int(round(10.0 / 0.02)),
+            smooth=0.02,
+            out_path=out_path
+        )
+        print("Saved:", out_path)
+        plt.close(fig)
+
+
         ### Apex and Antihelion ###
 
         if apex_mask is not None:
+
+            out_path = os.path.join(output_dir_rho, f"apex_anti_class")
+            # create the folder if does not exist
+            if not os.path.exists(out_path):
+                os.makedirs(out_path)
+
             print("Apex vs Antihelion plots for rho...")
             apex_mask = np.asarray(apex_mask, bool)
             # what is True is False for anti_mask
@@ -7139,8 +7793,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 ax.tick_params(labelsize=20)
 
             # Save
-            out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_apex_anti_threepanels_weighted.png")
-            plt.savefig(out_path, bbox_inches='tight', dpi=300)
+            out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_apex_anti_threepanels_weighted.png")
+            plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
             plt.close()
 
             # ### rho distribution plot ###
@@ -7156,7 +7810,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 random_seed=123,
                 caption=r"Pairwise tests on $\rho$ by Apex/Antihelion class (weighted posteriors).",
                 label="tab:rho_apex_anti_weighted_tests",
-                save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_apex_anti.tex"),
+                save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_apex_anti.tex"),
             )
 
             cuts = [
@@ -7164,7 +7818,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 (anti_class, f"Tot N.{anti_num} Antihelion"),
             ]
             # --- Call the plotter ---
-            out_path = os.path.join(output_dir_rho, f"{shower_name}_by_apex_anti_grid.png")
+            out_path = os.path.join(out_path, f"{shower_name}_by_apex_anti_grid.png")
             fig, axes = plot_by_cuts_and_vars(
                 vars_list=vars_to_plot,
                 cuts_list=cuts,
@@ -7180,6 +7834,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ### Above below begin height change plots ###
 
         print("Above & below begin height plots for rho...")
+
+        out_path = os.path.join(output_dir_rho, f"AC_class")
+        # create the folder if does not exist
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
 
         valid_curve = np.isfinite(h_thr)
 
@@ -7240,10 +7899,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             ax.tick_params(labelsize=20)
 
         # Save
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_dynpres_threepanels_weighted.png")
-        plt.savefig(out_path, bbox_inches='tight', dpi=300)
+        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_dynpres_threepanels_weighted.png")
+        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
         plt.close()
-        print("Saved:", out_path)
+        print("Saved:", out_path_rho)
 
 
         # ### rho distribution plot ###
@@ -7262,7 +7921,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             random_seed=123,
             caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
             label="tab:rho_dynpres_weighted_tests",
-            save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_hbeg.tex"),
+            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_hbeg.tex"),
         )
 
         # print(tex)  # also written to file if save_path was given
@@ -7273,7 +7932,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ]
 
         # --- Call the plotter ---
-        out_path = os.path.join(output_dir_rho, f"{shower_name}_by_hbeg_grid.png")
+        out_path = os.path.join(out_path, f"{shower_name}_by_AC_grid.png")
         fig, axes = plot_by_cuts_and_vars(
             vars_list=vars_to_plot,
             cuts_list=cuts,
@@ -7286,94 +7945,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.close(fig)
 
 
-        # ### dyn press change plots ###
-
-        # print("Dyn press change plots for rho...")
-
-        # # --- Dynamic pressure two-class overlay (NO gradient) ---
-        # logq = np.log10(erosion_beg_dyn_press)
-        # # thr = 3.2  # log10 Pa  (≈ 1.58 kPa)
-
-        # # mask_hi = logq >= thr
-        # # mask_lo = ~mask_hi
-
-        # # same for meteoroid_diameter_mm
-        # logq = np.asarray(logq, float) 
-        # if logq.shape[0] != event_names_like.shape[0]:
-        #     raise RuntimeError("Length mismatch: event_names vs meteoroid_diameter_mm.")
-
-        # # dict: base_name -> meteoroid_diameter_mm
-        # logq_by_name = {str(n): float(v) for n, v in zip(event_names_like, logq)}
-        # # Map each sample's base_name -> meteoroid_diameter_mm (NaN if missing)
-        # logq_samples = np.array([logq_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
-
-        # # ---------- Class masks at SAMPLE level ----------
-        # finite = np.isfinite(rho_samp) & np.isfinite(logq_samples) & np.isfinite(w_all)
-        # sturdy = finite & (logq_samples >= thr)
-        # fragile = finite & (logq_samples < thr)
-
-        # # find the number of mass
-        # num_sturdy = logq[logq >= thr].shape[0]
-        # num_fragile = logq[logq < thr].shape[0]
-
-        # # ---------- Figure with three stacked panels ----------
-        # fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
-
-        # _panel_like_top(axes[0], rho_samp[fragile], w_all[fragile], "Tot N." + str(num_fragile) + " below " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
-        # _panel_like_top(axes[1], rho_samp[sturdy], w_all[sturdy], "Tot N." + str(num_sturdy) + " above " + str(np.round(10**thr))+" Pa", lo_all, hi_all, nbins, xlim)
-
-        # # Bottom labels/ticks to match your style
-        # axes[1].tick_params(axis='x', labelbottom=True)
-        # axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-        # axes[1].set_xticks(np.arange(0, 9000, 2000))
-        # for ax in axes:
-        #     ax.tick_params(labelsize=20)
-
-        # # Save
-        # out_path = os.path.join(output_dir_rho, f"{shower_name}_rho_by_dynpres_threepanels_weighted.png")
-        # plt.savefig(out_path, bbox_inches='tight', dpi=300)
-        # plt.close()
-        # print("Saved:", out_path)
 
 
-        # # ### rho distribution plot ###
-
-        # # Build group masks (any number of groups works)
-        # groups = {
-        #     "below " + str(10**thr)+" Pa": fragile,
-        #     "above " + str(10**thr)+" Pa": sturdy
-        # }
-
-        # tex, results = weighted_tests_table(
-        #     values=rho_samp,
-        #     weights=w_all,
-        #     groups=groups,
-        #     resample_n=8000,                 # bump up for smoother p-values
-        #     random_seed=123,
-        #     caption=r"Pairwise tests on $\rho$ by dynamic pressure class (weighted posteriors).",
-        #     label="tab:rho_dynpres_weighted_tests",
-        #     save_path=os.path.join(output_dir_rho, f"{shower_name}_rho_weighted_tests_dynpres.tex"),
-        # )
-
-        # # print(tex)  # also written to file if save_path was given
-
-        # cuts = [
-        #     (fragile, f"Tot N.{num_fragile} below {np.round(10**thr)} Pa"),
-        #     (sturdy, f"Tot N.{num_sturdy} above {np.round(10**thr)} Pa"),
-        # ]
-
-        # # --- Call the plotter ---
-        # out_path = os.path.join(output_dir_rho, f"{shower_name}_by_dynampres_grid.png")
-        # fig, axes = plot_by_cuts_and_vars(
-        #     vars_list=vars_to_plot,
-        #     cuts_list=cuts,
-        #     weights_all=w_all,
-        #     nbins=int(round(10.0 / 0.02)),
-        #     smooth=0.02,
-        #     out_path=out_path
-        # )
-        # print("Saved:", out_path)
-        # plt.close(fig)
 
     ##################### DISTRIBUTION PLOTS #####################
 
@@ -7529,28 +8102,27 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         )
 
         try:
-            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-                combined_samples_cov_plot, variables_corr,
-                var_to_delete='',
-                var_to_correct='energy_per_cs_before_erosion_backup',
-                values_to_add=energy_per_cs_before_erosion_backup
-            )
-            combined_samples_cov_plot, variables_corr = delete_var_and_substitute(
-                combined_samples_cov_plot, variables_corr,
-                var_to_delete='',
-                var_to_correct='energy_per_mass_before_erosion_backup',
-                values_to_add=energy_per_mass_before_erosion_backup
-            )
+
+            # # add energy_per_cs_before_erosion_backup to the covariance 
+            # variables_corr = variables_corr + ['energy_per_cs_before_erosion_backup', 'energy_per_mass_before_erosion_backup', 'mass_left_second_percent', 'erosion_beg_dyn_press_backup', 'dyn_press_at_erosion_change_backup']
+            # combined_samples_cov_plot = np.hstack((combined_samples_cov_plot, energy_per_cs_before_erosion_backup.reshape(-1, 1), energy_per_mass_before_erosion_backup.reshape(-1, 1), mass_percent_2frag.reshape(-1, 1), erosion_beg_dyn_press_backup.reshape(-1, 1), dyn_press_at_erosion_change_backup.reshape(-1, 1) ))
+
+
+            # add energy_per_cs_before_erosion_backup to the covariance 
+            variables_corr = variables_corr + ['energy_per_cs_before_erosion_backup', 'energy_per_mass_before_erosion_backup', 'k_c', 'erosion_beg_dyn_press_backup'] # , 'dyn_press_at_erosion_change_backup'
+            combined_samples_cov_plot = np.hstack((combined_samples_cov_plot, energy_per_cs_before_erosion_backup.reshape(-1, 1), energy_per_mass_before_erosion_backup.reshape(-1, 1), kc_all.reshape(-1, 1), erosion_beg_dyn_press_backup.reshape(-1, 1) )) # , dyn_press_at_erosion_change_backup.reshape(-1, 1)
+
         except:
             print("energy_per_cs_before_erosion_backup or energy_per_mass_before_erosion_backup not found, skipping adding them to the correlation plot.")
 
-        # correlation_plots_all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, shower_name_short)
+        # correlation plots all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, shower_name_short)
         correlation_plots_all(
         combined_samples_cov_plot,
         variables_corr,
         combined_weights,
         output_dir_show,
-        shower_name_short=shower_name_short
+        shower_name_short=shower_name_short,
+        needed_1vs1cov = True
         )
 
 
@@ -7565,7 +8137,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Desktop\test", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -7606,7 +8178,11 @@ if __name__ == "__main__":
      file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, 
      mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, 
      erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, 
-     dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
+     dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all)=open_all_shower_data(cml_args.input_dir, cml_args.output_dir, cml_args.name)
     
-    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup,
-                       radiance_plot_flag=False, plot_correl_flag=True, plot_Kikwaya=False, plot_class = False) # cml_args.radiance_plot cml_args.correl_plot
+    shower_distrb_plot(cml_args.output_dir, cml_args.name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, 
+                       file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, 
+                       tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, 
+                       energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, 
+                       mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all,
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot

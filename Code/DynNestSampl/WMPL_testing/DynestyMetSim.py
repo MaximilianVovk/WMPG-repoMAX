@@ -1082,7 +1082,7 @@ def _compute_sim_lag(sim, obs_data):
     return lag
 
 
-def _worker_simulate_and_interp(sample_equal_row):
+def _worker_simulate_and_interp(sample_equal_row, sample_row):
     """
     Runs one posterior sample through runSimulation() and returns
     (lum_at_hl, mag_at_hl, vel_at_hl, lag_at_hl) as 1D arrays.
@@ -1097,8 +1097,6 @@ def _worker_simulate_and_interp(sample_equal_row):
 
         pars = _apply_log_flags_to_sample(sample_equal_row, variables, flags_dict)
         sim  = runSimulationDynesty(pars, obs_data, variables, fixed_values)
-
-        const_saved = sim.const  # save original const
 
         # NEW: integrate per your condition
         _maybe_integrate_luminosity(sim, obs_data)
@@ -1130,12 +1128,21 @@ def _worker_simulate_and_interp(sample_equal_row):
 
         # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
 
+        #############################################################################
+        # save the real variables not reweigted #
+        #############################################################################
+
+        pars_real = _apply_log_flags_to_sample(sample_row, variables, flags_dict)
+        sim_real  = runSimulationDynesty(pars_real, obs_data, variables, fixed_values)
+
+        const_saved = sim_real.const  # save original const
+
         # check if erosion_height_change is in variables
         if 'erosion_height_change' in variables:
             mass_at_erosion_change = const_saved.mass_at_erosion_change
             erosion_height_change = const_saved.erosion_height_change
-            h_raw = np.asarray(sim.leading_frag_height_arr)
-            mass = np.asarray(sim.mass_total_active_arr)
+            h_raw = np.asarray(sim_real.leading_frag_height_arr)
+            mass = np.asarray(sim_real.mass_total_active_arr)
 
             min_len = min(h_raw.size, mass.size)
             h_raw = h_raw[:min_len]
@@ -1150,7 +1157,7 @@ def _worker_simulate_and_interp(sample_equal_row):
             rho_mass_weighted = const_saved.rho*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + erosion_rho_change*(mass_at_erosion_change/const_saved.m_init)
             rho_volume_weighted = const_saved.m_init/((abs(const_saved.m_init-mass_at_erosion_change)/const_saved.rho) + (mass_at_erosion_change/erosion_rho_change))
             # print(f"rho_mass_weighted: {rho_mass_weighted} rho_volume_weighted: {rho_volume_weighted} and rho: {const_saved.rho}")
-            erosion_dyn_press_change = sim.leading_frag_dyn_press_arr[np.nanargmin(np.abs(h_raw - erosion_height_change))]
+            erosion_dyn_press_change = sim_real.leading_frag_dyn_press_arr[np.nanargmin(np.abs(h_raw - erosion_height_change))]
             erosion_coeff_mass_weighted = const_saved.erosion_coeff*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + const_saved.erosion_coeff_change*(mass_at_erosion_change/const_saved.m_init)
             sigma_mass_weighted = const_saved.sigma*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + const_saved.erosion_sigma_change*(mass_at_erosion_change/const_saved.m_init)
         else:
@@ -1161,7 +1168,7 @@ def _worker_simulate_and_interp(sample_equal_row):
             erosion_coeff_mass_weighted = const_saved.erosion_coeff
             sigma_mass_weighted = const_saved.sigma
         # compute the erosion energy per surface and per mass because by default const_saved.energy_per_cs_before_erosion and const_saved.energy_per_mass_before_erosion are empty 
-        eeucs_best, eeum_best = energyReceivedBeforeErosion(const_saved)
+        eeucs_curr, eeum_curr = energyReceivedBeforeErosion(const_saved)
 
         const_backup = {
         "rho_mass_weighted": rho_mass_weighted,
@@ -1173,18 +1180,18 @@ def _worker_simulate_and_interp(sample_equal_row):
         "erosion_beg_dyn_press": const_saved.erosion_beg_dyn_press if hasattr(const_saved, 'erosion_beg_dyn_press') else None,
         "mass_at_erosion_change": mass_at_erosion_change,
         "dyn_press_at_erosion_change": erosion_dyn_press_change,
-        "energy_per_cs_before_erosion": eeucs_best,
-        "energy_per_mass_before_erosion": eeum_best,
+        "energy_per_cs_before_erosion": eeucs_curr,
+        "energy_per_mass_before_erosion": eeum_curr,
         "main_mass_exhaustion_ht": const_saved.main_mass_exhaustion_ht if hasattr(const_saved, 'main_mass_exhaustion_ht') else None,
         "main_bottom_ht": const_saved.main_bottom_ht if hasattr(const_saved, 'main_bottom_ht') else None
         }
 
-        # add to const_backup also all variables
-        for var in variables:
-            # print(f"Checking variable {var} in const_saved...")
-            if hasattr(const_saved, var):
-                # print(f"Adding {var} to const_backup with value {getattr(const_saved, var)}")
-                const_backup[var] = getattr(const_saved, var)
+        # # add to const_backup also all variables
+        # for var in variables:
+        #     # print(f"Checking variable {var} in const_saved...")
+        #     if hasattr(const_saved, var):
+        #         # print(f"Adding {var} to const_backup with value {getattr(const_saved, var)}")
+        #         const_backup[var] = getattr(const_saved, var)
 
         return lum_hl, mag_hl, vel_hv, lag_hv, const_backup
     except Exception:
@@ -1364,7 +1371,7 @@ def posteriorBandsVsHeightParallel(
         ) as ex:
             # submit and keep a map to their sample index
             future_to_idx = {
-                ex.submit(_worker_simulate_and_interp, samples_eq[sidx]): sidx
+                ex.submit(_worker_simulate_and_interp, samples_eq[sidx], dynesty_results.samples[sidx]): sidx
                 for sidx in range(S)
             }
 
@@ -1392,7 +1399,7 @@ def posteriorBandsVsHeightParallel(
         _init_worker(obs_data, variables, flags_dict, fixed_values, align_height)
         done = 0
         for sidx in range(S):
-            res = _worker_simulate_and_interp(samples_eq[sidx])
+            res = _worker_simulate_and_interp(samples_eq[sidx], dynesty_results.samples[sidx])
             if res is not None:
                 lum_hl, mag_hl, vel_hl, lag_hl, const_backup = res
                 lum_samples[sidx] = lum_hl
@@ -2585,7 +2592,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             print(f"Loading existing backup file: {backup_file_check}")
              # to load the backup file later
             with gzip.open(backup_file_check, "rb") as f:
-                backup_small = pickle.load(f)
+                # backup_small = pickle.load(f)
+                backup_small = load_gzip_pickle_with_fallback(backup_file_check)
 
             bands_lum = backup_small['bands']['lum']
             bands_mag = backup_small['bands']['mag']
@@ -2642,11 +2650,12 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                     "logl": np.asarray(dynesty_run_results.logl, dtype=np.float64).tolist(),
                     "logwt": np.asarray(dynesty_run_results.logwt, dtype=np.float64).tolist(),
                     "logz": np.asarray(dynesty_run_results.logz, dtype=np.float64).tolist(),
-                    "logzerr": np.asarray(dynesty_run_results.logzerr, dtype=np.float64).tolist() if dynesty_run_results.logzerr is not None else None,
+                    "logzerr": np.asarray(dynesty_run_results.logzerr, dtype=np.float64).tolist()
+                            if dynesty_run_results.logzerr is not None else None,
                     "niter": dynesty_run_results.niter,
                     "ncall": dynesty_run_results.ncall,
                     "eff": dynesty_run_results.eff,
-                    "summary": dynesty_run_results.summary(),
+                    "summary": str(dynesty_run_results.summary()),
                     "variables": variables,
                     "flags_dict": flags_dict,
                     "fixed_values": fixed_values,
@@ -2655,18 +2664,23 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                     "approx_modes": np.asarray(approx_modes, dtype=np.float32).tolist(),
                     "95_CI_lower": np.asarray(lower_95, dtype=np.float32).tolist(),
                     "95_CI_upper": np.asarray(upper_95, dtype=np.float32).tolist(),
-                    "rho_array": backup_data["rho_array"],
-                    "rho_mass_weighted_estimate": {k: float(v) for k, v in backup_data["rho_mass_weighted_estimate"].items()},
-                    "const_backups": backup_data["const_backups"]
+                    "rho_array": np.asarray(backup_data["rho_array"], dtype=np.float32).tolist(),
+                    "rho_mass_weighted_estimate": {
+                        k: float(v) for k, v in backup_data["rho_mass_weighted_estimate"].items()
+                    },
+                    "const_backups": backup_data["const_backups"],
                 },
 
                 "best_guess": {
-                    k: np.asarray(v, dtype=np.float32)
+                    k: np.asarray(v, dtype=np.float32).tolist()
                     for k, v in backup_data["best_guess"].items()
                 },
 
                 "bands": {
-                    k: {q: v.astype(np.float32) for q, v in backup_data["bands"][k].items()}
+                    k: {
+                        q: np.asarray(v, dtype=np.float32).tolist()
+                        for q, v in backup_data["bands"][k].items()
+                    }
                     for k in ("lum", "mag", "vel", "lag")
                 },
             }
@@ -5451,10 +5465,59 @@ class RestoredDynestyResults:
         )
 
 
+class RemappingUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        # --- NumPy compatibility ---
+        if module == "numpy._core.numeric":
+            module = "numpy.core.numeric"
+        elif module == "numpy.core.numeric":
+            module = "numpy._core.numeric"
+
+        # --- dynesty compatibility ---
+        elif module == "dynesty.internal_samplers":
+            module = "dynesty.nestedsamplers"
+        elif module == "dynesty.nestedsamplers":
+            module = "dynesty.internal_samplers"
+
+        return super().find_class(module, name)
+
+
+def load_gzip_pickle_with_fallback(path):
+    # First try normal loading
+    try:
+        with gzip.open(path, "rb") as f:
+            return pickle.load(f)
+    except ModuleNotFoundError as e:
+        print(f"Normal pickle load failed: {e}")
+        print("Retrying with remapping unpickler...")
+
+    # Retry with remapping
+    with gzip.open(path, "rb") as f:
+        return RemappingUnpickler(f).load()
+
+class RemappingUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == "numpy._core.numeric":
+            module = "numpy.core.numeric"
+        elif module == "dynesty.internal_samplers":
+            module = "dynesty.nestedsamplers"
+        return super().find_class(module, name)
+
+
+def load_gzip_pickle_with_fallback(path):
+    try:
+        with gzip.open(path, "rb") as f:
+            return pickle.load(f)
+    except (ModuleNotFoundError, ImportError, AttributeError) as e:
+        print(f"Normal pickle load failed: {e}")
+        print("Retrying with remapping unpickler...")
+        with gzip.open(path, "rb") as f:
+            return RemappingUnpickler(f).load()
+
+
 def restoreBackupDynesty(backup_file: str):
     print(f"Loading existing backup file: {backup_file}")
-    with gzip.open(backup_file, "rb") as f:
-        backup_small = pickle.load(f)
+    backup_small = load_gzip_pickle_with_fallback(backup_file)
 
     d = backup_small["dynesty"]
 
@@ -5463,21 +5526,33 @@ def restoreBackupDynesty(backup_file: str):
         logl=np.asarray(d["logl"], dtype=np.float64),
         logwt=np.asarray(d["logwt"], dtype=np.float64),
         logz=np.asarray(d["logz"], dtype=np.float64),
-        logzerr=np.asarray(d["logzerr"], dtype=np.float64) if "logzerr" in d else None,
+        logzerr=np.asarray(d["logzerr"], dtype=np.float64) if d.get("logzerr") is not None else None,
         niter=d.get("niter"),
         ncall=d.get("ncall"),
         eff=d.get("eff"),
         _summary_text=d.get("summary"),
     )
 
+    best_guess = {
+        k: np.asarray(v, dtype=np.float32)
+        for k, v in backup_small.get("best_guess", {}).items()
+    }
+
     bands = backup_small.get("bands", {})
-    bands_lum = bands.get("lum", {})
-    bands_mag = bands.get("mag", {})
-    bands_vel = bands.get("vel", {})
-    bands_lag = bands.get("lag", {})
+    bands_lum = {k: np.asarray(v, dtype=np.float32) for k, v in bands.get("lum", {}).items()}
+    bands_mag = {k: np.asarray(v, dtype=np.float32) for k, v in bands.get("mag", {}).items()}
+    bands_vel = {k: np.asarray(v, dtype=np.float32) for k, v in bands.get("vel", {}).items()}
+    bands_lag = {k: np.asarray(v, dtype=np.float32) for k, v in bands.get("lag", {}).items()}
+
+    backup_small["best_guess"] = best_guess
+    backup_small["bands"] = {
+        "lum": bands_lum,
+        "mag": bands_mag,
+        "vel": bands_vel,
+        "lag": bands_lag,
+    }
 
     return dynesty_res, (bands_lum, bands_mag, bands_vel, bands_lag), backup_small
-
 
 
 def saveWakeContainersJson(wake_containers, out_json_path, metadata=None):

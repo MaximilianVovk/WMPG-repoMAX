@@ -299,7 +299,7 @@ def buildGlobalTimeAxis(
 # Function: plotting function
 ###############################################################################
 
-def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0):
+def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0, best_noise_wake=0, wake_data=None):
     """ Plot data from json files in the output folder against observations.
     
     The real LogL is computed with the best noise levels if provided. Initially is defined as guess.
@@ -311,7 +311,7 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0):
     Keyword arguments:
         best_noise_lum: [float] Best noise level for luminosity. 0 by default.
         best_noise_lag: [float] Best noise level for lag. 0 by default.
-
+        best_noise_wake: [float] Best noise level for wake. 0 by default.
     Return:
         None
 
@@ -327,7 +327,7 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0):
     json_files = [f for f in json_files if not f.startswith('wake_data_')]
 
     # delete any json file that ends with _with_noise.json
-    json_files = [f for f in json_files if not f.endswith('_with_noise.json')]
+    json_files = [f for f in json_files if not f.endswith('with_noise.json')]
     
     for const_json_name in json_files:
         print(f"Plotting simulation from json file: {const_json_name}")
@@ -364,22 +364,48 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0):
             manual_logL = logLikelihoodDynesty(guess_manual, obs_data, flags_dict_manual, fixed_values_manual, timeout=20)
             # run the simulation with the same parameters and same proecess as in run_simulation
             var_names_manual = list(flags_dict_manual.keys())
-            simulation_manual_MetSim_object = runSimulationDynesty(guess_manual, obs_data, var_names_manual, fixed_values_manual)
+            simulation_manual_MetSim_object = runSimulationDynesty(guess_manual, obs_data, var_names_manual, fixed_values_manual, flag_wake=False)
             if best_noise_lum!=0 and best_noise_lag!=0:
                 print(f"{json_name} real LogL = {manual_logL:.1f}")
                 # Plot the data with residuals and the best fit
                 plotSimVsObsResiduals(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL={manual_logL:.1f}')
                 plotObsVsHeight(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL={manual_logL:.1f}')
+                plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name, normalization_method="peak", align_method="correlate", noise_guess=best_noise_wake , color = 'slategray')
+                plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name+'_LogL', normalization_method="peak", align_method="correlate", noise_guess=best_noise_wake , color = 'slategray', lenMax = 100)
 
             else:
                 print(f"{json_name} intial guess LogL ~ {manual_logL:.1f}")
                 # Plot the data with residuals and the best fit
                 plotSimVsObsResiduals(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL$\\approx${manual_logL:.1f}')
                 plotObsVsHeight(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL$\\approx${manual_logL:.1f}')
+                plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name, normalization_method="peak", align_method="correlate", color = 'slategray')
+                plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name+'_LogL', normalization_method="peak", align_method="correlate", color = 'slategray', lenMax = 100)
 
         except Exception as e:
             print(f"Error encountered loading json file {const_json_file}: {e}")
+    try:
+        if hasattr(obs_data, 'const') and wake_data is not None and obs_data.noise_wake is not np.nan:
 
+            json_plots_folder = os.path.join(out_folder, "json_plots")
+            if not os.path.exists(json_plots_folder):
+                os.makedirs(json_plots_folder)
+
+            const_obs_dict = obs_data.const
+
+            const_obs = Constants()
+            const_obs.__dict__.update(const_obs_dict)
+
+            # Make sure dens_co is a numpy array if needed
+            const_obs.dens_co = np.array(const_obs.dens_co)
+
+            # Run the simulation
+            frag_main, results_list, wake_results = runSimulation(const_obs, compute_wake=True)
+            simulation_MetSim_object_wake = SimulationResults(const_obs, frag_main, results_list, wake_results)
+
+            plotWakeOverviewOptions(simulation_MetSim_object_wake, wake_data, json_plots_folder, "wake_fit_against_noise_overview", normalization_method="peak", align_method="correlate", noise_guess=obs_data.noise_wake, color = 'slategray')
+            plotWakeOverviewOptions(simulation_MetSim_object_wake, wake_data, json_plots_folder, "wake_fit_against_noise_LogL", normalization_method="peak", align_method="correlate", noise_guess=obs_data.noise_wake, color = 'slategray', lenMax = 100)
+    except Exception as e:
+        print(f"Error encountered running wake simulation for obs_data probably use an old format: {e}")
 
 
 def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=None, wake_samples=8,
@@ -481,11 +507,23 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
                                      normalization_method=normalization_method, align_method=align_method, 
                                      lenMax=lenMax, interp=interp_flag)
 
+        # Extract the wake points from the containers
+        wake_ref_intensity_array = []
+        for wake_pt in wake_container_ref.points:
+            wake_ref_intensity_array.append(wake_pt.intens_sum)
+        wake_ref_intensity_array = np.array(wake_ref_intensity_array)
+
         # Plot the observed wake
         axes[i].plot(obs_len_array, obs_lum_array, color="black", linestyle="--", linewidth=1, alpha=0.75)
 
         # Plot the simulated wake
         axes[i].plot(wake_len_array, wake_lum_array, color=color, linestyle="solid", linewidth=1, alpha=0.75)
+
+        # put 2 ticks on the y axis at the max and min of the wake_lum_array
+        axes[i].set_yticks([((np.max(wake_lum_array)+np.min(wake_lum_array))/2), np.max(wake_lum_array)])
+        # now change thier values to be the wake_ref_intensity_array values at the corresponding indices
+        axes[i].set_yticklabels([f"{((np.max(wake_ref_intensity_array)+np.min(wake_ref_intensity_array))/2):.0f}",
+                                f"{np.max(wake_ref_intensity_array):.0f}"], fontsize=6)
 
         # Get the height label as halfway between the peak model wake and 0
         txt_ht = np.max(wake_lum_array)/2
@@ -508,9 +546,9 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
         else:
             axes[i].text(txt_len_coord, txt_ht, "{:.1f} km".format(ht_ref/1000), fontsize=8, ha="right", va="center")
 
-    # Remove Y ticks on all axes
-    for ax in axes:
-        ax.set_yticks([])
+    # # Remove Y ticks on all axes
+    # for ax in axes:
+    #     ax.set_yticks([])
 
     # Set the X label
     axes[-1].set_xlabel("Length (m)", fontsize=12)
@@ -1236,15 +1274,19 @@ def _maybe_integrate_luminosity(sim, obs_data):
         # be silent and keep raw arrays if integration fails for any reason
         pass
 
-def _plot_distrib_weighted(rho_mass_weighted_list, weights, output_folder="", file_name="name",var_name="var", label="var", colors='black'):
+def _plot_distrib_weighted(rho_mass_weighted_list, weights, output_folder="", file_name="name",var_name="var", label="var", colors='black', ax_dist=None):
     if not DYNESTY_FOUND:
         return np.nan, np.nan, np.nan
         
     print("Creating distribution plot...")
     var_corrected_lo, var_corrected_median, var_corrected_hi = _quantile(rho_mass_weighted_list, [0.025, 0.5, 0.975], weights=weights)
-    # Create figure tau
-    fig = plt.figure(figsize=(8, 6))
-    ax_dist = fig.add_subplot(111)
+    if ax_dist is None:
+        # Create figure tau
+        fig = plt.figure(figsize=(8, 6))
+        ax_dist = fig.add_subplot(111)
+        save_file = True    
+    else:
+        save_file = False
 
     smooth = 0.02
     lo, hi = np.min(rho_mass_weighted_list), np.max(rho_mass_weighted_list)
@@ -1275,7 +1317,8 @@ def _plot_distrib_weighted(rho_mass_weighted_list, weights, output_folder="", fi
     ax_dist.spines['top'].set_visible(False)
     # x axis from 0 to tau_corrected*2
     # ax_dist.set_xlim(0, var_corrected_hi+var_corrected_median)
-    plt.savefig(os.path.join(output_folder, f"{file_name}_{var_name}_distribution.png"), bbox_inches='tight')
+    if save_file:
+        plt.savefig(os.path.join(output_folder, f"{file_name}_{var_name}_distribution.png"), bbox_inches='tight')
     return var_corrected_median, var_corrected_lo, var_corrected_hi
 
 def posteriorBandsVsHeightParallel(
@@ -2271,6 +2314,39 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         if mass_before is None:
             mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
         
+        # plot the two density the first one on top and te second one after
+        plt.subplots(2, 1, figsize=(5, 10))
+        plt.subplot(2, 1, 1)
+        ax = plt.gca()
+        # plot the
+        _plot_distrib_weighted(
+            samples_equal[:, variables.index('rho')].astype(float), 
+            weights=weights,
+            output_folder=output_folder,
+            file_name=file_name,
+            var_name='rho',
+            label='$\\rho$ [kg/m$^3$]',
+            colors='gray',
+            ax_dist=ax
+        )
+        plt.subplot(2, 1, 2)
+        ax = plt.gca()
+        _plot_distrib_weighted(
+            samples_equal[:, variables.index('erosion_rho_change')].astype(float),
+            weights=weights,
+            output_folder=output_folder,
+            file_name=file_name,
+            var_name='erosion_rho_change',
+            label='$\\rho_{2}$ [kg/m$^3$]',
+            colors='darkgray',
+            ax_dist=ax
+        )
+
+        # save the figure
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_folder, file_name + '_rho_distrib_two_rhos.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+
         # # precise erosion tal energy calculation ########################
         rho_total_arr = samples_equal[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before)/m_init) + samples_equal[:, variables.index('erosion_rho_change')].astype(float)*(mass_before/m_init)
     else:
@@ -2305,6 +2381,87 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             lum_eff_val = fixed_values[key]
             break
 
+    try:
+        # make a timer so that it does not take too much in
+        fixed_values_final_mass = copy.deepcopy(fixed_values)
+        # run the best simulations with h_kill = 1 and v_kill = 1.7
+        fixed_values_final_mass['h_kill'] = 1
+        fixed_values_final_mass['v_kill'] = 2500 # set to 2500 m/s to avoid killing the simulation too early and have a better estimate of the total radiated energy
+        # constjson_bestfit_final_mass.__dict__['h_kill'] = 1
+        # constjson_bestfit_final_mass.__dict__['v_kill'] = 2500 # set to 2500 m/s to avoid killing the simulation too early and have a better estimate of the total radiated energy
+        best_guess_obj_plot_kill = runSimulationDynesty(best_guess, obs_data, variables, fixed_values_final_mass)
+        # print the file_name then the initial mass the final mass
+        final_mass = best_guess_obj_plot_kill.mass_total_active_arr[-2]
+        final_mass_percent = (final_mass/best_guess_obj_plot_kill.mass_total_active_arr[0])*100
+        size_final = ((final_mass/(4/3*np.pi*best_guess_obj_plot_kill.const.rho))**(1/3))*2 * 1e6 # diameter in microns
+        print(f"Initial stop : {file_name}, initial mass: {best_guess_obj_plot.mass_total_active_arr[0]:.2g} kg, final mass: {best_guess_obj_plot.mass_total_active_arr[-2]:.2g} kg, final mass in percent {((best_guess_obj_plot.mass_total_active_arr[-2]/best_guess_obj_plot.mass_total_active_arr[0])*100):.2g} %")
+        print(f"Stop at 2.5 km/s {file_name}: initial mass: {best_guess_obj_plot.mass_total_active_arr[0]:.2g} kg, final mass: {final_mass:.2g} kg, final mass in percent {(final_mass_percent):.2g} %, final size: {size_final:.2f} microns")
+        
+        # create a plot that shows how the mass [:-1] varies against height [:-1]
+        plt.subplots(1, 3, figsize=(15, 5))
+
+        plt.subplot(1, 3, 2)
+        # plt.plot(best_guess_obj_plot.leading_frag_height_arr[:-1], best_guess_obj_plot.mass_total_active_arr[:-1], label='Best Fit')
+        plt.plot(best_guess_obj_plot_kill.mass_total_active_arr[:-1],best_guess_obj_plot_kill.leading_frag_height_arr[:-1]/1000,'k', label='Best Fit')
+        # create a shaded are where we see the meteor give the observe values  np.max(obs_data.height_lum)/1000 and np.min(obs_data.height_lum)/1000
+        plt.axhspan(np.min(obs_data.height_lum)/1000, np.max(obs_data.height_lum)/1000, color='lightgray', alpha=0.5, label='Observed meteor data')
+        # if the final velocity is higher than 1.71 then the stop was because the mass was below 10^-14 kg 
+        if best_guess_obj_plot_kill.leading_frag_vel_arr[-2] > 2510:
+           # plt.text(final_mass, best_guess_obj_plot_kill.leading_frag_height_arr[-2]/1000, 'Stop at mass limit', color='red', fontsize=8, ha='center', va='bottom')
+            plt.plot(final_mass, best_guess_obj_plot_kill.leading_frag_height_arr[-2]/1000, 'rx', label=f"Fully ablated (stop at mass limit)")
+        # # else:
+        #     # put dot where it reac 1.7 km/s i.e. at the end of the plot
+        #     plt.plot(final_mass, best_guess_obj_plot_kill.leading_frag_height_arr[-2]/1000, 'ro', label=f"Stop at {best_guess_obj_plot_kill.leading_frag_vel_arr[-2]/1000:.2f} km/s")
+
+
+        # display the leggen left up
+        plt.legend(loc='upper left', fontsize=10)
+        # add the label
+        # plt.ylabel('Height [km]')
+        plt.xlabel('Mass [kg]')
+        # take the current y axis value
+        y_axis = plt.gca().get_ylim()
+        # start the y axis np.max(obs_data.height_lum)/1000 + 10 
+        plt.ylim(y_axis[0], np.max(obs_data.height_lum)/1000 + 10)
+        # make x log
+        plt.xscale('log')
+        # plt.title(f"Mass vs Height for {file_name}")
+        plt.grid(True, linestyle='--', color='lightgray')
+
+        plt.subplot(1, 3, 1)
+        # put the absolute magnitude vs height plot with the obs_data and the best_guess_obj_plot
+        # plt.plot(obs_data.absolute_magnitudes, obs_data.height_lum/1000, color='k', label='Observed data')
+        plt.plot(best_guess_obj_plot_kill.abs_magnitude[:-1], best_guess_obj_plot_kill.leading_frag_height_arr[:-1]/1000, color='k', label='Best Fit')
+        plt.axhspan(np.min(obs_data.height_lum)/1000, np.max(obs_data.height_lum)/1000, color='lightgray', alpha=0.5, label='Observed meteor data')
+        plt.xlabel('Absolute Magnitude [-]')
+        plt.ylabel('Height [km]')
+        plt.grid(True, linestyle='--', color='lightgray')
+        plt.ylim(y_axis[0], np.max(obs_data.height_lum)/1000 + 10)
+        # invert the x axis
+        plt.gca().invert_xaxis()
+        plt.legend(loc='upper left', fontsize=10)
+        plt.subplot(1, 3, 3)
+        # put the velocity data
+        plt.plot(best_guess_obj_plot_kill.leading_frag_vel_arr[:-1]/1000, best_guess_obj_plot_kill.leading_frag_height_arr[:-1]/1000, color='k', label='Best Fit')
+        plt.axhspan(np.min(obs_data.height_lum)/1000, np.max(obs_data.height_lum)/1000, color='lightgray', alpha=0.5, label='Observed meteor data')
+        
+        if best_guess_obj_plot_kill.leading_frag_vel_arr[-2] < 2510:
+            #put dot where it reac 1.7 km/s i.e. at the end of the plot
+            plt.plot(best_guess_obj_plot_kill.leading_frag_vel_arr[-2]/1000, best_guess_obj_plot_kill.leading_frag_height_arr[-2]/1000, 'ro', label=f"Stop at {best_guess_obj_plot_kill.leading_frag_vel_arr[-2]/1000:.2f} km/s")
+
+        plt.legend(loc='upper left', fontsize=10)
+        plt.ylim(y_axis[0], np.max(obs_data.height_lum)/1000 + 10)
+        plt.grid(True, linestyle='--', color='lightgray')
+        plt.xlabel('Velocity [km/s]')
+        # plt.ylabel('Height [km]')
+
+        plt.tight_layout()
+        plt.savefig(output_folder +os.sep+ file_name +'_mass_vs_height.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+        
+    except Exception as e:
+        print("Error calculating tau real:", e)
 
     # try:
     #     # find the index of m_init in variables
@@ -2578,8 +2735,18 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     else:
         print('No noise_lum found in variables or fixed_values')
 
-    print('Correct the LogL with the best noise values for the json files (if any):')
-    plotJSONDataVsObs(obs_data,output_folder,best_noise_lum=best_noise_lum,best_noise_lag=best_noise_lag)
+    if 'noise_wake' in variables:
+        best_noise_wake = dynesty_run_results_new.samples[sim_num][variables.index('noise_wake')]
+        print('Correct the LogL with the best noise values for the json files (if any):')
+        plotJSONDataVsObs(obs_data,output_folder,best_noise_lum=best_noise_lum,best_noise_lag=best_noise_lag, best_noise_wake=best_noise_wake, wake_data=wake_data)
+    elif 'noise_wake' in fixed_values.keys():
+        best_noise_wake = fixed_values['noise_wake']
+        print('Correct the LogL with the best noise values for the json files (if any):')
+        plotJSONDataVsObs(obs_data,output_folder,best_noise_lum=best_noise_lum,best_noise_lag=best_noise_lag, best_noise_wake=best_noise_wake, wake_data=wake_data)
+    else:
+        print('No noise_wake found in variables or fixed_values')
+        print('Correct the LogL with the best noise values for the json files (if any):')
+        plotJSONDataVsObs(obs_data,output_folder,best_noise_lum=best_noise_lum,best_noise_lag=best_noise_lag)
 
     ### PLOT posterior bands vs height and save to backup ###
 
@@ -2850,6 +3017,11 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         f.write("\nBest fit:\n")
         for i in range(len(best_guess)):
             f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
+        f.write("\nBest fit initial and final masses:\n")
+        f.write("{:<16}|{:>12}|{:>12}|{:>12}|{:>12}|\n".format(
+            "Name:", "m_init [kg]", "m_final [kg]", "m_final% [%]", "d_final [μm]"))
+        f.write("{:<16}|{:>12.2g}|{:>12.2g}|{:>12.2g}|{:>12.2g}|\n".format(
+            file_name, best_guess_obj_plot.const.m_init, final_mass, final_mass_percent, size_final))
         f.write('\nBest fit logL: '+str(best_guess_logL)+'\n') # dynesty_run_results.logl[sim_num])+'\n')
         if diff_logL is not None:
             f.write('REAL logL: '+str(real_logL)+'\n')
@@ -3993,10 +4165,12 @@ class ObservationData:
         prior_file_path: [str] Path to a prior file. Empty string by default.
 
     """
-    def __init__(self, obs_file_path, use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, 
+    def __init__(self, obs_file_path, use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, noise_wake_prior=100, wake_psf=[5],
                  fps_prior=np.nan, P_0m_prior=np.nan, pick_position=0, prior_file_path=""):
         self.noise_lag = lag_noise_prior
         self.noise_lum = lum_noise_prior
+        self.noise_wake = noise_wake_prior
+        self.wake_psf = wake_psf
         self.file_name = obs_file_path
 
         # check obs_file_path is a list if so take the first element
@@ -4782,6 +4956,9 @@ class ObservationData:
 
         print(f"Loading json file: {self.file_name}")
 
+        base_name_atm = os.path.splitext(os.path.basename(self.file_name))[0]
+        out_folder = os.path.dirname(self.file_name)
+
         # Read the JSON file
         with open(self.file_name, 'r') as f:
             data_dict = json.load(f)
@@ -4820,6 +4997,12 @@ class ObservationData:
                 else:
                     self.fps_lum = 32
                     self.fps_lag = 80
+            
+            if self.noise_wake is not np.nan:
+                # check if in out_folder there is a file that have wake_data_ in their name
+                if not any(f.startswith(f"wake_data") for f in os.listdir(out_folder)):
+                    print("Genenerating noisy wake data...")
+                    self.loadJSONwake(const,base_name_atm,out_folder)
 
         else:
 
@@ -4843,7 +5026,7 @@ class ObservationData:
                 # const_nominal.erosion_bins_per_10mass = 10
 
             # Run the simulation
-            frag_main, results_list, wake_results = runSimulation(const, compute_wake=False)
+            frag_main, results_list, wake_results = runSimulation(const, compute_wake=False )
             simulation_MetSim_object = SimulationResults(const, frag_main, results_list, wake_results)
 
             # Store results in the object
@@ -5005,6 +5188,155 @@ class ObservationData:
                 self.const = self.const.__dict__
 
             self.new_json_file_save = self._save_json_data()
+
+            if self.noise_wake is not np.nan:
+                print("Genenerating noisy wake data...")
+                self.loadJSONwake(const,base_name_atm,out_folder)
+
+
+    def loadJSONwake(self,const,base_name_atm,out_folder):
+        
+        try:
+            constjson_test = Constants()
+            constjson_test.__dict__['wake_psf'] = self.wake_psf
+            constjson_test.__dict__['disruption_on'] = False
+            _, _, _ = runSimulation(constjson_test, compute_wake=True)
+        except Exception as e:
+            print(f"This is an old version of wmpl ({e}), cannot accept 2 gaussians for psf!")
+            self.wake_psf = self.wake_psf[0] if isinstance(self.wake_psf, list) else self.wake_psf
+
+        const.wake_psf = self.wake_psf
+        # Run the simulation
+        frag_main, results_list, wake_results = runSimulation(const, compute_wake=True)
+        simulation_MetSim_object_wake = SimulationResults(const, frag_main, results_list, wake_results)
+
+        wake_res_indx_ref = []
+        for altitude in self.height_lag:
+            idx = np.nanargmin(np.abs(altitude - simulation_MetSim_object_wake.brightest_height_arr))
+            wake_res_indx_ref.append(idx)
+
+        wake_results = [simulation_MetSim_object_wake.wake_results[idx] for idx in wake_res_indx_ref]
+
+        # actual station names, if available
+        stations_each_wake=self.stations_lag
+        station_name_to_id={"01T": 1, "02T": 2}  # replace if needed
+        theta_profiles=None
+        phi_profiles=None
+        state_vect_dist_profiles=None
+        amp_profiles=None
+        r_profiles=None
+        b_profiles=None
+        c_profiles=None
+        start_frame=32
+
+        def _safe_get( arr, i, default=None):
+            """Safely get arr[i], returning default if arr is None or too short."""
+            if arr is None:
+                return default
+            try:
+                return arr[i]
+            except (IndexError, TypeError):
+                return default
+
+
+        def _alternate_station_ids(n_frames, start_with=1):
+            """Return alternating station ids like 1,2,1,2,..."""
+            out = []
+            current = start_with
+            for _ in range(n_frames):
+                out.append(current)
+                current = 2 if current == 1 else 1
+            return out
+
+        n_frames = len(wake_results)
+
+        # If no station information is given, alternate 1 and 2
+        if stations_each_wake is None:
+            site_ids = _alternate_station_ids(n_frames)
+        else:
+            site_ids = []
+            for i, st in enumerate(stations_each_wake):
+                if isinstance(st, (int, np.integer)):
+                    site_ids.append(int(st))
+                elif station_name_to_id is not None:
+                    site_ids.append(station_name_to_id.get(st, 1 if i % 2 == 0 else 2))
+                else:
+                    # fallback: alternate if names are not mapped
+                    site_ids.append(1 if i % 2 == 0 else 2)
+
+        wake_containers = []
+        # enumarate fro the last to the first
+        for frame_idx, wake_res in enumerate(wake_results):
+
+            # These define the number of wake points for this frame
+            intens_sum_arr = np.asarray(wake_res.wake_luminosity_profile, dtype=float)
+            length_array = np.asarray(wake_res.length_array, dtype=float)*(-1)  # convert to positive lengths if needed
+
+            # multiply by 30000 and add the self.noise_wake as a gaussian noise to the intens_sum_arr
+            intens_sum_arr = intens_sum_arr*3000 + np.random.normal(loc=0, scale=self.noise_wake*2, size=len(intens_sum_arr))
+            # intens_sum_arr = intens_sum_arr + np.random.normal(loc=0, scale=self.noise_wake*2, size=len(intens_sum_arr))
+
+            # Same height for all points in this frame
+            ht_frame = self.height_lag[frame_idx] if frame_idx < len(self.height_lag) else None
+
+            # Optional arrays
+            th_arr = theta_profiles[frame_idx] if theta_profiles is not None else None
+            phi_arr = phi_profiles[frame_idx] if phi_profiles is not None else None
+            svd_arr = state_vect_dist_profiles[frame_idx] if state_vect_dist_profiles is not None else None
+            r_arr = r_profiles[frame_idx] if r_profiles is not None else None
+            b_arr = b_profiles[frame_idx] if b_profiles is not None else None
+            c_arr = c_profiles[frame_idx] if c_profiles is not None else None
+            amp_arr = amp_profiles[frame_idx] if amp_profiles is not None else None
+
+            # # Optional amplitude
+            # amp_arr = (
+            #     np.asarray(amp_profiles[frame_idx], dtype=float)
+            #     if amp_profiles is not None
+            #     else np.maximum(intens_sum_arr, 0.0)
+            # )
+
+            points = []
+
+            for j in range(len(length_array)):
+                if intens_sum_arr[j] > 1 and j%3 == 0:  # Only include points with significant luminosity and at intervals to reduce data size
+                    point = {
+                        "n": j-start_frame,
+                        "th": None if th_arr is None else float(_safe_get(th_arr, j)),
+                        "phi": None if phi_arr is None else float(_safe_get(phi_arr, j)),
+                        "intens_sum": float(intens_sum_arr[j]),
+                        "amp": float(_safe_get(amp_arr, j, 0.0)),
+                        "r": float(_safe_get(r_arr, j, 0.0)) if _safe_get(r_arr, j) is not None else 0.0,
+                        "b": None if b_arr is None else (
+                            None if _safe_get(b_arr, j) is None else float(_safe_get(b_arr, j))
+                        ),
+                        "c": None if c_arr is None else (
+                            None if _safe_get(c_arr, j) is None else float(_safe_get(c_arr, j))
+                        ),
+                        "state_vect_dist": None if svd_arr is None else float(_safe_get(svd_arr, j)),
+                        "ht": None if ht_frame is None else float(ht_frame),
+                        "leading_frag_length": float(length_array[j]),
+                    }
+                    points.append(point)
+            # put the points in the inverse order so that the first point is the closest to the leading fragment
+            points = points[::-1]
+            wake_containers.append({
+                "site_id": int(site_ids[frame_idx]),
+                "frame_n": int(start_frame + frame_idx),
+                "points": points,
+            })
+
+        wake_container_data = {"wake_containers": wake_containers}
+
+        output_data = {
+            "metadata": {
+                "event": self.file_name
+            },
+            "wake_containers": wake_container_data["wake_containers"]
+        }
+
+        with open(os.path.join(out_folder,f"wake_data_{base_name_atm}.json".format(base_name=base_name_atm)), "w") as f:
+            json.dump(output_data, f, indent=4)
+
 
 
     def mimicCameraFPS(self, time_visible, time_to_track, fps, station1, station2):
@@ -5268,7 +5600,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                 print("NOTE: Saving backup of dynesty files restuls.")
 
             # Plot obs data vs json file if present
-            plotJSONDataVsObs(obs_data, out_folder)
+            plotJSONDataVsObs(obs_data, out_folder, wake_data = wake_data)
 
             obs_data_json_file = os.path.join(out_folder, f"obs_data_{base_name}.json")
             with open(obs_data_json_file, "w") as f:
@@ -5310,7 +5642,21 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                                     log_file.write(f"\nError encountered loading the backup dynestsy file : {e}\n")
                                 print(f"\nError encountered loading the backup dynestsy file: {e}\n")
                         else:
-                            print(f"No backup dynesty file found at: {backup_dynesty_file}\n")
+                            # check if there is any file in dynesty_folder that ends with .dynesty and try to load it
+                            backup_dynesty_file = [f for f in os.listdir(out_folder) if f.endswith("_posterior_backup.pkl.gz")]
+                            backup_dynesty_file = [os.path.join(out_folder, f) for f in backup_dynesty_file]
+                            if backup_dynesty_file and os.path.isfile(backup_dynesty_file[0]):
+                                try:
+                                    dsampler_results, _ , _ = restoreBackupDynesty(backup_dynesty_file[0])
+                                    print(f"Loaded backup dynesty file: {backup_dynesty_file[0]}")
+                                except Exception as e:
+                                    with open(log_file_path, "a") as log_file:
+                                        log_file.write(f"\nError encountered loading the backup dynestsy file : {e}")
+                                    print(f"\nError encountered loading the backup dynestsy file: {e}")
+                            else:
+                                with open(log_file_path, "a") as log_file:
+                                    log_file.write(f"\nNo backup dynesty file found at: {backup_dynesty_file}")
+                                print(f"No backup dynesty file found at: {backup_dynesty_file}")
                         
                     try:
                         plotDynestyResults(dsampler_results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path,cml_args.cores,save_backup=save_backup, wake_data=wake_data)
@@ -5367,7 +5713,21 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                                 log_file.write(f"\nError encountered loading the backup dynestsy file : {e}")
                             print(f"\nError encountered loading the backup dynestsy file: {e}")
                     else:
-                        print(f"No backup dynesty file found at: {backup_dynesty_file}")
+                        # check if there is any file in dynesty_folder that ends with .dynesty and try to load it
+                        backup_dynesty_file = [f for f in os.listdir(out_folder) if f.endswith("_posterior_backup.pkl.gz")]
+                        backup_dynesty_file = [os.path.join(out_folder, f) for f in backup_dynesty_file]
+                        if backup_dynesty_file and os.path.isfile(backup_dynesty_file[0]):
+                            try:
+                                dsampler_results, _ , _ = restoreBackupDynesty(backup_dynesty_file[0])
+                                print(f"Loaded backup dynesty file: {backup_dynesty_file[0]}")
+                            except Exception as e:
+                                with open(log_file_path, "a") as log_file:
+                                    log_file.write(f"\nError encountered loading the backup dynestsy file : {e}")
+                                print(f"\nError encountered loading the backup dynestsy file: {e}")
+                        else:
+                            with open(log_file_path, "a") as log_file:
+                                log_file.write(f"\nNo backup dynesty file found at: {backup_dynesty_file}")
+                            print(f"No backup dynesty file found at: {backup_dynesty_file}")
 
                 # dsampler = dynesty oad DynamicNestedSampler by restore(dynesty_file)
                 plotDynestyResults(dsampler_results, obs_data, flags_dict, fixed_values, out_folder, base_name,log_file_path,cml_args.cores,save_backup=save_backup, wake_data=wake_data)
@@ -5754,7 +6114,7 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
     dynesty_file_in_output_path = os.path.join(out_folder,os.path.basename(dynesty_file))
     # check if dynesty_file exist and if update_priors_with_posteriors is True
     if update_priors_with_posteriors and os.path.isfile(dynesty_file):
-
+        print("Updating priors with posteriors...")
         # update the prior file with the posterior file
         bounds, flags_dict, fixed_values, prior_file_output = updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, base_name, prior_file_output, log_file_path, obs_data, priorFile_to_update_with_posteriors)
         # except Exception as e:
@@ -5836,14 +6196,15 @@ def updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, b
     Returns:
         new_bounds, flags_dict, fixed_values
     """
-
+    dynesty_folder = os.path.dirname(dynesty_file)
+    print(f"Attempting to load dynesty results from: {dynesty_file}")
     # try:
     try:
         dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
         dsampler_results = dsampler.results
     except Exception as e:
         # try to load the backup dynesty file if present {base_name}_posterior_backup.pkl.gz
-        backup_dynesty_file = os.path.join(out_folder, f"{base_name}_posterior_backup.pkl.gz")
+        backup_dynesty_file = os.path.join(dynesty_folder, f"{base_name}_posterior_backup.pkl.gz")
         if os.path.isfile(backup_dynesty_file):
             try:
                 dsampler_results, _ , _ = restoreBackupDynesty(backup_dynesty_file)
@@ -5852,8 +6213,19 @@ def updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, b
                 print(f"\nError encountered loading the backup dynestsy file: {e}")
                 return bounds, flags_dict, fixed_values
         else:
-            print(f"No backup dynesty file found at: {backup_dynesty_file}")
-            return bounds, flags_dict, fixed_values
+            # check if there is any file in dynesty_folder that ends with .dynesty and try to load it
+            backup_dynesty_file = [f for f in os.listdir(dynesty_folder) if f.endswith("_posterior_backup.pkl.gz")]
+            backup_dynesty_file = [os.path.join(dynesty_folder, f) for f in backup_dynesty_file]
+            if backup_dynesty_file and os.path.isfile(backup_dynesty_file[0]):
+                try:
+                    dsampler_results, _ , _ = restoreBackupDynesty(backup_dynesty_file[0])
+                    print(f"Loaded backup dynesty file: {backup_dynesty_file[0]}")
+                except Exception as e:
+                    print(f"\nError encountered loading the backup dynestsy file: {e}")
+                    return bounds, flags_dict, fixed_values
+            else:
+                print(f"No backup dynesty file found at: {backup_dynesty_file}")
+                return bounds, flags_dict, fixed_values
 
     samples = np.asarray(dsampler_results.samples, dtype=float)
     weights = np.asarray(dsampler_results.importance_weights(), dtype=float)
@@ -6003,6 +6375,8 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
     # default values
     noise_lag_prior = np.nan
     noise_lum_prior = np.nan
+    noise_wake_prior = np.nan
+    wake_psf = [5]
     P_0m = np.nan
     fps = np.nan
 
@@ -6040,21 +6414,28 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
         "n_wake0": user_inputs.get("n_wake0", user_inputs.get("noise_wake", np.nan)),
     }
 
+
     def safe_eval(value):
-        """Evaluate numeric expressions safely; return np.nan if it can't be evaluated."""
-        if not isinstance(value, str):
-            return value
-        v = value.strip()
-        if v.lower() == "nan":
-            return np.nan
         try:
-            out = eval(v, {"__builtins__": {}, "np": np, **eval_ctx}, {})
-            # ensure scalar numeric; otherwise treat as invalid here
-            if isinstance(out, (int, float, np.number)):
-                return float(out)
-            return np.nan
+            return eval(value, {"__builtins__": {}, "np": np, **eval_ctx}, {})
         except Exception:
-            return np.nan
+            return value
+        
+    # def safe_eval(value):
+    #     """Evaluate numeric expressions safely; return np.nan if it can't be evaluated."""
+    #     if not isinstance(value, str):
+    #         return value
+    #     v = value.strip()
+    #     if v.lower() == "nan":
+    #         return np.nan
+    #     try:
+    #         out = eval(v, {"__builtins__": {}, "np": np, **eval_ctx}, {})
+    #         # ensure scalar numeric; otherwise treat as invalid here
+    #         if isinstance(out, (int, float, np.number)):
+    #             return float(out)
+    #         return np.nan
+    #     except Exception:
+    #         return np.nan
 
     # Read .prior file, ignoring comment lines
     with open(file_path, 'r') as file:
@@ -6065,7 +6446,7 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
             parts = line.split('#')[0].strip().split(',')
             name = parts[0].strip()
 
-            if name not in ["noise_lag", "noise_lum", "fps", "P_0m"]:
+            if name not in ["noise_lag", "noise_lum", "noise_wake", "wake_psf", "fps", "P_0m"]:
                 continue
 
             # Handle fixed values
@@ -6077,6 +6458,11 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
                         noise_lag_prior = val_fixed
                     elif name == "noise_lum":
                         noise_lum_prior = val_fixed
+                    elif name == "noise_wake":
+                        noise_wake_prior = val_fixed
+                    elif name == "wake_psf":    
+                        # This is a special case where we want to set both noise_lag_prior and noise_wake_prior to the same fixed value
+                        wake_psf = val_fixed
                     elif name == "fps":
                         fps = val_fixed
                     elif name == "P_0m":
@@ -6102,12 +6488,16 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
                 noise_lag_prior = chosen
             elif name == "noise_lum":
                 noise_lum_prior = chosen
+            elif name == "noise_wake":
+                noise_wake_prior = chosen
+            elif name == "wake_psf":
+                wake_psf = chosen
             elif name == "fps":
                 fps = chosen
             elif name == "P_0m":
                 P_0m = chosen
 
-    return noise_lag_prior, noise_lum_prior, fps, P_0m
+    return noise_lag_prior, noise_lum_prior, noise_wake_prior, wake_psf, fps, P_0m
 
 
 def computeWakeNoiseXAltitude(
@@ -6354,7 +6744,7 @@ class autoSetupDynestyFiles:
          - Prior bounds and flags
          - Output folder
          - Path to associated `report.txt` (or `report_sim.txt`) for IAU identification
-         - Fully initialized `ObservationData` instance, accessible via `obsInstance(base_name)`
+         - Fully initialized `Observation Data` instance, accessible via `obsInstance(base_name)`
 
     This class streamlines the processing of diverse meteor datasets by automatically grouping observations, assigning priors, and managing file I/O in a reproducible way, enabling large-scale nested sampling analysis on multi-camera meteor networks.
     """
@@ -6685,21 +7075,24 @@ class autoSetupDynestyFiles:
 
         lag_noise_prior = np.nan
         lum_noise_prior = np.nan
+        noise_wake_prior = np.nan
         fps_prior = np.nan
         P_0m_prior = np.nan
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
             prior_path_noise = self.prior_file
-            lag_noise_prior, lum_noise_prior, fps_prior, P_0m_prior = readSimParams(self.prior_file)
+            lag_noise_prior, lum_noise_prior, noise_wake_prior, wake_psf, fps_prior, P_0m_prior = readSimParams(self.prior_file)
         else:
             # Look for local .prior
             existing_prior_list = [f for f in files if f.endswith(".prior")]
             if existing_prior_list:
                 prior_path_noise = os.path.join(root, existing_prior_list[0])
-                lag_noise_prior, lum_noise_prior, fps_prior, P_0m_prior = readSimParams(prior_path_noise)
+                lag_noise_prior, lum_noise_prior, noise_wake_prior, wake_psf, fps_prior, P_0m_prior = readSimParams(prior_path_noise)
 
         if not (np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior)):
             print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
+        if not np.isnan(noise_wake_prior):
+            print("Found wake noise in prior file:", noise_wake_prior)
 
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
@@ -6716,7 +7109,7 @@ class autoSetupDynestyFiles:
                 prior_path = ""
 
         observation_instance = ObservationData(input_file, self.use_all_cameras, lag_noise_prior, 
-            lum_noise_prior, fps_prior, P_0m_prior, self.pick_position, prior_path)
+            lum_noise_prior, noise_wake_prior, wake_psf, fps_prior, P_0m_prior, self.pick_position, prior_path)
 
         self.makeWakeContainers(input_file)
 
@@ -7382,6 +7775,7 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
         if var_name == 'wake_norm' and flag_wake:
             normalization_method = fix_var[var_name]
 
+
     var_names = list(flags_dict.keys())
     # check for each var_name in flags_dict if there is "log" in the flags_dict
     for i, var_name in enumerate(var_names):
@@ -7395,7 +7789,11 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             obs_metsim_obj.noise_wake = guess_var[i]
             obs_metsim_obj.noise_wake_ht = None
             obs_metsim_obj.noise_wake_array = None
-
+        if var_name == 'wake_psf' and flag_wake:
+            # check if wake_psf is not in an array
+            if isinstance(guess_var[i], (int, float)):
+                # if is not in an array, put it in an array of one element
+                guess_var[i] = [guess_var[i]]
 
     # check if among the var_names there is a "erosion_mass_max" and if there is a "erosion_mass_min"
     if 'erosion_mass_max' in var_names and 'erosion_mass_min' in var_names:

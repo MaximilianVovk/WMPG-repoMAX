@@ -1760,6 +1760,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             end_mag = obs_data.absolute_magnitudes[-1]
             max_mag = obs_data.absolute_magnitudes[np.argmax(obs_data.luminosity)]
             zenith_angle = np.rad2deg(obs_data.zenith_angle)
+            print(f"intial speed: {summary_df_meteor['Median'].values[variables_sing.index('v_init')]:.2f} km/s, zenith angle: {zenith_angle:.2f} deg")
 
 
 
@@ -1791,6 +1792,10 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             # check if the v_kill is smaller than 0
             if obs_data.v_kill < 0:
                 obs_data.v_kill = 1
+            
+            # if shower_name == 
+            obs_data.v_kill = 2500
+            obs_data.h_kill = 1
 
             # best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
 
@@ -1805,6 +1810,8 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
             heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
             mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+            final_diam = (6*mass_best[-1]/(np.pi*const_nominal.rho))**(1/3)*1e6 # in microns
+            print(f"Initial mass: {mass_best[0]:.3e} kg | final mass: {mass_best[-1]:.3e} kg diameter {final_diam:.2f} μm at heights {heights[-1]/1000:.1f} km")
             # print(f"Initial mass: {mass_best[0]} kg final mass: {mass_best[-1]} kg")
             erosion_beg_dyn_press = best_guess_obj_plot.const.erosion_beg_dyn_press
             print(f"Dynamic pressure at erosion onset: {erosion_beg_dyn_press} Pa")
@@ -2335,15 +2342,18 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     kinetic_energy_all = np.concatenate(kinetic_energy_all)
     kc_all = np.concatenate(kc_all)
     
-    energy_per_cs_before_erosion_backup = np.array(energy_per_cs_before_erosion_backup)/1e6
-    energy_per_mass_before_erosion_backup = np.array(energy_per_mass_before_erosion_backup)/1e6
-    erosion_beg_vel_backup = np.array(erosion_beg_vel_backup)/1000
-    erosion_beg_mass_backup = np.array(erosion_beg_mass_backup)
-    erosion_beg_dyn_press_backup = np.array(erosion_beg_dyn_press_backup)/1000
-    mass_at_erosion_change_backup = np.array(mass_at_erosion_change_backup)
-    dyn_press_at_erosion_change_backup = np.array(dyn_press_at_erosion_change_backup)/1000
-    main_mass_exhaustion_ht_backup = np.array(main_mass_exhaustion_ht_backup) /1000   # convert to km
-    main_bottom_ht_backup = np.array(main_bottom_ht_backup) /1000   # convert to km
+    try:
+        energy_per_cs_before_erosion_backup = np.array(energy_per_cs_before_erosion_backup)/1e6
+        energy_per_mass_before_erosion_backup = np.array(energy_per_mass_before_erosion_backup)/1e6
+        erosion_beg_vel_backup = np.array(erosion_beg_vel_backup)/1000
+        erosion_beg_mass_backup = np.array(erosion_beg_mass_backup)
+        erosion_beg_dyn_press_backup = np.array(erosion_beg_dyn_press_backup)/1000
+        mass_at_erosion_change_backup = np.array(mass_at_erosion_change_backup)
+        dyn_press_at_erosion_change_backup = np.array(dyn_press_at_erosion_change_backup)/1000
+        main_mass_exhaustion_ht_backup = np.array(main_mass_exhaustion_ht_backup) /1000   # convert to km
+        main_bottom_ht_backup = np.array(main_bottom_ht_backup) /1000   # convert to km
+    except:
+        print("No backup data available.")
 
     # erosion_beg_mass_backup = erosion_beg_mass_backup
     # print('energy_per_cs_before_erosion_backup',energy_per_cs_before_erosion_backup)
@@ -2596,7 +2606,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.xlabel("$\\rho$ [kg/m³]", fontsize=15) # log$_{10}$ 
         plt.ylabel("P [kPa]", fontsize=15)
         # plot the thr line
-        plt.axhline(y=10**thr, color='gray', linestyle='--', linewidth=1)
+        plt.axhline(y=(10**thr)/1000, color='gray', linestyle='--', linewidth=1)
         plt.xscale("log")
         plt.yscale("log")
         # grid on
@@ -2991,6 +3001,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         if name == "$Q$ [AU]" or name == "$q$ [AU]" or name == "$a$ [AU]":
             ax.set_xscale("log")
+        ax.set_yscale("log")
 
         # Compute and annotate correlation coefficient
         corr = np.corrcoef(obs, rho)[0, 1]
@@ -5097,164 +5108,168 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ##############################################################################################################################
     ### generate the samples #####################################################################################################
     ##############################################################################################################################
-
-    # Extract from combined_results
-    samples = combined_samples_copy_plot
-    # samples = combined_results.samples
-    weights = combined_results.importance_weights()
-    w = weights / np.sum(weights)
-
-    # samples_eq = dynesty.utils.resample_equal(samples, w)
-
-    # check how much the second mass is infuential for the total
-    # try:
-    idx_arr = np.where(np.asarray(variables) == "m_init")[0]
-    m_init_vals_all  = samples[:, int(idx_arr[0])].astype(float)
-
-    idx_arr = np.where(np.asarray(variables) == "v_init")[0]
-    v_init_vals_all  = samples[:, int(idx_arr[0])].astype(float)
-
-    idx_arr = np.where(np.asarray(variables) == "erosion_height_start")[0]
-    erosion_height_start_all  = samples[:, int(idx_arr[0])].astype(float)
-
-    idx_arr = np.where(np.asarray(variables) == "rho")[0]
-    rho_all  = samples[:, int(idx_arr[0])].astype(float)
-
-    idx_arr = np.where(np.asarray(variables) == "erosion_rho_change")[0]
-    rho_change_all  = samples[:, int(idx_arr[0])].astype(float)
-
-    idx_arr = np.where(np.asarray(variables) == "sigma")[0]
-    sigma_all  = samples[:, int(idx_arr[0])].astype(float)
-
-    idx_arr = np.where(np.asarray(variables) == "erosion_sigma_change")[0]
-    sigma_change_all  = samples[:, int(idx_arr[0])].astype(float)
-
-    idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
-    erosion_coeff_all  = samples[:, int(idx_arr[0])].astype(float)
-
-    idx_arr = np.where(np.asarray(variables) == "erosion_coeff_change")[0]
-    erosion_coeff_change_all  = samples[:, int(idx_arr[0])].astype(float)
-
-    # percent left after 2 fragmentation mass_at_erosion_change_backup
-    mass_percent_2frag = mass_at_erosion_change_backup/(10**m_init_vals_all) * 100
-    mass_percent_1frag = erosion_beg_mass_backup/(10**m_init_vals_all) * 100
-    print("Mass percent left after 2nd fragmentation (mass_at_erosion_change_backup / m_init) * 100:")
-    # print(10**m_init_vals_all)
-    # print(mass_at_erosion_change_backup)
-    # print(mass_percent_2frag)
-
-    # create a mask for values above 100 in mass_percent_2frag
-    mask = mass_percent_2frag > 100
-    print("Number of samples with mass percent left after 2nd fragmentation above 100%:", np.sum(mask), "out of", len(mass_percent_2frag))
-    # if there are some, set them to 100
-    if np.any(mask):
-        mass_percent_2frag[mask] = 100
-
-    def plot_color_2diffMass(initial_var, change_var, mass_percent_2frag, w,
-                            label_initial_var, label_change_var, barplot_var, output_dir_show, shower_name, initial_var_small=[], change_var_small=[], mass_percent_2frag_small=[]):
-
-        fig, ax = plt.subplots(figsize=(8, 6))
-        print("creating distribution plot for the 2 fragmentation...")
-
-        # make sure contour and scatter use same x/y convention
-        _plot_2d_distribution(ax, change_var, initial_var, w)
-
-        ax.set_xlabel(label_change_var, fontsize=15)
-        ax.set_ylabel(label_initial_var, fontsize=15)
-
-        if len(initial_var_small) > 0 and len(change_var_small) > 0 and len(mass_percent_2frag_small) > 0:
-            size=60
-            x_log = change_var_small
-            y_log = initial_var_small
-            c_log = mass_percent_2frag_small
-            x_plot = change_var_small
-            y_plot = initial_var_small
-            c_plot = mass_percent_2frag_small
-
-        else: 
-            size= 4
-            # keep only finite values
-            mask = (
-                np.isfinite(initial_var) &
-                np.isfinite(change_var) &
-                np.isfinite(mass_percent_2frag)
-            )
-
-            x_plot = np.asarray(change_var)[mask]
-            y_plot = np.asarray(initial_var)[mask]
-            c_plot = np.asarray(mass_percent_2frag)[mask]
-
-            # optional downsample
-            max_points = 50000
-            if len(x_plot) > max_points:
-                idx = np.random.choice(len(x_plot), max_points, replace=False)
-                x_plot = x_plot[idx]
-                y_plot = y_plot[idx]
-                c_plot = c_plot[idx]
-
-        # check if there are egative values in c_plot
-        if np.any(c_plot < 0):
-            print("Warning: There are negative values in the color variable (mass_percent_2frag). These will be ignored in the log scale plot.")
-            x_log = x_plot
-            y_log = y_plot
-            c_log = c_plot
-        else:
-            # use log scale only if all kept color values are positive and non-constant
-            positive_mask = c_plot > 0
-
-            x_log = x_plot[positive_mask]
-            y_log = y_plot[positive_mask]
-            c_log = c_plot[positive_mask]
-
-        # order them base on the highest c_log to the lowest
-        c_log_order = np.argsort(c_log)
-        x_log = x_log[c_log_order]
-        y_log = y_log[c_log_order]
-        c_log = c_log[c_log_order]
-
-        # # make the log of the color scale more visible by using a power norm with gamma < 1
-        # c_log = np.log10(c_log)
-
-        vmin = np.nanmin(c_log)
-        vmax = np.nanmax(c_log)
-
-        if np.any(c_plot < 0):
-            sc = ax.scatter(
-                x_log, y_log,
-                c=c_log,
-                s=size,
-                cmap='plasma',
-                marker='.',
-                linewidths=0,
-                edgecolors='none',
-                rasterized=True,
-                norm=Normalize(vmin=vmin,vmax=vmax)#
-            )
-
-        else:
-            sc = ax.scatter(
-                x_log, y_log,
-                c=c_log,
-                s=size,
-                cmap='plasma',
-                marker='.',
-                linewidths=0,
-                edgecolors='none',
-                rasterized=True,
-                norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax)#,mcolors.LogNorm(vmin=vmin, vmax=vmax) # Normalize(vmin=vmin,vmax=vmax)#
-            )
-
-        cbar = plt.colorbar(sc, ax=ax)
-        cbar.set_label(barplot_var, fontsize=14)
-
-        ax.grid(True, linestyle='--', alpha=0.5)
-        plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_masspercent2frag.png"), # 20190726_052141, 
-                    bbox_inches='tight', dpi=300)
-        plt.close()
     
-    plot_color_2diffMass(rho_all, rho_change_all, mass_percent_2frag, w, r'$\rho$ [kg/m$^3$]', r"$\rho_{2}$ [kg/m$^3$]", 'Mass percent left after 2nd fragmentation [%]',output_dir_show, shower_name+'_rho', initial_var_small=rho_meteor_begin_median, change_var_small=rho_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
-    plot_color_2diffMass(sigma_all, sigma_change_all, mass_percent_2frag, w, r'$\sigma$ [kg/MJ]', r"$\sigma_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_sigma', initial_var_small=sigma_meteor_begin_median, change_var_small=sigma_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
-    plot_color_2diffMass(erosion_coeff_all, erosion_coeff_change_all, mass_percent_2frag, w, r'log$_{10}$ $\eta$ [kg/MJ]', r"log$_{10}$ $\eta_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_erosion_coeff', initial_var_small=np.log10(eta_meteor_begin_median), change_var_small=np.log10(eta_meteor_change_median), mass_percent_2frag_small=mass_left_second_erosion_perc)
+    try:
+        # Extract from combined_results
+        samples = combined_samples_copy_plot
+        # samples = combined_results.samples
+        weights = combined_results.importance_weights()
+        w = weights / np.sum(weights)
+
+        # samples_eq = dynesty.utils.resample_equal(samples, w)
+
+        # check how much the second mass is infuential for the total
+        # try:
+        idx_arr = np.where(np.asarray(variables) == "m_init")[0]
+        m_init_vals_all  = samples[:, int(idx_arr[0])].astype(float)
+
+        idx_arr = np.where(np.asarray(variables) == "v_init")[0]
+        v_init_vals_all  = samples[:, int(idx_arr[0])].astype(float)
+
+        idx_arr = np.where(np.asarray(variables) == "erosion_height_start")[0]
+        erosion_height_start_all  = samples[:, int(idx_arr[0])].astype(float)
+
+        idx_arr = np.where(np.asarray(variables) == "rho")[0]
+        rho_all  = samples[:, int(idx_arr[0])].astype(float)
+
+        idx_arr = np.where(np.asarray(variables) == "erosion_rho_change")[0]
+        rho_change_all  = samples[:, int(idx_arr[0])].astype(float)
+
+        idx_arr = np.where(np.asarray(variables) == "sigma")[0]
+        sigma_all  = samples[:, int(idx_arr[0])].astype(float)
+
+        idx_arr = np.where(np.asarray(variables) == "erosion_sigma_change")[0]
+        sigma_change_all  = samples[:, int(idx_arr[0])].astype(float)
+
+        idx_arr = np.where(np.asarray(variables) == "erosion_coeff")[0]
+        erosion_coeff_all  = samples[:, int(idx_arr[0])].astype(float)
+
+        idx_arr = np.where(np.asarray(variables) == "erosion_coeff_change")[0]
+        erosion_coeff_change_all  = samples[:, int(idx_arr[0])].astype(float)
+
+        # percent left after 2 fragmentation mass_at_erosion_change_backup
+        mass_percent_2frag = mass_at_erosion_change_backup/(10**m_init_vals_all) * 100
+        mass_percent_1frag = erosion_beg_mass_backup/(10**m_init_vals_all) * 100
+        print("Mass percent left after 2nd fragmentation (mass_at_erosion_change_backup / m_init) * 100:")
+        # print(10**m_init_vals_all)
+        # print(mass_at_erosion_change_backup)
+        # print(mass_percent_2frag)
+
+        # create a mask for values above 100 in mass_percent_2frag
+        mask = mass_percent_2frag > 100
+        print("Number of samples with mass percent left after 2nd fragmentation above 100%:", np.sum(mask), "out of", len(mass_percent_2frag))
+        # if there are some, set them to 100
+        if np.any(mask):
+            mass_percent_2frag[mask] = 100
+
+        def plot_color_2diffMass(initial_var, change_var, mass_percent_2frag, w,
+                                label_initial_var, label_change_var, barplot_var, output_dir_show, shower_name, initial_var_small=[], change_var_small=[], mass_percent_2frag_small=[]):
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            print("creating distribution plot for the 2 fragmentation...")
+
+            # make sure contour and scatter use same x/y convention
+            _plot_2d_distribution(ax, change_var, initial_var, w)
+
+            ax.set_xlabel(label_change_var, fontsize=15)
+            ax.set_ylabel(label_initial_var, fontsize=15)
+
+            if len(initial_var_small) > 0 and len(change_var_small) > 0 and len(mass_percent_2frag_small) > 0:
+                size=60
+                x_log = change_var_small
+                y_log = initial_var_small
+                c_log = mass_percent_2frag_small
+                x_plot = change_var_small
+                y_plot = initial_var_small
+                c_plot = mass_percent_2frag_small
+
+            else: 
+                size= 4
+                # keep only finite values
+                mask = (
+                    np.isfinite(initial_var) &
+                    np.isfinite(change_var) &
+                    np.isfinite(mass_percent_2frag)
+                )
+
+                x_plot = np.asarray(change_var)[mask]
+                y_plot = np.asarray(initial_var)[mask]
+                c_plot = np.asarray(mass_percent_2frag)[mask]
+
+                # optional downsample
+                max_points = 50000
+                if len(x_plot) > max_points:
+                    idx = np.random.choice(len(x_plot), max_points, replace=False)
+                    x_plot = x_plot[idx]
+                    y_plot = y_plot[idx]
+                    c_plot = c_plot[idx]
+
+            # check if there are egative values in c_plot
+            if np.any(c_plot < 0):
+                print("Warning: There are negative values in the color variable (mass_percent_2frag). These will be ignored in the log scale plot.")
+                x_log = x_plot
+                y_log = y_plot
+                c_log = c_plot
+            else:
+                # use log scale only if all kept color values are positive and non-constant
+                positive_mask = c_plot > 0
+
+                x_log = x_plot[positive_mask]
+                y_log = y_plot[positive_mask]
+                c_log = c_plot[positive_mask]
+
+            # order them base on the highest c_log to the lowest
+            c_log_order = np.argsort(c_log)
+            x_log = x_log[c_log_order]
+            y_log = y_log[c_log_order]
+            c_log = c_log[c_log_order]
+
+            # # make the log of the color scale more visible by using a power norm with gamma < 1
+            # c_log = np.log10(c_log)
+
+            vmin = np.nanmin(c_log)
+            vmax = np.nanmax(c_log)
+
+            if np.any(c_plot < 0):
+                sc = ax.scatter(
+                    x_log, y_log,
+                    c=c_log,
+                    s=size,
+                    cmap='plasma',
+                    marker='.',
+                    linewidths=0,
+                    edgecolors='none',
+                    rasterized=True,
+                    norm=Normalize(vmin=vmin,vmax=vmax)#
+                )
+
+            else:
+                sc = ax.scatter(
+                    x_log, y_log,
+                    c=c_log,
+                    s=size,
+                    cmap='plasma',
+                    marker='.',
+                    linewidths=0,
+                    edgecolors='none',
+                    rasterized=True,
+                    norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax)#,mcolors.LogNorm(vmin=vmin, vmax=vmax) # Normalize(vmin=vmin,vmax=vmax)#
+                )
+
+            cbar = plt.colorbar(sc, ax=ax)
+            cbar.set_label(barplot_var, fontsize=14)
+
+            ax.grid(True, linestyle='--', alpha=0.5)
+            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_masspercent2frag.png"), # 20190726_052141, 
+                        bbox_inches='tight', dpi=300)
+            plt.close()
+        
+        plot_color_2diffMass(rho_all, rho_change_all, mass_percent_2frag, w, r'$\rho$ [kg/m$^3$]', r"$\rho_{2}$ [kg/m$^3$]", 'Mass percent left after 2nd fragmentation [%]',output_dir_show, shower_name+'_rho', initial_var_small=rho_meteor_begin_median, change_var_small=rho_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
+        plot_color_2diffMass(sigma_all, sigma_change_all, mass_percent_2frag, w, r'$\sigma$ [kg/MJ]', r"$\sigma_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_sigma', initial_var_small=sigma_meteor_begin_median, change_var_small=sigma_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
+        plot_color_2diffMass(erosion_coeff_all, erosion_coeff_change_all, mass_percent_2frag, w, r'log$_{10}$ $\eta$ [kg/MJ]', r"log$_{10}$ $\eta_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_erosion_coeff', initial_var_small=np.log10(eta_meteor_begin_median), change_var_small=np.log10(eta_meteor_change_median), mass_percent_2frag_small=mass_left_second_erosion_perc)
+    
+    except Exception as e:
+        print("Error in plotting 2D color plots for the 2 fragmentation parameters:", e)
 
 
     # plot_color_2diffMass(erosion_height_start_all, v_init_vals_all, np.log10(eta_corrected*1e6), w, r"$h_{e}$ [km]", r'$v_{\text{init}}$ [km/s]', r"log$_{10}$ $\eta$ [kg/MJ]", output_dir_show, shower_name+'_vel_erosionheightstart')
@@ -8137,7 +8152,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Desktop\test", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\2.1)Iron Letter\irons-rho_eta100-noPoros\Best_iron-fit", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

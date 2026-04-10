@@ -4170,7 +4170,6 @@ class ObservationData:
         self.noise_lag = lag_noise_prior
         self.noise_lum = lum_noise_prior
         self.noise_wake = noise_wake_prior
-        self.wake_psf = wake_psf
         self.file_name = obs_file_path
 
         # check obs_file_path is a list if so take the first element
@@ -5196,16 +5195,6 @@ class ObservationData:
 
     def loadJSONwake(self,const,base_name_atm,out_folder):
         
-        try:
-            constjson_test = Constants()
-            constjson_test.__dict__['wake_psf'] = self.wake_psf
-            constjson_test.__dict__['disruption_on'] = False
-            _, _, _ = runSimulation(constjson_test, compute_wake=True)
-        except Exception as e:
-            print(f"This is an old version of wmpl ({e}), cannot accept 2 gaussians for psf!")
-            self.wake_psf = self.wake_psf[0] if isinstance(self.wake_psf, list) else self.wake_psf
-
-        const.wake_psf = self.wake_psf
         # Run the simulation
         frag_main, results_list, wake_results = runSimulation(const, compute_wake=True)
         simulation_MetSim_object_wake = SimulationResults(const, frag_main, results_list, wake_results)
@@ -6376,7 +6365,6 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
     noise_lag_prior = np.nan
     noise_lum_prior = np.nan
     noise_wake_prior = np.nan
-    wake_psf = [5]
     P_0m = np.nan
     fps = np.nan
 
@@ -6415,27 +6403,27 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
     }
 
 
-    def safe_eval(value):
-        try:
-            return eval(value, {"__builtins__": {}, "np": np, **eval_ctx}, {})
-        except Exception:
-            return value
-        
     # def safe_eval(value):
-    #     """Evaluate numeric expressions safely; return np.nan if it can't be evaluated."""
-    #     if not isinstance(value, str):
-    #         return value
-    #     v = value.strip()
-    #     if v.lower() == "nan":
-    #         return np.nan
     #     try:
-    #         out = eval(v, {"__builtins__": {}, "np": np, **eval_ctx}, {})
-    #         # ensure scalar numeric; otherwise treat as invalid here
-    #         if isinstance(out, (int, float, np.number)):
-    #             return float(out)
-    #         return np.nan
+    #         return eval(value, {"__builtins__": {}, "np": np, **eval_ctx}, {})
     #     except Exception:
-    #         return np.nan
+    #         return value
+        
+    def safe_eval(value):
+        """Evaluate numeric expressions safely; return np.nan if it can't be evaluated."""
+        if not isinstance(value, str):
+            return value
+        v = value.strip()
+        if v.lower() == "nan":
+            return np.nan
+        try:
+            out = eval(v, {"__builtins__": {}, "np": np, **eval_ctx}, {})
+            # ensure scalar numeric; otherwise treat as invalid here
+            if isinstance(out, (int, float, np.number)):
+                return float(out)
+            return np.nan
+        except Exception:
+            return np.nan
 
     # Read .prior file, ignoring comment lines
     with open(file_path, 'r') as file:
@@ -6446,7 +6434,7 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
             parts = line.split('#')[0].strip().split(',')
             name = parts[0].strip()
 
-            if name not in ["noise_lag", "noise_lum", "noise_wake", "wake_psf", "fps", "P_0m"]:
+            if name not in ["noise_lag", "noise_lum", "noise_wake", "fps", "P_0m"]:
                 continue
 
             # Handle fixed values
@@ -6460,22 +6448,19 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
                         noise_lum_prior = val_fixed
                     elif name == "noise_wake":
                         noise_wake_prior = val_fixed
-                    elif name == "wake_psf":    
-                        # This is a special case where we want to set both noise_lag_prior and noise_wake_prior to the same fixed value
-                        wake_psf = val_fixed
                     elif name == "fps":
                         fps = val_fixed
                     elif name == "P_0m":
                         P_0m = val_fixed
                 continue
-
+            
             min_val = parts[1].strip() if len(parts) > 1 else "nan"
             max_val = parts[2].strip() if len(parts) > 2 else "nan"
             flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
 
             min_val = safe_eval(min_val)
             max_val = safe_eval(max_val)
-
+            
             if np.isnan(max_val):
                 continue
 
@@ -6490,14 +6475,12 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
                 noise_lum_prior = chosen
             elif name == "noise_wake":
                 noise_wake_prior = chosen
-            elif name == "wake_psf":
-                wake_psf = chosen
             elif name == "fps":
                 fps = chosen
             elif name == "P_0m":
                 P_0m = chosen
 
-    return noise_lag_prior, noise_lum_prior, noise_wake_prior, wake_psf, fps, P_0m
+    return noise_lag_prior, noise_lum_prior, noise_wake_prior, fps, P_0m
 
 
 def computeWakeNoiseXAltitude(
@@ -7081,13 +7064,13 @@ class autoSetupDynestyFiles:
         # If user gave a valid .prior path, read it once.
         if os.path.isfile(self.prior_file):
             prior_path_noise = self.prior_file
-            lag_noise_prior, lum_noise_prior, noise_wake_prior, wake_psf, fps_prior, P_0m_prior = readSimParams(self.prior_file)
+            lag_noise_prior, lum_noise_prior, noise_wake_prior, fps_prior, P_0m_prior = readSimParams(self.prior_file)
         else:
             # Look for local .prior
             existing_prior_list = [f for f in files if f.endswith(".prior")]
             if existing_prior_list:
                 prior_path_noise = os.path.join(root, existing_prior_list[0])
-                lag_noise_prior, lum_noise_prior, noise_wake_prior, wake_psf, fps_prior, P_0m_prior = readSimParams(prior_path_noise)
+                lag_noise_prior, lum_noise_prior, noise_wake_prior, fps_prior, P_0m_prior = readSimParams(prior_path_noise)
 
         if not (np.isnan(lag_noise_prior) or np.isnan(lum_noise_prior)):
             print("Found noise in prior file: lag",lag_noise_prior,"m, lum",lum_noise_prior,"J/s")
@@ -7109,7 +7092,7 @@ class autoSetupDynestyFiles:
                 prior_path = ""
 
         observation_instance = ObservationData(input_file, self.use_all_cameras, lag_noise_prior, 
-            lum_noise_prior, noise_wake_prior, wake_psf, fps_prior, P_0m_prior, self.pick_position, prior_path)
+            lum_noise_prior, noise_wake_prior, fps_prior, P_0m_prior, self.pick_position, prior_path)
 
         self.makeWakeContainers(input_file)
 

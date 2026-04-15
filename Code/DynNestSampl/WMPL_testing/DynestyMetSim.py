@@ -7378,6 +7378,10 @@ def constructConstants(parameter_guess, real_event, var_names, fix_var, dir_path
         # use the function thaht add them in the const_nominal
         const_nominal = addFragToConst(const_nominal, combined_frag_dic)
 
+    # check if const_nominal.wake_psf is a list and if it is not, make it a list with a single element
+    if not isinstance(const_nominal.wake_psf, list):
+        const_nominal.wake_psf = [const_nominal.wake_psf]
+
     if dir_path!="" and file_name!="":
         _, _, _ = runSimulation(const_nominal, compute_wake=False) # completes the some fields in const_nominal that will be saved
         saveConstants(const_nominal, dir_path, file_name)
@@ -7774,11 +7778,6 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             obs_metsim_obj.noise_wake = guess_var[i]
             obs_metsim_obj.noise_wake_ht = None
             obs_metsim_obj.noise_wake_array = None
-        if var_name == 'wake_psf' and flag_wake:
-            # check if wake_psf is not in an array
-            if isinstance(guess_var[i], (int, float)):
-                # if is not in an array, put it in an array of one element
-                guess_var[i] = [guess_var[i]]
 
     # check if among the var_names there is a "erosion_mass_max" and if there is a "erosion_mass_min"
     if 'erosion_mass_max' in var_names and 'erosion_mass_min' in var_names:

@@ -2286,83 +2286,86 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         os.makedirs(output_folder +os.sep+ 'fit_plots')
 
     best_guess_obj_plot = runSimulationDynesty(best_guess, obs_data, variables, fixed_values, flag_wake=flag_wake)
-
-    # find the index of m_init in variables
-    i_m_init = variables.index('m_init')
-    tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples_equal[:, i_m_init]*obs_data.velocities[0]**2)*100
-    # calculate the weights calculate the weighted median and the 95 CI for tau
-    # tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=weights)
-    tau_median, tau_low95, tau_high95 = _plot_distrib_weighted(
-        tau,
-        weights=weights,
-        output_folder=output_folder,
-        file_name=file_name,
-        var_name='tau',
-        label='$\\tau$ [%]',
-        colors='olive')
-    print(f"Tau: {tau_median:.4f} 95CI ({tau_low95:.4f} - {tau_high95:.4f}) %")
-
-    # find erosion change height
-    if 'erosion_height_change' in variables and 'm_init' in variables:
-        erosion_height_change = best_guess[variables.index('erosion_height_change')]
-        m_init = best_guess[variables.index('m_init')]
-
-        heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
-        mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
-
-        # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-        mass_before = best_guess_obj_plot.const.mass_at_erosion_change
-        # if mass_before is None use the old method
-        if mass_before is None:
-            mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-        
-        # plot the two density the first one on top and te second one after
-        plt.subplots(2, 1, figsize=(5, 10))
-        plt.subplot(2, 1, 1)
-        ax = plt.gca()
-        # plot the
-        _plot_distrib_weighted(
-            samples_equal[:, variables.index('rho')].astype(float), 
+    
+    try:
+        # find the index of m_init in variables
+        i_m_init = variables.index('m_init')
+        tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples_equal[:, i_m_init]*obs_data.velocities[0]**2)*100
+        # calculate the weights calculate the weighted median and the 95 CI for tau
+        # tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=weights)
+        tau_median, tau_low95, tau_high95 = _plot_distrib_weighted(
+            tau,
             weights=weights,
             output_folder=output_folder,
             file_name=file_name,
-            var_name='rho',
-            label='$\\rho$ [kg/m$^3$]',
-            colors='gray',
-            ax_dist=ax
-        )
-        plt.subplot(2, 1, 2)
-        ax = plt.gca()
-        _plot_distrib_weighted(
-            samples_equal[:, variables.index('erosion_rho_change')].astype(float),
+            var_name='tau',
+            label='$\\tau$ [%]',
+            colors='olive')
+        print(f"Tau: {tau_median:.4f} 95CI ({tau_low95:.4f} - {tau_high95:.4f}) %")
+
+        # find erosion change height
+        if 'erosion_height_change' in variables and 'm_init' in variables:
+            erosion_height_change = best_guess[variables.index('erosion_height_change')]
+            m_init = best_guess[variables.index('m_init')]
+
+            heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+            mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+
+            # mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+            mass_before = best_guess_obj_plot.const.mass_at_erosion_change
+            # if mass_before is None use the old method
+            if mass_before is None:
+                mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+            
+            # plot the two density the first one on top and te second one after
+            plt.subplots(2, 1, figsize=(5, 10))
+            plt.subplot(2, 1, 1)
+            ax = plt.gca()
+            # plot the
+            _plot_distrib_weighted(
+                samples_equal[:, variables.index('rho')].astype(float), 
+                weights=weights,
+                output_folder=output_folder,
+                file_name=file_name,
+                var_name='rho',
+                label='$\\rho$ [kg/m$^3$]',
+                colors='gray',
+                ax_dist=ax
+            )
+            plt.subplot(2, 1, 2)
+            ax = plt.gca()
+            _plot_distrib_weighted(
+                samples_equal[:, variables.index('erosion_rho_change')].astype(float),
+                weights=weights,
+                output_folder=output_folder,
+                file_name=file_name,
+                var_name='erosion_rho_change',
+                label='$\\rho_{2}$ [kg/m$^3$]',
+                colors='darkgray',
+                ax_dist=ax
+            )
+
+            # save the figure
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_folder, file_name + '_rho_distrib_two_rhos.png'), dpi=300, bbox_inches='tight')
+            plt.close()
+
+            # # precise erosion tal energy calculation ########################
+            rho_total_arr = samples_equal[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before)/m_init) + samples_equal[:, variables.index('erosion_rho_change')].astype(float)*(mass_before/m_init)
+        else:
+            rho_total_arr = samples_equal[:, variables.index('rho')].astype(float)
+
+        rho_median_approx, rho_low95_approx, rho_high95_approx = _plot_distrib_weighted(
+            rho_total_arr,
             weights=weights,
             output_folder=output_folder,
             file_name=file_name,
-            var_name='erosion_rho_change',
-            label='$\\rho_{2}$ [kg/m$^3$]',
-            colors='darkgray',
-            ax_dist=ax
-        )
-
-        # save the figure
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_folder, file_name + '_rho_distrib_two_rhos.png'), dpi=300, bbox_inches='tight')
-        plt.close()
-
-        # # precise erosion tal energy calculation ########################
-        rho_total_arr = samples_equal[:, variables.index('rho')].astype(float)*(abs(m_init-mass_before)/m_init) + samples_equal[:, variables.index('erosion_rho_change')].astype(float)*(mass_before/m_init)
-    else:
-        rho_total_arr = samples_equal[:, variables.index('rho')].astype(float)
-
-    rho_median_approx, rho_low95_approx, rho_high95_approx = _plot_distrib_weighted(
-        rho_total_arr,
-        weights=weights,
-        output_folder=output_folder,
-        file_name=file_name,
-        var_name='rho_mass_weighted',
-        label='$\\rho$ [kg/m$^3$]')
-    # rho_low95_approx, rho_median_approx, rho_high95_approx = _quantile(rho_total_arr, [0.025, 0.5, 0.975], weights=weights)
-    print(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3")
+            var_name='rho_mass_weighted',
+            label='$\\rho$ [kg/m$^3$]')
+        # rho_low95_approx, rho_median_approx, rho_high95_approx = _quantile(rho_total_arr, [0.025, 0.5, 0.975], weights=weights)
+        print(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3")
+    except Exception as e:
+        print(f"Error calculating tau and rho distributions: {e}\nSkipping tau and rho distribution calculations.\n")
 
     # inerpoate the abs_magnitude_arr to the leading_frag_height_arr
     sim_mag = np.interp(obs_data.height_lum, 
@@ -2374,14 +2377,19 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
 
     obs_data.noise_mag = np.std(sim_diff_mag)
 
-    lum_eff_val = tau_median
-    # fid the fixed_values that have the lum_eff
-    for key in fixed_values.keys():
-        # exact name is lum_eff
-        if 'lum_eff' == key:    
-            print(f"Fixed value for {key}: {fixed_values[key]}")
-            lum_eff_val = fixed_values[key]
-            break
+
+    try:
+
+        lum_eff_val = tau_median
+        # fid the fixed_values that have the lum_eff
+        for key in fixed_values.keys():
+            # exact name is lum_eff
+            if 'lum_eff' == key:    
+                print(f"Fixed value for {key}: {fixed_values[key]}")
+                lum_eff_val = fixed_values[key]
+                break
+    except Exception as e:
+        print(f"Error finding lum_eff in fixed_values: {e}\nUsing tau_median as lum_eff_val.\n")
 
     try:
         # make a timer so that it does not take too much in
@@ -3007,10 +3015,13 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         f.write("eff(%) i.e. (niter/ncall)*100 eff. of the logL call \n")
         f.write("logz i.e. final estimated evidence\n")
         # f.write("H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need for a lot of live points\n")
-        f.write(f"\nTau: {tau_median:.2f} 95CI ({tau_low95:.2f} - {tau_high95:.2f}) %\n")
-        f.write(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3\n")
-        if save_backup:
-            f.write(f"Real mass weighted $\\rho$ : {rho_median_real:.2f} 95CI ({rho_lo_real:.2f} - {rho_hi_real:.2f}) kg/m^3\n")
+        try:
+            f.write(f"\nTau: {tau_median:.2f} 95CI ({tau_low95:.2f} - {tau_high95:.2f}) %\n")
+            f.write(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3\n")
+            if save_backup:
+                f.write(f"Real mass weighted $\\rho$ : {rho_median_real:.2f} 95CI ({rho_lo_real:.2f} - {rho_hi_real:.2f}) kg/m^3\n")
+        except:
+            pass
         f.write("\nBest fit Noise:\n")
         f.write("{:<8}|{:>12}|{:>12}|{:>12}|{:>12}|\n".format(
             "Noise:", "Abs.Mag [-]", "Lum [W]", "Vel [km/s]", "Lag [m]"))
@@ -3019,11 +3030,14 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         f.write("\nBest fit:\n")
         for i in range(len(best_guess)):
             f.write(variables[i]+':\t'+str(best_guess[i])+'\n')
-        f.write("\nBest fit initial and final masses:\n")
-        f.write("{:<16}|{:>12}|{:>12}|{:>12}|{:>12}|\n".format(
-            "Name:", "m_init [kg]", "m_final [kg]", "m_final% [%]", "d_final [μm]"))
-        f.write("{:<16}|{:>12.2g}|{:>12.2g}|{:>12.2g}|{:>12.2g}|\n".format(
-            file_name, best_guess_obj_plot.const.m_init, final_mass, final_mass_percent, size_final))
+        try:
+            f.write("\nBest fit initial and final masses:\n")
+            f.write("{:<16}|{:>12}|{:>12}|{:>12}|{:>12}|\n".format(
+                "Name:", "m_init [kg]", "m_final [kg]", "m_final% [%]", "d_final [μm]"))
+            f.write("{:<16}|{:>12.2g}|{:>12.2g}|{:>12.2g}|{:>12.2g}|\n".format(
+                file_name, best_guess_obj_plot.const.m_init, final_mass, final_mass_percent, size_final))
+        except:
+            pass
         f.write('\nBest fit logL: '+str(best_guess_logL)+'\n') # dynesty_run_results.logl[sim_num])+'\n')
         if diff_logL is not None:
             f.write('REAL logL: '+str(real_logL)+'\n')

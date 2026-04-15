@@ -2083,6 +2083,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         'grain_mass_min': r"$m_{l}$ [kg]",
         'grain_mass_max': r"$m_{u}$ [kg]",
         'mass_index': r"$s$",
+        'wake_psf': r"$PSF_{wake}$ [m]",
         'noise_lag': r"$\sigma_{lag}$ [m]",
         'noise_lum': r"$\sigma_{lum}$ [W]",
         'noise_wake': r"$\sigma_{wake}$ [ADUs]"
@@ -2117,6 +2118,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         'grain_mass_min': r"$m_{l}$ [kg]",
         'grain_mass_max': r"$m_{u}$ [kg]",
         'mass_index': r"$s$",
+        'wake_psf': r"$PSF_{wake}$ [m]",
         'noise_lag': r"$\sigma_{lag}$ [m]",
         'noise_lum': r"$\sigma_{lum}$ [W]",
         'noise_wake': r"$\sigma_{wake}$ [ADUs]"
@@ -4165,7 +4167,7 @@ class ObservationData:
         prior_file_path: [str] Path to a prior file. Empty string by default.
 
     """
-    def __init__(self, obs_file_path, use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, noise_wake_prior=100, wake_psf=[5],
+    def __init__(self, obs_file_path, use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, noise_wake_prior=100,
                  fps_prior=np.nan, P_0m_prior=np.nan, pick_position=0, prior_file_path=""):
         self.noise_lag = lag_noise_prior
         self.noise_lum = lum_noise_prior

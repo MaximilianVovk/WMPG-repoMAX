@@ -17,7 +17,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\Jessica_flare\20251001_060203_output_magbump\20251001_060203_test_add_wake", 
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.1)Flare-project\20251001_060203_Jessica+wake", 
         help="Path to walk and find .pickle file or specific single file .pickle or .json file divided by ',' in between.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

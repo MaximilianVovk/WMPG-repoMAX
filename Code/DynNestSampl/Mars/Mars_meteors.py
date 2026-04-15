@@ -3366,11 +3366,11 @@ if __name__ == "__main__":
                             # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform\Fastsporad_CAMOnew+EMCCD_unif_density\fastsporad_EMCCD+CAMO_CAP"
                             # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform"
                             # "C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\CAMO-EMCCDonly"
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Before-Backup\Sporadics_rho-uniform_NO-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Test",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Test-2",
         help="Output directory, if not given is the same as input_dir.")
     
     arg_parser.add_argument('--name', metavar='NAME', type=str,

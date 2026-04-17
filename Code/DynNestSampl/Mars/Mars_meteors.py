@@ -1790,7 +1790,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # peak height abs mag
         peak_height_abs_mag = heights_single_mars[np.argmin(abs_mags_single_mars)]
         # take the mag that is below first_mag and before peak_height_abs_mag and the data that is after peak_height_abs_mag and below last_mag
-        index_to_use_single_mars = ((heights_single_mars > peak_height_abs_mag) & (abs_mags_single_mars < first_mag)) | ((heights_single_mars < peak_height_abs_mag) & (abs_mags_single_mars < last_mag))
+        # index_to_use_single_mars = ((heights_single_mars > peak_height_abs_mag) & (abs_mags_single_mars < first_mag)) | ((heights_single_mars < peak_height_abs_mag) & (abs_mags_single_mars < last_mag))
+        index_to_use_single_mars = np.min(abs_mags_single_mars) + 2.5 > abs_mags_single_mars
         len_to_use = lenght_single_mars[index_to_use_single_mars]
         abs_mags_to_use = abs_mags_single_mars[index_to_use_single_mars]
         heights_to_use = heights_single_mars[index_to_use_single_mars]
@@ -1820,7 +1821,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # abs_mags_to_use_mars = abs_mags_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
         # heights_to_use_mars = heights_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
         peak_height_abs_mag_mars = heights_mars[np.argmin(abs_mags_mars)]
-        index_to_use_mars = ((heights_mars > peak_height_abs_mag_mars) & (abs_mags_mars < first_mag)) | ((heights_mars < peak_height_abs_mag_mars) & (abs_mags_mars < last_mag))
+        # index_to_use_mars = ((heights_mars > peak_height_abs_mag_mars) & (abs_mags_mars < first_mag)) | ((heights_mars < peak_height_abs_mag_mars) & (abs_mags_mars < last_mag))
+        index_to_use_mars = np.min(abs_mags_mars) + 2.5 > abs_mags_mars
         len_to_use_mars = lenght_mars[index_to_use_mars]
         abs_mags_to_use_mars = abs_mags_mars[index_to_use_mars]
         heights_to_use_mars = heights_mars[index_to_use_mars]
@@ -1848,7 +1850,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # abs_mags_to_use_mars_dyn_press = abs_mags_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
         # heights_to_use_mars_dyn_press = heights_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
         peak_height_abs_mag_mars_dyn_press = heights_mars_dyn_press[np.argmin(abs_mags_mars_dyn_press)]
-        index_to_use_mars_dyn_press = ((heights_mars_dyn_press > peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < first_mag)) | ((heights_mars_dyn_press < peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < last_mag))
+        # index_to_use_mars_dyn_press = ((heights_mars_dyn_press > peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < first_mag)) | ((heights_mars_dyn_press < peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < last_mag))
+        index_to_use_mars_dyn_press = np.min(abs_mags_mars_dyn_press) + 2.5 > abs_mags_mars_dyn_press
         len_to_use_mars_dyn_press = lenght_mars_dyn_press[index_to_use_mars_dyn_press]
         abs_mags_to_use_mars_dyn_press = abs_mags_mars_dyn_press[index_to_use_mars_dyn_press]
         heights_to_use_mars_dyn_press = heights_mars_dyn_press[index_to_use_mars_dyn_press]
@@ -1876,7 +1879,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # abs_mags_to_use_mars_energy = abs_mags_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
         # heights_to_use_mars_energy = heights_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
         peak_height_abs_mag_mars_energy = heights_mars_energy[np.argmin(abs_mags_mars_energy)]
-        index_to_use_mars_energy = ((heights_mars_energy > peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < first_mag)) | ((heights_mars_energy < peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < last_mag))
+        # index_to_use_mars_energy = ((heights_mars_energy > peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < first_mag)) | ((heights_mars_energy < peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < last_mag))
+        index_to_use_mars_energy = np.min(abs_mags_mars_energy) + 2.5 > abs_mags_mars_energy
         len_to_use_mars_energy = lenght_mars_energy[index_to_use_mars_energy]
         abs_mags_to_use_mars_energy = abs_mags_mars_energy[index_to_use_mars_energy]
         heights_to_use_mars_energy = heights_mars_energy[index_to_use_mars_energy]
@@ -1894,7 +1898,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
             data_dict["mars_energy"]["h_start"].append(0)
             data_dict["mars_energy"]["h_end"].append(0)
 
-        # # check if the cuts are corrects plot the abs_mags_obs against the heights_obs and put a vertical line at the erosion_height_start/1000 and check if the points that are kept are the ones that are below the line and have a smaller magnitude than the one at the line
+        # # # check if the cuts are corrects plot the abs_mags_obs against the heights_obs and put a vertical line at the erosion_height_start/1000 and check if the points that are kept are the ones that are below the line and have a smaller magnitude than the one at the line
         # plt.figure()
         # plt.plot(abs_mags_obs, heights_obs, label='obs')
         # # plt.axvline(x=mag_aterosheight, color='red', linestyle='--', label='cut at erosion height start')
@@ -3680,19 +3684,23 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         const_obs, const_single_mars, const_mars, const_mars_dyn_press, const_mars_energy) = file_bright_dict[name]
 
         # Earth (deep-flatten + align)
-        m_obs = _to_1d_float(abs_mags_obs)
-        h_obs = _to_1d_float(heights_obs)
-        l_obs = _to_1d_float(length_obs)
+        index_to_use_obs = np.min(abs_mags_obs) + 2.5 > abs_mags_obs
+        m_obs = _to_1d_float(abs_mags_obs[index_to_use_obs])
+        h_obs = _to_1d_float(heights_obs[index_to_use_obs])
+        try:
+            l_obs = _to_1d_float(length_obs[index_to_use_obs])
+        except:
+            l_obs = _to_1d_float(length_obs)
         n = min(m_obs.size, h_obs.size, l_obs.size)
         data_dict["obs"]["mag"].append(m_obs[:n])
         data_dict["obs"]["h"].append(h_obs[:n])
         data_dict["obs"]["l"].append(l_obs[:n])
-        first_mag = abs_mags_obs[0]
-        last_mag = abs_mags_obs[-1]
-        if first_mag > last_mag:
-            last_mag = first_mag
-        else:
-            first_mag = last_mag 
+        # first_mag = abs_mags_obs[0]
+        # last_mag = abs_mags_obs[-1]
+        # if first_mag > last_mag:
+        #     last_mag = first_mag
+        # else:
+        #     first_mag = last_mag 
         # Mars (deep-flatten each component, then concatenate)
 
         # mag_aterosheight_mars = abs_mags_mars[np.argmin(np.abs(heights_mars - const_mars.erosion_height_start/1000))]
@@ -3700,7 +3708,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # abs_mags_to_use_mars = abs_mags_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
         # heights_to_use_mars = heights_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
         peak_height_abs_mag_mars = heights_mars[np.argmin(abs_mags_mars)]
-        index_to_use_mars = ((heights_mars > peak_height_abs_mag_mars) & (abs_mags_mars < first_mag)) | ((heights_mars < peak_height_abs_mag_mars) & (abs_mags_mars < last_mag))
+        # index_to_use_mars = ((heights_mars > peak_height_abs_mag_mars) & (abs_mags_mars < first_mag)) | ((heights_mars < peak_height_abs_mag_mars) & (abs_mags_mars < last_mag))
+        index_to_use_mars = np.min(abs_mags_mars) + 2.5 > abs_mags_mars
         len_to_use_mars = lenght_mars[index_to_use_mars]
         abs_mags_to_use_mars = abs_mags_mars[index_to_use_mars]
         heights_to_use_mars = heights_mars[index_to_use_mars]
@@ -3710,7 +3719,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # abs_mags_to_use_mars_dyn_press = abs_mags_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
         # heights_to_use_mars_dyn_press = heights_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
         peak_height_abs_mag_mars_dyn_press = heights_mars_dyn_press[np.argmin(abs_mags_mars_dyn_press)]
-        index_to_use_mars_dyn_press = ((heights_mars_dyn_press > peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < first_mag)) | ((heights_mars_dyn_press < peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < last_mag))
+        # index_to_use_mars_dyn_press = ((heights_mars_dyn_press > peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < first_mag)) | ((heights_mars_dyn_press < peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < last_mag))
+        index_to_use_mars_dyn_press = np.min(abs_mags_mars_dyn_press) + 2.5 > abs_mags_mars_dyn_press
         len_to_use_mars_dyn_press = lenght_mars_dyn_press[index_to_use_mars_dyn_press]
         abs_mags_to_use_mars_dyn_press = abs_mags_mars_dyn_press[index_to_use_mars_dyn_press]
         heights_to_use_mars_dyn_press = heights_mars_dyn_press[index_to_use_mars_dyn_press]
@@ -3720,7 +3730,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # abs_mags_to_use_mars_energy = abs_mags_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
         # heights_to_use_mars_energy = heights_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
         peak_height_abs_mag_mars_energy = heights_mars_energy[np.argmin(abs_mags_mars_energy)]
-        index_to_use_mars_energy = ((heights_mars_energy > peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < first_mag)) | ((heights_mars_energy < peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < last_mag))
+        # index_to_use_mars_energy = ((heights_mars_energy > peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < first_mag)) | ((heights_mars_energy < peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < last_mag))
+        index_to_use_mars_energy = np.min(abs_mags_mars_energy) + 2.5 > abs_mags_mars_energy
         len_to_use_mars_energy = lenght_mars_energy[index_to_use_mars_energy]
         abs_mags_to_use_mars_energy = abs_mags_mars_energy[index_to_use_mars_energy]
         heights_to_use_mars_energy = heights_mars_energy[index_to_use_mars_energy]
@@ -3880,7 +3891,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     Mars_lengths = Mars_lengths[mask_m]
 
     # --- Bin by height and compute median + 1σ/2σ bands in each bin for Earth and Mars ---
-    n_h_bins = 60
+    n_h_bins = 50
 
     h_min = 60
     h_max = max(Earth_heights.max(), Mars_heights.max())

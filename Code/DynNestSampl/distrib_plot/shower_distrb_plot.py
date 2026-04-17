@@ -5218,6 +5218,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     np.isfinite(change_var) &
                     np.isfinite(mass_percent_2frag)
                 )
+                # update the mask with only the one that have a w above the 95th percentile
+                w_threshold = np.percentile(w, 95)
+                mask = mask & (w > w_threshold)
 
                 x_plot = np.asarray(change_var)[mask]
                 y_plot = np.asarray(initial_var)[mask]
@@ -5376,6 +5379,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     weights_kinetic = weights_kinetic_raw * velocity_weights
     weights_kinetic /= np.sum(weights_kinetic)
     # print("Kinetic energy weights after applying velocity weights normalized:", (weights_kinetic))
+    # set the weight to zero if the rea weight is below the 95th percentile to see the effect of the velocity weights on the distribution
+    w_threshold = np.percentile(w, 95)
+    weights_kinetic[w < w_threshold] = 0
 
     # kinetic and velocity weighted distribution
 

@@ -2264,6 +2264,11 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             del flags_dict_real['noise_lum']
             # add in the fixed_values_real the noise_lum value that was introduced
             fixed_values_real['noise_lum'] = obs_data.noise_lum
+        if 'noise_wake' in variables:
+            variables_real.remove('noise_wake')
+            del flags_dict_real['noise_wake']
+            # add in the fixed_values_real the noise_wake value that was introduced
+            fixed_values_real['noise_wake'] = obs_data.noise_wake
 
         # feed variables in the obs_data.const of obs_data as guess_var
         guess_real = [obs_data.const[variable] for variable in variables_real if variable in obs_data.const]

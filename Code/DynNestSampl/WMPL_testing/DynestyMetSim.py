@@ -2915,8 +2915,23 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         if 'noise_lum' in flags_dict.keys():
             truth_values_plot['noise_lum'] = obs_data.noise_lum
 
-        # Convert to array safely
-        truths = np.array([truth_values_plot.get(variable, np.nan) for variable in variables])
+        def to_scalar(x):
+            if isinstance(x, (list, tuple, np.ndarray)):
+                arr = np.asarray(x)
+                if arr.size == 1:
+                    return float(arr.ravel()[0])
+                else:
+                    print(f"Warning: expected scalar but got array with shape {arr.shape}: {x}")
+                    return np.nan
+            return float(x) if x is not None else np.nan
+
+        truths = np.array(
+            [to_scalar(truth_values_plot.get(variable, np.nan)) for variable in variables],
+            dtype=float
+        )
+
+        # # Convert to array safely
+        # truths = np.array([truth_values_plot.get(variable, np.nan) for variable in variables])
 
         # Apply log10 safely if needed
         for variable in variables:
@@ -7766,8 +7781,8 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             obs_metsim_obj.noise_lum = fix_var[var_name]
         if var_name == 'noise_wake' and flag_wake:
             obs_metsim_obj.noise_wake = fix_var[var_name]
-            if 'ht' in  obs_metsim_obj.noise_wake:
-                # special case to use a variable wake for altitiudes 
+            if isinstance(obs_metsim_obj.noise_wake, str) and 'ht' in obs_metsim_obj.noise_wake:
+                # special case to use a variable wake for altitudes
                 obs_metsim_obj.altitudes_noises_wake = obs_metsim_obj.altitudes_noises_wake
                 obs_metsim_obj.noise_wake_array = obs_metsim_obj.noise_wake_array
             else:

@@ -852,781 +852,829 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     """
     print(f"Processing input: {input_dirfile}")
     if new_marsmeteor:
-        print("Update the .marsmeteor file.")
-    # Use the class to find .dynesty, load prior, and decide output folders
-    finder = find_dynestyfile_and_priors(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=True,pick_position=0)
+        print("Update the .marsmeteor_new file.")
 
-    all_label_sets = []  # List to store sets of labels for each file
-    variables = []  # List to store distributions for each file
-    flags_dict_total = {}  # Dictionary to store flags for each file
-    num_meteors = len(finder.base_names)  # Number of meteors
-    for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names,finder.input_folder_file,finder.priors,finder.output_folders)):
-        dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
+    # check if os.path.join(input_dirfile, "all_meteors_data.marsmeteor_total") is present
+    
+    if not os.path.exists(os.path.join(input_dirfile, "all_meteors_data.marsmeteor_total")):
+        # Use the class to find .dynesty, load prior, and decide output folders
+        finder = find_dynestyfile_and_priors(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=True,pick_position=0)
 
-        # check if len(flags_dict.keys()) > len(variables) to avoid index error
-        if len(flags_dict.keys()) > len(variables):
-            variables = list(flags_dict.keys())
+        all_label_sets = []  # List to store sets of labels for each file
+        variables = []  # List to store distributions for each file
+        flags_dict_total = {}  # Dictionary to store flags for each file
+        num_meteors = len(finder.base_names)  # Number of meteors
+        for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names,finder.input_folder_file,finder.priors,finder.output_folders)):
+            dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
 
-    # keep them in the same order distribution_list
-    print(f"Shared labels: {variables}")
+            # check if len(flags_dict.keys()) > len(variables) to avoid index error
+            if len(flags_dict.keys()) > len(variables):
+                variables = list(flags_dict.keys())
 
-    ndim = len(variables)
-    # Mapping of original variable names to LaTeX-style labels
-    variable_map = {
-        'v_init': r"$v_0$ [km/s]",
-        'zenith_angle': r"$z_c$ [rad]",
-        'm_init': r"$m_0$ [kg]",
-        'rho': r"$\rho$ [kg/m$^3$]",
-        'sigma': r"$\sigma$ [kg/MJ]",
-        'erosion_height_start': r"$h_e$ [km]",
-        'erosion_coeff': r"$\eta$ [kg/MJ]",
-        'erosion_mass_index': r"$s$",
-        'erosion_mass_min': r"$m_{l}$ [kg]",
-        'erosion_mass_max': r"$m_{u}$ [kg]",
-        'erosion_height_change': r"$h_{e2}$ [km]",
-        'erosion_coeff_change': r"$\eta_{2}$ [kg/MJ]",
-        'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
-        'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
-        'noise_lag': r"$\sigma_{lag}$ [m]",
-        'noise_lum': r"$\sigma_{lum}$ [W]",
-        'eeucs': r"$E_s$ [MJ/m$^2$]",
-        'eeum': r"$E_m$ [MJ/kg]",
-        'eeucs_end': r"$E_{s\,end}$ [MJ/m$^2$]",
-        'eeum_end': r"$E_{m\,end}$ [MJ/kg]"
-    }
+        # keep them in the same order distribution_list
+        print(f"Shared labels: {variables}")
 
-    # check if there are variables in the flags_dict that are not in the variable_map
-    for variable in variables:
-        if variable not in variable_map:
-            print(f"Warning: {variable} not found in variable_map")
-            # Add the variable to the map with a default label
-            variable_map[variable] = variable
-    labels = [variable_map[variable] for variable in variables]
+        ndim = len(variables)
+        # Mapping of original variable names to LaTeX-style labels
+        variable_map = {
+            'v_init': r"$v_0$ [km/s]",
+            'zenith_angle': r"$z_c$ [rad]",
+            'm_init': r"$m_0$ [kg]",
+            'rho': r"$\rho$ [kg/m$^3$]",
+            'sigma': r"$\sigma$ [kg/MJ]",
+            'erosion_height_start': r"$h_e$ [km]",
+            'erosion_coeff': r"$\eta$ [kg/MJ]",
+            'erosion_mass_index': r"$s$",
+            'erosion_mass_min': r"$m_{l}$ [kg]",
+            'erosion_mass_max': r"$m_{u}$ [kg]",
+            'erosion_height_change': r"$h_{e2}$ [km]",
+            'erosion_coeff_change': r"$\eta_{2}$ [kg/MJ]",
+            'erosion_rho_change': r"$\rho_{2}$ [kg/m$^3$]",
+            'erosion_sigma_change': r"$\sigma_{2}$ [kg/MJ]",
+            'noise_lag': r"$\sigma_{lag}$ [m]",
+            'noise_lum': r"$\sigma_{lum}$ [W]",
+            'eeucs': r"$E_s$ [MJ/m$^2$]",
+            'eeum': r"$E_m$ [MJ/kg]",
+            'eeucs_end': r"$E_{s\,end}$ [MJ/m$^2$]",
+            'eeum_end': r"$E_{m\,end}$ [MJ/kg]"
+        }
 
-
-    # the on that are not variables are the one that were not used in the dynesty run give a np.nan weight to dsampler for those
-    all_samples = []
-    all_weights = []
-    all_names = []  
-
-    # base_name, lg_min_la_sun, bg, rho
-    file_obs_data_dict = {}
-    file_phys_data_dict = {}
-    file_bright_dict = {}
-    file_rho_jd_dict = {}
-
-    # corrected rho
-    rho_corrected = []
-    eta_corrected = []
-    sigma_corrected = []
-    tau_corrected = []
-    mm_size_corrected = []
-    mass_distr = []
-    erosion_energy_per_unit_cross_section_corrected = []
-    erosion_energy_per_unit_mass_corrected = []
+        # check if there are variables in the flags_dict that are not in the variable_map
+        for variable in variables:
+            if variable not in variable_map:
+                print(f"Warning: {variable} not found in variable_map")
+                # Add the variable to the map with a default label
+                variable_map[variable] = variable
+        labels = [variable_map[variable] for variable in variables]
 
 
-    # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
-    if os.path.exists(output_dir_show+os.sep+"log_Mars.txt"):
-        # remove the file
-        os.remove(output_dir_show+os.sep+"log_Mars.txt")
-    # use the Logger class to redirect the print to a file 
-    sys.stdout = Logger(output_dir_show,"log_Mars.txt")
+        # the on that are not variables are the one that were not used in the dynesty run give a np.nan weight to dsampler for those
+        all_samples = []
+        all_weights = []
+        all_names = []  
 
-    for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
-        dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
-        print('\n', base_name)
-        print(f"Processed {i+1} out of {len(finder.base_names)}")
-        obs_data = finder.observation_instance(base_name)
-        obs_data.file_name = pickle_file  # update the file name in the observation data object
-        # take the traj.rbeg_ele and the traj.orbit.zc 
-        dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
-        # dsampler = load_dynesty_file(dynesty_file)
+        # base_name, lg_min_la_sun, bg, rho
+        file_obs_data_dict = {}
+        file_phys_data_dict = {}
+        file_bright_dict = {}
+        file_rho_jd_dict = {}
 
-        # Align to the union of all variables (padding missing ones with NaN and 0 weights)
-        samples_aligned, weights_aligned = align_dynesty_samples(dsampler, variables, flags_dict)
+        # corrected rho
+        rho_corrected = []
+        eta_corrected = []
+        sigma_corrected = []
+        tau_corrected = []
+        mm_size_corrected = []
+        mass_distr = []
+        erosion_energy_per_unit_cross_section_corrected = []
+        erosion_energy_per_unit_mass_corrected = []
 
-        output_dir = os.path.dirname(dynesty_file)
-        report_file = None
-        for name in os.listdir(output_dir):
-            if name.endswith("report.txt"):
-                report_file = name; break
-        if report_file is None:
-            for name in os.listdir(output_dir):
-                if name.endswith("report_sim.txt"):
-                    report_file = name; break
-        if report_file is None:
-            raise FileNotFoundError("No report.txt or report_sim.txt found")
 
-        report_path = os.path.join(output_dir, report_file)
+        # check if a file with the name "log"+n_PC_in_PCA+"_"+str(len(df_sel))+"ev.txt" already exist
+        if os.path.exists(output_dir_show+os.sep+"log_Mars.txt"):
+            # remove the file
+            os.remove(output_dir_show+os.sep+"log_Mars.txt")
+        # use the Logger class to redirect the print to a file 
+        sys.stdout = Logger(output_dir_show,"log_Mars.txt")
 
-        combined_results_meteor = CombinedResults(samples_aligned, weights_aligned)
-
-        summary_df_meteor = summarize_from_cornerplot(combined_results_meteor, variables, labels)
-
-        dynesty_run_results = dsampler.results
-        weights = dynesty_run_results.importance_weights()
-        w = weights / np.sum(weights)
-        samples = dynesty_run_results.samples
-        ndim_single = len(variables)
-
-        # delete from base_name _combined if it exists
-        if '_combined' in base_name:
-            base_name = base_name.replace('_combined', '')
-
-        # chek for the .marsmeteor file to extract the meteor name
-        marsmeteor_file = None
-        for name in os.listdir(output_dir):
-            if name.endswith(".marsmeteor"):
-                marsmeteor_file = name; break
-            
-        if new_marsmeteor:
-            marsmeteor_file = None
-
-        if marsmeteor_file is None:
-            sim_num = np.argmax(dynesty_run_results.logl)
-
-            # copy the best guess values
-            guess = dynesty_run_results.samples[sim_num].copy()
-            flag_total_rho = False
-            # load the variable names
-            variables_sing = list(flags_dict.keys())
-            for i, variable in enumerate(variables_sing):
-                if 'log' in flags_dict[variable]:
-                    guess[i] = 10**guess[i]
-                    samples[:, i] = 10**samples[:, i]
-                if variable == 'noise_lag':
-                    obs_data.noise_lag = guess[i]
-                    obs_data.noise_vel = guess[i] * np.sqrt(2)/(1.0/32)
-                if variable == 'noise_lum':
-                    obs_data.noise_lum = guess[i]
-                if variable == 'erosion_rho_change':
-                    flag_total_rho = True
-
-            beg_height = obs_data.height_lum[0]
-            end_height = obs_data.height_lum[-1]
-
-            # vel_init = obs_data.v_init
-            lenght_par = obs_data.length[-1]/1000 # convert to km
-            max_lum_height = obs_data.height_lum[np.argmax(obs_data.luminosity)]
-            F_par = (beg_height - max_lum_height) / (beg_height - end_height)
-            kc_par = beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables_sing.index('v_init')]))/0.0612
-            time_tot = obs_data.time_lum[-1] - obs_data.time_lum[0]
-            avg_vel = np.mean(obs_data.velocities)
-            init_mag = obs_data.absolute_magnitudes[0]
-            end_mag = obs_data.absolute_magnitudes[-1]
-            max_mag = obs_data.absolute_magnitudes[np.argmax(obs_data.luminosity)]
-            zenith_angle = np.rad2deg(obs_data.zenith_angle)
-
-            # set up the observation data object
+        for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names, finder.input_folder_file, finder.priors, finder.output_folders)):
+            dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
+            print('\n', base_name)
+            print(f"Processed {i+1} out of {len(finder.base_names)}")
             obs_data = finder.observation_instance(base_name)
+            obs_data.file_name = pickle_file  # update the file name in the observation data object
+            # take the traj.rbeg_ele and the traj.orbit.zc 
+            dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+            # dsampler = load_dynesty_file(dynesty_file)
 
-            # chek if obs_data is a None type object
-            if obs_data is None:
-                print(f"Observation data for {base_name} is None. Skipping this meteor.")
-                continue
+            # Align to the union of all variables (padding missing ones with NaN and 0 weights)
+            samples_aligned, weights_aligned = align_dynesty_samples(dsampler, variables, flags_dict)
 
-            obs_data.file_name = pickle_file # update teh file name in the observation data object
+            output_dir = os.path.dirname(dynesty_file)
+            report_file = None
+            for name in os.listdir(output_dir):
+                if name.endswith("report.txt"):
+                    report_file = name; break
+            if report_file is None:
+                for name in os.listdir(output_dir):
+                    if name.endswith("report_sim.txt"):
+                        report_file = name; break
+            if report_file is None:
+                raise FileNotFoundError("No report.txt or report_sim.txt found")
 
-            # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
-            if obs_data.v_init < 30000:
-                obs_data.dt = 0.01
-                # const_nominal.erosion_bins_per_10mass = 5
-            else:
-                obs_data.dt = 0.005
-                # const_nominal.erosion_bins_per_10mass = 10
+            report_path = os.path.join(output_dir, report_file)
 
-            obs_data.disruption_on = False
+            combined_results_meteor = CombinedResults(samples_aligned, weights_aligned)
 
-            obs_data.lum_eff_type = 5
+            summary_df_meteor = summarize_from_cornerplot(combined_results_meteor, variables, labels)
 
-            obs_data.h_kill = np.min([np.min(obs_data.height_lum),np.min(obs_data.height_lag)])-1000
-            # check if the h_kill is smaller than 0
-            if obs_data.h_kill < 0:
-                obs_data.h_kill = 1
-            # check if np.min(obs_data.velocity[-1]) is smaller than v_init-10000
-            if np.min(obs_data.velocities) < obs_data.v_init-10000:
-                obs_data.v_kill = obs_data.v_init-10000
-            else:
-                obs_data.v_kill = np.min(obs_data.velocities)-5000
-            # check if the v_kill is smaller than 0
-            if obs_data.v_kill < 0:
-                obs_data.v_kill = 1
+            dynesty_run_results = dsampler.results
+            weights = dynesty_run_results.importance_weights()
+            w = weights / np.sum(weights)
+            samples = dynesty_run_results.samples
+            ndim_single = len(variables)
 
-            best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
-
-            heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
-            mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
-            erosion_beg_dyn_press = best_guess_obj_plot.const.erosion_beg_dyn_press
-            print(f"Dynamic pressure at erosion onset: {erosion_beg_dyn_press} Pa")
-
-            if flag_total_rho:
-                
-                # find erosion change height
-                if 'erosion_height_change' in variables_sing:
-                    erosion_height_change = guess[variables_sing.index('erosion_height_change')]
-                if 'm_init' in variables_sing:
-                    m_init = guess[variables_sing.index('m_init')]
-
-                old_mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-                mass_before = best_guess_obj_plot.const.mass_at_erosion_change
-                print(f"Mass before erosion change: {mass_before} kg, old mass before: {old_mass_before} kg")
-                # check if mass_before is None if so use old_mass_before
-                if mass_before is None:
-                    print("Using old mass before erosion change, the new one is none!")
-                    mass_before = old_mass_before
-
-                x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
-
-                rho_corrected.append(x_valid_rho)
-
-            else:
-                rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
-                rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
-                rho = summary_df_meteor['Median'].values[variables.index('rho')]
-
-                x = samples[:, variables_sing.index('rho')].astype(float)
-                mask = ~np.isnan(x)
-                x_valid_rho = x[mask] 
-
-                rho_corrected.append(x_valid_rho)
-
-            # find the index of m_init in variables
-            tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples[:, variables_sing.index('m_init')].astype(float)*obs_data.velocities[0]**2) * 100
-            
-            # calculate the weights calculate the weighted median and the 95 CI for tau
-            tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=w)
-            tau_corrected.append(tau)
-        
-            m_init_meteor_median = summary_df_meteor['Median'].values[variables.index('m_init')]
-            m_init_meteor_lo = summary_df_meteor['Median'].values[variables.index('m_init')] - summary_df_meteor['Low95'].values[variables.index('m_init')]
-            m_init_meteor_hi = summary_df_meteor['High95'].values[variables.index('m_init')] - summary_df_meteor['Median'].values[variables.index('m_init')]
-
-            eta_meteor_begin = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
-            sigma_meteor_begin = summary_df_meteor['Median'].values[variables.index('sigma')]
-            v_init_meteor_median = summary_df_meteor['Median'].values[variables.index('v_init')]
-
-            # compute the meteoroid_diameter from a spherical shape in mm
-            all_diameter_mm = (6 * samples[:, variables_sing.index('m_init')].astype(float) / (np.pi * x_valid_rho))**(1/3) * 1000
-            mm_size_corrected.append(all_diameter_mm)
-            mass_distr.append(samples[:, variables_sing.index('m_init')].astype(float))
-            # make the quntile base on w 
-            meteoroid_diameter_mm_lo, meteoroid_diameter_mm, meteoroid_diameter_mm_hi = _quantile(all_diameter_mm, [0.025, 0.5, 0.975], weights=w)
-            meteoroid_diameter_mm_lo = (meteoroid_diameter_mm - meteoroid_diameter_mm_lo) #/1.96
-            meteoroid_diameter_mm_hi = (meteoroid_diameter_mm_hi - meteoroid_diameter_mm) #/1.96
-
-            # meteoroid_diameter_mm_old = (6 * m_init_meteor_median / (np.pi * rho))**(1/3) * 1000
-
-            print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
-            print(f"intial mass {m_init_meteor_median} kg and diameter {meteoroid_diameter_mm:.6f} mm")#, old diameter {meteoroid_diameter_mm_old:.6f} mm")
-            # print(f"erosion coeff: {eta} m/s, 95% CI = [{eta_lo}, {eta_hi}]")
-            # print(f"sigma: {sigma} kg/m^3, 95% CI = [{sigma_lo}, {sigma_hi}]")
-
-            # ### EROSION ENERGY CALCULATION ###
-
-            # take from dynesty_file folder name
-            folder_name = os.path.dirname(dynesty_file)
-
-            # look if in folder_name it exist a file that ends in .dynestyres exist in 
-            if any(f.endswith(".dynestyres") for f in os.listdir(folder_name)):
-                print(f"Found existing results in {folder_name}.dynestyres, loading them.")
-
-                # look for the file that ends in .dynestyres
-                dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
-                with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
-                    dynesty_run_results = pickle.load(f)
-
-                erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
-                erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
-
-            else:
-                print(f"No existing results found in {folder_name}.dynestyres, running dynesty.")
-                # dynesty_run_results = dsampler.results
-
-                ### add MORE PARAMETERS ###
-
-                # Package inputs
-                inputs = [
-                    (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
-                    for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
-                ]
-                #     for i in range(len(dynesty_run_results.samples)) # 
-                num_cores = multiprocessing.cpu_count()
-
-                # Run in parallel
-                with Pool(processes=num_cores) as pool:  # adjust to number of cores
-                    results = pool.map(run_single_eeu, inputs)
-
-                N = len(dynesty_run_results.samples)
-
-                erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
-                erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
-                # erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
-                # erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
-
-                for res in results:
-                    i, eeucs, eeum, eeucs_end, eeum_end = res
-                    erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
-                    erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
-                    # erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
-                    # erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
-
-
-                # Create a namespace object for dot-style access
-                results = SimpleNamespace(**dsampler.results.__dict__)  # load all default results
-
-                # Add your custom attributes
-                results.weights = dynesty_run_results.importance_weights()
-                results.norm_weights = w
-                results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
-                results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
-                # results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
-                # results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
-
-                # Save
-                with open(folder_name + os.sep + base_name+"_results.dynestyres", "wb") as f:
-                    pickle.dump(results, f)
-                    print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.dynestyres'}.")
-
-            erosion_energy_per_unit_cross_section_corrected.append(erosion_energy_per_unit_cross_section_arr)
-            erosion_energy_per_unit_mass_corrected.append(erosion_energy_per_unit_mass_arr)
-            
-
-            ### TRANSFORM TO MARS VEL ###
-
-            tj, tj_lo, tj_hi, inclin_val, Vinf_val, Vg_val, Q_val, q_val, a_val, e_val, peri_val, node_val = extract_tj_from_report(report_path)
-
-            print(f"Transforming velocities to Mars orbit:")
-            # constants
-            G0_mars = 3.75  # m/s^2
-            dens_co_mars = fitAtmPoly_mars(40*1000, 180*1000)
-            dens_co_earth = np.array(best_guess_obj_plot.const.dens_co)
-            rho_poly_earth = []
-            rho_poly_mars = []
-            altitude = np.arange(40, 181, 0.1)*1000
-            for alt in altitude:
-                rho_poly_earth.append((atmDensPoly(alt, dens_co_earth)))
-                rho_poly_mars.append((atmDensPoly(alt, dens_co_mars)))
-
-            # start simulations at the same bulk density point
-            dens_start_earth = atmDensPoly(best_guess_obj_plot.const.h_init, dens_co_earth)
-            start_height_mars = altitude[np.argmin(np.abs(np.array(rho_poly_mars) - dens_start_earth))]
-            # if start_height_mars > 100000:
-            #     start_height_mars = 100000  # do not start below 100 km on mars
-            print(f"Simulation start on Earth: {best_guess_obj_plot.const.h_init/1000:.2f} km")
-            print(f"Simulation start on Mars: {start_height_mars/1000:.2f} km")
-
-            # find the closest best_guess_obj_plot.const.erosion_height_start tat share the same density in mars
-            dens_erosion_earth = atmDensPoly(best_guess_obj_plot.const.erosion_height_start, dens_co_earth)
-            erosion_height_start_mars = altitude[np.argmin(np.abs(np.array(rho_poly_mars) - dens_erosion_earth))]
-            print(f"Erosion onset on Earth: {best_guess_obj_plot.const.erosion_height_start/1000:.2f} km rho: {dens_erosion_earth:.6f} kg/m^3")
-            print(f"Erosion onset on Mars: {erosion_height_start_mars/1000:.2f} km rho: {atmDensPoly(erosion_height_start_mars, dens_co_mars):.6f} kg/m^3")
-            if flag_total_rho:
-                dens_erosion_change_earth = atmDensPoly(best_guess_obj_plot.const.erosion_height_change, dens_co_earth)
-                erosion_height_change_mars = altitude[np.argmin(np.abs(np.array(rho_poly_mars) - dens_erosion_change_earth))]
-                # keep the same difference between erosion_height_change and erosion_height_start
-                # erosion_height_change_mars = erosion_height_start_mars - abs(best_guess_obj_plot.const.erosion_height_change - best_guess_obj_plot.const.erosion_height_start)
-                print(f"Erosion change on Earth: {best_guess_obj_plot.const.erosion_height_change/1000:.2f} km rho: {dens_erosion_change_earth:.6f} kg/m^3")
-                print(f"Erosion height change on Mars: {erosion_height_change_mars/1000:.2f} km rho: {atmDensPoly(erosion_height_change_mars, dens_co_mars):.6f} kg/m^3")
-                
-            V_ESC_MARS = escape_speed_kms(MU_MARS, R_MARS, start_height_mars/1000)
-            # print(f"Escape speed on Mars at {start_height_mars/1000:.2f} km: {V_ESC_MARS:.6f} km/s")
-            # print(f"Escape speed on Mars at 180 km: {V_ESC_MARS180:.6f} km/s")
-
-            # compute teh visvida velocity on earth
-            V_val_earth = vis_viva_speed_kms(a_val, A_EARTH_AU)
-            print(f"Vis viva speed on Earth orbit: {V_val_earth:.6f} km/s")
-            if Q_val < 0:
-                Vinf_val= V_PARAB_EARTHORBIT + V_ORBIT_EARTH
-                Vg_val = V_PARAB_EARTHORBIT + V_ORBIT_EARTH 
-                V_val_mars = V_PARAB_MARSORBIT
-                Vg_val_mars = V_PARAB_MARSORBIT + V_ORBIT_MARS
-                Vinf_val_mars = V_PARAB_MARSORBIT + V_ORBIT_MARS
-                print(f"Hyperbolic orbit, setting Vinf to parabolic + orbit speeds")
-                continue
-            elif Q_val < A_MARS_AU:
-                print(f"Orbit do not cross Mars Orbit, using equivalence method to compute Vinf on Mars")
-                V_val_mars = -1  # to indicate that we are using the equivalence method
-                # correct the speed on Mars base on the equivalence between V_ORBIT_EARTH+V_PARAB_EARTHORBIT and V_ESC_EARTH180
-                Vg_val_mars = V_ESC_MARS + (Vg_val - V_ESC_EARTH180)/ (V_ORBIT_EARTH + V_PARAB_EARTHORBIT-V_ESC_EARTH180) * (V_ORBIT_MARS + V_PARAB_MARSORBIT - V_ESC_MARS)
-                # correct the speed on Mars base on the equivalence between V_ORBIT_EARTH+V_PARAB_EARTHORBIT and V_ESC_EARTH180
-                Vinf_val_mars = V_ESC_MARS + (Vinf_val - V_ESC_EARTH180)/ (V_ORBIT_EARTH + V_PARAB_EARTHORBIT-V_ESC_EARTH180) * (V_ORBIT_MARS + V_PARAB_MARSORBIT - V_ESC_MARS)
-                continue
-            else:
-                # compute teh visvida velocity on mars
-                V_val_mars = vis_viva_speed_kms(a_val, A_MARS_AU)
-                print(f"Vis viva speed on Mars orbit: {V_val_mars:.6f} km/s")
-                # waht is te fraction of earth orbit speed that can be attributed to Vg_val V_ORBIT_EARTH
-                cos_earth =  (V_ORBIT_EARTH**2 + V_val_earth**2 - Vg_val**2)/(2*V_ORBIT_EARTH*V_val_earth)
-                # print(f"Cosine angle between Vg and V_ORBIT_EARTH: {cos_earth:.6f}")
-                Vg_val_mars = math.sqrt(V_val_mars**2 + V_ORBIT_MARS**2 - 2*V_val_mars*V_ORBIT_MARS*cos_earth)
-                Vinf_val_mars = math.sqrt(Vg_val_mars**2 + V_ESC_MARS**2)
-                print(f"2D intercept method V on Mars: {Vinf_val_mars:.6f} km/s")
-                V_val_mars_min_max, Vg_val_mars_min_max, Vinf_val_mars_min_max, V_val_earth_denis, Vg_val_denis, Vinf_val_denis = calculate_3d_intercept_speeds(a_val, e_val, inclin_val, peri_val, node_val)
-                print(f"3D intercept method V on Mars: [{Vinf_val_mars_min_max[0]:.3f}, {Vinf_val_mars_min_max[1]:.3f}] km/s")
-                Vinf_val_mars = np.mean(Vinf_val_mars_min_max)
-
-            print(f"Vg on Earth : {Vg_val:.6f} km/s")
-            print(f"Vg on Mars  : {Vg_val_mars:.6f} km/s")
-
-            # print the corrected Vg_val
-            print(f"Corrected V for Earth (Vinf): {Vinf_val:.6f} km/s")
-            print(f"Corrected V for Mars (Vinf) : {Vinf_val_mars:.6f} km/s")
-            print(f"Corrected V equivalent for Mars : {V_ESC_MARS + (Vinf_val - V_ESC_EARTH180)/ (V_ORBIT_EARTH + V_PARAB_EARTHORBIT-V_ESC_EARTH180) * (V_ORBIT_MARS + V_PARAB_MARSORBIT - V_ESC_MARS):.6f} km/s")
-            
-            # create a deep copy of best_guess_cost
-            best_guess_cost_mars = copy.deepcopy(best_guess_obj_plot.const)
-            best_guess_cost_mars.h_init = start_height_mars
-            best_guess_cost_mars.erosion_height_start = erosion_height_start_mars
-            if flag_total_rho:
-                best_guess_cost_mars.erosion_height_change = erosion_height_change_mars
-            best_guess_cost_mars.v_init = Vinf_val_mars * 1000  # convert to m/s
-            # PLANET PARAMETERS
-            best_guess_cost_mars.G0 = G0_mars  # m/s^2
-            best_guess_cost_mars.r_earth = R_MARS * 1000  # in m
-            best_guess_cost_mars.dens_co = np.array(dens_co_mars)
-            best_guess_cost_mars.v_kill = Vinf_val_mars * 1000 - 10000  # convert to m/s
-            if best_guess_cost_mars.v_kill < 0:
-                best_guess_cost_mars.v_kill = 1
-
-            # ZENITH ANGLE CALCULATION
-            print(f"Zenith angle Earth: {180/np.pi*best_guess_cost_mars.zenith_angle:.6f}°")
-            zenith_angle_list_mars = []
-            for curr_pickle_file in pickle_file:
-                traj=loadPickle(*os.path.split(curr_pickle_file))
-                zenith_angle_list_mars.append(zenithAngleAtSimulationBegin(start_height_mars, traj.rbeg_ele, traj.orbit.zc, best_guess_cost_mars.r_earth))
-            best_guess_cost_mars.zenith_angle = np.mean(zenith_angle_list_mars)
-            print(f"Zenith angle Mars: {180/np.pi*best_guess_cost_mars.zenith_angle:.6f}°")
-
-            # Minimum height (m) for simulation termination
-            best_guess_cost_mars.h_kill = 6000
-
-            
-            frag_main, results_list, wake_results = runSimulation(best_guess_cost_mars, compute_wake=False)
-            best_guess_obj_plot_mars = SimulationResults(best_guess_cost_mars, frag_main, results_list, wake_results)
-
-            # # get rid of pickle_file file name and take the folder
-            # out_folder_json = os.path.dirname(pickle_file[0])
-
-            # json_file_save = out_folder_json + os.sep + base_name + "_fit_params_saved_mars.json"
-            # save_json_data(best_guess_obj_plot_mars, json_file_save)
-
-            ############## SINGLE BODY ABLATION ####################################################################
-
+            # delete from base_name _combined if it exists
             if '_combined' in base_name:
                 base_name = base_name.replace('_combined', '')
 
-            # find in the Single body ablation with the same base_name in r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\SingleBody"
-            single_body_folder = r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\SingleBody"
-            # check if any folder in single_body_folder contains base_name
-            matching_folders = [f for f in os.listdir(single_body_folder) if base_name in f]
-            found_single_body = False
-            if len(matching_folders) > 0:
-                found_single_body = True
-                print(f"Found single body ablation folder for {base_name}")
-                # use the finder to load the observation data
-                single_body_folder_full = os.path.join(single_body_folder, matching_folders[0])
-                finder_single = find_dynestyfile_and_priors(input_dir_or_file=single_body_folder_full,prior_file="",resume=True,output_dir=single_body_folder_full,use_all_cameras=True,pick_position=0)
+            # chek for the .marsmeteor file to extract the meteor name
+            marsmeteor_file = None
+            for name in os.listdir(output_dir):
+                if name.endswith(".marsmeteor_new"):
+                    marsmeteor_file = name; break
+                
+            if new_marsmeteor:
+                marsmeteor_file = None
 
-                # input_folder_file is a list/iterable of dynesty_info tuples; take the first one
-                dynesty_info_single = finder_single.input_folder_file[0]
-                dynesty_file_single, pickle_file_single, bounds_single, flags_dict_single, fixed_values_single = dynesty_info_single
+            if marsmeteor_file is None:
+                sim_num = np.argmax(dynesty_run_results.logl)
 
-                dsampler_single = dynesty.DynamicNestedSampler.restore(dynesty_file_single)
-                dynesty_run_results_single = dsampler_single.results
-                sim_num_single = np.argmax(dynesty_run_results_single.logl)
                 # copy the best guess values
-                guess_single = dynesty_run_results_single.samples[sim_num_single].copy()
-                samples_single = dynesty_run_results_single.samples
-                variables_single = list(flags_dict_single.keys())
-                for i, variable in enumerate(variables_single):
-                    if 'log' in flags_dict_single[variable]:
-                        guess_single[i] = 10**guess_single[i]
-                        samples_single[:, i] = 10**samples_single[:, i]
-                best_guess_obj_plot_single_Earth = run_simulation(guess_single, obs_data, variables_single, fixed_values_single)
-                
-                # run for mars
-                best_guess_cost_single_mars = copy.deepcopy(best_guess_cost_mars)#copy.deepcopy(best_guess_obj_plot_single_Earth.const)
-                
-                best_guess_cost_single_mars.erosion_height_start = 2
-                best_guess_cost_single_mars.erosion_height_change = 1
-                best_guess_cost_single_mars.rho = best_guess_obj_plot_single_Earth.const.rho
-                # best_guess_cost_single_mars.erosion_coeff = best_guess_obj_plot_single_Earth.const.erosion_coeff
-                best_guess_cost_single_mars.sigma = best_guess_obj_plot_single_Earth.const.sigma
-                best_guess_cost_single_mars.m_init = best_guess_obj_plot_single_Earth.const.m_init
-                
-                # best_guess_cost_single_mars.h_init = start_height_mars
-                # best_guess_cost_single_mars.v_init = Vinf_val_mars * 1000  # convert to m/s
-                # # PLANET PARAMETERS
-                # best_guess_cost_single_mars.G0 = G0_mars  # m/s^
-                # best_guess_cost_single_mars.r_earth = R_MARS * 1000  # in m
-                # best_guess_cost_single_mars.dens_co = np.array(dens_co_mars)
-                # best_guess_cost_single_mars.zenith_angle = best_guess_cost_mars.zenith_angle
-                # best_guess_cost_mars.v_kill = Vinf_val_mars * 1000 - 10000  # convert to m/s
-                # if best_guess_cost_mars.v_kill < 0:
-                #     best_guess_cost_mars.v_kill = 1
+                guess = dynesty_run_results.samples[sim_num].copy()
+                flag_total_rho = False
+                # load the variable names
+                variables_sing = list(flags_dict.keys())
+                for i, variable in enumerate(variables_sing):
+                    if 'log' in flags_dict[variable]:
+                        guess[i] = 10**guess[i]
+                        samples[:, i] = 10**samples[:, i]
+                    if variable == 'noise_lag':
+                        obs_data.noise_lag = guess[i]
+                        obs_data.noise_vel = guess[i] * np.sqrt(2)/(1.0/32)
+                    if variable == 'noise_lum':
+                        obs_data.noise_lum = guess[i]
+                    if variable == 'erosion_rho_change':
+                        flag_total_rho = True
 
-                # # Minimum height (m) for simulation termination
-                # best_guess_cost_single_mars.h_kill = 6000
-                frag_main_single, results_list_single, wake_results_single = runSimulation(best_guess_cost_single_mars, compute_wake=False)
-                best_guess_obj_plot_single_mars = SimulationResults(best_guess_cost_single_mars, frag_main_single, results_list_single, wake_results_single)
-                # check if best_guess_obj_plot_single_mars.leading_frag_dyn_press_arr[:-1] is empty
-                if len(best_guess_obj_plot_single_mars.leading_frag_dyn_press_arr[:-1]) == 0:
-                    print("Even single body do not work")
+                beg_height = obs_data.height_lum[0]
+                end_height = obs_data.height_lum[-1]
+
+                # vel_init = obs_data.v_init
+                lenght_par = obs_data.length[-1]/1000 # convert to km
+                max_lum_height = obs_data.height_lum[np.argmax(obs_data.luminosity)]
+                F_par = (beg_height - max_lum_height) / (beg_height - end_height)
+                kc_par = beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables_sing.index('v_init')]))/0.0612
+                time_tot = obs_data.time_lum[-1] - obs_data.time_lum[0]
+                avg_vel = np.mean(obs_data.velocities)
+                init_mag = obs_data.absolute_magnitudes[0]
+                end_mag = obs_data.absolute_magnitudes[-1]
+                max_mag = obs_data.absolute_magnitudes[np.argmax(obs_data.luminosity)]
+                zenith_angle = np.rad2deg(obs_data.zenith_angle)
+
+                # set up the observation data object
+                obs_data = finder.observation_instance(base_name)
+
+                # chek if obs_data is a None type object
+                if obs_data is None:
+                    print(f"Observation data for {base_name} is None. Skipping this meteor.")
+                    continue
+
+                obs_data.file_name = pickle_file # update teh file name in the observation data object
+
+                # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
+                if obs_data.v_init < 30000:
+                    obs_data.dt = 0.01
+                    # const_nominal.erosion_bins_per_10mass = 5
+                else:
+                    obs_data.dt = 0.005
+                    # const_nominal.erosion_bins_per_10mass = 10
+
+                obs_data.disruption_on = False
+
+                obs_data.lum_eff_type = 5
+
+                obs_data.h_kill = np.min([np.min(obs_data.height_lum),np.min(obs_data.height_lag)])-1000
+                # check if the h_kill is smaller than 0
+                if obs_data.h_kill < 0:
+                    obs_data.h_kill = 1
+                # check if np.min(obs_data.velocity[-1]) is smaller than v_init-10000
+                if np.min(obs_data.velocities) < obs_data.v_init-10000:
+                    obs_data.v_kill = obs_data.v_init-10000
+                else:
+                    obs_data.v_kill = np.min(obs_data.velocities)-5000
+                # check if the v_kill is smaller than 2500
+                if obs_data.v_kill < 2500:
+                    obs_data.v_kill = 2500
+                    print(f"v_kill is smaller than 2.5 km/s, setting it to 2.5 km/s")
+
+                best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
+
+                heights = np.array(best_guess_obj_plot.leading_frag_height_arr, dtype=np.float64)[:-1]
+                mass_best = np.array(best_guess_obj_plot.mass_total_active_arr, dtype=np.float64)[:-1]
+                erosion_beg_dyn_press = best_guess_obj_plot.const.erosion_beg_dyn_press
+                print(f"Dynamic pressure at erosion onset: {erosion_beg_dyn_press} Pa")
+
+                if flag_total_rho:
                     
-            else:
-                print(f"No single body ablation folder found for {base_name}") # , skipping single body Mars simulation.
-                best_guess_obj_plot_single_mars = copy.deepcopy(best_guess_obj_plot_mars)
-                # continue
+                    # find erosion change height
+                    if 'erosion_height_change' in variables_sing:
+                        erosion_height_change = guess[variables_sing.index('erosion_height_change')]
+                    if 'm_init' in variables_sing:
+                        m_init = guess[variables_sing.index('m_init')]
 
-            
-            
-            ################## DYNAMIC PRESSURE #####################################################
+                    old_mass_before = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+                    mass_before = best_guess_obj_plot.const.mass_at_erosion_change
+                    print(f"Mass before erosion change: {mass_before} kg, old mass before: {old_mass_before} kg")
+                    # check if mass_before is None if so use old_mass_before
+                    if mass_before is None:
+                        print("Using old mass before erosion change, the new one is none!")
+                        mass_before = old_mass_before
 
-            best_guess_cost_mars_dyn_press = copy.deepcopy(best_guess_cost_mars)
+                    x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
 
-            # check if best_guess_obj_plot_mars.leading_frag_dyn_press_arr[:-1] is empty
-            if len(best_guess_obj_plot_mars.leading_frag_dyn_press_arr[:-1]) == 0:
-                print("No dynamic pressure data for Mars simulation, use same erosion heights as Mars rho.")
-                continue
-                    
-       
-            # now I want to know when it reaches the dyn_press on mars that matches the erosion_beg_dyn_press on earth
-            heightsame_dynpress_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(best_guess_obj_plot_mars.leading_frag_dyn_press_arr[:-1] - best_guess_obj_plot.const.erosion_beg_dyn_press))]
-            # heightsame_dynpress_mars_single = best_guess_obj_plot_single_mars.leading_frag_height_arr[np.argmin(np.abs(best_guess_obj_plot_single_mars.leading_frag_dyn_press_arr[:-1] - best_guess_obj_plot.const.erosion_beg_dyn_press))]
-            # print(f"Erosion onset dynamic pressure on Mars (single): {best_guess_obj_plot.const.erosion_beg_dyn_press} Pa at height {heightsame_dynpress_mars_single/1000:.2f} km instead of {erosion_height_start_mars/1000:.2f} km")
-            # now pick the erosion height change that matches the same dynamic pressure on mars
-            best_guess_cost_mars_dyn_press.erosion_height_start = heightsame_dynpress_mars
-            if flag_total_rho:
-                # fid te dynamic pressure on earth at the secod erosion height
-                erosion_beg_dyn_press_change = best_guess_obj_plot.leading_frag_dyn_press_arr[np.argmin(np.abs(best_guess_obj_plot.leading_frag_height_arr[:-1] - best_guess_obj_plot.const.erosion_height_change))]
-                heightsame_dynpress_change_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(best_guess_obj_plot_mars.leading_frag_dyn_press_arr[:-1] - erosion_beg_dyn_press_change))]
-                # heightsame_dynpress_change_mars_single = best_guess_obj_plot_single_mars.leading_frag_height_arr[np.argmin(np.abs(best_guess_obj_plot_single_mars.leading_frag_dyn_press_arr[:-1] - erosion_beg_dyn_press_change))]
-                # print(f"Erosion change dynamic pressure on Mars (single): {erosion_beg_dyn_press_change} Pa at height {heightsame_dynpress_change_mars_single/1000:.2f} km instead of {erosion_height_change_mars/1000:.2f} km")
-                best_guess_cost_mars_dyn_press.erosion_height_change = heightsame_dynpress_change_mars                  
+                    rho_corrected.append(x_valid_rho)
 
-            frag_main, results_list, wake_results = runSimulation(best_guess_cost_mars_dyn_press, compute_wake=False)
-            best_guess_obj_plot_mars_dyn_press = SimulationResults(best_guess_cost_mars_dyn_press, frag_main, results_list, wake_results)
-            
-            ################## ENERGY #####################################################
+                else:
+                    rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
+                    rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
+                    rho = summary_df_meteor['Median'].values[variables.index('rho')]
 
-            best_guess_cost_mars_energy = copy.deepcopy(best_guess_cost_mars)
+                    x = samples[:, variables_sing.index('rho')].astype(float)
+                    mask = ~np.isnan(x)
+                    x_valid_rho = x[mask] 
 
-            if flag_total_rho:
-                Tot_energy_arr_cum, total_energy_at_erosion_height_start, total_energy_at_erosion_height_change = compute_energy_per_height(best_guess_obj_plot, flag_total_rho=True, only_from_he_to_he2=True)
-                Tot_energy_arr_cum_mars, total_energy_at_erosion_height_start_mars, total_energy_at_erosion_height_change_mars = compute_energy_per_height(best_guess_obj_plot_mars, flag_total_rho=True, only_from_he_to_he2=False)
-                # find in Tot_energy_arr_cum_mars the closest index to total_energy_at_erosion_height_start and total_energy_at_erosion_height_change
-                height_energy_erosion_start_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(Tot_energy_arr_cum_mars - total_energy_at_erosion_height_start))]
-                height_energy_erosion_change_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(Tot_energy_arr_cum_mars - total_energy_at_erosion_height_change))]  
-                best_guess_cost_mars_energy.erosion_height_start = height_energy_erosion_start_mars
-                best_guess_cost_mars_energy.erosion_height_change = height_energy_erosion_change_mars
-            else:
-                _, total_energy_at_erosion_height_start, _ = compute_energy_per_height(best_guess_obj_plot, flag_total_rho=False, only_from_he_to_he2=True)
-                Tot_energy_arr_cum_mars, total_energy_at_erosion_height_start_mars, _ = compute_energy_per_height(best_guess_obj_plot_mars, flag_total_rho=False, only_from_he_to_he2=False)
-                # find in Tot_energy_arr_cum_mars the closest index to total_energy_at_erosion_height_start
-                height_energy_erosion_start_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(Tot_energy_arr_cum_mars - total_energy_at_erosion_height_start))]
-                best_guess_cost_mars_energy.erosion_height_start = height_energy_erosion_start_mars
-            
-            frag_main, results_list, wake_results = runSimulation(best_guess_cost_mars_energy, compute_wake=False)
-            best_guess_obj_plot_mars_energy = SimulationResults(best_guess_cost_mars_energy, frag_main, results_list, wake_results)
+                    rho_corrected.append(x_valid_rho)
+
+                # find the index of m_init in variables
+                tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples[:, variables_sing.index('m_init')].astype(float)*obs_data.velocities[0]**2) * 100
                 
-            ##### PRINT RESULTS FOR MARS SIMULATIONS #####
-            print("\n--- Mars Simulation Results ---")
-            print(f"\nErosion start on Earth: {best_guess_obj_plot.const.erosion_height_start/1000:.2f} km")
-            print("Using same initial density:")
-            print(f"Erosion height start on Mars: {best_guess_cost_mars.erosion_height_start/1000:.2f} km rho: {atmDensPoly(best_guess_cost_mars.erosion_height_start, dens_co_mars):.6f} kg/m^3")
-            print("Using same dynamic pressure:")
-            print(f"Erosion onset dynamic pressure on Mars: {best_guess_cost_mars_dyn_press.erosion_height_start/1000:.2f} km for {best_guess_obj_plot.const.erosion_beg_dyn_press} Pa")
-            print("Using same energy at erosion onset:")
-            print(f"Erosion energy onset on Mars: {best_guess_cost_mars_energy.erosion_height_start/1000:.2f} km for {total_energy_at_erosion_height_start:.2e} MJ")
-            if flag_total_rho:
-                print(f"\nErosion change on Earth: {best_guess_obj_plot.const.erosion_height_change/1000:.2f} km")
+                # calculate the weights calculate the weighted median and the 95 CI for tau
+                tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=w)
+                tau_corrected.append(tau)
+            
+                m_init_meteor_median = summary_df_meteor['Median'].values[variables.index('m_init')]
+                m_init_meteor_lo = summary_df_meteor['Median'].values[variables.index('m_init')] - summary_df_meteor['Low95'].values[variables.index('m_init')]
+                m_init_meteor_hi = summary_df_meteor['High95'].values[variables.index('m_init')] - summary_df_meteor['Median'].values[variables.index('m_init')]
+
+                eta_meteor_begin = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+                sigma_meteor_begin = summary_df_meteor['Median'].values[variables.index('sigma')]
+                v_init_meteor_median = summary_df_meteor['Median'].values[variables.index('v_init')]
+
+                # compute the meteoroid_diameter from a spherical shape in mm
+                all_diameter_mm = (6 * samples[:, variables_sing.index('m_init')].astype(float) / (np.pi * x_valid_rho))**(1/3) * 1000
+                mm_size_corrected.append(all_diameter_mm)
+                mass_distr.append(samples[:, variables_sing.index('m_init')].astype(float))
+                # make the quntile base on w 
+                meteoroid_diameter_mm_lo, meteoroid_diameter_mm, meteoroid_diameter_mm_hi = _quantile(all_diameter_mm, [0.025, 0.5, 0.975], weights=w)
+                meteoroid_diameter_mm_lo = (meteoroid_diameter_mm - meteoroid_diameter_mm_lo) #/1.96
+                meteoroid_diameter_mm_hi = (meteoroid_diameter_mm_hi - meteoroid_diameter_mm) #/1.96
+
+                # meteoroid_diameter_mm_old = (6 * m_init_meteor_median / (np.pi * rho))**(1/3) * 1000
+
+                print(f"rho: {rho} kg/m^3, 95% CI = [{rho_lo:.6f}, {rho_hi:.6f}]")
+                print(f"intial mass {m_init_meteor_median} kg and diameter {meteoroid_diameter_mm:.6f} mm")#, old diameter {meteoroid_diameter_mm_old:.6f} mm")
+                # print(f"erosion coeff: {eta} m/s, 95% CI = [{eta_lo}, {eta_hi}]")
+                # print(f"sigma: {sigma} kg/m^3, 95% CI = [{sigma_lo}, {sigma_hi}]")
+
+                # ### EROSION ENERGY CALCULATION ###
+
+                # take from dynesty_file folder name
+                folder_name = os.path.dirname(dynesty_file)
+
+                # look if in folder_name it exist a file that ends in .dynestyres exist in 
+                if any(f.endswith(".dynestyres") for f in os.listdir(folder_name)):
+                    print(f"Found existing results in {folder_name}.dynestyres, loading them.")
+
+                    # look for the file that ends in .dynestyres
+                    dynesty_res_file = [f for f in os.listdir(folder_name) if f.endswith(".dynestyres")][0]
+                    with open(folder_name + os.sep + dynesty_res_file, "rb") as f:
+                        dynesty_run_results = pickle.load(f)
+
+                    erosion_energy_per_unit_cross_section_arr = dynesty_run_results.erosion_energy_per_unit_cross_section
+                    erosion_energy_per_unit_mass_arr = dynesty_run_results.erosion_energy_per_unit_mass
+
+                else:
+                    print(f"No existing results found in {folder_name}.dynestyres, running dynesty.")
+                    # dynesty_run_results = dsampler.results
+
+                    ### add MORE PARAMETERS ###
+
+                    # Package inputs
+                    inputs = [
+                        (i, len(dynesty_run_results.samples), dynesty_run_results.samples[i], obs_data, variables_sing, fixed_values, flags_dict)
+                        for i in range(len(dynesty_run_results.samples)) # for i in np.linspace(0, len(dynesty_run_results.samples)-1, 10, dtype=int)
+                    ]
+                    #     for i in range(len(dynesty_run_results.samples)) # 
+                    num_cores = multiprocessing.cpu_count()
+
+                    # Run in parallel
+                    with Pool(processes=num_cores) as pool:  # adjust to number of cores
+                        results = pool.map(run_single_eeu, inputs)
+
+                    N = len(dynesty_run_results.samples)
+
+                    erosion_energy_per_unit_cross_section_arr = np.full(N, np.nan)
+                    erosion_energy_per_unit_mass_arr = np.full(N, np.nan)
+                    # erosion_energy_per_unit_cross_section_arr_end = np.full(N, np.nan)
+                    # erosion_energy_per_unit_mass_arr_end = np.full(N, np.nan)
+
+                    for res in results:
+                        i, eeucs, eeum, eeucs_end, eeum_end = res
+                        erosion_energy_per_unit_cross_section_arr[i] = eeucs / 1e6  # convert to MJ/m^2
+                        erosion_energy_per_unit_mass_arr[i] = eeum / 1e6  # convert to MJ/kg
+                        # erosion_energy_per_unit_cross_section_arr_end[i] = eeucs_end / 1e6  # convert to MJ/m^2
+                        # erosion_energy_per_unit_mass_arr_end[i] = eeum_end / 1e6  # convert to MJ/kg
+
+
+                    # Create a namespace object for dot-style access
+                    results = SimpleNamespace(**dsampler.results.__dict__)  # load all default results
+
+                    # Add your custom attributes
+                    results.weights = dynesty_run_results.importance_weights()
+                    results.norm_weights = w
+                    results.erosion_energy_per_unit_cross_section = erosion_energy_per_unit_cross_section_arr
+                    results.erosion_energy_per_unit_mass = erosion_energy_per_unit_mass_arr
+                    # results.erosion_energy_per_unit_cross_section_end = erosion_energy_per_unit_cross_section_arr_end
+                    # results.erosion_energy_per_unit_mass_arr_end = erosion_energy_per_unit_mass_arr_end
+
+                    # Save
+                    with open(folder_name + os.sep + base_name+"_results.dynestyres", "wb") as f:
+                        pickle.dump(results, f)
+                        print(f"Results saved successfully in {folder_name + os.sep + base_name+'_results.dynestyres'}.")
+
+                erosion_energy_per_unit_cross_section_corrected.append(erosion_energy_per_unit_cross_section_arr)
+                erosion_energy_per_unit_mass_corrected.append(erosion_energy_per_unit_mass_arr)
+                
+
+                ### TRANSFORM TO MARS VEL ###
+
+                tj, tj_lo, tj_hi, inclin_val, Vinf_val, Vg_val, Q_val, q_val, a_val, e_val, peri_val, node_val = extract_tj_from_report(report_path)
+
+                print(f"Transforming velocities to Mars orbit:")
+                # constants
+                G0_mars = 3.75  # m/s^2
+                dens_co_mars = fitAtmPoly_mars(40*1000, 180*1000)
+                dens_co_earth = np.array(best_guess_obj_plot.const.dens_co)
+                rho_poly_earth = []
+                rho_poly_mars = []
+                altitude = np.arange(40, 181, 0.1)*1000
+                for alt in altitude:
+                    rho_poly_earth.append((atmDensPoly(alt, dens_co_earth)))
+                    rho_poly_mars.append((atmDensPoly(alt, dens_co_mars)))
+
+                # start simulations at the same bulk density point
+                dens_start_earth = atmDensPoly(best_guess_obj_plot.const.h_init, dens_co_earth)
+                start_height_mars = altitude[np.argmin(np.abs(np.array(rho_poly_mars) - dens_start_earth))]
+                # if start_height_mars > 100000:
+                #     start_height_mars = 100000  # do not start below 100 km on mars
+                print(f"Simulation start on Earth: {best_guess_obj_plot.const.h_init/1000:.2f} km")
+                print(f"Simulation start on Mars: {start_height_mars/1000:.2f} km")
+
+                # find the closest best_guess_obj_plot.const.erosion_height_start tat share the same density in mars
+                dens_erosion_earth = atmDensPoly(best_guess_obj_plot.const.erosion_height_start, dens_co_earth)
+                erosion_height_start_mars = altitude[np.argmin(np.abs(np.array(rho_poly_mars) - dens_erosion_earth))]
+                print(f"Erosion onset on Earth: {best_guess_obj_plot.const.erosion_height_start/1000:.2f} km rho: {dens_erosion_earth:.6f} kg/m^3")
+                print(f"Erosion onset on Mars: {erosion_height_start_mars/1000:.2f} km rho: {atmDensPoly(erosion_height_start_mars, dens_co_mars):.6f} kg/m^3")
+                if flag_total_rho:
+                    dens_erosion_change_earth = atmDensPoly(best_guess_obj_plot.const.erosion_height_change, dens_co_earth)
+                    erosion_height_change_mars = altitude[np.argmin(np.abs(np.array(rho_poly_mars) - dens_erosion_change_earth))]
+                    # keep the same difference between erosion_height_change and erosion_height_start
+                    # erosion_height_change_mars = erosion_height_start_mars - abs(best_guess_obj_plot.const.erosion_height_change - best_guess_obj_plot.const.erosion_height_start)
+                    print(f"Erosion change on Earth: {best_guess_obj_plot.const.erosion_height_change/1000:.2f} km rho: {dens_erosion_change_earth:.6f} kg/m^3")
+                    print(f"Erosion height change on Mars: {erosion_height_change_mars/1000:.2f} km rho: {atmDensPoly(erosion_height_change_mars, dens_co_mars):.6f} kg/m^3")
+                    
+                V_ESC_MARS = escape_speed_kms(MU_MARS, R_MARS, start_height_mars/1000)
+                # print(f"Escape speed on Mars at {start_height_mars/1000:.2f} km: {V_ESC_MARS:.6f} km/s")
+                # print(f"Escape speed on Mars at 180 km: {V_ESC_MARS180:.6f} km/s")
+
+                # compute teh visvida velocity on earth
+                V_val_earth = vis_viva_speed_kms(a_val, A_EARTH_AU)
+                print(f"Vis viva speed on Earth orbit: {V_val_earth:.6f} km/s")
+                if Q_val < 0:
+                    Vinf_val= V_PARAB_EARTHORBIT + V_ORBIT_EARTH
+                    Vg_val = V_PARAB_EARTHORBIT + V_ORBIT_EARTH 
+                    V_val_mars = V_PARAB_MARSORBIT
+                    Vg_val_mars = V_PARAB_MARSORBIT + V_ORBIT_MARS
+                    Vinf_val_mars = V_PARAB_MARSORBIT + V_ORBIT_MARS
+                    print(f"Hyperbolic orbit, setting Vinf to parabolic + orbit speeds")
+                    continue
+                elif Q_val < A_MARS_AU:
+                    print(f"Orbit do not cross Mars Orbit, using equivalence method to compute Vinf on Mars")
+                    V_val_mars = -1  # to indicate that we are using the equivalence method
+                    # correct the speed on Mars base on the equivalence between V_ORBIT_EARTH+V_PARAB_EARTHORBIT and V_ESC_EARTH180
+                    Vg_val_mars = V_ESC_MARS + (Vg_val - V_ESC_EARTH180)/ (V_ORBIT_EARTH + V_PARAB_EARTHORBIT-V_ESC_EARTH180) * (V_ORBIT_MARS + V_PARAB_MARSORBIT - V_ESC_MARS)
+                    # correct the speed on Mars base on the equivalence between V_ORBIT_EARTH+V_PARAB_EARTHORBIT and V_ESC_EARTH180
+                    Vinf_val_mars = V_ESC_MARS + (Vinf_val - V_ESC_EARTH180)/ (V_ORBIT_EARTH + V_PARAB_EARTHORBIT-V_ESC_EARTH180) * (V_ORBIT_MARS + V_PARAB_MARSORBIT - V_ESC_MARS)
+                    continue
+                else:
+                    # compute teh visvida velocity on mars
+                    V_val_mars = vis_viva_speed_kms(a_val, A_MARS_AU)
+                    print(f"Vis viva speed on Mars orbit: {V_val_mars:.6f} km/s")
+                    # waht is te fraction of earth orbit speed that can be attributed to Vg_val V_ORBIT_EARTH
+                    cos_earth =  (V_ORBIT_EARTH**2 + V_val_earth**2 - Vg_val**2)/(2*V_ORBIT_EARTH*V_val_earth)
+                    # print(f"Cosine angle between Vg and V_ORBIT_EARTH: {cos_earth:.6f}")
+                    Vg_val_mars = math.sqrt(V_val_mars**2 + V_ORBIT_MARS**2 - 2*V_val_mars*V_ORBIT_MARS*cos_earth)
+                    Vinf_val_mars = math.sqrt(Vg_val_mars**2 + V_ESC_MARS**2)
+                    print(f"2D intercept method V on Mars: {Vinf_val_mars:.6f} km/s")
+                    V_val_mars_min_max, Vg_val_mars_min_max, Vinf_val_mars_min_max, V_val_earth_denis, Vg_val_denis, Vinf_val_denis = calculate_3d_intercept_speeds(a_val, e_val, inclin_val, peri_val, node_val)
+                    print(f"3D intercept method V on Mars: [{Vinf_val_mars_min_max[0]:.3f}, {Vinf_val_mars_min_max[1]:.3f}] km/s")
+                    Vinf_val_mars = np.mean(Vinf_val_mars_min_max)
+
+                print(f"Vg on Earth : {Vg_val:.6f} km/s")
+                print(f"Vg on Mars  : {Vg_val_mars:.6f} km/s")
+
+                # print the corrected Vg_val
+                print(f"Corrected V for Earth (Vinf): {Vinf_val:.6f} km/s")
+                print(f"Corrected V for Mars (Vinf) : {Vinf_val_mars:.6f} km/s")
+                print(f"Corrected V equivalent for Mars : {V_ESC_MARS + (Vinf_val - V_ESC_EARTH180)/ (V_ORBIT_EARTH + V_PARAB_EARTHORBIT-V_ESC_EARTH180) * (V_ORBIT_MARS + V_PARAB_MARSORBIT - V_ESC_MARS):.6f} km/s")
+                
+                # create a deep copy of best_guess_cost
+                best_guess_cost_mars = copy.deepcopy(best_guess_obj_plot.const)
+                best_guess_cost_mars.h_init = start_height_mars
+                best_guess_cost_mars.erosion_height_start = erosion_height_start_mars
+                if flag_total_rho:
+                    best_guess_cost_mars.erosion_height_change = erosion_height_change_mars
+                best_guess_cost_mars.v_init = Vinf_val_mars * 1000  # convert to m/s
+                # PLANET PARAMETERS
+                best_guess_cost_mars.G0 = G0_mars  # m/s^2
+                best_guess_cost_mars.r_earth = R_MARS * 1000  # in m
+                best_guess_cost_mars.dens_co = np.array(dens_co_mars)
+                best_guess_cost_mars.v_kill = Vinf_val_mars * 1000 - 10000  # convert to m/s
+                if best_guess_cost_mars.v_kill < 2500:
+                    best_guess_cost_mars.v_kill = 2500
+                    print(f"v_kill is smaller than 2.5 km/s, setting it to 2.5 km/s")
+
+                # ZENITH ANGLE CALCULATION
+                print(f"Zenith angle Earth: {180/np.pi*best_guess_cost_mars.zenith_angle:.6f}°")
+                zenith_angle_list_mars = []
+                for curr_pickle_file in pickle_file:
+                    traj=loadPickle(*os.path.split(curr_pickle_file))
+                    zenith_angle_list_mars.append(zenithAngleAtSimulationBegin(start_height_mars, traj.rbeg_ele, traj.orbit.zc, best_guess_cost_mars.r_earth))
+                best_guess_cost_mars.zenith_angle = np.mean(zenith_angle_list_mars)
+                print(f"Zenith angle Mars: {180/np.pi*best_guess_cost_mars.zenith_angle:.6f}°")
+
+                # Minimum height (m) for simulation termination
+                best_guess_cost_mars.h_kill = 6000
+
+                
+                frag_main, results_list, wake_results = runSimulation(best_guess_cost_mars, compute_wake=False)
+                best_guess_obj_plot_mars = SimulationResults(best_guess_cost_mars, frag_main, results_list, wake_results)
+
+                # # get rid of pickle_file file name and take the folder
+                # out_folder_json = os.path.dirname(pickle_file[0])
+
+                # json_file_save = out_folder_json + os.sep + base_name + "_fit_params_saved_mars.json"
+                # save_json_data(best_guess_obj_plot_mars, json_file_save)
+
+                ############## SINGLE BODY ABLATION ####################################################################
+
+                if '_combined' in base_name:
+                    base_name = base_name.replace('_combined', '')
+
+                # find in the Single body ablation with the same base_name in r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\SingleBody"
+                single_body_folder = r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\SingleBody"
+                # check if any folder in single_body_folder contains base_name
+                matching_folders = [f for f in os.listdir(single_body_folder) if base_name in f]
+                found_single_body = False
+                if len(matching_folders) > 0:
+                    found_single_body = True
+                    print(f"Found single body ablation folder for {base_name}")
+                    # use the finder to load the observation data
+                    single_body_folder_full = os.path.join(single_body_folder, matching_folders[0])
+                    finder_single = find_dynestyfile_and_priors(input_dir_or_file=single_body_folder_full,prior_file="",resume=True,output_dir=single_body_folder_full,use_all_cameras=True,pick_position=0)
+
+                    # input_folder_file is a list/iterable of dynesty_info tuples; take the first one
+                    dynesty_info_single = finder_single.input_folder_file[0]
+                    dynesty_file_single, pickle_file_single, bounds_single, flags_dict_single, fixed_values_single = dynesty_info_single
+
+                    dsampler_single = dynesty.DynamicNestedSampler.restore(dynesty_file_single)
+                    dynesty_run_results_single = dsampler_single.results
+                    sim_num_single = np.argmax(dynesty_run_results_single.logl)
+                    # copy the best guess values
+                    guess_single = dynesty_run_results_single.samples[sim_num_single].copy()
+                    samples_single = dynesty_run_results_single.samples
+                    variables_single = list(flags_dict_single.keys())
+                    for i, variable in enumerate(variables_single):
+                        if 'log' in flags_dict_single[variable]:
+                            guess_single[i] = 10**guess_single[i]
+                            samples_single[:, i] = 10**samples_single[:, i]
+                    best_guess_obj_plot_single_Earth = run_simulation(guess_single, obs_data, variables_single, fixed_values_single)
+                    
+                    # run for mars
+                    best_guess_cost_single_mars = copy.deepcopy(best_guess_cost_mars)#copy.deepcopy(best_guess_obj_plot_single_Earth.const)
+                    
+                    best_guess_cost_single_mars.erosion_height_start = 2
+                    best_guess_cost_single_mars.erosion_height_change = 1
+                    best_guess_cost_single_mars.rho = best_guess_obj_plot_single_Earth.const.rho
+                    # best_guess_cost_single_mars.erosion_coeff = best_guess_obj_plot_single_Earth.const.erosion_coeff
+                    best_guess_cost_single_mars.sigma = best_guess_obj_plot_single_Earth.const.sigma
+                    best_guess_cost_single_mars.m_init = best_guess_obj_plot_single_Earth.const.m_init
+                    
+                    # best_guess_cost_single_mars.h_init = start_height_mars
+                    # best_guess_cost_single_mars.v_init = Vinf_val_mars * 1000  # convert to m/s
+                    # # PLANET PARAMETERS
+                    # best_guess_cost_single_mars.G0 = G0_mars  # m/s^
+                    # best_guess_cost_single_mars.r_earth = R_MARS * 1000  # in m
+                    # best_guess_cost_single_mars.dens_co = np.array(dens_co_mars)
+                    # best_guess_cost_single_mars.zenith_angle = best_guess_cost_mars.zenith_angle
+                    # best_guess_cost_mars.v_kill = Vinf_val_mars * 1000 - 10000  # convert to m/s
+                    # if best_guess_cost_mars.v_kill < 0:
+                    #     best_guess_cost_mars.v_kill = 1
+
+                    # # Minimum height (m) for simulation termination
+                    # best_guess_cost_single_mars.h_kill = 6000
+                    frag_main_single, results_list_single, wake_results_single = runSimulation(best_guess_cost_single_mars, compute_wake=False)
+                    best_guess_obj_plot_single_mars = SimulationResults(best_guess_cost_single_mars, frag_main_single, results_list_single, wake_results_single)
+                    # check if best_guess_obj_plot_single_mars.leading_frag_dyn_press_arr[:-1] is empty
+                    if len(best_guess_obj_plot_single_mars.leading_frag_dyn_press_arr[:-1]) == 0:
+                        print("Even single body do not work")
+                        
+                else:
+                    print(f"No single body ablation folder found for {base_name}") # , skipping single body Mars simulation.
+                    best_guess_obj_plot_single_mars = copy.deepcopy(best_guess_obj_plot_mars)
+                    # continue
+
+                
+                
+                ################## DYNAMIC PRESSURE #####################################################
+
+                best_guess_cost_mars_dyn_press = copy.deepcopy(best_guess_cost_mars)
+
+                # check if best_guess_obj_plot_mars.leading_frag_dyn_press_arr[:-1] is empty
+                if len(best_guess_obj_plot_mars.leading_frag_dyn_press_arr[:-1]) == 0:
+                    print("No dynamic pressure data for Mars simulation, use same erosion heights as Mars rho.")
+                    continue
+                        
+        
+                # now I want to know when it reaches the dyn_press on mars that matches the erosion_beg_dyn_press on earth
+                heightsame_dynpress_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(best_guess_obj_plot_mars.leading_frag_dyn_press_arr[:-1] - best_guess_obj_plot.const.erosion_beg_dyn_press))]
+                # heightsame_dynpress_mars_single = best_guess_obj_plot_single_mars.leading_frag_height_arr[np.argmin(np.abs(best_guess_obj_plot_single_mars.leading_frag_dyn_press_arr[:-1] - best_guess_obj_plot.const.erosion_beg_dyn_press))]
+                # print(f"Erosion onset dynamic pressure on Mars (single): {best_guess_obj_plot.const.erosion_beg_dyn_press} Pa at height {heightsame_dynpress_mars_single/1000:.2f} km instead of {erosion_height_start_mars/1000:.2f} km")
+                # now pick the erosion height change that matches the same dynamic pressure on mars
+                best_guess_cost_mars_dyn_press.erosion_height_start = heightsame_dynpress_mars
+                if flag_total_rho:
+                    # fid te dynamic pressure on earth at the secod erosion height
+                    erosion_beg_dyn_press_change = best_guess_obj_plot.leading_frag_dyn_press_arr[np.argmin(np.abs(best_guess_obj_plot.leading_frag_height_arr[:-1] - best_guess_obj_plot.const.erosion_height_change))]
+                    heightsame_dynpress_change_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(best_guess_obj_plot_mars.leading_frag_dyn_press_arr[:-1] - erosion_beg_dyn_press_change))]
+                    # heightsame_dynpress_change_mars_single = best_guess_obj_plot_single_mars.leading_frag_height_arr[np.argmin(np.abs(best_guess_obj_plot_single_mars.leading_frag_dyn_press_arr[:-1] - erosion_beg_dyn_press_change))]
+                    # print(f"Erosion change dynamic pressure on Mars (single): {erosion_beg_dyn_press_change} Pa at height {heightsame_dynpress_change_mars_single/1000:.2f} km instead of {erosion_height_change_mars/1000:.2f} km")
+                    best_guess_cost_mars_dyn_press.erosion_height_change = heightsame_dynpress_change_mars                  
+
+                frag_main, results_list, wake_results = runSimulation(best_guess_cost_mars_dyn_press, compute_wake=False)
+                best_guess_obj_plot_mars_dyn_press = SimulationResults(best_guess_cost_mars_dyn_press, frag_main, results_list, wake_results)
+                
+                ################## ENERGY #####################################################
+
+                best_guess_cost_mars_energy = copy.deepcopy(best_guess_cost_mars)
+
+                if flag_total_rho:
+                    Tot_energy_arr_cum, total_energy_at_erosion_height_start, total_energy_at_erosion_height_change = compute_energy_per_height(best_guess_obj_plot, flag_total_rho=True, only_from_he_to_he2=True)
+                    Tot_energy_arr_cum_mars, total_energy_at_erosion_height_start_mars, total_energy_at_erosion_height_change_mars = compute_energy_per_height(best_guess_obj_plot_mars, flag_total_rho=True, only_from_he_to_he2=False)
+                    # find in Tot_energy_arr_cum_mars the closest index to total_energy_at_erosion_height_start and total_energy_at_erosion_height_change
+                    height_energy_erosion_start_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(Tot_energy_arr_cum_mars - total_energy_at_erosion_height_start))]
+                    height_energy_erosion_change_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(Tot_energy_arr_cum_mars - total_energy_at_erosion_height_change))]  
+                    best_guess_cost_mars_energy.erosion_height_start = height_energy_erosion_start_mars
+                    best_guess_cost_mars_energy.erosion_height_change = height_energy_erosion_change_mars
+                else:
+                    _, total_energy_at_erosion_height_start, _ = compute_energy_per_height(best_guess_obj_plot, flag_total_rho=False, only_from_he_to_he2=True)
+                    Tot_energy_arr_cum_mars, total_energy_at_erosion_height_start_mars, _ = compute_energy_per_height(best_guess_obj_plot_mars, flag_total_rho=False, only_from_he_to_he2=False)
+                    # find in Tot_energy_arr_cum_mars the closest index to total_energy_at_erosion_height_start
+                    height_energy_erosion_start_mars = best_guess_obj_plot_mars.leading_frag_height_arr[np.argmin(np.abs(Tot_energy_arr_cum_mars - total_energy_at_erosion_height_start))]
+                    best_guess_cost_mars_energy.erosion_height_start = height_energy_erosion_start_mars
+                
+                frag_main, results_list, wake_results = runSimulation(best_guess_cost_mars_energy, compute_wake=False)
+                best_guess_obj_plot_mars_energy = SimulationResults(best_guess_cost_mars_energy, frag_main, results_list, wake_results)
+                    
+                ##### PRINT RESULTS FOR MARS SIMULATIONS #####
+                print("\n--- Mars Simulation Results ---")
+                print(f"\nErosion start on Earth: {best_guess_obj_plot.const.erosion_height_start/1000:.2f} km")
                 print("Using same initial density:")
-                print(f"Erosion height change on Mars: {best_guess_cost_mars.erosion_height_change/1000:.2f} km rho: {atmDensPoly(best_guess_cost_mars.erosion_height_change, dens_co_mars):.6f} kg/m^3")
+                print(f"Erosion height start on Mars: {best_guess_cost_mars.erosion_height_start/1000:.2f} km rho: {atmDensPoly(best_guess_cost_mars.erosion_height_start, dens_co_mars):.6f} kg/m^3")
                 print("Using same dynamic pressure:")
-                print(f"Erosion change dynamic pressure on Mars: {best_guess_cost_mars_dyn_press.erosion_height_change/1000:.2f} km for {erosion_beg_dyn_press_change} Pa")
-                print("Using same energy at erosion change:")
-                print(f"Erosion height change on Mars: {best_guess_cost_mars_energy.erosion_height_change/1000:.2f} km for {total_energy_at_erosion_height_change:.2e} MJ")
-            ############ PLOTTING ##############
+                print(f"Erosion onset dynamic pressure on Mars: {best_guess_cost_mars_dyn_press.erosion_height_start/1000:.2f} km for {best_guess_obj_plot.const.erosion_beg_dyn_press} Pa")
+                print("Using same energy at erosion onset:")
+                print(f"Erosion energy onset on Mars: {best_guess_cost_mars_energy.erosion_height_start/1000:.2f} km for {total_energy_at_erosion_height_start:.2e} MJ")
+                if flag_total_rho:
+                    print(f"\nErosion change on Earth: {best_guess_obj_plot.const.erosion_height_change/1000:.2f} km")
+                    print("Using same initial density:")
+                    print(f"Erosion height change on Mars: {best_guess_cost_mars.erosion_height_change/1000:.2f} km rho: {atmDensPoly(best_guess_cost_mars.erosion_height_change, dens_co_mars):.6f} kg/m^3")
+                    print("Using same dynamic pressure:")
+                    print(f"Erosion change dynamic pressure on Mars: {best_guess_cost_mars_dyn_press.erosion_height_change/1000:.2f} km for {erosion_beg_dyn_press_change} Pa")
+                    print("Using same energy at erosion change:")
+                    print(f"Erosion height change on Mars: {best_guess_cost_mars_energy.erosion_height_change/1000:.2f} km for {total_energy_at_erosion_height_change:.2e} MJ")
+                ############ PLOTTING ##############
 
-            # plot y axis the unique_heights_massvar vs Tot_energy_arr
-            # fig, ax = plt.subplots(1,2, figsize=(12, 6))
-            fig, ax = plt.subplots(figsize=(10, 6))
-            station_colors = {}
-            cmap = plt.get_cmap("tab10")
-            # ABS MAGNITUDE
-            for station in np.unique(obs_data.stations_lum):
-                mask = obs_data.stations_lum == station
-                if station not in station_colors:
-                    station_colors[station] = cmap(len(station_colors) % 10)
-                ax.plot(obs_data.absolute_magnitudes[mask], obs_data.height_lum[mask] / 1000, 'x--', color=station_colors[station], label=station)
-            # max_mag= np.max(obs_data.absolute_magnitudes)+1
-            # take the y axis limits from the obs_data
-            y_min = ax.get_ylim()[0]
-            y_max = ax.get_ylim()[1]
-            x_max = ax.get_xlim()[1]
+                # plot y axis the unique_heights_massvar vs Tot_energy_arr
+                # fig, ax = plt.subplots(1,2, figsize=(12, 6))
+                fig, ax = plt.subplots(figsize=(10, 6))
+                station_colors = {}
+                cmap = plt.get_cmap("tab10")
+                # ABS MAGNITUDE
+                for station in np.unique(obs_data.stations_lum):
+                    mask = obs_data.stations_lum == station
+                    if station not in station_colors:
+                        station_colors[station] = cmap(len(station_colors) % 10)
+                    ax.plot(obs_data.absolute_magnitudes[mask], obs_data.height_lum[mask] / 1000, 'x--', color=station_colors[station], label=station)
+                # max_mag= np.max(obs_data.absolute_magnitudes)+1
+                # take the y axis limits from the obs_data
+                y_min = ax.get_ylim()[0]
+                y_max = ax.get_ylim()[1]
+                x_max = ax.get_xlim()[1]
 
-            # Integrate luminosity/magnitude if needed
-            if (1 / obs_data.fps_lum) > best_guess_obj_plot.const.dt:
-                best_guess_obj_plot.luminosity_arr, best_guess_obj_plot.abs_magnitude = luminosity_integration(
-                    best_guess_obj_plot.time_arr, best_guess_obj_plot.time_arr, best_guess_obj_plot.luminosity_arr,
-                    best_guess_obj_plot.const.dt, obs_data.fps_lum, obs_data.P_0m
-                )
-
-            # make a first subplot with the lightcurve against height
-            ax.plot(best_guess_obj_plot.abs_magnitude,best_guess_obj_plot.leading_frag_height_arr/1000, color='k', label='Best Fit Simulation')
-            ax.set_ylabel('Height [km]', fontsize=15)
-            ax.set_xlabel('Abs.Mag [-]', fontsize=15)
-            # add a hrizontal line at y=total_energy_before_erosion
-            ax.axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start $h_{e}$')
-            if flag_total_rho:
-                ax.axhline(y=best_guess_obj_plot.const.erosion_height_change/1000, color='gray', linestyle='-.', label='Erosion Height Change $h_{e2}$')
-            # ax.legend(fontsize=10)
-            # call the Earth plot
-            # ax[0].set_title('Earth', fontsize=16)
-
-            # Integrate luminosity/magnitude if needed
-            if (1 / obs_data.fps_lum) > best_guess_obj_plot.const.dt:
-                best_guess_obj_plot_mars.luminosity_arr, best_guess_obj_plot_mars.abs_magnitude = luminosity_integration(
-                    best_guess_obj_plot_mars.time_arr, best_guess_obj_plot_mars.time_arr, best_guess_obj_plot_mars.luminosity_arr,
-                    best_guess_obj_plot_mars.const.dt, obs_data.fps_lum, obs_data.P_0m
-                )
-            if (1 / obs_data.fps_lum) > best_guess_obj_plot_mars_dyn_press.const.dt:
-                best_guess_obj_plot_mars_dyn_press.luminosity_arr, best_guess_obj_plot_mars_dyn_press.abs_magnitude = luminosity_integration(
-                    best_guess_obj_plot_mars_dyn_press.time_arr, best_guess_obj_plot_mars_dyn_press.time_arr, best_guess_obj_plot_mars_dyn_press.luminosity_arr,
-                    best_guess_obj_plot_mars_dyn_press.const.dt, obs_data.fps_lum, obs_data.P_0m
-                )
-            if (1 / obs_data.fps_lum) > best_guess_obj_plot_mars_energy.const.dt:
-                best_guess_obj_plot_mars_energy.luminosity_arr, best_guess_obj_plot_mars_energy.abs_magnitude = luminosity_integration(
-                    best_guess_obj_plot_mars_energy.time_arr, best_guess_obj_plot_mars_energy.time_arr, best_guess_obj_plot_mars_energy.luminosity_arr,
-                    best_guess_obj_plot_mars_energy.const.dt, obs_data.fps_lum, obs_data.P_0m
-                )
-            # make a second subplot with the lightcurve against height for mars
-            ax.plot(best_guess_obj_plot_mars.abs_magnitude,best_guess_obj_plot_mars.leading_frag_height_arr/1000, color='pink', label='Best Fit Simulation (Mars same $\\rho$)')
-            ax.axhline(y=best_guess_obj_plot_mars.const.erosion_height_start/1000, color='pink', linestyle='--')
-            ax.plot(best_guess_obj_plot_mars_dyn_press.abs_magnitude,best_guess_obj_plot_mars_dyn_press.leading_frag_height_arr/1000, color='plum', label='Best Fit Simulation (Mars same $p_{dyn}$)')
-            ax.axhline(y=heightsame_dynpress_mars/1000, color='plum', linestyle='--')
-            ax.plot(best_guess_obj_plot_mars_energy.abs_magnitude,best_guess_obj_plot_mars_energy.leading_frag_height_arr/1000, color='thistle', label='Best Fit Simulation (Mars same $E_{e}$)')
-            ax.axhline(y=height_energy_erosion_start_mars/1000, color='thistle', linestyle='--')
-            if flag_total_rho:
-                ax.axhline(y=best_guess_obj_plot_mars.const.erosion_height_change/1000, color='pink', linestyle='-.')
-                ax.axhline(y=heightsame_dynpress_change_mars/1000, color='plum', linestyle='-.')
-                ax.axhline(y=height_energy_erosion_change_mars/1000, color='thistle', linestyle='-.')
-
-
-
-            ####### plot the single body ablation model on Mars ######
-            if found_single_body:
-                if (1 / obs_data.fps_lum) > best_guess_obj_plot_single_mars.const.dt:
-                    best_guess_obj_plot_single_mars.luminosity_arr, best_guess_obj_plot_single_mars.abs_magnitude = luminosity_integration(
-                        best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.luminosity_arr,
-                        best_guess_obj_plot_single_mars.const.dt, obs_data.fps_lum, obs_data.P_0m   
+                # Integrate luminosity/magnitude if needed
+                if (1 / obs_data.fps_lum) > best_guess_obj_plot.const.dt:
+                    best_guess_obj_plot.luminosity_arr, best_guess_obj_plot.abs_magnitude = luminosity_integration(
+                        best_guess_obj_plot.time_arr, best_guess_obj_plot.time_arr, best_guess_obj_plot.luminosity_arr,
+                        best_guess_obj_plot.const.dt, obs_data.fps_lum, obs_data.P_0m
                     )
-                ax.plot(best_guess_obj_plot_single_mars.abs_magnitude,best_guess_obj_plot_single_mars.leading_frag_height_arr/1000, color='peru', linestyle=':', label='Single Body Ablation (Mars)')
-            
-            # ax[0].invert_xaxis()
-            # ax[1].legend(fontsize=10)
-            # ax.set_title('Mars', fontsize=16)
-            # ax[1].set_ylabel('Height [km]', fontsize=15)
-            ax.set_xlabel('Abs.Mag [-]', fontsize=15)
-            # activate grid
-            ax.grid()
-            x_min = ax.get_xlim()[0]
-            x_max = 8
-            # put the x axis from the x_max to x_min
-            ax.set_xlim(x_max, x_min)
-            # for the y axis
-            new_ax_min = np.min([y_min, ax.get_ylim()[0]])
-            # # closest index to the x_max in best_guess_obj_plot_mars.abs_magnitude after the erosion start
-            # index_min_abs_mag = np.argmin(np.abs(best_guess_obj_plot_mars.abs_magnitude[np.argmin(np.abs(best_guess_obj_plot_mars.leading_frag_height_arr - best_guess_obj_plot_mars.const.erosion_height_start)):] - x_max))
-            # # closest index to the x_max in best_guess_obj_plot_mars.leading_frag_height_arr/1000
-            # new_ax_min = np.max([best_guess_obj_plot_mars.leading_frag_height_arr[index_min_abs_mag]/1000, new_ax_min])
-            new_ax_max = np.min([y_max, ax.get_ylim()[1]])
-            new_ax_max = np.max([best_guess_obj_plot.const.erosion_height_start/1000+2, new_ax_max])
-            ax.set_ylim(new_ax_min, new_ax_max)
-            # ax.invert_xaxis()
-            # put legend outside the plot
-            # ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
-            # put it outside to the top right
-            ax.legend(fontsize=10, loc='upper left', bbox_to_anchor=(1.05, 1))
-            # ax[1].grid()
-            # plt.suptitle(f'Lightcurve Comparison for {base_name}', fontsize=18)
-            plt.tight_layout()
-            plt.savefig(output_dir + os.sep + base_name + "_Lightcurve_Earth_vs_Mars.png")
-            plt.close()
 
-            ### save the results
+                # make a first subplot with the lightcurve against height
+                ax.plot(best_guess_obj_plot.abs_magnitude,best_guess_obj_plot.leading_frag_height_arr/1000, color='k', label='Best Fit Simulation')
+                ax.set_ylabel('Height [km]', fontsize=15)
+                ax.set_xlabel('Abs.Mag [-]', fontsize=15)
+                # add a hrizontal line at y=total_energy_before_erosion
+                ax.axhline(y=best_guess_obj_plot.const.erosion_height_start/1000, color='gray', linestyle='--', label='Erosion Height Start $h_{e}$')
+                if flag_total_rho:
+                    ax.axhline(y=best_guess_obj_plot.const.erosion_height_change/1000, color='gray', linestyle='-.', label='Erosion Height Change $h_{e2}$')
+                # ax.legend(fontsize=10)
+                # call the Earth plot
+                # ax[0].set_title('Earth', fontsize=16)
 
-            # save the 
-            file_bright_dict[base_name] = (obs_data.absolute_magnitudes, obs_data.height_lum/ 1000,
-                                        # best_guess_obj_plot.abs_magnitude,best_guess_obj_plot.leading_frag_height_arr/1000, 
-                                        best_guess_obj_plot_single_mars.abs_magnitude,best_guess_obj_plot_single_mars.leading_frag_height_arr/1000, 
-                                        best_guess_obj_plot_mars.abs_magnitude, best_guess_obj_plot_mars.leading_frag_height_arr/1000, 
-                                        best_guess_obj_plot_mars_dyn_press.abs_magnitude,best_guess_obj_plot_mars_dyn_press.leading_frag_height_arr/1000, 
-                                        best_guess_obj_plot_mars_energy.abs_magnitude,best_guess_obj_plot_mars_energy.leading_frag_height_arr/1000,
-                                        best_guess_obj_plot.const,
-                                        best_guess_obj_plot_single_mars.const,
-                                        best_guess_obj_plot_mars.const,
-                                        best_guess_obj_plot_mars_dyn_press.const,
-                                        best_guess_obj_plot_mars_energy.const)
+                # Integrate luminosity/magnitude if needed
+                if (1 / obs_data.fps_lum) > best_guess_obj_plot.const.dt:
+                    best_guess_obj_plot_mars.luminosity_arr, best_guess_obj_plot_mars.abs_magnitude = luminosity_integration(
+                        best_guess_obj_plot_mars.time_arr, best_guess_obj_plot_mars.time_arr, best_guess_obj_plot_mars.luminosity_arr,
+                        best_guess_obj_plot_mars.const.dt, obs_data.fps_lum, obs_data.P_0m
+                    )
+                if (1 / obs_data.fps_lum) > best_guess_obj_plot_mars_dyn_press.const.dt:
+                    best_guess_obj_plot_mars_dyn_press.luminosity_arr, best_guess_obj_plot_mars_dyn_press.abs_magnitude = luminosity_integration(
+                        best_guess_obj_plot_mars_dyn_press.time_arr, best_guess_obj_plot_mars_dyn_press.time_arr, best_guess_obj_plot_mars_dyn_press.luminosity_arr,
+                        best_guess_obj_plot_mars_dyn_press.const.dt, obs_data.fps_lum, obs_data.P_0m
+                    )
+                if (1 / obs_data.fps_lum) > best_guess_obj_plot_mars_energy.const.dt:
+                    best_guess_obj_plot_mars_energy.luminosity_arr, best_guess_obj_plot_mars_energy.abs_magnitude = luminosity_integration(
+                        best_guess_obj_plot_mars_energy.time_arr, best_guess_obj_plot_mars_energy.time_arr, best_guess_obj_plot_mars_energy.luminosity_arr,
+                        best_guess_obj_plot_mars_energy.const.dt, obs_data.fps_lum, obs_data.P_0m
+                    )
+                # make a second subplot with the lightcurve against height for mars
+                ax.plot(best_guess_obj_plot_mars.abs_magnitude,best_guess_obj_plot_mars.leading_frag_height_arr/1000, color='pink', label='Best Fit Simulation (Mars same $\\rho$)')
+                ax.axhline(y=best_guess_obj_plot_mars.const.erosion_height_start/1000, color='pink', linestyle='--')
+                ax.plot(best_guess_obj_plot_mars_dyn_press.abs_magnitude,best_guess_obj_plot_mars_dyn_press.leading_frag_height_arr/1000, color='plum', label='Best Fit Simulation (Mars same $p_{dyn}$)')
+                ax.axhline(y=heightsame_dynpress_mars/1000, color='plum', linestyle='--')
+                ax.plot(best_guess_obj_plot_mars_energy.abs_magnitude,best_guess_obj_plot_mars_energy.leading_frag_height_arr/1000, color='thistle', label='Best Fit Simulation (Mars same $E_{e}$)')
+                ax.axhline(y=height_energy_erosion_start_mars/1000, color='thistle', linestyle='--')
+                if flag_total_rho:
+                    ax.axhline(y=best_guess_obj_plot_mars.const.erosion_height_change/1000, color='pink', linestyle='-.')
+                    ax.axhline(y=heightsame_dynpress_change_mars/1000, color='plum', linestyle='-.')
+                    ax.axhline(y=height_energy_erosion_change_mars/1000, color='thistle', linestyle='-.')
 
-            file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Vg_val, Q_val, q_val, a_val, e_val, V_val_earth, V_val_mars, Vg_val_mars, Vinf_val_mars, Vg_val_mars_min_max, Vinf_val_mars_min_max, Vg_val_denis, Vinf_val_denis)
-            # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
-            file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, tau_median, tau_low95, tau_high95)
-            file_phys_data_dict[base_name] = (eta_meteor_begin, sigma_meteor_begin, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi)
 
-            # save in .marsmeteor as a pickle file the results for the best guess meteor for earth and mars
 
-            # Save ONLY this meteor's data into its .marsmeteor file
-            marsmeteor_path = os.path.join(output_dir, base_name + "_res_mars.marsmeteor")
+                ####### plot the single body ablation model on Mars ######
+                if found_single_body:
+                    if (1 / obs_data.fps_lum) > best_guess_obj_plot_single_mars.const.dt:
+                        best_guess_obj_plot_single_mars.luminosity_arr, best_guess_obj_plot_single_mars.abs_magnitude = luminosity_integration(
+                            best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.luminosity_arr,
+                            best_guess_obj_plot_single_mars.const.dt, obs_data.fps_lum, obs_data.P_0m   
+                        )
+                    ax.plot(best_guess_obj_plot_single_mars.abs_magnitude,best_guess_obj_plot_single_mars.leading_frag_height_arr/1000, color='peru', linestyle=':', label='Single Body Ablation (Mars)')
+                
+                # ax[0].invert_xaxis()
+                # ax[1].legend(fontsize=10)
+                # ax.set_title('Mars', fontsize=16)
+                # ax[1].set_ylabel('Height [km]', fontsize=15)
+                ax.set_xlabel('Abs.Mag [-]', fontsize=15)
+                # activate grid
+                ax.grid()
+                x_min = ax.get_xlim()[0]
+                x_max = 8
+                # put the x axis from the x_max to x_min
+                ax.set_xlim(x_max, x_min)
+                # for the y axis
+                new_ax_min = np.min([y_min, ax.get_ylim()[0]])
+                # # closest index to the x_max in best_guess_obj_plot_mars.abs_magnitude after the erosion start
+                # index_min_abs_mag = np.argmin(np.abs(best_guess_obj_plot_mars.abs_magnitude[np.argmin(np.abs(best_guess_obj_plot_mars.leading_frag_height_arr - best_guess_obj_plot_mars.const.erosion_height_start)):] - x_max))
+                # # closest index to the x_max in best_guess_obj_plot_mars.leading_frag_height_arr/1000
+                # new_ax_min = np.max([best_guess_obj_plot_mars.leading_frag_height_arr[index_min_abs_mag]/1000, new_ax_min])
+                new_ax_max = np.min([y_max, ax.get_ylim()[1]])
+                new_ax_max = np.max([best_guess_obj_plot.const.erosion_height_start/1000+2, new_ax_max])
+                ax.set_ylim(new_ax_min, new_ax_max)
+                # ax.invert_xaxis()
+                # put legend outside the plot
+                # ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
+                # put it outside to the top right
+                ax.legend(fontsize=10, loc='upper left', bbox_to_anchor=(1.05, 1))
+                # ax[1].grid()
+                # plt.suptitle(f'Lightcurve Comparison for {base_name}', fontsize=18)
+                plt.tight_layout()
+                plt.savefig(output_dir + os.sep + base_name + "_Lightcurve_Earth_vs_Mars.png")
+                plt.close()
 
-            single_meteor_payload = {
-                "file_bright_dict": {base_name: file_bright_dict[base_name]},
-                "file_rho_jd_dict": {base_name: file_rho_jd_dict[base_name]},
-                "file_obs_data_dict": {base_name: file_obs_data_dict[base_name]},
-                "file_phys_data_dict": {base_name: file_phys_data_dict[base_name]},
-            }
+                ### save the results
 
-            with open(marsmeteor_path, "wb") as f:
-                pickle.dump(single_meteor_payload, f)
+                # save the 
+                file_bright_dict[base_name] = (obs_data.absolute_magnitudes, obs_data.height_lum/ 1000, obs_data.length/ 1000,
+                                            # best_guess_obj_plot.abs_magnitude,best_guess_obj_plot.leading_frag_height_arr/1000, 
+                                            best_guess_obj_plot_single_mars.abs_magnitude,best_guess_obj_plot_single_mars.leading_frag_height_arr/1000,best_guess_obj_plot_single_mars.leading_frag_length_arr/1000, 
+                                            best_guess_obj_plot_mars.abs_magnitude, best_guess_obj_plot_mars.leading_frag_height_arr/1000, best_guess_obj_plot_mars.leading_frag_length_arr/1000, 
+                                            best_guess_obj_plot_mars_dyn_press.abs_magnitude,best_guess_obj_plot_mars_dyn_press.leading_frag_height_arr/1000, best_guess_obj_plot_mars_dyn_press.leading_frag_length_arr/1000, 
+                                            best_guess_obj_plot_mars_energy.abs_magnitude,best_guess_obj_plot_mars_energy.leading_frag_height_arr/1000, best_guess_obj_plot_mars_energy.leading_frag_length_arr/1000, 
+                                            best_guess_obj_plot.const,
+                                            best_guess_obj_plot_single_mars.const,
+                                            best_guess_obj_plot_mars.const,
+                                            best_guess_obj_plot_mars_dyn_press.const,
+                                            best_guess_obj_plot_mars_energy.const)
 
-        else:
-            
-            # open the .marsmeteor file and load the dictionaries
-            marsmeteor_path = os.path.join(output_dir, marsmeteor_file)
-            with open(marsmeteor_path, "rb") as f:
-                data = pickle.load(f)
+                file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Vg_val, Q_val, q_val, a_val, e_val, V_val_earth, V_val_mars, Vg_val_mars, Vinf_val_mars, Vg_val_mars_min_max, Vinf_val_mars_min_max, Vg_val_denis, Vinf_val_denis)
+                # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
+                file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, tau_median, tau_low95, tau_high95)
+                file_phys_data_dict[base_name] = (eta_meteor_begin, sigma_meteor_begin, meteoroid_diameter_mm, meteoroid_diameter_mm_lo, meteoroid_diameter_mm_hi, m_init_meteor_median, m_init_meteor_lo, m_init_meteor_hi)
 
-            if base_name not in data["file_bright_dict"]:
-                raise RuntimeError(
-                    f"{marsmeteor_path} does not contain brightness data for {base_name}"
-                )
+                # save in .marsmeteor as a pickle file the results for the best guess meteor for earth and mars
+
+                # Save ONLY this meteor's data into its .marsmeteor file
+                marsmeteor_path = os.path.join(output_dir, base_name + "_res_mars.marsmeteor_new")
+
+                single_meteor_payload = {
+                    "file_bright_dict": {base_name: file_bright_dict[base_name]},
+                    "file_rho_jd_dict": {base_name: file_rho_jd_dict[base_name]},
+                    "file_obs_data_dict": {base_name: file_obs_data_dict[base_name]},
+                    "file_phys_data_dict": {base_name: file_phys_data_dict[base_name]},
+                }
+
+                with open(marsmeteor_path, "wb") as f:
+                    pickle.dump(single_meteor_payload, f)
+
             else:
-                print(f"Loading pre-computed Mars data for {base_name} from {marsmeteor_path}")
-            
-            # Merge into the global dicts instead of overwriting them
-            for key, val in data["file_bright_dict"].items():
-                file_bright_dict[key] = val
+                
+                # open the .marsmeteor file and load the dictionaries
+                marsmeteor_path = os.path.join(output_dir, marsmeteor_file)
+                with open(marsmeteor_path, "rb") as f:
+                    data = pickle.load(f)
 
-            for key, val in data["file_rho_jd_dict"].items():
-                file_rho_jd_dict[key] = val
+                if base_name not in data["file_bright_dict"]:
+                    raise RuntimeError(
+                        f"{marsmeteor_path} does not contain brightness data for {base_name}"
+                    )
+                else:
+                    print(f"Loading pre-computed Mars data for {base_name} from {marsmeteor_path}")
+                
+                # Merge into the global dicts instead of overwriting them
+                for key, val in data["file_bright_dict"].items():
+                    file_bright_dict[key] = val
 
-            for key, val in data["file_obs_data_dict"].items():
-                file_obs_data_dict[key] = val
+                for key, val in data["file_rho_jd_dict"].items():
+                    file_rho_jd_dict[key] = val
 
-            for key, val in data["file_phys_data_dict"].items():
-                file_phys_data_dict[key] = val
+                for key, val in data["file_obs_data_dict"].items():
+                    file_obs_data_dict[key] = val
+
+                for key, val in data["file_phys_data_dict"].items():
+                    file_phys_data_dict[key] = val
 
 
-        all_names.append(base_name)
-        all_samples.append(samples_aligned)
-        all_weights.append(weights_aligned)
+            all_names.append(base_name)
+            all_samples.append(samples_aligned)
+            all_weights.append(weights_aligned)
 
-    # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
-    sys.stdout.close()
+        # Close the Logger to ensure everything is written to the file STOP COPY in TXT file
+        sys.stdout.close()
 
-    # Reset sys.stdout to its original value if needed
-    sys.stdout = sys.__stdout__
+        # Reset sys.stdout to its original value if needed
+        sys.stdout = sys.__stdout__
+
+        print(f"\nFinished processing all meteors. Total meteors processed: {len(all_names)}")
+        print("save the results for all meteors in a .marsmeteor_total file...")
+        # save all the dictionaries in a .marsmeteor_total file as a pickle file
+        marsmeteor_total_path = os.path.join(input_dirfile, "all_meteors_data.marsmeteor_total")
+        total_payload = {
+            "file_bright_dict": file_bright_dict,
+            "file_rho_jd_dict": file_rho_jd_dict,
+            "file_obs_data_dict": file_obs_data_dict,
+            "file_phys_data_dict": file_phys_data_dict,
+            "all_names": all_names,
+            "all_samples": all_samples,
+            "all_weights": all_weights
+        }
+
+        with open(marsmeteor_total_path, "wb") as f:
+            pickle.dump(total_payload, f)
+
+    else:
+        print(f"Loading pre-computed Mars data for all meteors from {input_dirfile}")
+        marsmeteor_total_path = os.path.join(input_dirfile, "all_meteors_data.marsmeteor_total")
+        with open(marsmeteor_total_path, "rb") as f:
+            total_data = pickle.load(f)
+
+        file_bright_dict = total_data["file_bright_dict"]
+        file_rho_jd_dict = total_data["file_rho_jd_dict"]
+        file_obs_data_dict = total_data["file_obs_data_dict"]
+        file_phys_data_dict = total_data["file_phys_data_dict"]
+        all_names = total_data["all_names"]
+        all_samples = total_data["all_samples"]
+        all_weights = total_data["all_weights"]
+
+
+    #####################################################################################################################################################################################################
+    #####################################################################################################################################################################################################
+    #####################################################################################################################################################################################################
+
+
+
+
+
+
 
 
 
@@ -1686,45 +1734,213 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
     # Storage for each method
     data_dict = {
-        "obs":            {"mag": [], "h": []},
-        "single_mars":    {"mag": [], "h": []},
-        "mars_rho":           {"mag": [], "h": []},
-        "mars_dyn_press": {"mag": [], "h": []},
-        "mars_energy":    {"mag": [], "h": []},
+        "obs":            {"mag": [], "h": [], "l": [], "heros": [], "obs_mag": [], "obs_h": [], "obs_l": [], 'tot_l': [], 'peak_mag': [], "h_start": [], "h_end": []},
+        "single_mars":    {"mag": [], "h": [], "l": [], "heros": [], "obs_mag": [], "obs_h": [], "obs_l": [], 'tot_l': [], 'peak_mag': [], "h_start": [], "h_end": []},
+        "mars_rho":       {"mag": [], "h": [], "l": [], "heros": [], "obs_mag": [], "obs_h": [], "obs_l": [], 'tot_l': [], 'peak_mag': [], "h_start": [], "h_end": []},
+        "mars_dyn_press": {"mag": [], "h": [], "l": [], "heros": [], "obs_mag": [], "obs_h": [], "obs_l": [], 'tot_l': [], 'peak_mag': [], "h_start": [], "h_end": []},
+        "mars_energy":    {"mag": [], "h": [], "l": [], "heros": [], "obs_mag": [], "obs_h": [], "obs_l": [], 'tot_l': [], 'peak_mag': [], "h_start": [], "h_end": []},
     }
 
     # Fill from your per-meteor dictionary
     for name in all_names:
-        (abs_mags_obs, heights_obs,
-        abs_mags_single_mars, heights_single_mars,
-        abs_mags_mars, heights_mars,
-        abs_mags_mars_dyn_press, heights_mars_dyn_press,
-        abs_mags_mars_energy, heights_mars_energy, 
+        (abs_mags_obs, heights_obs, lenght_obs,
+        abs_mags_single_mars, heights_single_mars, lenght_single_mars,
+        abs_mags_mars, heights_mars, lenght_mars,
+        abs_mags_mars_dyn_press, heights_mars_dyn_press, lenght_mars_dyn_press,
+        abs_mags_mars_energy, heights_mars_energy, lenght_mars_energy,
         const_obs, const_single_mars, const_mars, const_mars_dyn_press, const_mars_energy) = file_bright_dict[name]
 
         data_dict["obs"]["mag"].append(abs_mags_obs)
         data_dict["obs"]["h"].append(heights_obs)
+        data_dict["obs"]["l"].append(lenght_obs)
+        data_dict["obs"]["heros"].append([const_obs.erosion_height_start, const_obs.erosion_height_change])
+        data_dict["obs"]["obs_mag"].append(abs_mags_obs)    
+        data_dict["obs"]["obs_h"].append(heights_obs)
+        data_dict["obs"]["obs_l"].append(lenght_obs)
+        data_dict["obs"]['tot_l'].append(lenght_obs[-1]-lenght_obs[0])
+        data_dict["obs"]['peak_mag'].append(np.min(abs_mags_obs))
+        data_dict["obs"]["h_start"].append(heights_obs[0])
+        data_dict["obs"]["h_end"].append(heights_obs[-1])
+        first_mag = abs_mags_obs[0]
+        last_mag = abs_mags_obs[-1]
+        if first_mag > last_mag:
+            last_mag = first_mag
+        else:
+            first_mag = last_mag 
 
+        # mag_aterosheight = abs_mags_obs[np.argmin(np.abs(heights_obs - const_obs.erosion_height_start/1000))]
+        # len_to_use = lenght_obs[(heights_obs < const_obs.erosion_height_start/1000) & (abs_mags_obs < mag_aterosheight)]
+        # abs_mags_to_use = abs_mags_obs[(heights_obs < const_obs.erosion_height_start/1000) & (abs_mags_obs < mag_aterosheight)]
+        # heights_to_use = heights_obs[(heights_obs < const_obs.erosion_height_start/1000) & (abs_mags_obs < mag_aterosheight)]
+        # data_dict["obs"]["obs_mag"].append(abs_mags_to_use)
+        # data_dict["obs"]["obs_h"].append(heights_to_use)
+        # data_dict["obs"]["obs_l"].append(len_to_use-len_to_use[0])
+        
+        # take only the mag that are below the const_mars.erosion_height_start/1000 in heights_single_mars
         data_dict["single_mars"]["mag"].append(abs_mags_single_mars)
         data_dict["single_mars"]["h"].append(heights_single_mars)
+        data_dict["single_mars"]["l"].append(lenght_single_mars)
+        data_dict["single_mars"]["heros"].append([const_mars.erosion_height_start, const_mars.erosion_height_change])
+        # take the magnitude of the point the closest to the erosion_height_start in heights_single_mars
+        # mag_aterosheight = abs_mags_single_mars[np.argmin(np.abs(heights_single_mars - const_mars.erosion_height_start/1000))]
+        # len_to_use = lenght_single_mars[(heights_single_mars < const_mars.erosion_height_start/1000) & (abs_mags_single_mars < mag_aterosheight)]
+        # abs_mags_to_use = abs_mags_single_mars[(heights_single_mars < const_mars.erosion_height_start/1000) & (abs_mags_single_mars < mag_aterosheight)]
+        # heights_to_use = heights_single_mars[(heights_single_mars < const_mars.erosion_height_start/1000) & (abs_mags_single_mars < mag_aterosheight)]
+
+        # peak height abs mag
+        peak_height_abs_mag = heights_single_mars[np.argmin(abs_mags_single_mars)]
+        # take the mag that is below first_mag and before peak_height_abs_mag and the data that is after peak_height_abs_mag and below last_mag
+        index_to_use_single_mars = ((heights_single_mars > peak_height_abs_mag) & (abs_mags_single_mars < first_mag)) | ((heights_single_mars < peak_height_abs_mag) & (abs_mags_single_mars < last_mag))
+        len_to_use = lenght_single_mars[index_to_use_single_mars]
+        abs_mags_to_use = abs_mags_single_mars[index_to_use_single_mars]
+        heights_to_use = heights_single_mars[index_to_use_single_mars]
+        # and take it until the abs_mags_single_mars is smaller than the one at heights_single_mars
+        data_dict["single_mars"]["obs_mag"].append(abs_mags_to_use)
+        data_dict["single_mars"]["obs_h"].append(heights_to_use)
+        data_dict["single_mars"]['peak_mag'].append(np.min(abs_mags_single_mars))
+        # so it starts from 0
+        try:
+            data_dict["single_mars"]["obs_l"].append(len_to_use-len_to_use[0])
+            data_dict["single_mars"]['tot_l'].append(len_to_use[-2]-len_to_use[0])
+            data_dict["single_mars"]["h_start"].append(heights_to_use[0])
+            data_dict["single_mars"]["h_end"].append(heights_to_use[-1])
+        except:
+            data_dict["single_mars"]["obs_l"].append(len_to_use)
+            data_dict["single_mars"]['tot_l'].append(0)
+            data_dict["single_mars"]["h_start"].append(0)
+            data_dict["single_mars"]["h_end"].append(0)
+
 
         data_dict["mars_rho"]["mag"].append(abs_mags_mars)
         data_dict["mars_rho"]["h"].append(heights_mars)
+        data_dict["mars_rho"]["l"].append(lenght_mars)
+        data_dict["mars_rho"]["heros"].append([const_mars.erosion_height_start, const_mars.erosion_height_change])
+        # mag_aterosheight_mars = abs_mags_mars[np.argmin(np.abs(heights_mars - const_mars.erosion_height_start/1000))]
+        # len_to_use_mars = lenght_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
+        # abs_mags_to_use_mars = abs_mags_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
+        # heights_to_use_mars = heights_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
+        peak_height_abs_mag_mars = heights_mars[np.argmin(abs_mags_mars)]
+        index_to_use_mars = ((heights_mars > peak_height_abs_mag_mars) & (abs_mags_mars < first_mag)) | ((heights_mars < peak_height_abs_mag_mars) & (abs_mags_mars < last_mag))
+        len_to_use_mars = lenght_mars[index_to_use_mars]
+        abs_mags_to_use_mars = abs_mags_mars[index_to_use_mars]
+        heights_to_use_mars = heights_mars[index_to_use_mars]
+        data_dict["mars_rho"]["obs_mag"].append(abs_mags_to_use_mars)
+        data_dict["mars_rho"]["obs_h"].append(heights_to_use_mars)
+        data_dict["mars_rho"]['peak_mag'].append(np.min(abs_mags_mars))
+        # so it starts from 0
+        try:
+            data_dict["mars_rho"]["obs_l"].append(len_to_use_mars-len_to_use_mars[0])
+            data_dict["mars_rho"]['tot_l'].append(len_to_use_mars[-2]-len_to_use_mars[0])
+            data_dict["mars_rho"]["h_start"].append(heights_to_use_mars[0])
+            data_dict["mars_rho"]["h_end"].append(heights_to_use_mars[-1])
+        except:
+            data_dict["mars_rho"]["obs_l"].append(len_to_use_mars)
+            data_dict["mars_rho"]['tot_l'].append(0)
+            data_dict["mars_rho"]["h_start"].append(0)
+            data_dict["mars_rho"]["h_end"].append(0)
 
         data_dict["mars_dyn_press"]["mag"].append(abs_mags_mars_dyn_press)
         data_dict["mars_dyn_press"]["h"].append(heights_mars_dyn_press)
+        data_dict["mars_dyn_press"]["l"].append(lenght_mars_dyn_press)
+        data_dict["mars_dyn_press"]["heros"].append([const_mars_dyn_press.erosion_height_start, const_mars_dyn_press.erosion_height_change])
+        # mag_aterosheight_mars_dyn_press = abs_mags_mars_dyn_press[np.argmin(np.abs(heights_mars_dyn_press - const_mars_dyn_press.erosion_height_start/1000))]
+        # len_to_use_mars_dyn_press = lenght_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
+        # abs_mags_to_use_mars_dyn_press = abs_mags_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
+        # heights_to_use_mars_dyn_press = heights_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
+        peak_height_abs_mag_mars_dyn_press = heights_mars_dyn_press[np.argmin(abs_mags_mars_dyn_press)]
+        index_to_use_mars_dyn_press = ((heights_mars_dyn_press > peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < first_mag)) | ((heights_mars_dyn_press < peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < last_mag))
+        len_to_use_mars_dyn_press = lenght_mars_dyn_press[index_to_use_mars_dyn_press]
+        abs_mags_to_use_mars_dyn_press = abs_mags_mars_dyn_press[index_to_use_mars_dyn_press]
+        heights_to_use_mars_dyn_press = heights_mars_dyn_press[index_to_use_mars_dyn_press]
+        data_dict["mars_dyn_press"]["obs_mag"].append(abs_mags_to_use_mars_dyn_press)
+        data_dict["mars_dyn_press"]["obs_h"].append(heights_to_use_mars_dyn_press)
+        data_dict["mars_dyn_press"]['peak_mag'].append(np.min(abs_mags_mars_dyn_press))
+        try:
+            data_dict["mars_dyn_press"]["obs_l"].append(len_to_use_mars_dyn_press-len_to_use_mars_dyn_press[0])
+            data_dict["mars_dyn_press"]['tot_l'].append(len_to_use_mars_dyn_press[-2]-len_to_use_mars_dyn_press[0])
+            data_dict["mars_dyn_press"]["h_start"].append(heights_to_use_mars_dyn_press[0])
+            data_dict["mars_dyn_press"]["h_end"].append(heights_to_use_mars_dyn_press[-1])
+        except:
+            data_dict["mars_dyn_press"]["obs_l"].append(len_to_use_mars_dyn_press)
+            data_dict["mars_dyn_press"]['tot_l'].append(0)
+            data_dict["mars_dyn_press"]["h_start"].append(0)
+            data_dict["mars_dyn_press"]["h_end"].append(0)
+
 
         data_dict["mars_energy"]["mag"].append(abs_mags_mars_energy)
         data_dict["mars_energy"]["h"].append(heights_mars_energy)
+        data_dict["mars_energy"]["l"].append(lenght_mars_energy)
+        data_dict["mars_energy"]["heros"].append([const_mars_energy.erosion_height_start, const_mars_energy.erosion_height_change])
+        # mag_aterosheight_mars_energy = abs_mags_mars_energy[np.argmin(np.abs(heights_mars_energy - const_mars_energy.erosion_height_start/1000))]
+        # len_to_use_mars_energy = lenght_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
+        # abs_mags_to_use_mars_energy = abs_mags_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
+        # heights_to_use_mars_energy = heights_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
+        peak_height_abs_mag_mars_energy = heights_mars_energy[np.argmin(abs_mags_mars_energy)]
+        index_to_use_mars_energy = ((heights_mars_energy > peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < first_mag)) | ((heights_mars_energy < peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < last_mag))
+        len_to_use_mars_energy = lenght_mars_energy[index_to_use_mars_energy]
+        abs_mags_to_use_mars_energy = abs_mags_mars_energy[index_to_use_mars_energy]
+        heights_to_use_mars_energy = heights_mars_energy[index_to_use_mars_energy]
+        data_dict["mars_energy"]["obs_mag"].append(abs_mags_to_use_mars_energy)
+        data_dict["mars_energy"]["obs_h"].append(heights_to_use_mars_energy )
+        data_dict["mars_energy"]['peak_mag'].append(np.min(abs_mags_mars_energy))
+        try:
+            data_dict["mars_energy"]["obs_l"].append(len_to_use_mars_energy-len_to_use_mars_energy[0])
+            data_dict["mars_energy"]['tot_l'].append(len_to_use_mars_energy[-2]-len_to_use_mars_energy[0])
+            data_dict["mars_energy"]["h_start"].append(heights_to_use_mars_energy[0])
+            data_dict["mars_energy"]["h_end"].append(heights_to_use_mars_energy[-1])
+        except:
+            data_dict["mars_energy"]["obs_l"].append(len_to_use_mars_energy)
+            data_dict["mars_energy"]['tot_l'].append(0)
+            data_dict["mars_energy"]["h_start"].append(0)
+            data_dict["mars_energy"]["h_end"].append(0)
+
+        # # check if the cuts are corrects plot the abs_mags_obs against the heights_obs and put a vertical line at the erosion_height_start/1000 and check if the points that are kept are the ones that are below the line and have a smaller magnitude than the one at the line
+        # plt.figure()
+        # plt.plot(abs_mags_obs, heights_obs, label='obs')
+        # # plt.axvline(x=mag_aterosheight, color='red', linestyle='--', label='cut at erosion height start')
+        # plt.plot(abs_mags_to_use, heights_to_use, color='red', label='single_mars')
+        # plt.plot(abs_mags_to_use_mars, heights_to_use_mars, color='orange', label='rho cut')
+        # plt.plot(abs_mags_to_use_mars_dyn_press, heights_to_use_mars_dyn_press, color='green', label='dyn_press cut')
+        # plt.plot(abs_mags_to_use_mars_energy, heights_to_use_mars_energy, color='blue', label='energy cut')
+
+        # plt.xlabel('Abs.Mag [-]')
+        # plt.ylabel('Height [km]')
+        # # invert the x axis
+        # plt.xlim(plt.xlim()[::-1])
+        # plt.legend()
+        # # plot show
+        # plt.show()
+
+
+
 
     # Concatenate lists into single arrays per method
     for key in data_dict:
         if len(data_dict[key]["mag"]) > 0:
             data_dict[key]["mag"] = np.concatenate(data_dict[key]["mag"])
             data_dict[key]["h"]   = np.concatenate(data_dict[key]["h"])
+            data_dict[key]["l"]   = np.concatenate(data_dict[key]["l"])
+            data_dict[key]["heros"] = np.array(data_dict[key]["heros"])
+            data_dict[key]["obs_mag"] = np.concatenate(data_dict[key]["obs_mag"])
+            data_dict[key]["obs_h"] = np.concatenate(data_dict[key]["obs_h"])
+            data_dict[key]["obs_l"] = np.concatenate(data_dict[key]["obs_l"])
+            data_dict[key]['tot_l'] = np.array(data_dict[key]['tot_l']) #np.concatenate(data_dict[key]['tot_l'])
+            data_dict[key]['peak_mag'] = np.array(data_dict[key]['peak_mag'])
+            data_dict[key]["h_start"] = np.array(data_dict[key]["h_start"])
+            data_dict[key]["h_end"] = np.array(data_dict[key]["h_end"])
+
         else:
             data_dict[key]["mag"] = np.array([])
             data_dict[key]["h"]   = np.array([])
+            data_dict[key]["l"]   = np.array([])
+            data_dict[key]["heros"] = np.array([])
+            data_dict[key]["obs_mag"] = np.array([])
+            data_dict[key]["obs_h"] = np.array([])
+            data_dict[key]["obs_l"] = np.array([])
+            data_dict[key]['tot_l'] = np.array([])
+            data_dict[key]['peak_mag'] = np.array([])
+            data_dict[key]["h_start"] = np.array([])
+            data_dict[key]["h_end"] = np.array([])
 
     # ---- 2. Define common height bins across all methods ----
 
@@ -1749,13 +1965,42 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     h_centers = 0.5 * (height_bins[:-1] + height_bins[1:])
 
     brightness_grid = np.zeros((n_methods, n_hbins), dtype=float)
+    # len all_names
+    total_len = np.zeros((n_methods,len(all_names)), dtype=int)
 
     # Gaussian kernel bandwidth in km (tune this if needed)
     bandwidth = 2.0  # smaller -> more detailed, larger -> smoother
+    start_heights_rho = []
+    end_heights_rho = []
+
+    start_heights_dyn = []
+    end_heights_dyn = []
+
+    start_heights_energy = []
+    end_heights_energy = []
+
+    start_heights_single = []
+    end_heights_single = []
 
     for m_idx, (_, key) in enumerate(methods):
-        mags = data_dict[key]["mag"]
-        hs   = data_dict[key]["h"]
+        mags = data_dict[key]["obs_mag"] 
+        hs = data_dict[key]["obs_h"]
+
+        if key == "mars_rho":
+            start_heights_rho.extend(np.asarray(data_dict[key]["h_start"]).ravel())
+            end_heights_rho.extend(np.asarray(data_dict[key]["h_end"]).ravel())
+
+        elif key == "mars_dyn_press":
+            start_heights_dyn.extend(np.asarray(data_dict[key]["h_start"]).ravel())
+            end_heights_dyn.extend(np.asarray(data_dict[key]["h_end"]).ravel())
+
+        elif key == "mars_energy":
+            start_heights_energy.extend(np.asarray(data_dict[key]["h_start"]).ravel())
+            end_heights_energy.extend(np.asarray(data_dict[key]["h_end"]).ravel())
+
+        elif key == "single_mars":
+            start_heights_single.extend(np.asarray(data_dict[key]["h_start"]).ravel())
+            end_heights_single.extend(np.asarray(data_dict[key]["h_end"]).ravel())
 
         # Keep only finite values
         mask = np.isfinite(mags) & np.isfinite(hs)
@@ -1844,8 +2089,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     bright_frac = 0.3  # brightest 30% at high altitudes
 
     for m_idx, (_, key) in enumerate(methods):
-        mags = data_dict[key]["mag"]
-        hs   = data_dict[key]["h"]
+        mags = data_dict[key]["obs_mag"]
+        hs   = data_dict[key]["obs_h"]
 
         mask = np.isfinite(mags) & np.isfinite(hs)
         mags = mags[mask]
@@ -1957,6 +2202,195 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     plt.savefig(output_dir_show + os.sep + "density_mean_AbsMagHeight.png")
     plt.close()
 
+
+    def plot_distribution_summary(
+        data_dict,
+        var_name,
+        xlabel,
+        bins,
+        output_dir_show,
+        output_name,
+        invert_xaxis=False,
+        value_unit="",
+        variance_unit="",
+        methods=None,
+        legend_fontsize_single=9,
+        legend_fontsize_combined=14,):
+        """
+        Create:
+        1. A 5-panel histogram plot (one panel per method, shared y-axis)
+        2. A combined histogram plot (all methods together)
+
+        Parameters
+        ----------
+        data_dict : dict
+            Dictionary containing arrays for each method.
+        var_name : str
+            Variable name inside each method dictionary, e.g. 'tot_l' or 'peak_mag'.
+        xlabel : str
+            Label for the x-axis.
+        bins : array-like
+            Histogram bins.
+        output_dir_show : str
+            Output directory.
+        output_name : str
+            Base output filename (without extension or suffix).
+        invert_xaxis : bool, optional
+            Whether to invert the x-axis, useful for magnitudes.
+        value_unit : str, optional
+            Unit string for the median value, e.g. ' km'.
+        variance_unit : str, optional
+            Unit string for the variance value, e.g. ' km$^2$'.
+        methods : list of tuples, optional
+            List like [(title, key, color), ...].
+        legend_fontsize_single : int, optional
+            Font size for legends in the panel plot.
+        legend_fontsize_combined : int, optional
+            Font size for legend in the combined plot.
+        """
+
+        if methods is None:
+            methods = [
+                ("Earth", "obs", "blue"),
+                ("Mars single body", "single_mars", "red"),
+                ("Mars $\\rho$", "mars_rho", "green"),
+                ("Mars $p_{dyn}$", "mars_dyn_press", "orange"),
+                ("Mars $E_{e}$", "mars_energy", "purple"),
+            ]
+
+        # ---------------------------
+        # 1) Individual subplot figure
+        # ---------------------------
+        print(f"\nPlotting {var_name} distribution...")
+
+        fig, ax = plt.subplots(1, len(methods), figsize=(3 * len(methods), 6), sharey=True)
+        ax = np.atleast_1d(ax).flatten()
+
+        for i, (title, key, color) in enumerate(methods):
+            axi = ax[i]
+
+            values = np.asarray(data_dict[key][var_name], dtype=float)
+            values = values[np.isfinite(values)]
+
+            axi.hist(values, bins=bins, color=color, alpha=0.7)
+
+            if values.size > 0:
+                median_val = np.median(values)
+                var_val = np.var(values)
+
+                axi.axvline(
+                    median_val,
+                    color=color,
+                    linestyle="--",
+                    linewidth=1.5,
+                    label=f"Median = {median_val:.1f}{value_unit}\nVar = {var_val:.1f}{variance_unit}"
+                )
+                axi.legend(fontsize=legend_fontsize_single, loc="upper right")
+
+            axi.set_xlabel(xlabel)
+            axi.set_title(title)
+            axi.set_xlim(bins[0], bins[-1])
+
+            if invert_xaxis:
+                axi.invert_xaxis()
+
+        ax[0].set_ylabel("Count")
+
+        plt.tight_layout()
+        plt.savefig(output_dir_show + os.sep + f"{output_name}_barplot.png")
+        plt.close(fig)
+
+        # ---------------------------
+        # 2) Combined histogram figure
+        # ---------------------------
+        # print(f"\nPlotting {var_name} distribution (combined view)...")
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        for title, key, color in methods:
+            values = np.asarray(data_dict[key][var_name], dtype=float)
+            values = values[np.isfinite(values)]
+
+            if values.size == 0:
+                continue
+
+            median_val = np.median(values)
+            var_val = np.var(values)
+
+            print(f"{title}: med={median_val:.1f}{value_unit}, var={var_val:.1f}{variance_unit}")
+
+            ax.hist(
+                values,
+                bins=bins,
+                color=color,
+                alpha=0.35,
+                label=f"{title}: med={median_val:.1f}{value_unit}, var={var_val:.1f}{variance_unit}"
+            )
+
+            ax.axvline(
+                median_val,
+                color=color,
+                linestyle="--",
+                linewidth=2
+            )
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Count")
+        ax.set_xlim(bins[0], bins[-1])
+
+        if invert_xaxis:
+            ax.invert_xaxis()
+
+        ax.legend(fontsize=legend_fontsize_combined)
+        plt.tight_layout()
+        plt.savefig(output_dir_show + os.sep + f"{output_name}_barplot_combined.png")
+        plt.close(fig)
+
+
+    plot_distribution_summary(
+        data_dict,
+        var_name="tot_l",
+        xlabel="Total Length [km]",
+        bins=np.arange(1, 100, 5),
+        output_dir_show=output_dir_show,
+        output_name="total_length",
+        value_unit=" km",
+        variance_unit=" km$^2$",
+    )
+
+    plot_distribution_summary(
+        data_dict,
+        var_name="peak_mag",
+        xlabel="Peak Magnitude [-]",
+        bins=np.arange(0, 10, 1),
+        output_dir_show=output_dir_show,
+        output_name="peak_mag",
+        invert_xaxis=True,
+    )
+
+    plot_distribution_summary(
+        data_dict,
+        var_name="h_start",
+        xlabel="Start Height [km]",
+        bins=np.arange(50, 150, 5),
+        output_dir_show=output_dir_show,
+        output_name="start_height",
+        value_unit=" km",
+        variance_unit=" km$^2$",
+    )
+
+    plot_distribution_summary(
+        data_dict,
+        var_name="h_end",
+        xlabel="End Height [km]",
+        bins=np.arange(50, 150, 5),
+        output_dir_show=output_dir_show,
+        output_name="end_height",
+        value_unit=" km",
+        variance_unit=" km$^2$"
+    )
+
+
     ############ PLOTTING Earth peak values ##############
 
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -2014,11 +2448,11 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         vel_brightest.append(Vinf_val_mars)
         vel_brightest.append(Vinf_val_mars)
 
-        (abs_mags_obs, heights_obs,
-        abs_mags_single_mars, heights_single_mars,
-        abs_mags_mars, heights_mars,
-        abs_mags_mars_dyn_press, heights_mars_dyn_press,
-        abs_mags_mars_energy, heights_mars_energy, 
+        (abs_mags_obs, heights_obs, lenght_obs,
+        abs_mags_single_mars, heights_single_mars, lenght_single_mars,
+        abs_mags_mars, heights_mars, lenght_mars,
+        abs_mags_mars_dyn_press, heights_mars_dyn_press, lenght_mars_dyn_press,
+        abs_mags_mars_energy, heights_mars_energy, lenght_mars_energy,
         const_obs, const_single_mars, const_mars, const_mars_dyn_press, const_mars_energy) = file_bright_dict[name]
 
         min_mag_index_earth = np.argmin(abs_mags_obs)
@@ -2425,7 +2859,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     ax.grid()
 
     plt.tight_layout()
-    plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag_field_contour.png")
+    plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag_field_contour_bad.png")
     plt.close()
 
 
@@ -2498,6 +2932,161 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     axs.grid()
     plt.tight_layout()
     plt.savefig(output_dir_show + os.sep + "Vinf_DeltaHeight_AbsMag.png")
+    plt.close()
+
+    ################# DETETION plot ####################
+
+
+    start_heights_rho = np.asarray(start_heights_rho, dtype=float)
+    end_heights_rho = np.asarray(end_heights_rho, dtype=float)
+
+    start_heights_dyn = np.asarray(start_heights_dyn, dtype=float)
+    end_heights_dyn = np.asarray(end_heights_dyn, dtype=float)
+
+    start_heights_energy = np.asarray(start_heights_energy, dtype=float)
+    end_heights_energy = np.asarray(end_heights_energy, dtype=float)
+
+    start_heights_single = np.asarray(start_heights_single, dtype=float)
+    end_heights_single = np.asarray(end_heights_single, dtype=float)
+
+    print("\nPlotting Velocity height with brightness colorbar - separate plots...")
+
+    fig, axs = plt.subplots(1, 4, figsize=(16, 6), sharex=True, sharey=True)
+    axs = axs.ravel()
+
+    vel_brightest_arr = np.asarray(vel_brightest, dtype=float)
+    height_brightest_arr = np.asarray(height_brightest, dtype=float)
+    brightest_mags_arr = np.asarray(brightest_mags, dtype=float)
+    height_type_arr = np.asarray(height_type)
+
+    # ---------------- rho ----------------
+    idx_rho_all = np.where(height_type_arr == 'Mars $\\rho$')[0]
+    det_mask_rho = ~np.isclose(start_heights_rho, end_heights_rho, equal_nan=False)
+
+    print(f"Mars rho: detected {np.sum(det_mask_rho)}/{len(start_heights_rho)}")
+
+    axs[0].vlines(
+        vel_brightest_arr[idx_rho_all][det_mask_rho],
+        np.minimum(start_heights_rho[det_mask_rho], end_heights_rho[det_mask_rho]),
+        np.maximum(start_heights_rho[det_mask_rho], end_heights_rho[det_mask_rho]),
+        colors='black',
+        linewidth=1.2,
+        alpha=0.7,
+        zorder=1
+    )
+
+    sc = axs[0].scatter(
+        vel_brightest_arr[idx_rho_all][det_mask_rho],
+        height_brightest_arr[idx_rho_all][det_mask_rho],
+        c=brightest_mags_arr[idx_rho_all][det_mask_rho],
+        cmap='plasma_r',
+        s=40,
+        edgecolors='black',
+        zorder=2
+    )
+    axs[0].set_title(f'Mars $\\rho$', fontsize=15) #  ({np.sum(det_mask_rho)}/{len(start_heights_rho)})
+
+    # ---------------- dyn pressure ----------------
+    idx_dyn_all = np.where(height_type_arr == 'Mars $p_{dyn}$')[0]
+    det_mask_dyn = ~np.isclose(start_heights_dyn, end_heights_dyn, equal_nan=False)
+
+    print(f"Mars p_dyn: detected {np.sum(det_mask_dyn)}/{len(start_heights_dyn)}")
+
+    axs[1].vlines(
+        vel_brightest_arr[idx_dyn_all][det_mask_dyn],
+        np.minimum(start_heights_dyn[det_mask_dyn], end_heights_dyn[det_mask_dyn]),
+        np.maximum(start_heights_dyn[det_mask_dyn], end_heights_dyn[det_mask_dyn]),
+        colors='black',
+        linewidth=1.2,
+        alpha=0.7,
+        zorder=1
+    )
+
+    sc = axs[1].scatter(
+        vel_brightest_arr[idx_dyn_all][det_mask_dyn],
+        height_brightest_arr[idx_dyn_all][det_mask_dyn],
+        c=brightest_mags_arr[idx_dyn_all][det_mask_dyn],
+        cmap='plasma_r',
+        s=40,
+        edgecolors='black',
+        zorder=2
+    )
+    axs[1].set_title(f'Mars $p_{{dyn}}$', fontsize=15) #  ({np.sum(det_mask_dyn)}/{len(start_heights_dyn)})
+
+    # ---------------- energy ----------------
+    idx_energy_all = np.where(height_type_arr == 'Mars $E_{e}$')[0]
+    det_mask_energy = ~np.isclose(start_heights_energy, end_heights_energy, equal_nan=False)
+
+    print(f"Mars E_e: detected {np.sum(det_mask_energy)}/{len(start_heights_energy)}")
+
+    axs[2].vlines(
+        vel_brightest_arr[idx_energy_all][det_mask_energy],
+        np.minimum(start_heights_energy[det_mask_energy], end_heights_energy[det_mask_energy]),
+        np.maximum(start_heights_energy[det_mask_energy], end_heights_energy[det_mask_energy]),
+        colors='black',
+        linewidth=1.2,
+        alpha=0.7,
+        zorder=1
+    )
+
+    sc = axs[2].scatter(
+        vel_brightest_arr[idx_energy_all][det_mask_energy],
+        height_brightest_arr[idx_energy_all][det_mask_energy],
+        c=brightest_mags_arr[idx_energy_all][det_mask_energy],
+        cmap='plasma_r',
+        s=40,
+        edgecolors='black',
+        zorder=2
+    )
+    axs[2].set_title(f'Mars $E_{{e}}$', fontsize=15) #  ({np.sum(det_mask_energy)}/{len(start_heights_energy)})
+
+    # ---------------- single body ----------------
+    vel_brightest_single_arr = np.asarray(vel_brightest_single, dtype=float)
+    height_brightest_single_arr = np.asarray(height_brightest_single, dtype=float)
+    brightest_mags_single_arr = np.asarray(brightest_mags_single, dtype=float)
+
+    det_mask_single = ~np.isclose(start_heights_single, end_heights_single, equal_nan=False)
+
+    print(f"Mars single body: detected {np.sum(det_mask_single)}/{len(start_heights_single)}")
+
+    axs[3].vlines(
+        vel_brightest_single_arr[det_mask_single],
+        np.minimum(start_heights_single[det_mask_single], end_heights_single[det_mask_single]),
+        np.maximum(start_heights_single[det_mask_single], end_heights_single[det_mask_single]),
+        colors='black',
+        linewidth=1.2,
+        alpha=0.7,
+        zorder=1
+    )
+
+    sc = axs[3].scatter(
+        vel_brightest_single_arr[det_mask_single],
+        height_brightest_single_arr[det_mask_single],
+        c=brightest_mags_single_arr[det_mask_single],
+        cmap='plasma_r',
+        s=40,
+        edgecolors='black',
+        zorder=2
+    )
+    # axs[3].set_title(f'Mars Single Body ({np.sum(det_mask_single)}/{len(start_heights_single)})', fontsize=15)
+    axs[3].set_title(f'Mars Single Body', fontsize=15) #  ({np.sum(det_mask_single)}/{len(start_heights_single)})
+
+    fig.subplots_adjust(right=0.86)
+
+    cbar_ax = fig.add_axes([0.88, 0.15, 0.02, 0.7])
+    cbar = fig.colorbar(sc, cax=cbar_ax)
+    cbar.set_label('Abs.Mag [-]', fontsize=14)
+    cbar.ax.invert_yaxis()
+    cbar.ax.yaxis.set_tick_params(pad=14, labelsize=14)
+
+    for ax in axs:
+        ax.set_xlabel('$V_i$ [km/s]', fontsize=14)
+        ax.tick_params(axis='both', which='major', labelsize=14)
+        ax.grid()
+
+    axs[0].set_ylabel('Height [km]', fontsize=14)
+
+    plt.savefig(output_dir_show + os.sep + "Vinf_Height_AbsMag_separate_detected.png")
     plt.close()
 
     ############## 3 plots showing the distribution Velocity height with brightness with a shared colorbar ##############
@@ -2658,12 +3247,12 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
     for name in all_names:
         (
-            abs_mags_obs, heights_obs,
-            abs_mags_single_mars, heights_single_mars,
-            abs_mags_mars, heights_mars,
-            abs_mags_mars_dyn_press, heights_mars_dyn_press,
-            abs_mags_mars_energy, heights_mars_energy,
-            const_obs, const_single_mars, const_mars,
+            abs_mags_obs, heights_obs, len_obs,
+            abs_mags_single_mars, heights_single_mars, len_single_mars,
+            abs_mags_mars, heights_mars, len_mars,
+            abs_mags_mars_dyn_press, heights_mars_dyn_press, len_mars_dyn_press,
+            abs_mags_mars_energy, heights_mars_energy, len_mars_energy,
+            const_obs, const_single_mars, const_mars, 
             const_mars_dyn_press, const_mars_energy
         ) = file_bright_dict[name]
 
@@ -2840,12 +3429,12 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
     for name in all_names:
         (
-            abs_mags_obs, heights_obs,
-            abs_mags_single_mars, heights_single_mars,
-            abs_mags_mars, heights_mars,
-            abs_mags_mars_dyn_press, heights_mars_dyn_press,
-            abs_mags_mars_energy, heights_mars_energy,
-            const_obs, const_single_mars, const_mars,
+            abs_mags_obs, heights_obs, len_obs,
+            abs_mags_single_mars, heights_single_mars, len_single_mars,
+            abs_mags_mars, heights_mars, len_mars,
+            abs_mags_mars_dyn_press, heights_mars_dyn_press, len_mars_dyn_press,
+            abs_mags_mars_energy, heights_mars_energy, len_mars_energy,
+            const_obs, const_single_mars, const_mars, 
             const_mars_dyn_press, const_mars_energy
         ) = file_bright_dict[name]
 
@@ -3049,11 +3638,12 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         return arr.astype(float, copy=False).ravel()
 
 
-    def _flatten_pairs(mag_list, h_list):
-        mags_all, hs_all = [], []
-        for m, h in zip(mag_list, h_list):
+    def _flatten_pairs(mag_list, h_list, l_list):
+        mags_all, hs_all, ls_all = [], [], []
+        for m, h, l in zip(mag_list, h_list, l_list):
             m = _to_1d_float(m)
             h = _to_1d_float(h)
+            l = _to_1d_float(l)
 
             n = min(m.size, h.size)
             if n == 0:
@@ -3061,12 +3651,14 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
             mags_all.append(m[:n])
             hs_all.append(h[:n])
+            ls_all.append(l[:n])
+
 
         if mags_all:
-            return np.concatenate(mags_all).astype(float, copy=False), np.concatenate(hs_all).astype(float, copy=False)
+            return np.concatenate(mags_all).astype(float, copy=False), np.concatenate(hs_all).astype(float, copy=False), np.concatenate(ls_all).astype(float, copy=False)
 
-        return np.empty(0, dtype=float), np.empty(0, dtype=float)
-    
+        return np.empty(0, dtype=float), np.empty(0, dtype=float), np.empty(0, dtype=float)
+
 
     methods = [
         ("Earth", "obs"),
@@ -3075,40 +3667,90 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
     # Storage for each method
     data_dict = {
-        "obs":            {"mag": [], "h": []},
-        "mars":    {"mag": [], "h": []},
+        "obs":            {"mag": [], "h": [], "l": []},
+        "mars":    {"mag": [], "h": [], "l": []},
     }
 
     for name in all_names:
-        (abs_mags_obs, heights_obs,
-        abs_mags_single_mars, heights_single_mars,
-        abs_mags_mars, heights_mars,
-        abs_mags_mars_dyn_press, heights_mars_dyn_press,
-        abs_mags_mars_energy, heights_mars_energy,
+        (abs_mags_obs, heights_obs, length_obs,
+        abs_mags_single_mars, heights_single_mars, length_single_mars,
+        abs_mags_mars, heights_mars, lenght_mars,
+        abs_mags_mars_dyn_press, heights_mars_dyn_press, lenght_mars_dyn_press,
+        abs_mags_mars_energy, heights_mars_energy, lenght_mars_energy,
         const_obs, const_single_mars, const_mars, const_mars_dyn_press, const_mars_energy) = file_bright_dict[name]
 
         # Earth (deep-flatten + align)
         m_obs = _to_1d_float(abs_mags_obs)
         h_obs = _to_1d_float(heights_obs)
-        n = min(m_obs.size, h_obs.size)
+        l_obs = _to_1d_float(length_obs)
+        n = min(m_obs.size, h_obs.size, l_obs.size)
         data_dict["obs"]["mag"].append(m_obs[:n])
         data_dict["obs"]["h"].append(h_obs[:n])
-
+        data_dict["obs"]["l"].append(l_obs[:n])
+        first_mag = abs_mags_obs[0]
+        last_mag = abs_mags_obs[-1]
+        if first_mag > last_mag:
+            last_mag = first_mag
+        else:
+            first_mag = last_mag 
         # Mars (deep-flatten each component, then concatenate)
-        m1 = _to_1d_float(abs_mags_mars)
-        m2 = _to_1d_float(abs_mags_mars_dyn_press)
-        m3 = _to_1d_float(abs_mags_mars_energy)
 
-        h1 = _to_1d_float(heights_mars)
-        h2 = _to_1d_float(heights_mars_dyn_press)
-        h3 = _to_1d_float(heights_mars_energy)
+        # mag_aterosheight_mars = abs_mags_mars[np.argmin(np.abs(heights_mars - const_mars.erosion_height_start/1000))]
+        # len_to_use_mars = lenght_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
+        # abs_mags_to_use_mars = abs_mags_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
+        # heights_to_use_mars = heights_mars[(heights_mars < const_mars.erosion_height_start/1000) & (abs_mags_mars < mag_aterosheight_mars)]
+        peak_height_abs_mag_mars = heights_mars[np.argmin(abs_mags_mars)]
+        index_to_use_mars = ((heights_mars > peak_height_abs_mag_mars) & (abs_mags_mars < first_mag)) | ((heights_mars < peak_height_abs_mag_mars) & (abs_mags_mars < last_mag))
+        len_to_use_mars = lenght_mars[index_to_use_mars]
+        abs_mags_to_use_mars = abs_mags_mars[index_to_use_mars]
+        heights_to_use_mars = heights_mars[index_to_use_mars]
+        m1 = _to_1d_float(abs_mags_to_use_mars)
+        # mag_aterosheight_mars_dyn_press = abs_mags_mars_dyn_press[np.argmin(np.abs(heights_mars_dyn_press - const_mars_dyn_press.erosion_height_start/1000))]
+        # len_to_use_mars_dyn_press = lenght_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
+        # abs_mags_to_use_mars_dyn_press = abs_mags_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
+        # heights_to_use_mars_dyn_press = heights_mars_dyn_press[(heights_mars_dyn_press < const_mars_dyn_press.erosion_height_start/1000) & (abs_mags_mars_dyn_press < mag_aterosheight_mars_dyn_press)]
+        peak_height_abs_mag_mars_dyn_press = heights_mars_dyn_press[np.argmin(abs_mags_mars_dyn_press)]
+        index_to_use_mars_dyn_press = ((heights_mars_dyn_press > peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < first_mag)) | ((heights_mars_dyn_press < peak_height_abs_mag_mars_dyn_press) & (abs_mags_mars_dyn_press < last_mag))
+        len_to_use_mars_dyn_press = lenght_mars_dyn_press[index_to_use_mars_dyn_press]
+        abs_mags_to_use_mars_dyn_press = abs_mags_mars_dyn_press[index_to_use_mars_dyn_press]
+        heights_to_use_mars_dyn_press = heights_mars_dyn_press[index_to_use_mars_dyn_press]
+        m2 = _to_1d_float(abs_mags_to_use_mars_dyn_press)
+        # mag_aterosheight_mars_energy = abs_mags_mars_energy[np.argmin(np.abs(heights_mars_energy - const_mars_energy.erosion_height_start/1000))]
+        # len_to_use_mars_energy = lenght_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
+        # abs_mags_to_use_mars_energy = abs_mags_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
+        # heights_to_use_mars_energy = heights_mars_energy[(heights_mars_energy < const_mars_energy.erosion_height_start/1000) & (abs_mags_mars_energy < mag_aterosheight_mars_energy)]
+        peak_height_abs_mag_mars_energy = heights_mars_energy[np.argmin(abs_mags_mars_energy)]
+        index_to_use_mars_energy = ((heights_mars_energy > peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < first_mag)) | ((heights_mars_energy < peak_height_abs_mag_mars_energy) & (abs_mags_mars_energy < last_mag))
+        len_to_use_mars_energy = lenght_mars_energy[index_to_use_mars_energy]
+        abs_mags_to_use_mars_energy = abs_mags_mars_energy[index_to_use_mars_energy]
+        heights_to_use_mars_energy = heights_mars_energy[index_to_use_mars_energy]
+        m3 = _to_1d_float(abs_mags_to_use_mars_energy)
+
+        h1 = _to_1d_float(heights_to_use_mars)
+        h2 = _to_1d_float(heights_to_use_mars_dyn_press)
+        h3 = _to_1d_float(heights_to_use_mars_energy)
+
+        try:
+            l1 = _to_1d_float(len_to_use_mars-len_to_use_mars[0])
+        except:
+            l1 = _to_1d_float(len_to_use_mars)
+        try:
+            l2 = _to_1d_float(len_to_use_mars_dyn_press-len_to_use_mars_dyn_press[0])
+        except:
+            l2 = _to_1d_float(len_to_use_mars_dyn_press)
+        try:
+            l3 = _to_1d_float(len_to_use_mars_energy-len_to_use_mars_energy[0])
+        except:
+            l3 = _to_1d_float(len_to_use_mars_energy)
 
         mars_mags    = np.concatenate([m1, m2, m3])
         mars_heights = np.concatenate([h1, h2, h3])
+        mars_lengths = np.concatenate([l1, l2, l3])
 
-        n = min(mars_mags.size, mars_heights.size)
+        n = min(mars_mags.size, mars_heights.size, mars_lengths.size)
         data_dict["mars"]["mag"].append(mars_mags[:n])
         data_dict["mars"]["h"].append(mars_heights[:n])
+        data_dict["mars"]["l"].append(mars_lengths[:n])
 
 
     # ---- 3. Compute "most likely" magnitude in each bin: median mag ----
@@ -3118,11 +3760,12 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     count_grid = np.zeros((n_methods, n_hbins), dtype=int)         # how many samples per bin (optional)
 
     for m_idx, (_, key) in enumerate(methods):
-        mags, hs = _flatten_pairs(data_dict[key]["mag"], data_dict[key]["h"])
+        mags, hs, ls = _flatten_pairs(data_dict[key]["mag"], data_dict[key]["h"], data_dict[key]["l"])
 
         mask = np.isfinite(mags) & np.isfinite(hs)
         mags = mags[mask]
         hs   = hs[mask]
+        ls   = ls[mask]
 
         if mags.size == 0:
             continue
@@ -3213,27 +3856,31 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     print("\nPlotting median Abs.Mag vs height for Earth and Mars (all data)...")
         
     # Flatten list-of-arrays into 1D arrays (and keep mag/height paired per event)
-    Earth_mags,  Earth_heights = _flatten_pairs(data_dict["obs"]["mag"],  data_dict["obs"]["h"])
-    Mars_mags,   Mars_heights  = _flatten_pairs(data_dict["mars"]["mag"], data_dict["mars"]["h"])
+    Earth_mags,  Earth_heights, Earth_lengths = _flatten_pairs(data_dict["obs"]["mag"],  data_dict["obs"]["h"], data_dict["obs"]["l"])
+    Mars_mags,   Mars_heights, Mars_lengths  = _flatten_pairs(data_dict["mars"]["mag"], data_dict["mars"]["h"], data_dict["mars"]["l"])
 
     # Mask NaNs just in case
-    mask_e = np.isfinite(Earth_heights) & np.isfinite(Earth_mags)
+    mask_e = np.isfinite(Earth_heights) & np.isfinite(Earth_mags) & np.isfinite(Earth_lengths)
     Earth_heights = Earth_heights[mask_e]
     Earth_mags    = Earth_mags[mask_e]
+    Earth_lengths = Earth_lengths[mask_e]
     # delete anything that is above 8
-    mask_e = Earth_mags <= 5
+    # mask_e = Earth_mags <= 5
     Earth_heights = Earth_heights[mask_e]
     Earth_mags    = Earth_mags[mask_e]
+    Earth_lengths = Earth_lengths[mask_e]
 
-    mask_m = np.isfinite(Mars_heights) & np.isfinite(Mars_mags)
+    mask_m = np.isfinite(Mars_heights) & np.isfinite(Mars_mags) & np.isfinite(Mars_lengths)
     Mars_heights = Mars_heights[mask_m]
     Mars_mags    = Mars_mags[mask_m]
-    mask_m = Mars_mags <= 5
+    Mars_lengths = Mars_lengths[mask_m]
+    # mask_m = Mars_mags <= 5
     Mars_heights = Mars_heights[mask_m]
     Mars_mags    = Mars_mags[mask_m]
+    Mars_lengths = Mars_lengths[mask_m]
 
     # --- Bin by height and compute median + 1σ/2σ bands in each bin for Earth and Mars ---
-    n_h_bins = 50
+    n_h_bins = 60
 
     h_min = 60
     h_max = max(Earth_heights.max(), Mars_heights.max())
@@ -3334,6 +3981,10 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     
     # I need a cover letter where I express strong interest for this position mention that I am an Aerospce engineer and I have a Master where for my thesis  work extesivelly with MASTER and DRAMA and even the mre preise rentry mel SCARAB. I now work on this researc funded by  both NASA and ESA to chearterize the reis of impcat wit meteroid in order to better. mention that I work extesivlly with Python thought my studies andesearch.
     
+    # take the value of the x axis limits and put them to 14
+    x_min, x_max = ax.get_xlim()
+    ax.set_xlim(x_min, 6)
+
     # Magnitude: brighter = more negative; invert so brighter appears to the right
     ax.invert_xaxis()
 
@@ -3366,11 +4017,11 @@ if __name__ == "__main__":
                             # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform\Fastsporad_CAMOnew+EMCCD_unif_density\fastsporad_EMCCD+CAMO_CAP"
                             # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform"
                             # "C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\CAMO-EMCCDonly"
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Before-Backup\Sporadics_rho-uniform_NO-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Test-2",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Test-15April2026",
         help="Output directory, if not given is the same as input_dir.")
     
     arg_parser.add_argument('--name', metavar='NAME', type=str,

@@ -1839,9 +1839,6 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                     break
             
             if backup_file is not None:
-                # change the weight to the equivalet weights
-                w_eq = np.ones(samples.shape[0], dtype=float)
-                w_eq /= w_eq.sum()
 
                 x_valid_rho = []
                 x_valid_eta = []
@@ -1897,6 +1894,14 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                     
                     # w_eq = np.ones(samples_eq.shape[0], dtype=float)
                     # w_eq /= w_eq.sum()
+
+                if flag_toreweight:
+                    # change the weight to the equivalet weights
+                    w_eq = np.ones(samples.shape[0], dtype=float)
+                    w_eq /= w_eq.sum()
+                else:
+                    w_eq = w.copy()
+
                 x_valid_rho = np.array(x_valid_rho)
                 x_valid_eta = np.array(x_valid_eta)
                 x_valid_sigma = np.array(x_valid_sigma)
@@ -2342,18 +2347,40 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     kinetic_energy_all = np.concatenate(kinetic_energy_all)
     kc_all = np.concatenate(kc_all)
     
-    try:
-        energy_per_cs_before_erosion_backup = np.array(energy_per_cs_before_erosion_backup)/1e6
-        energy_per_mass_before_erosion_backup = np.array(energy_per_mass_before_erosion_backup)/1e6
-        erosion_beg_vel_backup = np.array(erosion_beg_vel_backup)/1000
-        erosion_beg_mass_backup = np.array(erosion_beg_mass_backup)
-        erosion_beg_dyn_press_backup = np.array(erosion_beg_dyn_press_backup)/1000
-        mass_at_erosion_change_backup = np.array(mass_at_erosion_change_backup)
-        dyn_press_at_erosion_change_backup = np.array(dyn_press_at_erosion_change_backup)/1000
-        main_mass_exhaustion_ht_backup = np.array(main_mass_exhaustion_ht_backup) /1000   # convert to km
-        main_bottom_ht_backup = np.array(main_bottom_ht_backup) /1000   # convert to km
-    except:
-        print("No backup data available.")
+    def none_delete_and_replace_with_random(erosion_beg_vel_backup, variable_name):
+        # count the number of None in erosion_beg_vel_backup
+        none_count = sum(1 for v in erosion_beg_vel_backup if v is None)
+        print(f"Number of None values in {variable_name}: {none_count} out of {len(erosion_beg_vel_backup)}")
+        # if so replace them with a randome value between the min and max of the non-None values
+        if none_count > 0:
+            non_none_values = [v for v in erosion_beg_vel_backup if v is not None]
+            if non_none_values:  # Check if there are any non-None values to avoid errors
+                min_val = min(non_none_values)
+                max_val = max(non_none_values)
+                for i in range(len(erosion_beg_vel_backup)):           # Replace None with a random value between min_val and max_val
+                    if erosion_beg_vel_backup[i] is None:
+                        erosion_beg_vel_backup[i] = np.random.uniform(min_val, max_val)
+        return erosion_beg_vel_backup
+
+    # try:
+    energy_per_cs_before_erosion_backup = np.array(energy_per_cs_before_erosion_backup)/1e6
+    energy_per_mass_before_erosion_backup = np.array(energy_per_mass_before_erosion_backup)/1e6
+    erosion_beg_vel_backup = none_delete_and_replace_with_random(erosion_beg_vel_backup, 'erosion_beg_vel_backup')
+    erosion_beg_vel_backup = np.array(erosion_beg_vel_backup)/1000
+    erosion_beg_mass_backup = none_delete_and_replace_with_random(erosion_beg_mass_backup, 'erosion_beg_mass_backup')
+    erosion_beg_mass_backup = np.array(erosion_beg_mass_backup)
+    erosion_beg_dyn_press_backup = none_delete_and_replace_with_random(erosion_beg_dyn_press_backup, 'erosion_beg_dyn_press_backup')
+    erosion_beg_dyn_press_backup = np.array(erosion_beg_dyn_press_backup)/1000
+    mass_at_erosion_change_backup = none_delete_and_replace_with_random(mass_at_erosion_change_backup, 'mass_at_erosion_change_backup')
+    mass_at_erosion_change_backup = np.array(mass_at_erosion_change_backup)
+    dyn_press_at_erosion_change_backup = none_delete_and_replace_with_random(dyn_press_at_erosion_change_backup, 'dyn_press_at_erosion_change_backup')
+    dyn_press_at_erosion_change_backup = np.array(dyn_press_at_erosion_change_backup)/1000
+    main_mass_exhaustion_ht_backup = none_delete_and_replace_with_random(main_mass_exhaustion_ht_backup, 'main_mass_exhaustion_ht_backup')
+    main_mass_exhaustion_ht_backup = np.array(main_mass_exhaustion_ht_backup) /1000   # convert to km
+    main_bottom_ht_backup = none_delete_and_replace_with_random(main_bottom_ht_backup, 'main_bottom_ht_backup')
+    main_bottom_ht_backup = np.array(main_bottom_ht_backup) /1000   # convert to km
+    # except:
+    #     print("No backup data available.")
 
     # erosion_beg_mass_backup = erosion_beg_mass_backup
     # print('energy_per_cs_before_erosion_backup',energy_per_cs_before_erosion_backup)
@@ -5264,9 +5291,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         bbox_inches='tight', dpi=300)
             plt.close()
         
-        plot_color_2diffMass(rho_all, rho_change_all, mass_percent_2frag, w, r'$\rho$ [kg/m$^3$]', r"$\rho_{2}$ [kg/m$^3$]", 'Mass percent left after 2nd fragmentation [%]',output_dir_show, shower_name+'_rho', initial_var_small=rho_meteor_begin_median, change_var_small=rho_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
-        plot_color_2diffMass(sigma_all, sigma_change_all, mass_percent_2frag, w, r'$\sigma$ [kg/MJ]', r"$\sigma_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_sigma', initial_var_small=sigma_meteor_begin_median, change_var_small=sigma_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
-        plot_color_2diffMass(erosion_coeff_all, erosion_coeff_change_all, mass_percent_2frag, w, r'log$_{10}$ $\eta$ [kg/MJ]', r"log$_{10}$ $\eta_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_erosion_coeff', initial_var_small=np.log10(eta_meteor_begin_median), change_var_small=np.log10(eta_meteor_change_median), mass_percent_2frag_small=mass_left_second_erosion_perc)
+        plot_color_2diffMass(rho_all, rho_change_all, mass_percent_2frag, w, r'$\rho$ [kg/m$^3$]', r"$\rho_{2}$ [kg/m$^3$]", 'Mass percent left after 2nd fragmentation [%]',output_dir_show, shower_name+'_rho')#, initial_var_small=rho_meteor_begin_median, change_var_small=rho_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
+        plot_color_2diffMass(sigma_all, sigma_change_all, mass_percent_2frag, w, r'$\sigma$ [kg/MJ]', r"$\sigma_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_sigma')#,, initial_var_small=sigma_meteor_begin_median, change_var_small=sigma_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
+        plot_color_2diffMass(erosion_coeff_all, erosion_coeff_change_all, mass_percent_2frag, w, r'log$_{10}$ $\eta$ [kg/MJ]', r"log$_{10}$ $\eta_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_erosion_coeff')#,, initial_var_small=np.log10(eta_meteor_begin_median), change_var_small=np.log10(eta_meteor_change_median), mass_percent_2frag_small=mass_left_second_erosion_perc)
     
     except Exception as e:
         print("Error in plotting 2D color plots for the 2 fragmentation parameters:", e)
@@ -8152,7 +8179,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2.1)Iron Letter\irons-rho_eta100-noPoros\Best_iron-fit", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup\Stony\Fast", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

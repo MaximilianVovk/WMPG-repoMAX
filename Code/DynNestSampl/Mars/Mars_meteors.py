@@ -1457,7 +1457,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
                 # plot y axis the unique_heights_massvar vs Tot_energy_arr
                 # fig, ax = plt.subplots(1,2, figsize=(12, 6))
-                fig, ax = plt.subplots(figsize=(10, 6))
+                fig, ax = plt.subplots(figsize=(6, 6))
                 station_colors = {}
                 cmap = plt.get_cmap("tab10")
                 # ABS MAGNITUDE
@@ -1478,6 +1478,9 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
                         best_guess_obj_plot.time_arr, best_guess_obj_plot.time_arr, best_guess_obj_plot.luminosity_arr,
                         best_guess_obj_plot.const.dt, obs_data.fps_lum, obs_data.P_0m
                     )
+
+                # real_flag_total_rho = flag_total_rho
+                # flag_total_rho= False
 
                 # make a first subplot with the lightcurve against height
                 ax.plot(best_guess_obj_plot.abs_magnitude,best_guess_obj_plot.leading_frag_height_arr/1000, color='k', label='Best Fit Simulation')
@@ -1508,16 +1511,16 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
                         best_guess_obj_plot_mars_energy.const.dt, obs_data.fps_lum, obs_data.P_0m
                     )
                 # make a second subplot with the lightcurve against height for mars
-                ax.plot(best_guess_obj_plot_mars.abs_magnitude,best_guess_obj_plot_mars.leading_frag_height_arr/1000, color='pink', label='Best Fit Simulation (Mars same $\\rho$)')
-                ax.axhline(y=best_guess_obj_plot_mars.const.erosion_height_start/1000, color='pink', linestyle='--')
-                ax.plot(best_guess_obj_plot_mars_dyn_press.abs_magnitude,best_guess_obj_plot_mars_dyn_press.leading_frag_height_arr/1000, color='plum', label='Best Fit Simulation (Mars same $p_{dyn}$)')
-                ax.axhline(y=heightsame_dynpress_mars/1000, color='plum', linestyle='--')
-                ax.plot(best_guess_obj_plot_mars_energy.abs_magnitude,best_guess_obj_plot_mars_energy.leading_frag_height_arr/1000, color='thistle', label='Best Fit Simulation (Mars same $E_{e}$)')
-                ax.axhline(y=height_energy_erosion_start_mars/1000, color='thistle', linestyle='--')
+                ax.plot(best_guess_obj_plot_mars.abs_magnitude,best_guess_obj_plot_mars.leading_frag_height_arr/1000, color='tab:purple', label='Best Fit Simulation (Mars same $\\rho$)')
+                ax.axhline(y=best_guess_obj_plot_mars.const.erosion_height_start/1000, color='tab:purple', linestyle='--')
+                ax.plot(best_guess_obj_plot_mars_dyn_press.abs_magnitude,best_guess_obj_plot_mars_dyn_press.leading_frag_height_arr/1000, color='tab:brown', label='Best Fit Simulation (Mars same $p_{dyn}$)')
+                ax.axhline(y=heightsame_dynpress_mars/1000, color='tab:brown', linestyle='--')
+                ax.plot(best_guess_obj_plot_mars_energy.abs_magnitude,best_guess_obj_plot_mars_energy.leading_frag_height_arr/1000, color='tab:pink', label='Best Fit Simulation (Mars same $E_{e}$)')
+                ax.axhline(y=height_energy_erosion_start_mars/1000, color='tab:pink', linestyle='--')
                 if flag_total_rho:
-                    ax.axhline(y=best_guess_obj_plot_mars.const.erosion_height_change/1000, color='pink', linestyle='-.')
-                    ax.axhline(y=heightsame_dynpress_change_mars/1000, color='plum', linestyle='-.')
-                    ax.axhline(y=height_energy_erosion_change_mars/1000, color='thistle', linestyle='-.')
+                    ax.axhline(y=best_guess_obj_plot_mars.const.erosion_height_change/1000, color='tab:purple', linestyle='-.')
+                    ax.axhline(y=heightsame_dynpress_change_mars/1000, color='tab:brown', linestyle='-.')
+                    ax.axhline(y=height_energy_erosion_change_mars/1000, color='tab:pink', linestyle='-.')
 
 
 
@@ -1528,7 +1531,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
                             best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.time_arr, best_guess_obj_plot_single_mars.luminosity_arr,
                             best_guess_obj_plot_single_mars.const.dt, obs_data.fps_lum, obs_data.P_0m   
                         )
-                    ax.plot(best_guess_obj_plot_single_mars.abs_magnitude,best_guess_obj_plot_single_mars.leading_frag_height_arr/1000, color='peru', linestyle=':', label='Single Body Ablation (Mars)')
+                    ax.plot(best_guess_obj_plot_single_mars.abs_magnitude,best_guess_obj_plot_single_mars.leading_frag_height_arr/1000, color='blue', linestyle=':', label='Single Body Ablation (Mars)')
                 
                 # ax[0].invert_xaxis()
                 # ax[1].legend(fontsize=10)
@@ -1554,12 +1557,18 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
                 # put legend outside the plot
                 # ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
                 # put it outside to the top right
-                ax.legend(fontsize=10, loc='upper left', bbox_to_anchor=(1.05, 1))
+                # ax.legend(fontsize=10, loc='upper left', bbox_to_anchor=(1.05, 1))
+                # put thelegend inside i the lower right corner
+                ax.legend(fontsize=8, loc='lower right')
                 # ax[1].grid()
                 # plt.suptitle(f'Lightcurve Comparison for {base_name}', fontsize=18)
                 plt.tight_layout()
                 plt.savefig(output_dir + os.sep + base_name + "_Lightcurve_Earth_vs_Mars.png")
                 plt.close()
+
+
+                # flag_total_rho= real_flag_total_rho
+
 
                 ### save the results
 
@@ -1680,6 +1689,10 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
     ############ PLOTTING SUMMARY ##############
     print("\nPlotting Vinf distribution...")
+
+    # create a panda dataframe with the Vinf_val and tj for each meteor and a column for the name of the meteor
+    df_orbit = pd.DataFrame(columns=['meteor', 'tj', 'Q_val', 'q_val', 'a_val', 'e_val', 'inclin_val', 'Vinf_val_earth', 'Vinf_val_mars', 'Vinf_val_mars_min', 'Vinf_val_mars_max'])
+
     # plot the distribution of speed and Vg_val and Vg_val_mars in a single plot one in blue for earth and one in red for mars 
     fig, axs = plt.subplots(1, 1, figsize=(8, 6))
     for name in all_names:
@@ -1695,6 +1708,22 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # # add error bars
         # axs.errorbar(Vg_val, tj, xerr=0, yerr=[[tj - tj_lo], [tj_hi - tj]], fmt='o', color='blue', alpha=0.5)
         # axs.errorbar(Vg_val_mars, tj, xerr=0, yerr=[[tj - tj_lo], [tj_hi - tj]], fmt='o', color='red', alpha=0.5)
+        
+                
+        df_orbit.loc[len(df_orbit)] = {
+            'meteor': name,
+            'tj': tj,
+            'Q_val': Q_val,
+            'q_val': q_val,
+            'a_val': a_val,
+            'e_val': e_val,
+            'inclin_val': inclin_val,
+            'Vinf_val_earth': Vinf_val,
+            'Vinf_val_mars': Vinf_val_mars,
+            'Vinf_val_mars_min': Vinf_val_mars_min_max[1],
+            'Vinf_val_mars_max': Vinf_val_mars_min_max[0]
+        }
+
     # add the labels and legend for a red and blue points
     axs.scatter([], [], color='blue', label='Earth')
     # axs.scatter([], [], color='red', label='Mars 2D')
@@ -1740,6 +1769,12 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         "mars_dyn_press": {"mag": [], "h": [], "l": [], "heros": [], "obs_mag": [], "obs_h": [], "obs_l": [], 'tot_l': [], 'peak_mag': [], "h_start": [], "h_end": []},
         "mars_energy":    {"mag": [], "h": [], "l": [], "heros": [], "obs_mag": [], "obs_h": [], "obs_l": [], 'tot_l': [], 'peak_mag': [], "h_start": [], "h_end": []},
     }
+
+    df_detections = pd.DataFrame(columns=['meteor', 'h_erosion_height_start', 'h_erosion_height_change', 'earth_h_start', 'earth_h_end', 'earth_h_peak', 'earth_peak_mag', 'earth_trail_lenght', 
+                                          'mars_rho_h_erosion_height_start', 'mars_rho_h_erosion_height_change', 'mars_rho_h_start', 'mars_rho_h_end', 'mars_rho_h_peak', 'mars_rho_peak_mag', 'mars_rho_trail_lenght', 
+                                          'mars_dyn_press_h_erosion_height_start', 'mars_dyn_press_h_erosion_height_change', 'mars_dyn_press_h_start', 'mars_dyn_press_h_end', 'mars_dyn_press_h_peak', 'mars_dyn_press_peak_mag', 'mars_dyn_press_trail_lenght', 
+                                          'mars_energy_h_erosion_height_start', 'mars_energy_h_erosion_height_change', 'mars_energy_h_start', 'mars_energy_h_end', 'mars_energy_h_peak', 'mars_energy_peak_mag', 'mars_energy_trail_lenght',
+                                          'mars_single_h_start', 'mars_single_h_end', 'mars_single_h_peak', 'mars_single_peak_mag', 'mars_single_trail_lenght'])
 
     # Fill from your per-meteor dictionary
     for name in all_names:
@@ -1805,11 +1840,18 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
             data_dict["single_mars"]['tot_l'].append(len_to_use[-2]-len_to_use[0])
             data_dict["single_mars"]["h_start"].append(heights_to_use[0])
             data_dict["single_mars"]["h_end"].append(heights_to_use[-1])
+            trail_len_single_mars = len_to_use[-2]-len_to_use[0]
+            h_start_single_mars = heights_to_use[0]
+            h_end_single_mars = heights_to_use[-1]
         except:
             data_dict["single_mars"]["obs_l"].append(len_to_use)
             data_dict["single_mars"]['tot_l'].append(0)
             data_dict["single_mars"]["h_start"].append(0)
             data_dict["single_mars"]["h_end"].append(0)
+            trail_len_single_mars = 0
+            h_start_single_mars = 0
+            h_end_single_mars = 0
+
 
 
         data_dict["mars_rho"]["mag"].append(abs_mags_mars)
@@ -1835,11 +1877,17 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
             data_dict["mars_rho"]['tot_l'].append(len_to_use_mars[-2]-len_to_use_mars[0])
             data_dict["mars_rho"]["h_start"].append(heights_to_use_mars[0])
             data_dict["mars_rho"]["h_end"].append(heights_to_use_mars[-1])
+            trail_len_rho_mars = len_to_use_mars[-2]-len_to_use_mars[0]
+            h_start_rho_mars = heights_to_use_mars[0]
+            h_end_rho_mars = heights_to_use_mars[-1]
         except:
             data_dict["mars_rho"]["obs_l"].append(len_to_use_mars)
             data_dict["mars_rho"]['tot_l'].append(0)
             data_dict["mars_rho"]["h_start"].append(0)
             data_dict["mars_rho"]["h_end"].append(0)
+            trail_len_rho_mars = 0
+            h_start_rho_mars = 0
+            h_end_rho_mars = 0
 
         data_dict["mars_dyn_press"]["mag"].append(abs_mags_mars_dyn_press)
         data_dict["mars_dyn_press"]["h"].append(heights_mars_dyn_press)
@@ -1863,11 +1911,17 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
             data_dict["mars_dyn_press"]['tot_l'].append(len_to_use_mars_dyn_press[-2]-len_to_use_mars_dyn_press[0])
             data_dict["mars_dyn_press"]["h_start"].append(heights_to_use_mars_dyn_press[0])
             data_dict["mars_dyn_press"]["h_end"].append(heights_to_use_mars_dyn_press[-1])
+            trail_len_mars_dyn_press = len_to_use_mars_dyn_press[-2]-len_to_use_mars_dyn_press[0]
+            h_start_mars_dyn_press = heights_to_use_mars_dyn_press[0]
+            h_end_mars_dyn_press = heights_to_use_mars_dyn_press[-1]
         except:
             data_dict["mars_dyn_press"]["obs_l"].append(len_to_use_mars_dyn_press)
             data_dict["mars_dyn_press"]['tot_l'].append(0)
             data_dict["mars_dyn_press"]["h_start"].append(0)
             data_dict["mars_dyn_press"]["h_end"].append(0)
+            trail_len_mars_dyn_press = 0
+            h_start_mars_dyn_press = 0
+            h_end_mars_dyn_press = 0
 
 
         data_dict["mars_energy"]["mag"].append(abs_mags_mars_energy)
@@ -1892,11 +1946,65 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
             data_dict["mars_energy"]['tot_l'].append(len_to_use_mars_energy[-2]-len_to_use_mars_energy[0])
             data_dict["mars_energy"]["h_start"].append(heights_to_use_mars_energy[0])
             data_dict["mars_energy"]["h_end"].append(heights_to_use_mars_energy[-1])
+            trail_len_mars_energy = len_to_use_mars_energy[-2]-len_to_use_mars_energy[0]
+            h_start_mars_energy = heights_to_use_mars_energy[0]
+            h_end_mars_energy = heights_to_use_mars_energy[-1]
         except:
             data_dict["mars_energy"]["obs_l"].append(len_to_use_mars_energy)
             data_dict["mars_energy"]['tot_l'].append(0)
             data_dict["mars_energy"]["h_start"].append(0)
             data_dict["mars_energy"]["h_end"].append(0)
+            trail_len_mars_energy = 0
+            h_start_mars_energy = 0
+            h_end_mars_energy = 0
+
+        df_detections.loc[len(df_detections)] = {
+            'meteor': name,
+
+            # Earth / observed
+            'h_erosion_height_start': const_obs.erosion_height_start / 1000,
+            'h_erosion_height_change': const_obs.erosion_height_change / 1000,
+            'earth_h_start': heights_obs[0],
+            'earth_h_end': heights_obs[-1],
+            'earth_h_peak': heights_obs[np.argmin(abs_mags_obs)],
+            'earth_peak_mag': np.min(abs_mags_obs),
+            'earth_trail_lenght': lenght_obs[-1] - lenght_obs[0],
+
+            # Mars rho trigger
+            'mars_rho_h_erosion_height_start': const_mars.erosion_height_start / 1000,
+            'mars_rho_h_erosion_height_change': const_mars.erosion_height_change / 1000,
+            'mars_rho_h_start': h_start_rho_mars,
+            'mars_rho_h_end': h_end_rho_mars,
+            'mars_rho_h_peak': heights_to_use_mars[np.argmin(abs_mags_to_use_mars)],
+            'mars_rho_peak_mag': np.min(abs_mags_mars),
+            'mars_rho_trail_lenght': trail_len_rho_mars,
+
+            # Mars dynamic-pressure trigger
+            'mars_dyn_press_h_erosion_height_start': const_mars_dyn_press.erosion_height_start / 1000,
+            'mars_dyn_press_h_erosion_height_change': const_mars_dyn_press.erosion_height_change / 1000,
+            'mars_dyn_press_h_start': h_start_mars_dyn_press,
+            'mars_dyn_press_h_end': h_end_mars_dyn_press,
+            'mars_dyn_press_h_peak': heights_to_use_mars_dyn_press[np.argmin(abs_mags_to_use_mars_dyn_press)],
+            'mars_dyn_press_peak_mag': np.min(abs_mags_mars_dyn_press),
+            'mars_dyn_press_trail_lenght': trail_len_mars_dyn_press,
+
+            # Mars energy trigger
+            'mars_energy_h_erosion_height_start': const_mars_energy.erosion_height_start / 1000,
+            'mars_energy_h_erosion_height_change': const_mars_energy.erosion_height_change / 1000,
+            'mars_energy_h_start': h_start_mars_energy,
+            'mars_energy_h_end': h_end_mars_energy,
+            'mars_energy_h_peak': heights_to_use_mars_energy[np.argmin(abs_mags_to_use_mars_energy)],
+            'mars_energy_peak_mag': np.min(abs_mags_mars_energy),
+            'mars_energy_trail_lenght': trail_len_mars_energy,
+
+            # Mars single body
+            'mars_single_h_start': h_start_single_mars,
+            'mars_single_h_end': h_end_single_mars,
+            'mars_single_h_peak': heights_to_use[np.argmin(abs_mags_to_use)],
+            'mars_single_peak_mag': np.min(abs_mags_single_mars),
+            'mars_single_trail_lenght': trail_len_single_mars,
+
+        }
 
         # # # check if the cuts are corrects plot the abs_mags_obs against the heights_obs and put a vertical line at the erosion_height_start/1000 and check if the points that are kept are the ones that are below the line and have a smaller magnitude than the one at the line
         # plt.figure()
@@ -1916,6 +2024,17 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         # plt.show()
 
 
+    df_summary = pd.merge(
+        df_orbit,
+        df_detections,
+        on='meteor',
+        how='inner'
+    )
+
+    df_summary.to_csv(
+        output_dir_show + os.sep + "meteor_mars_earth_orbit_detection_summary.csv",
+        index=False
+    )
 
 
     # Concatenate lists into single arrays per method

@@ -2242,7 +2242,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     # print('logL:', dynesty_run_results.logl[sim_num])
     # copy the dynesty_run_results results to a variable avoid overwriting the original one
     dynesty_run_results_new = copy.deepcopy(dynesty_run_results)
-    best_guess_logL = logLikelihoodDynesty(dynesty_run_results_new.samples[sim_num], obs_data, flags_dict, fixed_values, timeout=20, wake_data=wake_data)
+    obs_data_logL = copy.deepcopy(obs_data)
+    best_guess_logL = logLikelihoodDynesty(dynesty_run_results_new.samples[sim_num], obs_data_logL, flags_dict, fixed_values, timeout=20, wake_data=wake_data)
     print('logL:', best_guess_logL, ' dynesty logL:', dynesty_run_results.logl[sim_num])
 
     real_logL = None
@@ -2509,8 +2510,10 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             if var_name == 'noise_wake' and flag_wake:
                 noise_wake_plot = best_guess[i]
                 print(f"Found noise_wake in variables and flag_wake is True, using noise_wake_plot: {noise_wake_plot} for the wake plot")
-
-        plotWakeOverviewOptions(best_guess_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_bestLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, lenMax = 100)
+        try:
+            plotWakeOverviewOptions(best_guess_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_bestLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, lenMax = 100)
+        except Exception as e:
+            print(f"Error plotting wake overview options: {e}")
         # put None to wake_heights in obs_data_NoneWakeHeights
         obs_data_NoneWakeHeights = copy.deepcopy(obs_data)
         obs_data_NoneWakeHeights.wake_heights = None
@@ -2687,8 +2690,11 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         for i, var_name in enumerate(variables):
             if var_name == 'noise_wake' and flag_wake:
                 noise_wake_plot = approx_modes_all[i]
-
-        plotWakeOverviewOptions(approx_mode_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_modeLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red', lenMax = 100)
+        try:
+            plotWakeOverviewOptions(approx_mode_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_modeLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red', lenMax = 100)
+        except Exception as e:
+            print(f"Error plotting wake overview options for mode: {e}")
+        
         approx_mode_obj_plot_NoneWakeHeights = runSimulationDynesty(approx_modes_all, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
         plotWakeOverviewOptions(approx_mode_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mode", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red')
 
@@ -2708,7 +2714,10 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             if var_name == 'noise_wake' and flag_wake:
                 noise_wake_plot = all_samples_mean[i]
 
-        plotWakeOverviewOptions(mean_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_meanLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue', lenMax = 100)
+        try:
+            plotWakeOverviewOptions(mean_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_meanLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue', lenMax = 100)
+        except Exception as e:
+            print(f"Error plotting wake overview options for mean: {e}")    
         mean_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_mean, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
         plotWakeOverviewOptions(mean_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mean", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue')
 
@@ -2728,7 +2737,10 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             if var_name == 'noise_wake' and flag_wake:
                 noise_wake_plot = all_samples_median[i]
 
-        plotWakeOverviewOptions(median_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_medianLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue', lenMax = 100)
+        try:
+            plotWakeOverviewOptions(median_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_medianLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue', lenMax = 100)
+        except Exception as e:
+            print(f"Error plotting wake overview options for median: {e}")
         median_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_median, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
         plotWakeOverviewOptions(median_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_median", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue')
 
@@ -2919,6 +2931,10 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         # if 'noise_mag' take it from obs_data.noise_mag
         if 'noise_lum' in flags_dict.keys():
             truth_values_plot['noise_lum'] = obs_data.noise_lum
+        # if 'noise_wake' take it from obs_data.noise_wake
+        if 'noise_wake' in flags_dict.keys():
+            truth_values_plot['noise_wake'] = obs_data.noise_wake
+
 
         def to_scalar(x):
             if isinstance(x, (list, tuple, np.ndarray)):
@@ -5033,7 +5049,7 @@ class ObservationData:
                     self.fps_lum = 32
                     self.fps_lag = 80
             
-            if self.noise_wake is not np.nan:
+            if self.noise_wake is not np.nan: 
                 # check if in out_folder there is a file that have wake_data_ in their name
                 if not any(f.startswith(f"wake_data") for f in os.listdir(out_folder)):
                     print("Genenerating noisy wake data...")

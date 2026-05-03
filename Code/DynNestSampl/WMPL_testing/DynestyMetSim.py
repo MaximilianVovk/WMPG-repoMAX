@@ -2490,8 +2490,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     #     tau_real = None
 
     # Plot the data with residuals and the best fit
-    plotSimVsObsResiduals(obs_data, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
-    plotObsVsHeight(obs_data, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
+    plotSimVsObsResiduals(obs_data_logL, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
+    plotObsVsHeight(obs_data_logL, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
     # plotObsVsHeight(obs_data, None, output_folder , file_name + "_data_only")
     if flag_wake:
         noise_wake_plot = 1
@@ -2682,8 +2682,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     approx_mode_obj_plot = runSimulationDynesty(approx_modes_all, obs_data, variables, fixed_values, flag_wake=flag_wake)
 
     # Plot the data with residuals and the best fit
-    plotSimVsObsResiduals(obs_data, approx_mode_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mode','red', 'Mode')
-    plotObsVsHeight(obs_data, approx_mode_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_mode_height", color_sim='red', label_sim='Mode')
+    plotSimVsObsResiduals(obs_data_logL, approx_mode_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mode','red', 'Mode')
+    plotObsVsHeight(obs_data_logL, approx_mode_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_mode_height", color_sim='red', label_sim='Mode')
 
     if flag_wake:
         # check for each var_name in flags_dict if there is "log" in the flags_dict
@@ -2705,8 +2705,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     mean_obj_plot = runSimulationDynesty(all_samples_mean, obs_data, variables, fixed_values, flag_wake=flag_wake)
 
     # Plot the data with residuals and the best fit
-    plotSimVsObsResiduals(obs_data, mean_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mean','blue', 'Mean')
-    plotObsVsHeight(obs_data, mean_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_mean_height", color_sim='blue', label_sim='Mean')
+    plotSimVsObsResiduals(obs_data_logL, mean_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_mean','blue', 'Mean')
+    plotObsVsHeight(obs_data_logL, mean_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_mean_height", color_sim='blue', label_sim='Mean')
 
     if flag_wake:
         # check for each var_name in flags_dict if there is "log" in the flags_dict
@@ -2728,8 +2728,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     median_obj_plot = runSimulationDynesty(all_samples_median, obs_data, variables, fixed_values, flag_wake=flag_wake)
 
     # Plot the data with residuals and the best fit
-    plotSimVsObsResiduals(obs_data, median_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_median','cornflowerblue', 'Median')
-    plotObsVsHeight(obs_data, median_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_median_height", color_sim='cornflowerblue', label_sim='Median')
+    plotSimVsObsResiduals(obs_data_logL, median_obj_plot, output_folder +os.sep+ 'fit_plots', file_name+'_median','cornflowerblue', 'Median')
+    plotObsVsHeight(obs_data_logL, median_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_median_height", color_sim='cornflowerblue', label_sim='Median')
 
     if flag_wake:
         # check for each var_name in flags_dict if there is "log" in the flags_dict

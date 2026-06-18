@@ -1600,6 +1600,12 @@ def _plot_bands_obs_best(
     ax_lum.set_xlabel("Luminosity [W]")
     ax_lum.set_ylabel("Height [km]")
     ax_lum.grid(True, linestyle='--', color='lightgray')
+    # get the x and y axis limit values
+    xlim = ax_lum.get_xlim()
+    ylim = ax_lum.get_ylim()
+    # fix the x and y axis limit for the lum
+    ax_lum.set_xlim(xlim)
+    ax_lum.set_ylim(ylim)
 
     # --- ABS MAG ---
     shade(ax_mag, bands_mag["p00015"], bands_mag["p99985"],
@@ -1619,6 +1625,12 @@ def _plot_bands_obs_best(
     ax_mag.set_xlabel("Abs. Magnitude")
     ax_mag.invert_xaxis()
     ax_mag.grid(True, linestyle='--', color='lightgray')
+    # get the x and y axis limit values
+    xlim = ax_mag.get_xlim()
+    ylim = ax_mag.get_ylim()
+    # fix the x and y axis limit for the abs mag
+    ax_mag.set_xlim(xlim)
+    ax_mag.set_ylim(ylim)
 
     # --- VELOCITY (km/s) ---
     shade(ax_vel, bands_vel["p00015"]/1000.0, bands_vel["p99985"]/1000.0,
@@ -1637,6 +1649,12 @@ def _plot_bands_obs_best(
     ax_vel.plot(best_vel/1000.0, heights_km_lag, color=color_best, lw=1.8)
     ax_vel.set_xlabel("Velocity [km/s]")
     ax_vel.grid(True, linestyle='--', color='lightgray')
+    # get the x and y axis limit values
+    xlim = ax_vel.get_xlim()
+    ylim = ax_vel.get_ylim()
+    # fix the x and y axis limit for the velocity
+    ax_vel.set_xlim(xlim)
+    ax_vel.set_ylim(ylim)
 
     # --- LAG (m) ---
     shade(ax_lag, bands_lag["p00015"], bands_lag["p99985"],
@@ -1657,6 +1675,12 @@ def _plot_bands_obs_best(
     best_line, = ax_lag.plot(best_lag, heights_km_lag, color=color_best, lw=1.8, label=label_best)
     ax_lag.set_xlabel("Lag [m]")
     ax_lag.grid(True, linestyle='--', color='lightgray')
+    # get the x and y axis limit values
+    xlim = ax_lag.get_xlim()
+    ylim = ax_lag.get_ylim()
+    # fix the x and y axis limit for the lag
+    ax_lag.set_xlim(xlim)
+    ax_lag.set_ylim(ylim)
 
     # --- Legend with σ labels ---
     proxy_1s = Patch(facecolor='gray', alpha=0.28, label='1σ')
@@ -3567,26 +3591,39 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
 
         bounds = [default_bounds[key] for key in default_bounds]
         flags_dict = {key: default_flags.get(key, []) for key in default_bounds}
+
         # for the one that have log transformation, apply it
         for i, key in enumerate(default_bounds):
             if "log" in flags_dict[key]:
                 bounds[i] = np.log10(bounds[i][0]), np.log10(bounds[i][1])
+
+        def is_nan_safe(x):
+            try:
+                return np.isnan(float(x))
+            except (TypeError, ValueError):
+                return False
+
         # check if any of the values are np.nan and replace them with the object_meteor values
         for i, key in enumerate(default_bounds):
             bounds[i] = list(bounds[i])
             est = get_estimate(key)
-            # now check if the values are np.nan and if the flag key is 'norm' then divide by 10
-            if np.isnan(bounds[i][0]) and est is not None:
+
+            if is_nan_safe(bounds[i][0]) and est is not None:
+                est = float(est)
                 bounds[i][0] = est - 10**int(np.floor(np.log10(abs(est))))
-            if np.isnan(bounds[i][1]) and est is not None and "norm" in flags_dict[key]:
-                bounds[i][1] = est
-            elif np.isnan(bounds[i][1]) and est is not None:
+
+            if is_nan_safe(bounds[i][1]) and est is not None and "norm" in flags_dict[key]:
+                bounds[i][1] = float(est)
+
+            elif is_nan_safe(bounds[i][1]) and est is not None:
+                est = float(est)
                 bounds[i][1] = est + 10**int(np.floor(np.log10(abs(est))))
+
             bounds[i] = tuple(bounds[i])
             
         # checck if stil any bounds are np.nan and raise an error
         for i, key in enumerate(default_bounds):
-            if np.isnan(bounds[i][0]) or np.isnan(bounds[i][1]):
+            if is_nan_safe(bounds[i][0]) or is_nan_safe(bounds[i][1]):
                 raise ValueError(f"The value for {key} is np.nan and it is not in the dictionary")
 
         fixed_values = {
@@ -4326,13 +4363,23 @@ class ObservationData:
                     # create an array with the same length as obs.model_ht and fill it with 15
                     obs.absolute_magnitudes = np.array([15.5]*len(obs.model_ht))
 
+                try:
+                    apparent_magnitudes_test = np.array(meteorAbsMagnitudeToApparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
+                except Exception as e:
+                    apparent_magnitudes_test = np.array(obs.magnitudes)
+                apparent_magnitudes_test = np.asarray(apparent_magnitudes_test, dtype=float)
+                apparent_magnitudes_test = np.where(np.isfinite(apparent_magnitudes_test), apparent_magnitudes_test, 20.0)
+
+                absolute_magnitudes = np.asarray(obs.absolute_magnitudes, dtype=float)
+                absolute_magnitudes = np.where(np.isfinite(absolute_magnitudes), absolute_magnitudes, 20.0)
+                
                 obs_data_camera = {
                     # make an array that is long as len(obs.model_ht) and has only obs.station_id
                     'flag_station': np.array([obs.station_id]*len(obs.model_ht)),
                     'flag_file': np.array([current_file_name]*len(obs.model_ht)),
                     'height': np.array(obs.model_ht), # m
-                    'absolute_magnitudes': np.array(obs.absolute_magnitudes),
-                    'luminosity': np.array(P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))), # const.P_0m)
+                    'absolute_magnitudes': absolute_magnitudes, # mag
+                    'luminosity': np.array(P_0m*(10 ** (absolute_magnitudes/(-2.5)))), # const.P_0m)
                     'time': np.array(obs.time_data), # s
                     'ignore_list': np.array(obs.ignore_list),
                     'velocities': np.array(obs.velocities), # m/s
@@ -4340,7 +4387,7 @@ class ObservationData:
                     'length': np.array(obs.state_vect_dist), # m
                     'time_lag': np.array(obs.time_data), # s
                     'height_lag': np.array(obs.model_ht), # m
-                    'apparent_magnitudes': np.array(meteorAbsMagnitudeToApparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
+                    'apparent_magnitudes': apparent_magnitudes_test#np.array(meteorAbsMagnitudeToApparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
                     }
                 obs_data_camera['velocities'][0] = obs.v_init
                 obs_data_dict.append(obs_data_camera)
@@ -7000,7 +7047,7 @@ class autoSetupDynestyFiles:
             except Exception as e:
                 print(f"Cannot load pickle {fullpath}: {e}")
                 continue
-            
+
             if not hasattr(traj, 'orbit'):
                 print(f"Trajectory data not found in {fullpath}")
                 continue

@@ -126,7 +126,7 @@ fig, ax = plt.subplots(figsize=(8, 6))
 for idx in mass_indices:
     mass_bins, int_counts, m_mean = results[idx]
     # ax.axvline(m_mean, color='r', linestyle='--', linewidth=2, label=r'$\langle m \rangle$', zorder=0)
-    ax.plot(mass_bins, int_counts, marker='o', linestyle='-', label=f'Gamma $s_{{\gamma}}$ = {idx}')
+    ax.plot(mass_bins, int_counts, marker='o', linestyle='-', label=f'Gamma $s_{{\Gamma}}$ = {idx}')
 
 # reset the color cycle for the next plot
 ax.set_prop_cycle(None)

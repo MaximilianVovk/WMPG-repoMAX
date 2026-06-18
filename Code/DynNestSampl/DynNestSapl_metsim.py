@@ -3404,13 +3404,23 @@ class observation_data:
                     # create an array with the same length as obs.model_ht and fill it with 15
                     obs.absolute_magnitudes = np.array([15.5]*len(obs.model_ht))
 
+                try:
+                    apparent_magnitudes_test = np.array(meteor_abs_magnitude_to_apparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
+                except Exception as e:
+                    apparent_magnitudes_test = np.array(obs.magnitudes)
+                apparent_magnitudes_test = np.asarray(apparent_magnitudes_test, dtype=float)
+                apparent_magnitudes_test = np.where(np.isfinite(apparent_magnitudes_test), apparent_magnitudes_test, 20.0)
+
+                absolute_magnitudes = np.asarray(obs.absolute_magnitudes, dtype=float)
+                absolute_magnitudes = np.where(np.isfinite(absolute_magnitudes), absolute_magnitudes, 20.0)
+                
                 obs_data_camera = {
                     # make an array that is long as len(obs.model_ht) and has only obs.station_id
                     'flag_station': np.array([obs.station_id]*len(obs.model_ht)),
                     'flag_file': np.array([current_file_name]*len(obs.model_ht)),
                     'height': np.array(obs.model_ht), # m
-                    'absolute_magnitudes': np.array(obs.absolute_magnitudes),
-                    'luminosity': np.array(P_0m*(10 ** (obs.absolute_magnitudes/(-2.5)))), # const.P_0m)
+                    'absolute_magnitudes': absolute_magnitudes, # mag
+                    'luminosity': np.array(P_0m*(10 ** (absolute_magnitudes/(-2.5)))), # const.P_0m)
                     'time': np.array(obs.time_data), # s
                     'ignore_list': np.array(obs.ignore_list),
                     'velocities': np.array(obs.velocities), # m/s
@@ -3418,7 +3428,7 @@ class observation_data:
                     'length': np.array(obs.state_vect_dist), # m
                     'time_lag': np.array(obs.time_data), # s
                     'height_lag': np.array(obs.model_ht), # m
-                    'apparent_magnitudes': np.array(meteor_abs_magnitude_to_apparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
+                    'apparent_magnitudes': apparent_magnitudes_test#np.array(meteorAbsMagnitudeToApparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
                     }
                 obs_data_camera['velocities'][0] = obs.v_init
                 obs_data_dict.append(obs_data_camera)

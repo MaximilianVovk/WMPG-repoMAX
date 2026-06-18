@@ -3009,15 +3009,15 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # Define your observable names and corresponding data arrays
     observable_names = [
-        "$a$ [AU]", "$e$ [-]", "$i$ [deg]", "$Q$ [AU]", "$q$ [AU]"
+        "$a$ [AU]", "$e$ [-]", "$i$ [deg]", "$Q$ [AU]", "$q$ [AU]", "T$_j$ [-]"
     ]
 
     observable_arrays = [
-        a_val, e_val, inclin_val, Q_val, q_val
+        a_val, e_val, inclin_val, Q_val, q_val, tj
     ]
 
-    # Create figure with 1 row and 5 columns
-    fig, axes = plt.subplots(1, 5, figsize=(15, 3))
+    # Create figure with 1 row and 6 columns
+    fig, axes = plt.subplots(1, 6, figsize=(18, 3))
     axes = axes.flatten()  # flatten to easily index 0-9
 
     for i, (name, obs) in enumerate(zip(observable_names, observable_arrays)):
@@ -3351,6 +3351,27 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 print('Creating Velocity vs Begin Height scatter plot with stream...')
                 plt.figure(figsize=(10, 6))
                 df_EMCCD_spor = df_EMCCD[df_EMCCD['shw'] == '...']
+                # mask the noisy points from the df_EMCCD_spor filter 65 and 85 height in H_beg at vel 0 km/s, then for 10 km/s filter 60 and 90, for 20 km/s filter 55 and 95, for 30 km/s filter 50 and 100, for 40 km/s filter 45 and 105, for 50 km/s filter 40 and 110, for 60 km/s filter 35 and 115, for 70 km/s filter 30 and 120, for 80 km/s filter 25 and 125
+                curve_v = np.array([ 0, 10, 20, 30, 40, 50, 60, 70, 75], dtype=float)
+                curve_h_low = np.array([70, 75, 80, 83, 88, 90, 92, 94, 96], dtype=float)
+                curve_h_high = np.array([80, 95, 110, 113, 115, 120, 125, 130, 132], dtype=float)
+
+                # Generate a smooth-ish line for plotting (linear interpolation is fine here)
+                v_dense = np.linspace(curve_v.min(), curve_v.max(), 200)
+                h_dense_low = np.interp(v_dense, curve_v, curve_h_low)  # or curve_h_high, depending on which you want to plot
+                h_dense_high = np.interp(v_dense, curve_v, curve_h_high)
+
+                # For each meteor, compute the threshold height at its velocity
+                #    (np.interp returns NaN-like behaviour via left/right if we set them)
+                h_thr_low = np.interp(df_EMCCD_spor['vel'].values, curve_v, curve_h_low,
+                                left=np.nan, right=np.nan)
+                h_thr_high = np.interp(df_EMCCD_spor['vel'].values, curve_v, curve_h_high,
+                                left=np.nan, right=np.nan)
+
+                # get only the values below the high curve and above the low curve from the df_EMCCD_spor
+                mask = (df_EMCCD_spor['H_beg'].values > h_thr_low) & (df_EMCCD_spor['H_beg'].values < h_thr_high)
+                df_EMCCD_spor = df_EMCCD_spor[mask]
+
                 # spor_vgeo = df_EMCCD_spor['v_g'].values
                 spor_vgeo = df_EMCCD_spor['vel'].values
                 spor_htbeg = df_EMCCD_spor['H_beg'].values
@@ -3398,7 +3419,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     c=rho[finite],          # facecolor from rho
                     cmap='YlGn_r',
                     norm=PowerNorm(gamma=0.5, vmin=np.nanmin(rho), vmax=np.nanmax(rho)),
-                    edgecolors=edge_colors[finite],  # edges from groups
+                    # edgecolors=edge_colors[finite],  # edges from groups
                     s=60,
                     linewidths=1.2,
                     zorder=3
@@ -5218,9 +5239,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     np.isfinite(change_var) &
                     np.isfinite(mass_percent_2frag)
                 )
-                # update the mask with only the one that have a w above the 95th percentile
-                w_threshold = np.percentile(w, 95)
-                mask = mask & (w > w_threshold)
+                # # update the mask with only the one that have a w above the 95th percentile
+                # w_threshold = np.percentile(w, 95)
+                # mask = mask & (w > w_threshold)
 
                 x_plot = np.asarray(change_var)[mask]
                 y_plot = np.asarray(initial_var)[mask]
@@ -5260,37 +5281,46 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             vmin = np.nanmin(c_log)
             vmax = np.nanmax(c_log)
 
-            if np.any(c_plot < 0):
-                sc = ax.scatter(
-                    x_log, y_log,
-                    c=c_log,
-                    s=size,
-                    cmap='plasma',
-                    marker='.',
-                    linewidths=0,
-                    edgecolors='none',
-                    rasterized=True,
-                    norm=Normalize(vmin=vmin,vmax=vmax)#
-                )
+            # if np.any(c_plot < 0):
+            #     sc = ax.scatter(
+            #         x_log, y_log,
+            #         c=c_log,
+            #         s=size,
+            #         cmap='plasma',
+            #         marker='.',
+            #         linewidths=0,
+            #         edgecolors='none',
+            #         rasterized=True,
+            #         norm=Normalize(vmin=vmin,vmax=vmax)#
+            #     )
 
-            else:
-                sc = ax.scatter(
-                    x_log, y_log,
-                    c=c_log,
-                    s=size,
-                    cmap='plasma',
-                    marker='.',
-                    linewidths=0,
-                    edgecolors='none',
-                    rasterized=True,
-                    norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax)#,mcolors.LogNorm(vmin=vmin, vmax=vmax) # Normalize(vmin=vmin,vmax=vmax)#
-                )
+            # else:
+            #     sc = ax.scatter(
+            #         x_log, y_log,
+            #         c=c_log,
+            #         s=size,
+            #         cmap='plasma',
+            #         marker='.',
+            #         linewidths=0,
+            #         edgecolors='none',
+            #         rasterized=True,
+            #         norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax)#,mcolors.LogNorm(vmin=vmin, vmax=vmax) # Normalize(vmin=vmin,vmax=vmax)#
+            #     )
 
-            cbar = plt.colorbar(sc, ax=ax)
-            cbar.set_label(barplot_var, fontsize=14)
+            # cbar = plt.colorbar(sc, ax=ax)
+            # cbar.set_label(barplot_var, fontsize=14)
+
+            if label_change_var == r"log$_{10}$ $\eta_{2}$ [kg/MJ]":
+                # plot a red line from 0,0 to -5,-5
+                ax.plot([-5, 0], [-5, 0], color='red', linewidth=1.5)
+            if label_change_var == r"$\sigma_{2}$ [kg/MJ]":
+                # plot a red line from 0,0 to 0.05,0.05
+                ax.plot([0, 0.05], [0, 0.05], color='red', linewidth=1.5)
 
             ax.grid(True, linestyle='--', alpha=0.5)
-            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_masspercent2frag.png"), # 20190726_052141, 
+            # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_masspercent2frag.png"), # 20190726_052141, 
+            #             bbox_inches='tight', dpi=300)
+            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_2frag.png"), # 20190726_052141, 
                         bbox_inches='tight', dpi=300)
             plt.close()
         
@@ -5327,6 +5357,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     hist, edges = np.histogram(rho_corrected, bins=nbins, weights=w, range=(lo, hi))
     hist = norm_kde(hist, 10.0)
     bin_centers = 0.5 * (edges[:-1] + edges[1:])
+    peak_idx = np.argmax(hist)
+    rho_corrected_peak = bin_centers[peak_idx]
 
     ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
 
@@ -5348,6 +5380,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax_dist.spines['left'].set_visible(False)
     ax_dist.spines['right'].set_visible(False)
     ax_dist.spines['top'].set_visible(False)
+    # find the highest point of the distirburion and put an arrow pointing to it with the text "Peak"
+    peak_idx = np.argmax(hist)
+    peak_x = bin_centers[peak_idx]
+    peak_y = hist[peak_idx]
+    # annotate the value
+    ax_dist.annotate(f'Peak: {rho_corrected_peak:.4g}', xy=(peak_x, peak_y), xytext=(peak_x, peak_y),  fontsize=15) # arrowprops=dict(facecolor='black', shrink=0.05),
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"), bbox_inches='tight')
     plt.close()
     print("Rho distribution plot saved:",os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"))
@@ -5380,8 +5418,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     weights_kinetic /= np.sum(weights_kinetic)
     # print("Kinetic energy weights after applying velocity weights normalized:", (weights_kinetic))
     # set the weight to zero if the rea weight is below the 95th percentile to see the effect of the velocity weights on the distribution
-    w_threshold = np.percentile(w, 95)
-    weights_kinetic[w < w_threshold] = 0
+
+    # w_threshold = np.percentile(w, 95)
+    # weights_kinetic[w < w_threshold] = 0
 
     # kinetic and velocity weighted distribution
 
@@ -5906,7 +5945,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             wrap_cols=4,          # how many variables (columns) per band
             band_gap=0.65,        # vertical gap between bands (in "row units")
             wspace=0.08,          # horizontal spacing
-            hspace=0.15):
+            hspace=0.15, 
+            plot_correl_flag=False, # if True, add a final column of correlation coefficients between each variable and the first variable
+            ):
             """
             Plot a grid of (cuts x variables) hist panels, but wrap variables into multiple
             vertical bands to avoid a very wide figure. Example:
@@ -6105,11 +6146,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         ax = fig.add_subplot(gs[band_row0 + i, k])
                         axes_map[b][i][k] = ax
 
+
             # -------------------------
             # Plot panels
             # -------------------------
             # take the directory where the file is supposed to be
-            output_folder = os.path.dirname(out_path) if out_path else None
+            
             all_variables = []
             # from vars_list get the name and put in list
             for vinfo in vars_list:
@@ -6186,22 +6228,24 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         ax.tick_params(axis='x', labelbottom=True)
                         ax.set_xlabel(bottom_xlabel_per_col[j], fontsize=16)
 
-                # # use regex to get from Tot N.30 the rest so get rid of the Tot N.numbers part
-                # regex = r"Tot N\.\d+\s*[-—]?\s*"
-                # title_cov_new = re.sub(regex, "", cut_title).strip()
-                # # check if title_cov_new has forbidden characte for windows and delete them
-                title_cov_new = re.sub(r'[<>:"/\\|?*]', '', cut_title)
-                if np.any(v_use):
-                    print(f"  Plotting correlation for cut '{cut_title}' with {len(v_use)} points...")
-                    # correlation plots all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, shower_name_short)
-                    correlation_plots_all(
-                    array_for_cov,
-                    all_variables,  
-                    w_use,
-                    output_folder,
-                    shower_name_short=title_cov_new,
-                    name_covar_fold=title_cov_new
-                    )
+                if plot_correl_flag:
+                    output_folder = os.path.dirname(out_path) if out_path else None
+                    # # use regex to get from Tot N.30 the rest so get rid of the Tot N.numbers part
+                    # regex = r"Tot N\.\d+\s*[-—]?\s*"
+                    # title_cov_new = re.sub(regex, "", cut_title).strip()
+                    # # check if title_cov_new has forbidden characte for windows and delete them
+                    title_cov_new = re.sub(r'[<>:"/\\|?*]', '', cut_title)
+                    if np.any(v_use):
+                        print(f"  Plotting correlation for cut '{cut_title}' with {len(v_use)} points...")
+                        # correlation plots all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, shower_name_short)
+                        correlation_plots_all(
+                        array_for_cov,
+                        all_variables,  
+                        w_use,
+                        output_folder,
+                        shower_name_short=title_cov_new,
+                        name_covar_fold=title_cov_new
+                        )
 
             # Tick label sizes
             for b in range(nbands):
@@ -6832,6 +6876,16 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # find the number of tj below 2
         num_tj_below_2 = tj[tj < 2].shape[0]
 
+        # print the name of the ast_m, jfc_m, htc_m masks with the number of samples in each
+        for label, mask in {
+            "AST": tj >= 3,
+            "JFC": (tj >= 2) & (tj < 3),
+            "HTC": tj < 2,
+        }.items():
+            print(f"\n{label}:")
+            for name in all_names[mask]:
+                print(name)
+
         # ---------- Figure with three stacked panels ----------
         fig, axes = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
 
@@ -6913,7 +6967,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         rho_lo_all, rho_hi_all = float(np.nanmin(rho_vals)), float(np.nanmax(rho_vals))
         rho_spec = {
             "values": rho_vals,
-            "label":  r"$\rho$ [kg/m$^3$]",
+            "label":  r"$\rho_{eff}$ [kg/m$^3$]",
             "name":   "rho",
             "xlim":   (-100, 8300),   # or (rho_lo, rho_hi)
             "color":  "black",
@@ -6936,6 +6990,35 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             print("Warning: rho_cut has no True values, all samples have rho >= 4000. Check your data and cut logic.")
             rho_cut = np.isfinite(rho_vals)  # just filter finite values
 
+        # plot 2 kde distribution of the density of the TJ < 2 in red and te one above TJ > 2 in blue but with alpha 0.5 and with a legend, make the figure long and not tall
+        plt.figure(figsize=(10, 4))
+        for label, mask in {
+            "TJ < 2": (tj_samples < 2) & np.isfinite(tj_samples) & np.isfinite(rho_vals),
+            "TJ > 2": (tj_samples >= 2) & np.isfinite(tj_samples) & np.isfinite(rho_vals),
+        }.items():
+            r = rho_vals[mask]
+            if r.size > 0:
+                # make the x axis log scale and the y axis linear scale
+                hist, edges = np.histogram(r, bins=nbins, range=(lo_all, hi_all), density=True, weights=w_all[mask] if np.any(w_all[mask]) else None)
+                # put the x axis in log scale but keep the original values for the histogram (don't log-transform the data, just the axis)
+                plt.xscale('log')
+                bin_centers = 0.5 * (edges[:-1] + edges[1:])
+                # color blue for TJ > 2 and red for TJ < 2
+                color_plot = 'blue' if label == "TJ > 2" else 'red'
+                # smooth the histogram with a gaussian kernel density estimator (KDE) with bandwidth 10% of the data range
+                hist = norm_kde(hist, 10.0)
+                plt.fill_between(bin_centers, hist, alpha=0.5, label=label, color=color_plot)
+        plt.xlabel(r'$\rho$ [kg/m$^3$]', fontsize=16)
+        # delete the y axis and the right and top sides of the plot
+        plt.tick_params(axis='y', left=False, labelleft=False)
+        for sp in ['left','right','top']:
+            plt.gca().spines[sp].set_visible(False)
+        plt.legend(fontsize=12)
+        # plt.title("Density distribution by Tisserand class", fontsize=18)
+        plt.xlim(-100, 8300)
+        plt.savefig(os.path.join(out_path, f"{shower_name}_rho_distribution_by_2_Tj.png"), bbox_inches='tight', dpi=300)
+        plt.close()
+
         # --------------------------
         # Pattern 1 (recommended)
         # --------------------------
@@ -6945,6 +7028,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         print("Eros vals full length max:", np.nanmax(eros_vals_full_weight), "min:", np.nanmin(eros_vals_full_weight))
         sigma_vals_full_weight = np.asarray(sigma_corrected*1e6, float)              # FULL
         print("Sigma vals full length max:", np.nanmax(sigma_vals_full_weight), "min:", np.nanmin(sigma_vals_full_weight))
+        idx_arr = np.where(np.asarray(variables) == "rho")[0]
+        index_rho = int(idx_arr[0])
+        idx_arr = np.where(np.asarray(variables) == "erosion_rho_change")[0]
+        index_erosion_rho_change = int(idx_arr[0])
         idx_arr = np.where(np.asarray(variables) == "erosion_mass_index")[0]
         index_s = int(idx_arr[0])
         idx_arr = np.where(np.asarray(variables) == "erosion_mass_min")[0]
@@ -6959,6 +7046,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         index_sig = int(idx_arr[0])
         idx_arr = np.where(np.asarray(variables) == "erosion_sigma_change")[0]
         index_sig_ch = int(idx_arr[0])
+        rho_first = samples[:, index_rho].astype(float)                 # FULL
+        erosion_rho_change_full = samples[:, index_erosion_rho_change].astype(float)  # FULL
         s_vals_full     = samples[:, index_s].astype(float)                   # FULL
         ml_vals_full    = samples[:, index_ml].astype(float)                  # FULL
         mu_vals_full    = samples[:, index_mu].astype(float)                  # FULL
@@ -6966,6 +7055,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         ero_ch_vals_full= samples[:, index_ero_ch].astype(float)              # FULL
         sig_vals_full   = samples[:, index_sig].astype(float)                 # FULL
         sig_ch_vals_full= samples[:, index_sig_ch].astype(float)              # FULL
+
 
         energy_surf = {
             "values": energy_per_cs_before_erosion_backup,
@@ -7093,6 +7183,24 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             "base_mask": rho_cut,
         }
 
+        rho_beg = {
+            "values": rho_first,
+            "label":  r"$\rho_1$ [kg/m³]",
+            "name":   "rho_beg",
+            "xlim":   (-100, 8300),  # or (float(np.nanmin(rho_first[rho_cut])), float(np.nanmax(rho_first[rho_cut]))),
+            "color":  "darkgray",
+            "base_mask": rho_cut,
+        }
+
+        rho_change = {
+            "values": erosion_rho_change_full,
+            "label":  r"$\rho_2$ [kg/m³]",
+            "name":   "erosion_rho_change",
+            "xlim":   (-100, 8300),  # or (float(np.nanmin(erosion_rho_change_full[rho_cut])), float(np.nanmax(erosion_rho_change_full[rho_cut]))),
+            "color":  "gray",
+            "base_mask": rho_cut,
+        }
+
         ####################################
 
         # vars_to_plot_split1 = vars_to_plot + [eros_spec] 
@@ -7100,7 +7208,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         # vars_to_plot = vars_to_plot + [eros_spec] + [sigma_spec] + [s_spec] + [ml_spec] + [mu_spec]
         # vars_to_plot = vars_to_plot + [energy_surf, mass_left, eros_spec, eros_spec2, sigma_spec, sigma_spec2]
-        vars_to_plot = vars_to_plot + [eros_spec1, sigma_spec1, energy_kg, dynpress, eros_spec2, sigma_spec2] #, eros_spec2, sigma_spec2, s_spec, ml_spec, mu_spec
+        vars_to_plot = vars_to_plot + [eros_spec1, sigma_spec1, rho_beg, rho_change, eros_spec2, sigma_spec2] #, eros_spec2, sigma_spec2, s_spec, ml_spec, mu_spec
 
         ####################################
 
@@ -7235,7 +7343,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             weights_all=w_all,
             nbins=int(round(10.0 / 0.02)),
             smooth=0.02,
-            out_path=out_path
+            out_path=out_path,
+            plot_correl_flag=plot_correl_flag
         )
         print("Saved:", out_path)
         plt.close(fig)
@@ -7336,11 +7445,225 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             weights_all=w_all,
             nbins=int(round(10.0 / 0.02)),
             smooth=0.02,
-            out_path=out_path
+            out_path=out_path,
+            plot_correl_flag=plot_correl_flag
         )
         print("Saved:", out_path)
         plt.close(fig)
 
+
+        ### Structure change plots ###
+
+        print("Creating structure sigma change plots for rho...")
+
+        out_path = os.path.join(output_dir_rho, f"sigma_class")
+        # create the folder if does not exist
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
+
+        sigma_meteor_begin_median_c = np.asarray(sigma_meteor_begin_median, float)  # per-event Tj (same length as event_names_like)
+        if sigma_meteor_begin_median_c.shape[0] != event_names_like.shape[0]:
+            raise RuntimeError("Length mismatch: event_names vs ablat.")
+
+        sigma_meteor_change_median_c = np.asarray(sigma_meteor_change_median, float)  # per-event Tj (same length as event_names_like)
+        if sigma_meteor_change_median_c.shape[0] != event_names_like.shape[0]:
+            raise RuntimeError("Length mismatch: event_names vs ablat.")
+
+        # dict: base_name -> Tj
+        sigma_meteor_begin_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, sigma_meteor_begin_median_c)}
+        sigma_meteor_change_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, sigma_meteor_change_median_c)}
+
+        # Map each sample's base_name -> Tj (NaN if missing)
+        sigma_meteor_begin_med_samples = np.array([sigma_meteor_begin_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+        sigma_meteor_change_med_samples = np.array([sigma_meteor_change_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+
+        # # ---------- Class masks at SAMPLE level ----------
+        # finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
+        # big_kg = finite & (m_init_med_samples >= 10**(-4))
+        # medium_b_kg = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
+        # medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
+        # small_kg = finite & (m_init_med_samples < 10**(-5))
+
+        # # find the number of mass
+        # num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
+        # num_medium_b_kg = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
+        # num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
+        # num_small_kg = m_init_med[m_init_med < 10**(-5)].shape[0]
+
+        # ---------- Class masks at SAMPLE level ----------
+        finite = np.isfinite(rho_samp) & np.isfinite(sigma_meteor_begin_med_samples) & np.isfinite(w_all) & np.isfinite(sigma_meteor_change_med_samples)
+        high_sigmainit_than_sigmachange = finite & (sigma_meteor_begin_med_samples > sigma_meteor_change_med_samples)
+        low_sigmainit_than_sigmachange = finite & (sigma_meteor_begin_med_samples <= sigma_meteor_change_med_samples)
+
+        # find the number of mass
+        num_sigma_high = sigma_meteor_begin_median_c[sigma_meteor_begin_median_c > sigma_meteor_change_median_c].shape[0]
+        num_sigma_low = sigma_meteor_begin_median_c[sigma_meteor_begin_median_c <= sigma_meteor_change_median_c].shape[0]
+
+        # ---------- Figure with three stacked panels ----------
+        fig, axes = plt.subplots(2, 1, figsize=(10, 15), sharex=True)
+
+        _panel_like_top(axes[0], rho_samp[high_sigmainit_than_sigmachange], w_all[high_sigmainit_than_sigmachange], "Tot N." + str(num_sigma_high) + " avocado", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[low_sigmainit_than_sigmachange], w_all[low_sigmainit_than_sigmachange], "Tot N." + str(num_sigma_low) + " coconut", lo_all, hi_all, nbins, xlim)
+        # _panel_like_top(axes[4], rho_samp[small_kg], w_all[small_kg], "Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
+
+        # Bottom labels/ticks to match your style
+        axes[1].tick_params(axis='x', labelbottom=True)
+        axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[1].set_xticks(np.arange(0, 9000, 2000))
+        for ax in axes:
+            ax.tick_params(labelsize=20)
+
+        # Save
+        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
+        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
+        plt.close()
+        print("Saved:", out_path_rho)
+        
+        # ### rho distribution plot ###
+
+        # Build group masks (any number of groups works)
+        groups = {
+            "avocado": high_sigmainit_than_sigmachange,
+            "coconut": low_sigmainit_than_sigmachange,
+        }
+
+        tex, results = weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,                 # bump up for smoother p-values
+            random_seed=123,
+            caption=r"Pairwise tests on $\rho$ by mass (weighted posteriors).",
+            label="tab:rho_sigma_weighted_tests",
+            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_mass.tex"),
+        )
+
+        # mass cuts
+        cuts = [
+            (high_sigmainit_than_sigmachange, rf"Tot N." + str(num_sigma_high) + " avocado"),
+            (low_sigmainit_than_sigmachange, rf"Tot N." + str(num_sigma_low) + " coconut"),
+        ]
+
+        # --- Call the plotter ---
+        out_path = os.path.join(out_path, f"{shower_name}_by_sigma_grid.png")
+        fig, axes = plot_by_cuts_and_vars(
+            vars_list=vars_to_plot,
+            cuts_list=cuts,
+            weights_all=w_all,
+            nbins=int(round(10.0 / 0.02)),
+            smooth=0.02,
+            out_path=out_path,
+            plot_correl_flag=plot_correl_flag
+        )
+        print("Saved:", out_path)
+        plt.close(fig)
+
+
+        ### Structure change plots ###
+
+        print("Creating structure eta change plots for rho...")
+
+        out_path = os.path.join(output_dir_rho, f"eta_class")
+        # create the folder if does not exist
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
+
+        eta_meteor_begin_median_c = np.asarray(eta_meteor_begin_median, float)  # per-event Tj (same length as event_names_like)
+        if eta_meteor_begin_median_c.shape[0] != event_names_like.shape[0]:
+            raise RuntimeError("Length mismatch: event_names vs ablat.")
+
+        eta_meteor_change_median_c = np.asarray(eta_meteor_change_median, float)  # per-event Tj (same length as event_names_like)
+        if eta_meteor_change_median_c.shape[0] != event_names_like.shape[0]:
+            raise RuntimeError("Length mismatch: event_names vs ablat.")
+
+        # dict: base_name -> Tj
+        eta_meteor_begin_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, eta_meteor_begin_median_c)}
+        eta_meteor_change_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, eta_meteor_change_median_c)}
+
+        # Map each sample's base_name -> Tj (NaN if missing)
+        eta_meteor_begin_med_samples = np.array([eta_meteor_begin_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+        eta_meteor_change_med_samples = np.array([eta_meteor_change_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
+
+        # # ---------- Class masks at SAMPLE level ----------
+        # finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
+        # big_kg = finite & (m_init_med_samples >= 10**(-4))
+        # medium_b_kg = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
+        # medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
+        # small_kg = finite & (m_init_med_samples < 10**(-5))
+
+        # # find the number of mass
+        # num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
+        # num_medium_b_kg = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
+        # num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
+        # num_small_kg = m_init_med[m_init_med < 10**(-5)].shape[0]
+
+        # ---------- Class masks at SAMPLE level ----------
+        finite = np.isfinite(rho_samp) & np.isfinite(eta_meteor_begin_med_samples) & np.isfinite(w_all) & np.isfinite(eta_meteor_change_med_samples)
+        high_etainit_than_etachange = finite & (eta_meteor_begin_med_samples > eta_meteor_change_med_samples)
+        low_etainit_than_etachange = finite & (eta_meteor_begin_med_samples <= eta_meteor_change_med_samples)
+
+        # find the number of mass
+        num_eta_high = eta_meteor_begin_median_c[eta_meteor_begin_median_c > eta_meteor_change_median_c].shape[0]
+        num_eta_low = eta_meteor_begin_median_c[eta_meteor_begin_median_c <= eta_meteor_change_median_c].shape[0]
+
+        # ---------- Figure with three stacked panels ----------
+        fig, axes = plt.subplots(2, 1, figsize=(10, 15), sharex=True)
+
+        _panel_like_top(axes[0], rho_samp[high_etainit_than_etachange], w_all[high_etainit_than_etachange], "Tot N." + str(num_eta_high) + " avocado", lo_all, hi_all, nbins, xlim)
+        _panel_like_top(axes[1], rho_samp[low_etainit_than_etachange], w_all[low_etainit_than_etachange], "Tot N." + str(num_eta_low) + " coconut", lo_all, hi_all, nbins, xlim)
+        # _panel_like_top(axes[4], rho_samp[small_kg], w_all[small_kg], "Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
+
+        # Bottom labels/ticks to match your style
+        axes[1].tick_params(axis='x', labelbottom=True)
+        axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        axes[1].set_xticks(np.arange(0, 9000, 2000))
+        for ax in axes:
+            ax.tick_params(labelsize=20)
+
+        # Save
+        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
+        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
+        plt.close()
+        print("Saved:", out_path_rho)
+        
+        # ### rho distribution plot ###
+
+        # Build group masks (any number of groups works)
+        groups = {
+            "avocado": high_etainit_than_etachange,
+            "coconut": low_etainit_than_etachange,
+        }
+
+        tex, results = weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,                 # bump up for smoother p-values
+            random_seed=123,
+            caption=r"Pairwise tests on $\rho$ by mass (weighted posteriors).",
+            label="tab:rho_eta_weighted_tests",
+            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_mass.tex"),
+        )
+
+        # mass cuts
+        cuts = [
+            (high_etainit_than_etachange, rf"Tot N." + str(num_eta_high) + " avocado"),
+            (low_etainit_than_etachange, rf"Tot N." + str(num_eta_low) + " coconut"),
+        ]
+
+        # --- Call the plotter ---
+        out_path = os.path.join(out_path, f"{shower_name}_by_eta_grid.png")
+        fig, axes = plot_by_cuts_and_vars(
+            vars_list=vars_to_plot,
+            cuts_list=cuts,
+            weights_all=w_all,
+            nbins=int(round(10.0 / 0.02)),
+            smooth=0.02,
+            out_path=out_path,
+            plot_correl_flag=plot_correl_flag
+        )
+        print("Saved:", out_path)
+        plt.close(fig)
 
         ### mass change plots ###
 
@@ -7484,7 +7807,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             weights_all=w_all,
             nbins=int(round(10.0 / 0.02)),
             smooth=0.02,
-            out_path=out_path
+            out_path=out_path,
+            plot_correl_flag=plot_correl_flag
         )
         print("Saved:", out_path)
         plt.close(fig)
@@ -7624,7 +7948,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             weights_all=w_all,
             nbins=int(round(10.0 / 0.02)),
             smooth=0.02,
-            out_path=out_path
+            out_path=out_path,
+            plot_correl_flag=plot_correl_flag
         )
         print("Saved:", out_path)
         plt.close(fig)
@@ -7705,7 +8030,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             weights_all=w_all,
             nbins=int(round(10.0 / 0.02)),
             smooth=0.02,
-            out_path=out_path
+            out_path=out_path,
+            plot_correl_flag=plot_correl_flag
         )
         print("Saved:", out_path)
         plt.close(fig)
@@ -7788,7 +8114,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             weights_all=w_all,
             nbins=int(round(10.0 / 0.02)),
             smooth=0.02,
-            out_path=out_path
+            out_path=out_path,
+            plot_correl_flag=plot_correl_flag
         )
         print("Saved:", out_path)
         plt.close(fig)
@@ -7873,7 +8200,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 weights_all=w_all,
                 nbins=int(round(10.0 / 0.02)),
                 smooth=0.02,
-                out_path=out_path
+                out_path=out_path,
+                plot_correl_flag=plot_correl_flag
             )
             print("Saved:", out_path)
             plt.close(fig)
@@ -7987,7 +8315,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             weights_all=w_all,
             nbins=int(round(10.0 / 0.02)),
             smooth=0.02,
-            out_path=out_path
+            out_path=out_path,
+            plot_correl_flag=plot_correl_flag
         )
         print("Saved:", out_path)
         plt.close(fig)
@@ -8185,7 +8514,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup\Stony\Fast", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -8233,4 +8562,4 @@ if __name__ == "__main__":
                        tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, 
                        energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, 
                        mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all,
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=True) # cml_args.radiance_plot cml_args.correl_plot

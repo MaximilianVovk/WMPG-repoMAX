@@ -8322,6 +8322,463 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.close(fig)
 
 
+    ##########################################################
+    ##################### SPECTRAL PLOTS #####################
+    ##########################################################
+
+    spectral_data_path = (
+        r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics"
+        r"\Results\EventData20260621.json"
+    )
+
+    # Maximum allowed difference between the modeled meteor time
+    # and the spectral event time.
+    spectral_match_tolerance_s = 3
+
+    if os.path.exists(spectral_data_path):
+
+        with open(spectral_data_path, "r", encoding="utf-8") as f:
+            spectral_data = json.load(f)
+
+        if radiance_plot_flag == True:
+
+            print("Creating velocity vs begin-height plot with spectral data...")
+
+            # Build arrays using the meteor names as keys.
+            # This guarantees that names, velocities, heights, and densities
+            # remain in the same order.
+            plot_names = [
+                name for name in all_names
+                if name in file_obs_data_dict
+                and name in file_radiance_rho_dict
+            ]
+
+            plot_v0 = np.asarray(
+                [file_obs_data_dict[name][15] for name in plot_names],
+                dtype=float,
+            )
+
+            plot_hbeg = np.asarray(
+                [file_obs_data_dict[name][3] for name in plot_names],
+                dtype=float,
+            )
+
+            plot_rho = np.asarray(
+                [file_radiance_rho_dict[name][2] for name in plot_names],
+                dtype=float,
+            )
+
+            plot_names = np.asarray(plot_names, dtype=object)
+
+            # Keep only JSON events that have a spectral classification.
+            spectral_by_event = {}
+
+            for json_key, event_info in spectral_data.items():
+
+                spectral_type = event_info.get("spectral_type")
+
+                if spectral_type is None:
+                    continue
+
+                spectral_type = str(spectral_type).strip()
+
+                if spectral_type == "":
+                    continue
+
+                event_name = str(
+                    event_info.get("event_name", json_key)
+                )
+
+                spectral_by_event[event_name] = event_info
+
+            spectral_event_names = list(spectral_by_event.keys())
+
+            used_spectral_events = set()
+            spectral_matches = []
+
+            # Match every modeled meteor to the closest spectral event.
+            #
+            # _normalize_code_to_dt removes all non-numeric characters,
+            # so:
+            #
+            # 20260621_035015A
+            #
+            # becomes:
+            #
+            # 20260621_035015
+            #
+            # before matching.
+            for meteor_index, meteor_name in enumerate(plot_names):
+
+                available_events = [
+                    event_name
+                    for event_name in spectral_event_names
+                    if event_name not in used_spectral_events
+                ]
+
+                matched_event = find_close_in_list(
+                    meteor_name,
+                    available_events,
+                    tol_seconds=spectral_match_tolerance_s,
+                )
+
+                if matched_event is None:
+                    continue
+
+                event_info = spectral_by_event[matched_event]
+
+                # Signed time difference:
+                # spectral time minus modeled meteor time.
+                delta_t_s = (
+                    _normalize_code_to_dt(matched_event)
+                    - _normalize_code_to_dt(meteor_name)
+                ).total_seconds()
+
+                spectral_matches.append({
+                    "meteor_index": meteor_index,
+                    "meteor_name": str(meteor_name),
+                    "spectral_event": matched_event,
+                    "delta_t_s": delta_t_s,
+                    "spectral_type": str(
+                        event_info["spectral_type"]
+                    ),
+                    "quality": str(
+                        event_info.get("quality", "None")
+                    ),
+                })
+
+                # Prevent one spectral event from matching more than one meteor.
+                used_spectral_events.add(matched_event)
+
+            # ---------------------------------------------------------
+            # Save the matched meteors and their spectral information
+            # ---------------------------------------------------------
+
+            match_txt_path = os.path.join(
+                output_dir_show,
+                f"{shower_name}_spectral_matches.txt",
+            )
+
+            with open(match_txt_path, "w", encoding="utf-8") as f:
+
+                f.write(
+                    "meteor_name\t"
+                    "spectral_event\t"
+                    "delta_t_s(spectral-model)\t"
+                    "spectral_type\t"
+                    "quality\t"
+                    "v0_km_s\t"
+                    "hbeg_km\t"
+                    "rho_kg_m3\n"
+                )
+
+                for match in spectral_matches:
+
+                    i = match["meteor_index"]
+
+                    f.write(
+                        f'{match["meteor_name"]}\t'
+                        f'{match["spectral_event"]}\t'
+                        f'{match["delta_t_s"]:+.1f}\t'
+                        f'{match["spectral_type"]}\t'
+                        f'{match["quality"]}\t'
+                        f'{plot_v0[i]:.4f}\t'
+                        f'{plot_hbeg[i]:.4f}\t'
+                        f'{plot_rho[i]:.4f}\n'
+                    )
+
+            print(
+                f"Matched {len(spectral_matches)} of "
+                f"{len(plot_names)} meteors within "
+                f"+/-{spectral_match_tolerance_s} seconds."
+            )
+
+            print(
+                f"Saved spectral matches to: {match_txt_path}"
+            )
+
+            # ---------------------------------------------------------
+            # Create the velocity versus begin-height plot
+            # ---------------------------------------------------------
+
+            if len(spectral_matches) > 0:
+
+                fig, ax = plt.subplots(figsize=(10, 6))
+
+                # ---------------------------------------------
+                # Background EMCCD sporadic meteor population
+                # ---------------------------------------------
+
+                # str.strip() avoids problems caused by whitespace
+                # around the "..." shower identifier.
+                df_EMCCD_spor = df_EMCCD[
+                    df_EMCCD["shw"]
+                    .astype(str)
+                    .str.strip()
+                    == "..."
+                ].copy()
+
+                curve_v = np.array(
+                    [0, 10, 20, 30, 40, 50, 60, 70, 75],
+                    dtype=float,
+                )
+
+                curve_h_low = np.array(
+                    [70, 75, 80, 83, 88, 90, 92, 94, 96],
+                    dtype=float,
+                )
+
+                curve_h_high = np.array(
+                    [80, 95, 110, 113, 115, 120, 125, 130, 132],
+                    dtype=float,
+                )
+
+                background_h_low = np.interp(
+                    df_EMCCD_spor["vel"].to_numpy(dtype=float),
+                    curve_v,
+                    curve_h_low,
+                    left=np.nan,
+                    right=np.nan,
+                )
+
+                background_h_high = np.interp(
+                    df_EMCCD_spor["vel"].to_numpy(dtype=float),
+                    curve_v,
+                    curve_h_high,
+                    left=np.nan,
+                    right=np.nan,
+                )
+
+                background_mask = (
+                    df_EMCCD_spor["H_beg"].to_numpy(dtype=float)
+                    > background_h_low
+                ) & (
+                    df_EMCCD_spor["H_beg"].to_numpy(dtype=float)
+                    < background_h_high
+                )
+
+                df_EMCCD_spor = df_EMCCD_spor.loc[
+                    background_mask
+                ]
+
+                ax.scatter(
+                    df_EMCCD_spor["vel"],
+                    df_EMCCD_spor["H_beg"],
+                    c="black",
+                    s=1,
+                    alpha=0.5,
+                    linewidths=0,
+                    zorder=1,
+                )
+
+                # ---------------------------------------------
+                # Meteors analyzed with the erosion model
+                # ---------------------------------------------
+
+                finite = (
+                    np.isfinite(plot_v0)
+                    & np.isfinite(plot_hbeg)
+                    & np.isfinite(plot_rho)
+                )
+
+                if not np.any(finite):
+                    print(
+                        "No finite velocity, begin-height, and "
+                        "density combinations are available."
+                    )
+
+                else:
+
+                    rho_min = np.nanmin(plot_rho[finite])
+                    rho_max = np.nanmax(plot_rho[finite])
+
+                    # Avoid identical PowerNorm limits.
+                    if rho_min == rho_max:
+                        rho_max = rho_min + 1.0
+
+                    rho_norm = PowerNorm(
+                        gamma=0.5,
+                        vmin=rho_min,
+                        vmax=rho_max,
+                    )
+
+                    # Density controls the marker face color.
+                    scatter = ax.scatter(
+                        plot_v0[finite],
+                        plot_hbeg[finite],
+                        c=plot_rho[finite],
+                        cmap="YlGn_r",
+                        norm=rho_norm,
+                        s=70,
+                        edgecolors="0.55",
+                        linewidths=0.5,
+                        zorder=3,
+                    )
+
+                    # Find all unique spectral classifications.
+                    spectral_types = sorted({
+                        match["spectral_type"]
+                        for match in spectral_matches
+                    })
+
+                    spectral_cmap = plt.get_cmap("tab10")
+                    
+                    # Remove tab10's green color, which is at index 2
+                    spectral_colors = [
+                        color
+                        for i, color in enumerate(spectral_cmap.colors)
+                        if i != 2
+                    ]
+
+                    spectral_type_colors = {
+                        spectral_type: spectral_colors[i % len(spectral_colors)]
+                        for i, spectral_type in enumerate(spectral_types)
+                    }
+
+                    # ---------------------------------------------
+                    # Add spectral-type edge colors and labels
+                    # ---------------------------------------------
+
+                    for spectral_type in spectral_types:
+
+                        type_matches = [
+                            match
+                            for match in spectral_matches
+                            if match["spectral_type"]
+                            == spectral_type
+                        ]
+
+                        type_indices = np.asarray(
+                            [
+                                match["meteor_index"]
+                                for match in type_matches
+                            ],
+                            dtype=int,
+                        )
+
+                        # Remove matched points with invalid plotting data.
+                        type_indices = type_indices[
+                            finite[type_indices]
+                        ]
+
+                        if type_indices.size == 0:
+                            continue
+
+                        edge_color = spectral_type_colors[
+                            spectral_type
+                        ]
+
+                        # Draw only the colored edge over the density point.
+                        ax.scatter(
+                            plot_v0[type_indices],
+                            plot_hbeg[type_indices],
+                            s=95,
+                            facecolors="none",
+                            edgecolors=[edge_color],
+                            linewidths=2.2,
+                            label=(
+                                f"{spectral_type} "
+                                f"(N={type_indices.size})"
+                            ),
+                            zorder=4,
+                        )
+
+                        # Label every matched meteor with its spectral type.
+                        for label_number, meteor_index in enumerate(
+                            type_indices
+                        ):
+
+                            # Alternate labels above and below points
+                            # to reduce overlapping text.
+                            if label_number % 2 == 0:
+                                vertical_offset = 7
+                                vertical_alignment = "bottom"
+                            else:
+                                vertical_offset = -11
+                                vertical_alignment = "top"
+
+                            # ax.annotate(
+                            #     spectral_type,
+                            #     (
+                            #         plot_v0[meteor_index],
+                            #         plot_hbeg[meteor_index],
+                            #     ),
+                            #     xytext=(5, vertical_offset),
+                            #     textcoords="offset points",
+                            #     fontsize=8,
+                            #     color=edge_color,
+                            #     ha="left",
+                            #     va=vertical_alignment,
+                            #     zorder=5,
+                            # )
+
+                    colorbar = fig.colorbar(
+                        scatter,
+                        ax=ax,
+                    )
+
+                    colorbar.set_label(
+                        r"$\rho$ [kg/m$^3$]"
+                    )
+
+                    ax.set_xlim(0, 80)
+                    ax.set_ylim(50, 150)
+
+                    ax.set_xlabel(
+                        r"$v_{0}$ [km/s]",
+                        fontsize=15,
+                    )
+
+                    ax.set_ylabel(
+                        r"$h_{beg}$ [km]",
+                        fontsize=15,
+                    )
+
+                    ax.grid(True)
+
+                    ax.legend(
+                        title="Spectral type",
+                        loc="best",
+                        fontsize=15,
+                        title_fontsize=16,
+                    )
+
+                    fig.tight_layout()
+
+                    spectral_plot_path = os.path.join(
+                        output_dir_show,
+                        (
+                            f"{shower_name}_velocity_vs_"
+                            "beg_height_rho_spectra.png"
+                        ),
+                    )
+
+                    fig.savefig(
+                        spectral_plot_path,
+                        bbox_inches="tight",
+                        dpi=300,
+                    )
+
+                    plt.close(fig)
+
+                    print(
+                        f"Saved spectral plot to: "
+                        f"{spectral_plot_path}"
+                    )
+
+            else:
+
+                print(
+                    "No modeled meteors matched JSON events "
+                    "containing a spectral_type."
+                )
+
+    else:
+
+        print(
+            f"Spectral JSON file not found: "
+            f"{spectral_data_path}"
+        )
 
 
 
@@ -8514,7 +8971,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -8562,4 +9019,4 @@ if __name__ == "__main__":
                        tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, 
                        energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, 
                        mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all,
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=True) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot

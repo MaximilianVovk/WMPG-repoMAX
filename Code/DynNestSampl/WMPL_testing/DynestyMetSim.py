@@ -293,6 +293,123 @@ def buildGlobalTimeAxis(
 
 
 
+_WAKE_ANALYSIS_FIELDS = (
+    "noise_wake",
+    "noise_region_start_x",
+    "logl_len_max",
+    "region_method",
+    "noise_region_used",
+)
+
+
+def _wake_container_height(wake_container):
+    """Return the representative height of a wake container."""
+    try:
+        return float(wake_container.points[0].ht)
+    except (AttributeError, IndexError, TypeError, ValueError):
+        return np.nan
+
+
+def _resolve_wake_value(value, wake_containers, ht_ref, altitudes=None,
+                        container_attr=None, default=None):
+    """Resolve a scalar or per-height wake value at ``ht_ref``.
+
+    ``value`` may be a scalar, a one-element array, or an array containing one
+    value per wake height. When ``value`` is None, the value is read directly
+    from the nearest wake container using ``container_attr``.
+    """
+    wake_containers = list(wake_containers or [])
+    wake_heights = np.array([_wake_container_height(wc) for wc in wake_containers], dtype=float)
+
+    if wake_heights.size and np.any(np.isfinite(wake_heights)):
+        container_idx = int(np.nanargmin(np.abs(wake_heights - float(ht_ref))))
+    else:
+        container_idx = 0
+
+    # An explicit scalar/array takes priority over stored metadata.
+    if value is not None:
+        try:
+            arr = np.asarray(value, dtype=float)
+        except (TypeError, ValueError):
+            arr = np.asarray([], dtype=float)
+
+        if arr.ndim == 0:
+            resolved = float(arr)
+            return resolved if np.isfinite(resolved) else default
+
+        arr = arr.reshape(-1)
+        if arr.size == 1:
+            resolved = float(arr[0])
+            return resolved if np.isfinite(resolved) else default
+
+        if altitudes is not None:
+            try:
+                altitude_arr = np.asarray(altitudes, dtype=float).reshape(-1)
+            except (TypeError, ValueError):
+                altitude_arr = np.asarray([], dtype=float)
+
+            if altitude_arr.size == arr.size and np.any(np.isfinite(altitude_arr)):
+                idx = int(np.nanargmin(np.abs(altitude_arr - float(ht_ref))))
+                resolved = float(arr[idx])
+                return resolved if np.isfinite(resolved) else default
+
+        if arr.size == len(wake_containers) and arr.size:
+            resolved = float(arr[container_idx])
+            return resolved if np.isfinite(resolved) else default
+
+    # Read the value directly from the closest wake container.
+    if container_attr and wake_containers:
+        resolved = getattr(wake_containers[container_idx], container_attr, None)
+        try:
+            resolved = float(resolved)
+        except (TypeError, ValueError):
+            resolved = np.nan
+        if np.isfinite(resolved):
+            return resolved
+
+    return default
+
+
+def _wake_result_arrays(results, value_key):
+    """Extract one result value and its altitude from result dictionaries."""
+    if not isinstance(results, (list, tuple)):
+        return None, None
+
+    values = []
+    heights = []
+    for result in results:
+        if not isinstance(result, dict) or value_key not in result:
+            continue
+        values.append(result.get(value_key, np.nan))
+        heights.append(result.get("ht_m", np.nan))
+
+    if not values:
+        return None, None
+
+    return np.asarray(values, dtype=float), np.asarray(heights, dtype=float)
+
+
+def _attach_wake_analysis_to_containers(wake_containers, results, region_method):
+    """Attach noise and LogL-region metadata directly to each wake container."""
+    result_lookup = {
+        (int(result["site_id"]), int(result["frame_n"])): result
+        for result in results
+        if isinstance(result, dict) and "site_id" in result and "frame_n" in result
+    }
+
+    for wake_container in wake_containers:
+        key = (int(wake_container.site_id), int(wake_container.frame_n))
+        result = result_lookup.get(key)
+        if result is None:
+            continue
+
+        wake_container.noise_wake = result.get("noise_median_abs_resid", np.nan)
+        wake_container.noise_region_start_x = result.get("noise_start_x", np.nan)
+        wake_container.logl_len_max = result.get("logl_len_max", np.nan)
+        wake_container.region_method = region_method
+        wake_container.noise_region_used = result.get("region_used", region_method)
+
+
 ###############################################################################
 # Function: plotting function
 ###############################################################################
@@ -451,7 +568,7 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0, 
                 plotObsVsHeight(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL={manual_logL:.1f}')
                 if wake_data is not None:
                     plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name, normalization_method="peak", align_method="correlate", noise_guess=best_noise_wake , color = 'slategray')
-                    plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name+'_LogL', normalization_method="peak", align_method="correlate", noise_guess=best_noise_wake , color = 'slategray', lenMax = 100)
+                    plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name+'_LogL', normalization_method="peak", align_method="correlate", noise_guess=best_noise_wake , color = 'slategray', lenMax=None)
 
             else:
                 print(f"{json_name} intial guess LogL ~ {manual_logL:.1f}")
@@ -460,7 +577,7 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0, 
                 plotObsVsHeight(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL$\\approx${manual_logL:.1f}')
                 if wake_data is not None:
                     plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name, normalization_method="peak", align_method="correlate", color = 'slategray')
-                    plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name+'_LogL', normalization_method="peak", align_method="correlate", color = 'slategray', lenMax = 100)
+                    plotWakeOverviewOptions(simulation_manual_MetSim_object, wake_data, json_plots_folder, json_name+'_LogL', normalization_method="peak", align_method="correlate", color = 'slategray', lenMax=None)
 
         except Exception as e:
             print(f"Error encountered loading json file {const_json_file}: {e}")
@@ -483,15 +600,21 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0, 
             frag_main, results_list, wake_results = runSimulation(const_obs, compute_wake=True)
             simulation_MetSim_object_wake = SimulationResults(const_obs, frag_main, results_list, wake_results)
 
-            plotWakeOverviewOptions(simulation_MetSim_object_wake, wake_data, json_plots_folder, "wake_fit_against_noise_overview", normalization_method="peak", align_method="correlate", noise_guess=obs_data.noise_wake, color = 'slategray')
-            plotWakeOverviewOptions(simulation_MetSim_object_wake, wake_data, json_plots_folder, "wake_fit_against_noise_LogL", normalization_method="peak", align_method="correlate", noise_guess=obs_data.noise_wake, color = 'slategray', lenMax = 100)
+            wake_noise_plot = (
+                obs_data.noise_wake_array
+                if getattr(obs_data, "noise_wake_array", None) is not None
+                else obs_data.noise_wake
+            )
+            plotWakeOverviewOptions(simulation_MetSim_object_wake, wake_data, json_plots_folder, "wake_fit_against_noise_overview", normalization_method="peak", align_method="correlate", noise_guess=wake_noise_plot, color = 'slategray')
+            plotWakeOverviewOptions(simulation_MetSim_object_wake, wake_data, json_plots_folder, "wake_fit_against_noise_LogL", normalization_method="peak", align_method="correlate", noise_guess=wake_noise_plot, color = 'slategray', lenMax=None)
     except Exception as e:
         print(f"Error encountered running wake simulation for obs_data probably use an old format: {e}")
 
 
 def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=None, wake_samples=8,
                      first_height_ratio=0.1, final_height_ratio=0.75, peak_region=20,
-                     normalization_method="peak", align_method="correlate", lenMax = 0, noise_guess=1, color = 'black'):
+                     normalization_method="peak", align_method="correlate", lenMax=0,
+                     noise_guess=None, color='black'):
     """ Plot the wake at a range of heights showing the match between the observed and simulated wake.
 
     Arguments:
@@ -510,6 +633,10 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
             when tracking began and 1 is the height when the tracking stopped.
         peak_region: [float] Region around the peak to use for the wake normalization (m). If None, the whole
             wake will be used.
+        lenMax: [float, array-like, or None] A scalar is used at every height, an array is matched to the wake
+            heights, 0 shows the full wake, and None reads ``logl_len_max`` from each wake container.
+        noise_guess: [float, array-like, or None] A scalar is used at every height, an array is matched to the wake
+            heights, and None reads ``noise_wake`` from each wake container.
 
     """
 
@@ -528,16 +655,17 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
     # Make N plots for wake_samples heights
     height_fractions = np.linspace(first_height_ratio, final_height_ratio, wake_samples)
 
-    # Set up the plot
+    # Set up the plot. np.atleast_1d also handles wake_samples == 1.
     fig, axes = plt.subplots(figsize=(8, 8), nrows=wake_samples, sharex=True)
+    axes = np.atleast_1d(axes)
 
-    # Length at which text is plotted
+    # Keep the limits from all displayed cuts. Because the subplots share the
+    # x-axis, the final common range must be set only once after the loop.
+    plotted_logl_regions = []
+    plotted_x_arrays = []
+
+    # Length at which text is plotted for a full-wake plot.
     txt_len_coord = 50 # m
-
-    if lenMax == 0:
-        interp_flag = False
-    else:
-        interp_flag = True
 
     # Loop through the heights
     for i, height_fraction in enumerate(height_fractions):
@@ -581,12 +709,30 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
             closest_idx_in_valid = np.argmin(np.abs(ht_ref - sr.brightest_height_arr[valid_wake_indices]))
             wake_res_indx_ref = valid_wake_indices[closest_idx_in_valid]
 
+        # Resolve the LogL region at this altitude. ``lenMax=None`` uses the
+        # value stored directly on the nearest wake container.
+        len_max_this_height = _resolve_wake_value(
+            lenMax, wake_containers, ht_ref,
+            container_attr="logl_len_max", default=100.0 if lenMax is None else 0.0,
+        )
+        interp_flag = not np.isclose(len_max_this_height, 0.0)
+        if interp_flag and np.isfinite(len_max_this_height):
+            plotted_logl_regions.append(abs(float(len_max_this_height)))
+
         # Get the wake results
         ( wake_len_array, wake_lum_array, # Return the simulated wake at the ref ht
             obs_len_array, obs_lum_array # Return the observed wake at the ref ht
         ) = WakeNormalizeAlignReduce(sr.wake_results[wake_res_indx_ref], wake_container_ref,
                                      normalization_method=normalization_method, align_method=align_method,
-                                     lenMax=lenMax, interp=interp_flag)
+                                     lenMax=len_max_this_height, interp=interp_flag)
+
+        # Save all finite x values so the non-LogL/full-wake fallback can still
+        # use the actual plotted data range.
+        for x_array in (wake_len_array, obs_len_array):
+            x_array = np.asarray(x_array, dtype=float)
+            finite_x = x_array[np.isfinite(x_array)]
+            if finite_x.size:
+                plotted_x_arrays.append(finite_x)
 
         # Extract the wake points from the containers
         wake_ref_intensity_array = []
@@ -613,16 +759,21 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
             # axes[i].scatter(obs_len_array, obs_lum_array, color="red", s=5, alpha=0.75)
             for jj in range(len(obs_len_array)):
                 axes[i].plot([obs_len_array[jj],wake_len_array[jj]] , [obs_lum_array[jj], wake_lum_array[jj]], ":xk", alpha=0.75, markersize=1, linewidth=0.2)
-            # chack if the noise_guess is an array
-            if isinstance(noise_guess, (list, np.ndarray)):
-                noise_logl = noise_guess[ht_ref_idx]
-            else:
-                noise_logl = noise_guess
+            noise_logl = _resolve_wake_value(
+                noise_guess, wake_containers, ht_ref,
+                container_attr="noise_wake", default=1.0,
+            )
             # compute the loglikehood between the two wakes
             log_likelihood_wake = np.nansum(-0.5*np.log(2*np.pi*noise_logl**2) - 0.5/(noise_logl**2)*(obs_lum_array - wake_lum_array) ** 2)
-            txt_len_coord = -80  # m
+            txt_len_coord = -1*len_max_this_height + 30  # m
             # Set the height label
-            axes[i].text(txt_len_coord, txt_ht, "{:.1f} km\nLogL={:.2f}\nNoise={:.2f}".format(ht_ref/1000, log_likelihood_wake, noise_logl), fontsize=8, ha="left", va="center")
+            axes[i].text(
+                txt_len_coord, txt_ht,
+                "{:.1f} km\nLogL={:.2f}\nNoise={:.2f}\nRegion={:.1f} m".format(
+                    ht_ref/1000, log_likelihood_wake, noise_logl, len_max_this_height
+                ),
+                fontsize=8, ha="left", va="center"
+            )
 
         else:
             axes[i].text(txt_len_coord, txt_ht, "{:.1f} km".format(ht_ref/1000), fontsize=8, ha="right", va="center")
@@ -634,14 +785,29 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
     # Set the X label
     axes[-1].set_xlabel("Length (m)", fontsize=12)
 
-    if len(wake_len_array) == len(obs_len_array):
-        # Set X axis limits
-        axes[-1].set_xlim(-100, max(np.max(wake_len_array), np.max(obs_len_array)))
+    # Use the longest displayed likelihood region for every subplot. This
+    # keeps all cuts directly comparable and prevents a later fixed -100 m
+    # limit from hiding part of a longer adaptive region.
+    if plotted_logl_regions:
+        longest_region = np.nanmax(plotted_logl_regions)
+
+        if plotted_x_arrays:
+            common_x_max = max(np.nanmax(x_array) for x_array in plotted_x_arrays)
+        else:
+            common_x_max = 0.0
+
+        axes[-1].set_xlim(-longest_region, common_x_max)
+
+    # elif plotted_x_arrays:
+    #     # Full-wake plot: use the complete range actually present in the data.
+    #     common_x_min = min(np.nanmin(x_array) for x_array in plotted_x_arrays)
+    #     common_x_max = max(np.nanmax(x_array) for x_array in plotted_x_arrays)
+    #     axes[-1].set_xlim(common_x_min, common_x_max)
+
     else:
-        # Set X axis limits
         axes[-1].set_xlim(-200, 80)
 
-    # Invert X axis
+    # Invert X axis. sharex=True propagates this range to every row.
     axes[-1].invert_xaxis()
 
     # Remove vertical space between subplots
@@ -2616,7 +2782,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 noise_wake_plot = best_guess[i]
                 print(f"Found noise_wake in variables and flag_wake is True, using noise_wake_plot: {noise_wake_plot} for the wake plot")
         try:
-            plotWakeOverviewOptions(best_guess_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_bestLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, lenMax = 100)
+            plotWakeOverviewOptions(best_guess_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_bestLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, lenMax=None)
         except Exception as e:
             print(f"Error plotting wake overview options: {e}")
         # put None to wake_heights in obs_data_NoneWakeHeights
@@ -2796,7 +2962,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             if var_name == 'noise_wake' and flag_wake:
                 noise_wake_plot = approx_modes_all[i]
         try:
-            plotWakeOverviewOptions(approx_mode_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_modeLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red', lenMax = 100)
+            plotWakeOverviewOptions(approx_mode_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_modeLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red', lenMax=None)
         except Exception as e:
             print(f"Error plotting wake overview options for mode: {e}")
         
@@ -2820,7 +2986,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 noise_wake_plot = all_samples_mean[i]
 
         try:
-            plotWakeOverviewOptions(mean_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_meanLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue', lenMax = 100)
+            plotWakeOverviewOptions(mean_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_meanLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue', lenMax=None)
         except Exception as e:
             print(f"Error plotting wake overview options for mean: {e}")    
         mean_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_mean, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
@@ -2843,7 +3009,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 noise_wake_plot = all_samples_median[i]
 
         try:
-            plotWakeOverviewOptions(median_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_medianLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue', lenMax = 100)
+            plotWakeOverviewOptions(median_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_medianLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue', lenMax=None)
         except Exception as e:
             print(f"Error plotting wake overview options for median: {e}")
         median_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_median, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
@@ -6125,6 +6291,11 @@ def saveWakeContainersJson(wake_containers, out_json_path, metadata=None):
         wc_dict = {
             "site_id": int(wc.site_id),
             "frame_n": int(wc.frame_n),
+            "wake_analysis": {
+                field_name: to_json_safe(getattr(wc, field_name, None))
+                for field_name in _WAKE_ANALYSIS_FIELDS
+                if hasattr(wc, field_name)
+            },
             "points": []
         }
 
@@ -6173,6 +6344,10 @@ def loadWakeContainersJson(json_path):
     wake_containers = []
     for wc_d in payload.get("wake_containers", []):
         wc = WakeContainter(wc_d["site_id"], wc_d["frame_n"])
+
+        for field_name, field_value in wc_d.get("wake_analysis", {}).items():
+            if field_name in _WAKE_ANALYSIS_FIELDS:
+                setattr(wc, field_name, from_json_safe(field_value))
 
         for p in wc_d.get("points", []):
             wc.addPoint(
@@ -6243,11 +6418,24 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
     plotSimVsObsResiduals(obs_data, output_folder=out_folder, file_name=base_name)
     if wake_data_present:
         plotWakeSimVsObsResiduals(None, wake_data, plot_dir=out_folder, event_name=base_name)
-        saveWakeContainersJson(wake_data, os.path.join(out_folder, f"wake_data_{base_name}.json"), metadata={"event": base_name, "traj_pickle": pickle_files})
-        # reaate a folder called wake_noise_plots in the output folder check if present
+        # Compute first so every container receives its per-height noise and
+        # LogL-region metadata before the wake JSON is written.
         wake_noise_plots_dir = os.path.join(out_folder, "wake_noise_plots")
         os.makedirs(wake_noise_plots_dir, exist_ok=True)
-        _, _, _, _ = computeWakeNoiseXAltitude(wake_data, save_plots=True, output_dir=wake_noise_plots_dir, x_threshold=noise_wake_limit, region_method=region_method)
+        computeWakeNoiseXAltitude(
+            wake_data, save_plots=True, output_dir=wake_noise_plots_dir,
+            x_threshold=noise_wake_limit, region_method=region_method,
+        )
+        saveWakeContainersJson(
+            wake_data,
+            os.path.join(out_folder, f"wake_data_{base_name}.json"),
+            metadata={
+                "event": base_name,
+                "traj_pickle": pickle_files,
+                "region_method": region_method,
+                "noise_wake_limit": noise_wake_limit,
+            },
+        )
 
     if os.path.isfile(report_txt):
         # copy the report file to the output folder if not already there
@@ -6811,8 +6999,13 @@ def computeWakeNoiseXAltitude(
             noise_median_abs_resid,
             resid_percentiles, npts_total, npts_used,
             poly_coeffs (highest power first),
-            region_used ("threshold" or "tail")
+            region_used ("threshold", "adaptive", or a fallback),
+            noise_start_x (negative plot-coordinate where the noise begins),
+            logl_len_max (positive wake length used by the likelihood)
         overall_noise: robust median across altitudes (median of per-altitude noise)
+
+    The computed values are also attached directly to each wake container as
+    ``noise_wake``, ``noise_region_start_x``, and ``logl_len_max``.
     """
 
     # Filter by site if requested
@@ -6844,6 +7037,20 @@ def computeWakeNoiseXAltitude(
         ok = np.isfinite(x) & np.isfinite(y)
         x, y = x[ok], y[ok]
 
+        # Determine the signal/noise boundary independently from the polynomial
+        # fit. The same boundary is used as the wake likelihood cutoff.
+        if x.size:
+            if region_method == "adaptive":
+                noise_start_x = find_wake_signal_extent(
+                    x, y, peak_fraction=peak_fraction, buffer_m=buffer_m
+                )[0]
+            else:
+                noise_start_x = float(x_threshold)
+            logl_len_max = abs(float(noise_start_x))
+        else:
+            noise_start_x = np.nan
+            logl_len_max = np.nan
+
         if x.size < max(min_points, poly_order + 2):
             # Not enough points -> skip or fallback
             # Fallback: robust scale of y (trimmed)
@@ -6863,6 +7070,8 @@ def computeWakeNoiseXAltitude(
                 "npts_used": int(y_trim.size),
                 "poly_coeffs": None,
                 "region_used": "fallback_trimmed_y",
+                "noise_start_x": float(noise_start_x) if np.isfinite(noise_start_x) else np.nan,
+                "logl_len_max": float(logl_len_max) if np.isfinite(logl_len_max) else np.nan,
             })
             continue
 
@@ -6870,9 +7079,7 @@ def computeWakeNoiseXAltitude(
         x_min = float(np.min(x))
 
         if region_method == "adaptive":
-            # ADDED: detect where the wake SIGNAL ends; everything beyond it is noise.
-            noise_start_x = find_wake_signal_extent(x, y, peak_fraction=peak_fraction,
-                                                    buffer_m=buffer_m)[0]
+            # Everything beyond the already-computed signal end is noise.
             mask = x <= noise_start_x
             region_used = "adaptive"
         else:
@@ -6914,6 +7121,8 @@ def computeWakeNoiseXAltitude(
                 "npts_used": int(y_trim.size),
                 "poly_coeffs": None,
                 "region_used": "fallback_trimmed_y",
+                "noise_start_x": float(noise_start_x) if np.isfinite(noise_start_x) else np.nan,
+                "logl_len_max": float(logl_len_max) if np.isfinite(logl_len_max) else np.nan,
             })
             continue
 
@@ -6977,6 +7186,8 @@ def computeWakeNoiseXAltitude(
             "npts_used": int(resid_trim.size),
             "poly_coeffs": [float(c) for c in coeffs],  # [a,b,c] for quadratic
             "region_used": region_used,
+            "noise_start_x": float(noise_start_x),
+            "logl_len_max": float(logl_len_max),
         })
 
     # Overall robust noise summary across altitudes
@@ -6985,6 +7196,8 @@ def computeWakeNoiseXAltitude(
     altitudes_noise = altitudes_noise[np.isfinite(noises)]
     noises = noises[np.isfinite(noises)]
     overall_noise = float(np.median(noises)) if noises.size else np.nan
+
+    _attach_wake_analysis_to_containers(wake_containers, results, region_method)
 
     if save_plots:
         print(f"saved all noise fit in: {output_dir}")
@@ -7893,7 +8106,7 @@ def addFragToConst(const_nominal, var_frag_dic):
     return const_nominal
 
 
-def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_len_shift=50, normalization_method="peak", align_method="correlate", lenMax=100, interp=True):
+def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_len_shift=50, normalization_method="peak", align_method="correlate", lenMax=0, interp=True):
     """ Extract the wake from the simulation results.
 
     Arguments:
@@ -8181,22 +8394,48 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             # Get the two containers with observations
             wake_container_ref = wake_data[ht_ref_idx]
 
+            # Resolve the per-altitude likelihood region directly from the
+            # wake container. resultsXalt_wake is only a fallback for older
+            # in-memory objects that do not yet carry the metadata.
+            len_max_this_height = _resolve_wake_value(
+                None, wake_data, ht_ref, container_attr="logl_len_max", default=None
+            )
+            if len_max_this_height is None:
+                len_max_values, len_max_heights = _wake_result_arrays(
+                    getattr(obs_metsim_obj, "resultsXalt_wake", None), "logl_len_max"
+                )
+                len_max_this_height = _resolve_wake_value(
+                    len_max_values, wake_data, ht_ref, altitudes=len_max_heights,
+                    default=100.0,
+                )
+
             # Get the wake results
             (
                 _, wake_lum_array, # Return the simulated wake at the ref ht
                 _, obs_lum_array # Return the observed wake at the ref ht
             ) = WakeNormalizeAlignReduce(simulation_results.wake_results[wake_indices[jj]], wake_container_ref,
                                         normalization_method=normalization_method, align_method=align_method,
-                                        lenMax=100, interp=True)
+                                        lenMax=len_max_this_height, interp=True)
 
-            if obs_metsim_obj.noise_wake_array is not None:
-                # find the obs_metsim_obj.noise_wake_array that is closest to the reference ht_ref
-                obs_metsim_obj.noise_wake = obs_metsim_obj.noise_wake_array[np.argmin(np.abs(obs_metsim_obj.altitudes_noises_wake - ht_ref))]
-                # print(f"Using variable noise_wake: {obs_metsim_obj.noise_wake} at height {ht_ref} m")
-                # print(f"index of noise_wake_array used: {np.argmin(np.abs(obs_metsim_obj.altitudes_noises_wake - ht_ref))} ")
-                # print(f"other index: {ht_ref_idx}")
+            # Use per-height noise unless noise_wake is sampled/fixed as a
+            # scalar, in which case noise_wake_array is cleared above.
+            if getattr(obs_metsim_obj, "noise_wake_array", None) is not None:
+                noise_wake_this_height = _resolve_wake_value(
+                    None, wake_data, ht_ref, container_attr="noise_wake", default=None
+                )
+                if noise_wake_this_height is None:
+                    noise_wake_this_height = _resolve_wake_value(
+                        obs_metsim_obj.noise_wake_array, wake_data, ht_ref,
+                        altitudes=getattr(obs_metsim_obj, "altitudes_noises_wake", None),
+                        default=obs_metsim_obj.noise_wake,
+                    )
+            else:
+                noise_wake_this_height = float(obs_metsim_obj.noise_wake)
 
-            log_likelihood_wake_array[jj] = np.nansum(-0.5*np.log(2*np.pi*obs_metsim_obj.noise_wake**2) - 0.5/(obs_metsim_obj.noise_wake**2)*(obs_lum_array - wake_lum_array) ** 2)
+            if not np.isfinite(noise_wake_this_height) or noise_wake_this_height <= 0:
+                return -np.inf
+
+            log_likelihood_wake_array[jj] = np.nansum(-0.5*np.log(2*np.pi*noise_wake_this_height**2) - 0.5/(noise_wake_this_height**2)*(obs_lum_array - wake_lum_array) ** 2)
             tot_num_values += np.sum(~np.isnan(obs_lum_array))
             # print("number of wake values:", np.sum(~np.isnan(obs_lum_array)), "log_likelihood_wake_array[jj]:", log_likelihood_wake_array[jj])
         log_likelihood_wake = np.sum(log_likelihood_wake_array)
@@ -8451,11 +8690,11 @@ if __name__ == "__main__":
         help="If wake data present not use it.",
         action="store_false")
 
-    arg_parser.add_argument('--noise_wake_limit', metavar='NOISE_WAKE_LIMIT', type=int, default=-100,
-        help="Lenght where computed the noise in the wake (always negative) and then computed the wake LogL, by default -100 m.")
+    arg_parser.add_argument('--noise_wake_limit', metavar='NOISE_WAKE_LIMIT', type=float, default=-100.0,
+        help="Fixed wake x-coordinate where the noise tail begins. It is also used as the LogL cutoff when --region_method=threshold (default: -100 m).")
 
-    arg_parser.add_argument('--region_method', metavar='REGION_METHOD', type=str, default="threshold",  # ADDED
-        help="Wake-noise region only to compute the noise (does not influence the wake LogL region as always based on the noise_wake_limit): 'threshold' (fixed x<=noise_wake_limit, default) or 'adaptive'.")
+    arg_parser.add_argument('--region_method', metavar='REGION_METHOD', type=str, choices=('threshold', 'adaptive'), default="threshold",
+        help="Method used for both the noise-estimation tail and wake LogL cutoff: 'threshold' uses --noise_wake_limit at every height; 'adaptive' estimates a separate cutoff at each height.")
 
     arg_parser.add_argument('--priorposteriorupdate', metavar='PRIORPOSTERIORUPDATE', type=str,
         default=r"",

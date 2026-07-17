@@ -19,8 +19,10 @@ from Mars_AtmDens import fitAtmPoly_mars
 #### EVENT
 event_path = r'C:\Users\maxiv\WMPG-repoMAX\Code\Mars_mission\usg_input_jul_2010' # file path to the USG light curve, WITHOUT the .txt extension
 #### DYNESTY SAVE:
-save_to = r'C:\Users\maxiv\WMPG-repoMAX\Code\Mars_mission'  # file path to the dynesty save to save to/continue running from
+save_to = r'C:\Users\maxiv\Documents\UWO\Papers\5)METEORCAM-Strawman'  # file path to the dynesty save to save to/continue running from
 new_run = True  # boolean, set True if this is a new run (i.e. the dynesty save does not already exist) and set False if continuing an existing run from the specified dynesty save
+
+base_name = os.path.basename(event_path)
 
 # CONSTANTS (change if necessary):
 ############################################################################
@@ -460,8 +462,8 @@ metsim_obj.initializeSimulation(metsim_obj.all_params)
 # plot 
 print('plotting...')
 resuls = earth_to_mars_empirical(v_earth=metsim_obj.const.v_init, zenith_earth=metsim_obj.const.zenith_angle*180/np.pi, sigma_level=2.0)
-print(f"Velocity at Earth: {metsim_obj.const.v_init:.2f} km/s, Zenith angle at Earth: {metsim_obj.const.zenith_angle:.2f} deg")
-print(f"Estimated Mars velocity: {resuls['v_mars']:.2f} km/s (model: {resuls['velocity_model']})")
+print(f"Velocity at Earth: {metsim_obj.const.v_init/1000:.2f} km/s, Zenith angle at Earth: {metsim_obj.const.zenith_angle:.2f} deg")
+print(f"Estimated Mars velocity: {resuls['v_mars']/1000:.2f} km/s (model: {resuls['velocity_model']})")
 Vinf_val_mars = resuls['v_mars']
 print(f"Estimated Mars zenith angle: {resuls['zenith_mars']:.2f} deg (model: {resuls['zenith_model']})")
 zenith_angle_mars = resuls['zenith_mars'] * np.pi / 180  # convert to radians
@@ -647,8 +649,8 @@ ax.legend(fontsize=8, loc='lower right')
 # plt.suptitle(f'Lightcurve Comparison for {base_name}', fontsize=18)
 plt.tight_layout()
 # show the plot
-plt.show()
-# plt.savefig(output_dir + os.sep + base_name + "_Lightcurve_Earth_vs_Mars.png")
-# plt.close()
+# plt.show()
+plt.savefig(save_to + os.sep + base_name + "_Lightcurve_Earth_vs_Mars.png")
+plt.close()
 
 

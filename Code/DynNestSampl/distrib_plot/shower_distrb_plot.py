@@ -5674,6 +5674,112 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
     plt.close()
 
+
+    # Create figure
+    fig = plt.figure(figsize=(8, 10))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
+
+    # Set main axes (with shared x-axis)
+    ax_dist = fig.add_subplot(gs[0])
+    ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
+
+    # --- TOP PANEL: Rho Distribution ---
+    smooth = 0.02
+    lo, hi = np.min(rho_corrected), np.max(rho_corrected)
+    nbins = int(round(10. / smooth))
+    hist, edges = np.histogram(rho_corrected, bins=nbins, weights=w, range=(lo, hi))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+    ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
+
+    # Percentile lines
+    ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = rho_corrected_hi - rho_corrected_median
+    minus = rho_corrected_median - rho_corrected_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    ax_dist.set_xlim(-100, 8300)
+    ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.spines['bottom'].set_visible(False)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+
+    # --- BOTTOM PANEL: Rho vs Tj ---
+    for i in range(len(tj)):
+        ax_scatter.errorbar(
+            rho[i], tj[i],
+            xerr=[[abs(rho_lo[i])], [abs(rho_hi[i])]],
+            yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
+            elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
+
+    scatter = ax_scatter.scatter(
+        rho, tj,
+        # c=np.log10(meteoroid_diameter_mm),
+        # c=log10_m_init,
+        c='red',
+        # c=kc_par,
+        # cmap='viridis',
+        # cmap='coolwarm',
+        # cmap='Spectral_r',
+        # # norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)),
+        # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
+        # norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
+        marker='x',
+        s=40,
+        zorder=2,
+        edgecolors='black', 
+        # linewidth=0.5
+    )
+
+    # Add manually aligned colorbar
+    # Get position of ax_scatter to align colorbar
+    # pos = ax_scatter.get_position()
+    # cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
+    # cbar = plt.colorbar(scatter, cax=cbar_ax)
+    # # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+    # cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
+    # cbar.set_label('$k_c$ parameter', fontsize=20)
+    # the ticks size of the colorbar
+    cbar.ax.tick_params(labelsize=20)
+
+    # Tj markers
+    if shower_iau_no == -1:
+        ax_scatter.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1)
+        ax_scatter.text(5500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
+        ax_scatter.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1)
+        ax_scatter.text(5500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
+        if ax_scatter.get_ylim()[0] < 1.5:
+            ax_scatter.text(5500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+
+    # Axis labels
+    ax_scatter.set_xlim(0, 6000)
+    ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    ax_scatter.set_ylabel(r'Tisserand parameter (T$_j$)', fontsize=20)
+    ax_scatter.tick_params(labelsize=20)
+    # display the values on the x and y axes at 0 2000 4000 6000 8000
+    ax_scatter.set_xticks(np.arange(0, 6001, 1000))
+    ax_scatter.grid(True)
+
+    # Save
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_JB_plot.png"), bbox_inches='tight', dpi=300)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.close()
+
     # save as a csv the first column is all base_name then the Tj and then density
     summary_df_rho_tj = pd.DataFrame({
         "Name": all_names,
@@ -8850,7 +8956,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         # creating a ternary plot with the Fe Mg Na values from
         # c:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\results_only_spectra_Max.csv
-        print("Creating ternary plot with Fe, Mg, Na values...")
+        
 
         spectra_csv_path = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\results_only_spectra_Max.csv"
 
@@ -8964,411 +9070,414 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 name_to_sigma_class = {}
                 name_to_eta_class = {}
 
-                for name_i, rho_i, sigma_init_i, sigma_change_i, eta_init_i, eta_change_i in zip(
-                    all_names,
-                    rho,
-                    sigma_meteor_begin_median_c,
-                    sigma_meteor_change_median_c,
-                    eta_meteor_begin_median_c,
-                    eta_meteor_change_median_c,
-                ):
+                if plot_class:
+                    print("Creating ternary plot with Fe, Mg, Na values...")
 
-                    name_to_rho[name_i] = rho_i
+                    for name_i, rho_i, sigma_init_i, sigma_change_i, eta_init_i, eta_change_i in zip(
+                        all_names,
+                        rho,
+                        sigma_meteor_begin_median_c,
+                        sigma_meteor_change_median_c,
+                        eta_meteor_begin_median_c,
+                        eta_meteor_change_median_c,
+                    ):
 
-                    if np.isfinite(sigma_init_i) and np.isfinite(sigma_change_i):
-                        if sigma_init_i > sigma_change_i:
-                            name_to_sigma_class[name_i] = "avocado"
+                        name_to_rho[name_i] = rho_i
+
+                        if np.isfinite(sigma_init_i) and np.isfinite(sigma_change_i):
+                            if sigma_init_i > sigma_change_i:
+                                name_to_sigma_class[name_i] = "avocado"
+                            else:
+                                name_to_sigma_class[name_i] = "coconut"
                         else:
-                            name_to_sigma_class[name_i] = "coconut"
-                    else:
-                        name_to_sigma_class[name_i] = None
+                            name_to_sigma_class[name_i] = None
 
-                    if np.isfinite(eta_init_i) and np.isfinite(eta_change_i):
-                        if eta_init_i > eta_change_i:
-                            name_to_eta_class[name_i] = "avocado"
+                        if np.isfinite(eta_init_i) and np.isfinite(eta_change_i):
+                            if eta_init_i > eta_change_i:
+                                name_to_eta_class[name_i] = "avocado"
+                            else:
+                                name_to_eta_class[name_i] = "coconut"
                         else:
-                            name_to_eta_class[name_i] = "coconut"
-                    else:
-                        name_to_eta_class[name_i] = None
+                            name_to_eta_class[name_i] = None
 
-                model_name_list = list(all_names)
-
-                # ---------------------------------------------------------
-                # Match spectral meteors to modeled meteors
-                # ---------------------------------------------------------
-                matched_model_names = []
-                matched_rho = []
-                matched_sigma_class = []
-                matched_eta_class = []
-                matched_dt = []
-
-                for meteor_id in df_spec["ID"].astype(str).values:
-
-                    matched_name = find_close_in_list(
-                        meteor_id,
-                        model_name_list,
-                        tol_seconds=3
-                    )
-
-                    if matched_name is None:
-                        matched_model_names.append(None)
-                        matched_rho.append(np.nan)
-                        matched_sigma_class.append(None)
-                        matched_eta_class.append(None)
-                        matched_dt.append(np.nan)
-                    else:
-                        matched_model_names.append(matched_name)
-                        matched_rho.append(name_to_rho.get(matched_name, np.nan))
-                        matched_sigma_class.append(name_to_sigma_class.get(matched_name, None))
-                        matched_eta_class.append(name_to_eta_class.get(matched_name, None))
-
-                        try:
-                            dt_s = (
-                                _normalize_code_to_dt(matched_name)
-                                - _normalize_code_to_dt(meteor_id)
-                            ).total_seconds()
-                        except Exception:
-                            dt_s = np.nan
-
-                        matched_dt.append(dt_s)
-
-                df_spec["matched_model_name"] = matched_model_names
-                df_spec["rho_match"] = matched_rho
-                df_spec["sigma_class"] = matched_sigma_class
-                df_spec["eta_class"] = matched_eta_class
-                df_spec["delta_t_s"] = matched_dt
-
-                # Only plot rows with matched rho
-                df_plot = df_spec[np.isfinite(df_spec["rho_match"])].copy()
-
-                if len(df_plot) == 0:
-                    print("No matched spectral meteors with valid rho values were found.")
-                else:
+                    model_name_list = list(all_names)
 
                     # ---------------------------------------------------------
-                    # Convert ternary (Fe, Mg, Na) -> Cartesian
+                    # Match spectral meteors to modeled meteors
                     # ---------------------------------------------------------
-                    def ternary_to_xy(fe, mg, na):
-                        """
-                        Ternary orientation:
+                    matched_model_names = []
+                    matched_rho = []
+                    matched_sigma_class = []
+                    matched_eta_class = []
+                    matched_dt = []
 
-                                  Fe
-                                 /  \
-                                /    \
-                               Mg----Na
-                        """
+                    for meteor_id in df_spec["ID"].astype(str).values:
 
-                        x = na + 0.5 * fe
-                        y = (np.sqrt(3) / 2.0) * fe
-
-                        return x, y
-
-                    x_plot, y_plot = ternary_to_xy(
-                        df_plot["Fe_n"].values,
-                        df_plot["Mg_n"].values,
-                        df_plot["Na_n"].values
-                    )
-
-                    fig, ax = plt.subplots(figsize=(9, 8))
-
-                    # Triangle boundary:
-                    # Mg = lower left, Na = lower right, Fe = top.
-                    triangle = np.array([
-                        [0.0, 0.0],                    # Mg
-                        [1.0, 0.0],                    # Na
-                        [0.5, np.sqrt(3)/2.0],         # Fe
-                        [0.0, 0.0]
-                    ])
-                    ax.plot(triangle[:, 0], triangle[:, 1], color="black", lw=1.5, zorder=1)
-
-                    # Light ternary grid
-                    grid_vals = np.linspace(0.2, 0.8, 4)
-                    for g in grid_vals:
-                        p1 = ternary_to_xy(g, 1-g, 0)
-                        p2 = ternary_to_xy(g, 0, 1-g)
-                        ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="0.85", lw=0.8, zorder=0)
-
-                        p1 = ternary_to_xy(1-g, g, 0)
-                        p2 = ternary_to_xy(0, g, 1-g)
-                        ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="0.85", lw=0.8, zorder=0)
-
-                        p1 = ternary_to_xy(1-g, 0, g)
-                        p2 = ternary_to_xy(0, 1-g, g)
-                        ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="0.85", lw=0.8, zorder=0)
-
-                    rho_vals = df_plot["rho_match"].values
-
-                    # ---------------------------------------------------------
-                    # Spectral-class edge colors
-                    # ---------------------------------------------------------
-                    # These are the exact same assignments used by the
-                    # velocity/begin-height spectral plot.
-                    plot_spectral_types = (
-                        df_plot["spectral_type"]
-                        .astype(str)
-                        .str.strip()
-                        .values
-                    )
-
-                    add_spectral_type_colors(
-                        plot_spectral_types
-                    )
-
-                    edge_cols = [
-                        spectral_type_colors[spectral_type]
-                        for spectral_type in plot_spectral_types
-                    ]
-
-                    # base scatter
-                    scatter = ax.scatter(
-                        x_plot,
-                        y_plot,
-                        c=rho_vals,
-                        cmap="YlGn_r",
-                        norm=PowerNorm(
-                            gamma=0.5,
-                            vmin=np.nanmin(rho_vals),
-                            vmax=np.nanmax(rho_vals)
-                        ),
-                        s=120,
-                        edgecolors=edge_cols,     # <-- spectral class color
-                        linewidths=2.0,
-                        zorder=3
-                    )
-
-                    # ---------------------------------------------------------
-                    # Add spectral class legend
-                    # ---------------------------------------------------------
-                    class_handles = []
-
-                    present_classes = sorted(
-                        set(plot_spectral_types),
-                        key=str.casefold,
-                    )
-
-                    for class_name in present_classes:
-                        class_handles.append(
-                            Line2D(
-                                [0], [0],
-                                marker='o',
-                                linestyle='None',
-                                markerfacecolor='white',
-                                markeredgecolor=spectral_type_colors[class_name],
-                                markeredgewidth=2,
-                                markersize=9,
-                                label=class_name
-                            )
+                        matched_name = find_close_in_list(
+                            meteor_id,
+                            model_name_list,
+                            tol_seconds=3
                         )
 
-                    # ---------------------------------------------------------
-                    # Overlay avocado/coconut as black shapes
-                    # ---------------------------------------------------------
-                    sigma_handles = []
-
-                    if plot_class == True and show_sigma_overlay == True:
-                        print("Add the coconut or avocado model for sigma...")
-
-                        class_styles = {
-                            "avocado": "h",   # black circle outline
-                            "coconut": "s",   # black square outline
-                        }
-
-                        # if True, only show overlay for Iron meteors
-                        if sigma_overlay_not_iron:
-                            sigma_mask_global = (
-                                df_plot["spectral_type"].astype(str).str.lower() != "iron"
-                            ).values
+                        if matched_name is None:
+                            matched_model_names.append(None)
+                            matched_rho.append(np.nan)
+                            matched_sigma_class.append(None)
+                            matched_eta_class.append(None)
+                            matched_dt.append(np.nan)
                         else:
-                            sigma_mask_global = np.ones(len(df_plot), dtype=bool)
+                            matched_model_names.append(matched_name)
+                            matched_rho.append(name_to_rho.get(matched_name, np.nan))
+                            matched_sigma_class.append(name_to_sigma_class.get(matched_name, None))
+                            matched_eta_class.append(name_to_eta_class.get(matched_name, None))
 
-                        for sigma_name, marker_style in class_styles.items():
+                            try:
+                                dt_s = (
+                                    _normalize_code_to_dt(matched_name)
+                                    - _normalize_code_to_dt(meteor_id)
+                                ).total_seconds()
+                            except Exception:
+                                dt_s = np.nan
 
-                            mask_sigma = ( # eta_class
-                                df_plot["sigma_class"].astype(str).str.lower() == sigma_name
-                            ).values
+                            matched_dt.append(dt_s)
 
-                            final_mask = sigma_mask_global & mask_sigma
+                    df_spec["matched_model_name"] = matched_model_names
+                    df_spec["rho_match"] = matched_rho
+                    df_spec["sigma_class"] = matched_sigma_class
+                    df_spec["eta_class"] = matched_eta_class
+                    df_spec["delta_t_s"] = matched_dt
 
-                            if np.any(final_mask):
-                                ax.scatter(
-                                    x_plot[final_mask],
-                                    y_plot[final_mask],
-                                    s=230,
-                                    facecolors="none",
-                                    edgecolors="black",
-                                    linewidths=2.2,
-                                    marker=marker_style,
-                                    zorder=4
+                    # Only plot rows with matched rho
+                    df_plot = df_spec[np.isfinite(df_spec["rho_match"])].copy()
+
+                    if len(df_plot) == 0:
+                        print("No matched spectral meteors with valid rho values were found.")
+                    else:
+
+                        # ---------------------------------------------------------
+                        # Convert ternary (Fe, Mg, Na) -> Cartesian
+                        # ---------------------------------------------------------
+                        def ternary_to_xy(fe, mg, na):
+                            """
+                            Ternary orientation:
+
+                                    Fe
+                                    /  \
+                                    /    \
+                                Mg----Na
+                            """
+
+                            x = na + 0.5 * fe
+                            y = (np.sqrt(3) / 2.0) * fe
+
+                            return x, y
+
+                        x_plot, y_plot = ternary_to_xy(
+                            df_plot["Fe_n"].values,
+                            df_plot["Mg_n"].values,
+                            df_plot["Na_n"].values
+                        )
+
+                        fig, ax = plt.subplots(figsize=(9, 8))
+
+                        # Triangle boundary:
+                        # Mg = lower left, Na = lower right, Fe = top.
+                        triangle = np.array([
+                            [0.0, 0.0],                    # Mg
+                            [1.0, 0.0],                    # Na
+                            [0.5, np.sqrt(3)/2.0],         # Fe
+                            [0.0, 0.0]
+                        ])
+                        ax.plot(triangle[:, 0], triangle[:, 1], color="black", lw=1.5, zorder=1)
+
+                        # Light ternary grid
+                        grid_vals = np.linspace(0.2, 0.8, 4)
+                        for g in grid_vals:
+                            p1 = ternary_to_xy(g, 1-g, 0)
+                            p2 = ternary_to_xy(g, 0, 1-g)
+                            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="0.85", lw=0.8, zorder=0)
+
+                            p1 = ternary_to_xy(1-g, g, 0)
+                            p2 = ternary_to_xy(0, g, 1-g)
+                            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="0.85", lw=0.8, zorder=0)
+
+                            p1 = ternary_to_xy(1-g, 0, g)
+                            p2 = ternary_to_xy(0, 1-g, g)
+                            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="0.85", lw=0.8, zorder=0)
+
+                        rho_vals = df_plot["rho_match"].values
+
+                        # ---------------------------------------------------------
+                        # Spectral-class edge colors
+                        # ---------------------------------------------------------
+                        # These are the exact same assignments used by the
+                        # velocity/begin-height spectral plot.
+                        plot_spectral_types = (
+                            df_plot["spectral_type"]
+                            .astype(str)
+                            .str.strip()
+                            .values
+                        )
+
+                        add_spectral_type_colors(
+                            plot_spectral_types
+                        )
+
+                        edge_cols = [
+                            spectral_type_colors[spectral_type]
+                            for spectral_type in plot_spectral_types
+                        ]
+
+                        # base scatter
+                        scatter = ax.scatter(
+                            x_plot,
+                            y_plot,
+                            c=rho_vals,
+                            cmap="YlGn_r",
+                            norm=PowerNorm(
+                                gamma=0.5,
+                                vmin=np.nanmin(rho_vals),
+                                vmax=np.nanmax(rho_vals)
+                            ),
+                            s=120,
+                            edgecolors=edge_cols,     # <-- spectral class color
+                            linewidths=2.0,
+                            zorder=3
+                        )
+
+                        # ---------------------------------------------------------
+                        # Add spectral class legend
+                        # ---------------------------------------------------------
+                        class_handles = []
+
+                        present_classes = sorted(
+                            set(plot_spectral_types),
+                            key=str.casefold,
+                        )
+
+                        for class_name in present_classes:
+                            class_handles.append(
+                                Line2D(
+                                    [0], [0],
+                                    marker='o',
+                                    linestyle='None',
+                                    markerfacecolor='white',
+                                    markeredgecolor=spectral_type_colors[class_name],
+                                    markeredgewidth=2,
+                                    markersize=9,
+                                    label=class_name
                                 )
+                            )
 
-                                # if sigma_overlay_not_iron:
-                                #     label_name = f"{sigma_name.capitalize()} (Not Iron)"
-                                # else:
-                                #     label_name = sigma_name.capitalize()
-                                
-                                label_name = sigma_name.capitalize()
+                        # ---------------------------------------------------------
+                        # Overlay avocado/coconut as black shapes
+                        # ---------------------------------------------------------
+                        sigma_handles = []
 
-                                sigma_handles.append(
-                                    Line2D(
-                                        [0], [0],
+                        if plot_class == True and show_sigma_overlay == True:
+                            print("Add the coconut or avocado model for sigma...")
+
+                            class_styles = {
+                                "avocado": "h",   # black circle outline
+                                "coconut": "s",   # black square outline
+                            }
+
+                            # if True, only show overlay for Iron meteors
+                            if sigma_overlay_not_iron:
+                                sigma_mask_global = (
+                                    df_plot["spectral_type"].astype(str).str.lower() != "iron"
+                                ).values
+                            else:
+                                sigma_mask_global = np.ones(len(df_plot), dtype=bool)
+
+                            for sigma_name, marker_style in class_styles.items():
+
+                                mask_sigma = ( # eta_class
+                                    df_plot["sigma_class"].astype(str).str.lower() == sigma_name
+                                ).values
+
+                                final_mask = sigma_mask_global & mask_sigma
+
+                                if np.any(final_mask):
+                                    ax.scatter(
+                                        x_plot[final_mask],
+                                        y_plot[final_mask],
+                                        s=230,
+                                        facecolors="none",
+                                        edgecolors="black",
+                                        linewidths=2.2,
                                         marker=marker_style,
-                                        color="black",
-                                        markerfacecolor="none",
-                                        markeredgewidth=2.0,
-                                        linestyle="None",
-                                        markersize=10,
-                                        label=label_name
+                                        zorder=4
                                     )
+
+                                    # if sigma_overlay_not_iron:
+                                    #     label_name = f"{sigma_name.capitalize()} (Not Iron)"
+                                    # else:
+                                    #     label_name = sigma_name.capitalize()
+                                    
+                                    label_name = sigma_name.capitalize()
+
+                                    sigma_handles.append(
+                                        Line2D(
+                                            [0], [0],
+                                            marker=marker_style,
+                                            color="black",
+                                            markerfacecolor="none",
+                                            markeredgewidth=2.0,
+                                            linestyle="None",
+                                            markersize=10,
+                                            label=label_name
+                                        )
+                                    )
+
+                        # Optional meteor labels
+                        if show_labels:
+                            for xi, yi, mid in zip(x_plot, y_plot, df_plot["ID"].astype(str).values):
+                                ax.text(
+                                    xi + 0.01, yi + 0.01, mid,
+                                    fontsize=7, color="black", zorder=5
                                 )
 
-                    # Optional meteor labels
-                    if show_labels:
-                        for xi, yi, mid in zip(x_plot, y_plot, df_plot["ID"].astype(str).values):
-                            ax.text(
-                                xi + 0.01, yi + 0.01, mid,
-                                fontsize=7, color="black", zorder=5
+                        # Corner labels
+                        ax.text(
+                            0.5,
+                            np.sqrt(3)/2.0 + 0.05,
+                            "Fe",
+                            fontsize=16,
+                            ha="center",
+                            va="bottom",
+                        )
+
+                        ax.text(
+                            -0.04,
+                            -0.05,
+                            "Mg",
+                            fontsize=16,
+                            ha="right",
+                            va="top",
+                        )
+
+                        ax.text(
+                            1.04,
+                            -0.05,
+                            "Na",
+                            fontsize=16,
+                            ha="left",
+                            va="top",
+                        )
+
+                        # Small ternary tick labels.
+                        #
+                        # Move each scale outward, perpendicular to its side:
+                        # Mg on the left, Na along the bottom, and Fe on the right.
+                        tick_offset = 0.045
+                        sqrt3_over_2 = np.sqrt(3) / 2.0
+
+                        for frac in [0.2, 0.4, 0.6, 0.8]:
+
+                            # Mg scale: left edge, increasing toward Mg.
+                            x_t, y_t = ternary_to_xy(
+                                1.0 - frac,
+                                frac,
+                                0.0,
                             )
 
-                    # Corner labels
-                    ax.text(
-                        0.5,
-                        np.sqrt(3)/2.0 + 0.05,
-                        "Fe",
-                        fontsize=16,
-                        ha="center",
-                        va="bottom",
-                    )
+                            ax.text(
+                                x_t - sqrt3_over_2 * tick_offset,
+                                y_t + 0.5 * tick_offset,
+                                f"{frac:.1f}",
+                                fontsize=9,
+                                rotation=60,
+                                rotation_mode="anchor",
+                                ha="center",
+                                va="center",
+                                color="0.35",
+                            )
 
-                    ax.text(
-                        -0.04,
-                        -0.05,
-                        "Mg",
-                        fontsize=16,
-                        ha="right",
-                        va="top",
-                    )
+                            # Na scale: bottom edge, increasing toward Na.
+                            x_t, y_t = ternary_to_xy(
+                                0.0,
+                                1.0 - frac,
+                                frac,
+                            )
 
-                    ax.text(
-                        1.04,
-                        -0.05,
-                        "Na",
-                        fontsize=16,
-                        ha="left",
-                        va="top",
-                    )
+                            ax.text(
+                                x_t,
+                                y_t - tick_offset,
+                                f"{frac:.1f}",
+                                fontsize=9,
+                                ha="center",
+                                va="top",
+                                color="0.35",
+                            )
 
-                    # Small ternary tick labels.
-                    #
-                    # Move each scale outward, perpendicular to its side:
-                    # Mg on the left, Na along the bottom, and Fe on the right.
-                    tick_offset = 0.045
-                    sqrt3_over_2 = np.sqrt(3) / 2.0
+                            # Fe scale: right edge, increasing toward Fe.
+                            x_t, y_t = ternary_to_xy(
+                                frac,
+                                0.0,
+                                1.0 - frac,
+                            )
 
-                    for frac in [0.2, 0.4, 0.6, 0.8]:
+                            ax.text(
+                                x_t + sqrt3_over_2 * tick_offset,
+                                y_t + 0.5 * tick_offset,
+                                f"{frac:.1f}",
+                                fontsize=9,
+                                rotation=-60,
+                                rotation_mode="anchor",
+                                ha="center",
+                                va="center",
+                                color="0.35",
+                            )
 
-                        # Mg scale: left edge, increasing toward Mg.
-                        x_t, y_t = ternary_to_xy(
-                            1.0 - frac,
-                            frac,
-                            0.0,
-                        )
+                        # Colorbar
+                        cbar = fig.colorbar(scatter, ax=ax, shrink=0.9, pad=0.05)
+                        cbar.set_label(r"$\rho$ [kg/m$^3$]", fontsize=14)
 
-                        ax.text(
-                            x_t - sqrt3_over_2 * tick_offset,
-                            y_t + 0.5 * tick_offset,
-                            f"{frac:.1f}",
-                            fontsize=9,
-                            rotation=60,
-                            rotation_mode="anchor",
-                            ha="center",
-                            va="center",
-                            color="0.35",
-                        )
-
-                        # Na scale: bottom edge, increasing toward Na.
-                        x_t, y_t = ternary_to_xy(
-                            0.0,
-                            1.0 - frac,
-                            frac,
-                        )
-
-                        ax.text(
-                            x_t,
-                            y_t - tick_offset,
-                            f"{frac:.1f}",
-                            fontsize=9,
-                            ha="center",
-                            va="top",
-                            color="0.35",
-                        )
-
-                        # Fe scale: right edge, increasing toward Fe.
-                        x_t, y_t = ternary_to_xy(
-                            frac,
-                            0.0,
-                            1.0 - frac,
-                        )
-
-                        ax.text(
-                            x_t + sqrt3_over_2 * tick_offset,
-                            y_t + 0.5 * tick_offset,
-                            f"{frac:.1f}",
-                            fontsize=9,
-                            rotation=-60,
-                            rotation_mode="anchor",
-                            ha="center",
-                            va="center",
-                            color="0.35",
-                        )
-
-                    # Colorbar
-                    cbar = fig.colorbar(scatter, ax=ax, shrink=0.9, pad=0.05)
-                    cbar.set_label(r"$\rho$ [kg/m$^3$]", fontsize=14)
-
-                    # Legends
-                    legend1 = ax.legend(
-                        handles=class_handles,
-                        title="Spectral class",
-                        loc="upper left",
-                        fontsize=11,
-                        title_fontsize=12,
-                        frameon=True
-                    )
-                    ax.add_artist(legend1)
-
-                    if len(sigma_handles) > 0:
-                        ax.legend(
-                            handles=sigma_handles,
-                            title=r"$\sigma$ structure",
-                            # title=r"$\eta$ structure",
-                            loc="upper right",
+                        # Legends
+                        legend1 = ax.legend(
+                            handles=class_handles,
+                            title="Spectral class",
+                            loc="upper left",
                             fontsize=11,
                             title_fontsize=12,
                             frameon=True
                         )
+                        ax.add_artist(legend1)
 
-                    ax.set_title("Fe-Mg-Na ternary plot", fontsize=16)
-                    ax.set_aspect("equal")
-                    ax.set_xlim(-0.12, 1.12)
-                    ax.set_ylim(-0.12, np.sqrt(3)/2.0 + 0.12)
-                    ax.axis("off")
+                        if len(sigma_handles) > 0:
+                            ax.legend(
+                                handles=sigma_handles,
+                                title=r"$\sigma$ structure",
+                                # title=r"$\eta$ structure",
+                                loc="upper right",
+                                fontsize=11,
+                                title_fontsize=12,
+                                frameon=True
+                            )
 
-                    fig.tight_layout()
+                        ax.set_title("Fe-Mg-Na ternary plot", fontsize=16)
+                        ax.set_aspect("equal")
+                        ax.set_xlim(-0.12, 1.12)
+                        ax.set_ylim(-0.12, np.sqrt(3)/2.0 + 0.12)
+                        ax.axis("off")
 
-                    ternary_plot_path = os.path.join(
-                        output_dir_show,
-                        # f"{shower_name}_ternary_FeMgNa_rho_etaClass.png"
-                        f"{shower_name}_ternary_FeMgNa_rho_sigmaClass.png"
-                    )
+                        fig.tight_layout()
 
-                    fig.savefig(
-                        ternary_plot_path,
-                        dpi=300,
-                        bbox_inches="tight"
-                    )
-                    plt.close(fig)
+                        ternary_plot_path = os.path.join(
+                            output_dir_show,
+                            # f"{shower_name}_ternary_FeMgNa_rho_etaClass.png"
+                            f"{shower_name}_ternary_FeMgNa_rho_sigmaClass.png"
+                        )
 
-                    print(f"Saved ternary plot to: {ternary_plot_path}")
+                        fig.savefig(
+                            ternary_plot_path,
+                            dpi=300,
+                            bbox_inches="tight"
+                        )
+                        plt.close(fig)
+
+                        print(f"Saved ternary plot to: {ternary_plot_path}")
 
         else:
             print(f"Spectra CSV file not found: {spectra_csv_path}")
@@ -9570,7 +9679,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -9618,4 +9727,4 @@ if __name__ == "__main__":
                        tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, 
                        energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, 
                        mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all,
-                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False, plot_class=True) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot

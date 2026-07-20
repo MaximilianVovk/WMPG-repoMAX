@@ -49,8 +49,8 @@ def read_mem_flux_file(filepath):
 # Input files
 # -------------------------------------------------------------------
 
-file1 = "cube_avg_1.txt"
-file2 = "cube_avg_2.txt"
+file1 = r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\Test-Flux-surface\test-surf-mars\HiDensity\cube_avg.txt"
+file2 = r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\Test-Flux-surface\test-surf-mars\LoDensity\cube_avg.txt"
 
 speeds1, data1 = read_mem_flux_file(file1)
 speeds2, data2 = read_mem_flux_file(file2)
@@ -65,7 +65,7 @@ speeds = speeds1
 # Directions to plot
 # -------------------------------------------------------------------
 
-directions_to_plot = ["+x ram", "-x wake", "+z zenith"]
+directions_to_plot = ["+x ram", "-x wake", "+y port", "-y starboard", "+z zenith", "-z nadir"]
 
 summed_flux = {}
 
@@ -105,6 +105,6 @@ plt.legend()
 plt.tight_layout()
 
 # High-resolution output
-plt.savefig("summed_flux_selected_directions_highres.png", dpi=600, bbox_inches="tight")
+plt.savefig(r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\Test-Flux-surface\test-surf-mars\summed_flux_selected_directions_highres.png", dpi=600, bbox_inches="tight")
 
 plt.show()

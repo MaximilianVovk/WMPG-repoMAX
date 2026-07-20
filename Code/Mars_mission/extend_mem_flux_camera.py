@@ -23,10 +23,12 @@ is configurable. It:
 
 Important MEM interpretation:
 - Cube face fluxes are not the same as total cross-sectional flux.
-- The default flux mode uses the six cube faces only to estimate the speed-
-  distribution shape, and normalizes that shape to the total cross-sectional
-  flux reported in the cube-file headers.
-- Use --flux-mode six-face-sum to reproduce the user's earlier plotting method.
+- For the METEORCAM surface-flux calculation, the default uses only the MEM
+  ``+z zenith`` face via ``--flux-mode zenith``.
+- Use ``--flux-mode selected-direction --selected-direction "..."`` to choose
+  any other individual MEM direction.
+- The cross-sectional-normalized and six-face modes remain available for
+  comparison with other flux definitions.
 
 Only NumPy and Matplotlib are required; SciPy and pandas are not used.
 """
@@ -61,8 +63,7 @@ DEFAULT_FACE_DIRECTIONS = [
     "+z zenith", "-z nadir",
 ]
 
-# DEFAULT_MASS_EDGES_G = [10, 50, 100, 250, 500, 1000, 2000, 5000, 10000]
-DEFAULT_MASS_EDGES_G = [50, 100, 250, 500, 1000, 2000, 5000, 10000]
+DEFAULT_MASS_EDGES_G = [10, 50, 100, 250, 500, 1000, 2000, 5000, 10000]
 
 
 @dataclass
@@ -242,20 +243,44 @@ def reference_speed_flux(
     directions: list[str],
     total_cross_sectional_flux: float,
     mode: str,
-) -> tuple[np.ndarray, dict[str, np.ndarray | float]]:
+    selected_direction: str = "+z zenith",
+) -> tuple[np.ndarray, dict[str, np.ndarray | float | str]]:
     matrix = np.vstack([np.asarray(direction_flux[name], dtype=float) for name in directions])
     face_sum = np.sum(matrix, axis=0)
     face_mean = np.mean(matrix, axis=0)
 
-    diagnostics: dict[str, np.ndarray | float] = {
+    canonical = {name.lower(): name for name in DIRECTIONS}
+    selected_key = str(selected_direction).strip().lower()
+    if selected_key not in canonical:
+        raise ValueError(
+            f"Unknown selected direction {selected_direction!r}. "
+            f"Valid values are: {', '.join(DIRECTIONS)}"
+        )
+    selected_direction = canonical[selected_key]
+    individual_direction_flux = np.asarray(
+        direction_flux[selected_direction], dtype=float
+    )
+
+    diagnostics: dict[str, np.ndarray | float | str] = {
         "six_face_or_selected_sum_speed_flux": face_sum,
         "six_face_or_selected_mean_speed_flux": face_mean,
+        "selected_direction_speed_flux": individual_direction_flux,
+        "selected_direction_name": selected_direction,
         "selected_direction_sum_total": float(np.sum(face_sum)),
         "selected_direction_mean_total": float(np.sum(face_mean)),
+        "individual_direction_total": float(np.sum(individual_direction_flux)),
         "total_cross_sectional_flux": float(total_cross_sectional_flux),
     }
 
-    if mode == "six-face-sum":
+    if mode == "zenith":
+        selected_direction = "+z zenith"
+        selected = np.asarray(direction_flux[selected_direction], dtype=float)
+        diagnostics["selected_direction_name"] = selected_direction
+        diagnostics["selected_direction_speed_flux"] = selected
+        diagnostics["individual_direction_total"] = float(np.sum(selected))
+    elif mode == "selected-direction":
+        selected = individual_direction_flux
+    elif mode == "six-face-sum":
         selected = face_sum
     elif mode == "six-face-mean":
         selected = face_mean
@@ -710,16 +735,23 @@ def save_reference_speed_plot(
 
     raw = np.asarray(diagnostics["six_face_or_selected_sum_speed_flux"], dtype=float)
     raw_positive = raw > 0.0
-    if flux_mode != "six-face-sum":
+    if flux_mode not in {"six-face-sum", "zenith", "selected-direction"}:
         ax.plot(
             speeds[raw_positive], raw[raw_positive], marker=".", linestyle="--",
             label=f"Selected cube-face sum, total={np.sum(raw):.6e} #/m²/yr",
         )
 
+    if flux_mode in {"zenith", "selected-direction"}:
+        direction_name = str(diagnostics.get("selected_direction_name", "+z zenith"))
+        ax.set_title(
+            f"MEM {direction_name} flux for m ≥ {reference_mass_g:g} g"
+        )
+    else:
+        ax.set_title(f"MEM reference speed distribution for m ≥ {reference_mass_g:g} g")
+
     ax.set_yscale("log")
     ax.set_xlabel("Speed [km/s]")
     ax.set_ylabel("Cumulative flux per speed bin [#/m²/yr]")
-    ax.set_title(f"MEM reference speed distribution for m ≥ {reference_mass_g:g} g")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -931,10 +963,12 @@ def save_text_summary(path: Path, summary: dict[str, Any]) -> None:
         f"Reference limiting mass: {summary['reference_mass_g']:.6g} g",
         f"Mass interval integrated: {summary['mass_range_g'][0]:.6g} to {summary['mass_range_g'][1]:.6g} g",
         f"Flux mode: {summary['flux_mode']}",
-        f"Selected directions: {', '.join(summary['selected_directions'])}",
+        f"Selected individual direction: {summary.get('selected_individual_direction', '+z zenith')}",
+        f"Directions used only by summed/normalized modes: {', '.join(summary['selected_directions'])}",
         "",
         f"MEM header total cross-sectional flux >= reference mass: {summary['mem_total_cross_sectional_flux_above_reference_m2_yr']:.8e} #/m^2/yr",
-        f"Selected six-face/direction sum >= reference mass: {summary['selected_direction_sum_flux_above_reference_m2_yr']:.8e} #/m^2/yr",
+        f"Selected individual-direction flux >= reference mass: {summary['individual_direction_flux_above_reference_m2_yr']:.8e} #/m^2/yr",
+        f"Selected summed-direction flux >= reference mass: {summary['selected_direction_sum_flux_above_reference_m2_yr']:.8e} #/m^2/yr",
         f"Reference flux used in integration: {summary['reference_flux_used_above_reference_m2_yr']:.8e} #/m^2/yr",
         f"Incident flux inside requested mass range: {summary['incident_flux_in_mass_range_m2_yr']:.8e} #/m^2/yr",
         f"Probability-weighted camera-detectable flux: {summary['camera_detectable_flux_m2_yr']:.8e} #/m^2/yr",
@@ -950,8 +984,10 @@ def save_text_summary(path: Path, summary: dict[str, Any]) -> None:
         lines.extend([
             "",
             f"Effective collecting area: {summary['effective_area_m2']:.8e} m^2",
-            f"Expected incident events per year: {summary['expected_incident_events_per_year']:.8e}",
-            f"Expected camera-detectable events per year: {summary['expected_detectable_events_per_year']:.8e}",
+            f"Expected incident events per year: {summary['expected_incident_events_per_year']:.8g}",
+            f"Expected camera-detectable events per year: {summary['expected_detectable_events_per_year']:.8g}",
+            f"Expected camera-detectable events per year in the dark side: {summary['expected_detectable_events_per_year']/2:.8g}",
+            f"Expected camera-detectable events per year in the dark side for a Straylight rejection factor of 0.5 : {summary['expected_detectable_events_per_year']/4:.8g}",
         ])
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1001,12 +1037,29 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--flux-mode",
-        choices=["cross-sectional-normalized", "six-face-sum", "six-face-mean"],
-        default="cross-sectional-normalized",
+        choices=[
+            "zenith",
+            "selected-direction",
+            "cross-sectional-normalized",
+            "six-face-sum",
+            "six-face-mean",
+        ],
+        default="zenith",
         help=(
-            "Flux used for the mass-speed integration. The default normalizes the "
-            "selected face speed distribution to the total cross-sectional flux "
-            "reported in the MEM headers."
+            "Flux used for the mass-speed integration. Default: zenith, which "
+            "uses only the MEM '+z zenith' column. Use selected-direction with "
+            "--selected-direction to choose another individual MEM direction. "
+            "The previous cross-sectional and six-face modes remain available."
+        ),
+    )
+    parser.add_argument(
+        "--selected-direction",
+        choices=DIRECTIONS,
+        default="+z zenith",
+        help=(
+            "Individual MEM flux column used when --flux-mode selected-direction. "
+            "Default: +z zenith. This option is ignored by --flux-mode zenith, "
+            "which always selects +z zenith."
         ),
     )
 
@@ -1133,6 +1186,7 @@ def main() -> None:
         directions,
         total_cross_flux,
         args.flux_mode,
+        selected_direction=args.selected_direction,
     )
 
     mass_edges_g = parse_mass_edges(args.mass_edges_g)
@@ -1230,8 +1284,14 @@ def main() -> None:
         "mass_edges_g": mass_edges_g,
         "mass_range_g": [float(mass_edges_g[0]), float(mass_edges_g[-1])],
         "selected_directions": directions,
+        "selected_individual_direction": str(
+            diagnostics.get("selected_direction_name", args.selected_direction)
+        ),
         "flux_mode": args.flux_mode,
         "mem_total_cross_sectional_flux_above_reference_m2_yr": float(total_cross_flux),
+        "individual_direction_flux_above_reference_m2_yr": float(
+            diagnostics["individual_direction_total"]
+        ),
         "selected_direction_sum_flux_above_reference_m2_yr": float(diagnostics["selected_direction_sum_total"]),
         "selected_direction_mean_flux_above_reference_m2_yr": float(diagnostics["selected_direction_mean_total"]),
         "reference_flux_used_above_reference_m2_yr": float(np.sum(reference_flux)),

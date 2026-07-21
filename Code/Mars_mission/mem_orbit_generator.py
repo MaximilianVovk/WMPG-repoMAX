@@ -58,9 +58,9 @@ def parse_args() -> argparse.Namespace:
                         help="Orbit type. Default: circular")
 
     # Simple circular-orbit inputs
-    parser.add_argument("--altitude-km", type=float, default=100.0,
+    parser.add_argument("--altitude-km", type=float, default=5720.0,
                         help="Altitude above the reference radius for circular orbits [km]. Default: 100")
-    parser.add_argument("--inclination-deg", type=float, default=90.0,
+    parser.add_argument("--inclination-deg", type=float, default=20.0,
                         help="Inclination [deg]. Default: 0")
 
     # General orbital-element inputs

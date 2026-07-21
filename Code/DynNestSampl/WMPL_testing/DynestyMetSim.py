@@ -5776,7 +5776,8 @@ class ObservationData:
 
 def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True,
     only_plot=True, cores=None, pool_MPI=None, pick_position=0, extraprior_file='', save_backup=True,
-    use_wake_data=True, noise_wake_limit=-100, region_method="threshold", priorFile_to_update_with_posteriors=""):
+    use_wake_data=True, noise_wake_limit=-100, region_method="threshold", priorFile_to_update_with_posteriors="",
+    print_progress=True):
     """ Create the output folder if it doesn't exist and run the Dynesty simulation.
 
     Arguments:
@@ -5953,7 +5954,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                 start_time = time.time()
                 # Run dynesty
                 try:
-                    dsampler = dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, base_name=base_name, log_file_path=log_file_path, pool_MPI=pool_MPI, save_backup=save_backup, wake_data=wake_data)
+                    dsampler = dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, 
+                                              pool_MPI=pool_MPI, wake_data=wake_data, print_progress=print_progress)
                     plotDynestyResults(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name, log_file_path, cml_args.cores, save_backup=save_backup, finish_run=True, wake_data=wake_data)
 
                 except Exception as e:
@@ -8515,8 +8517,8 @@ def priorDynesty(cube, bounds, flags_dict):
     return x
 
 
-def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="",
-                    base_name="",log_file_path="", pool_MPI=None, save_backup=True, wake_data=None):
+def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", 
+                   pool_MPI=None, wake_data=None, print_progress=True):
     """ Main function to run the Dynesty nested sampling.
 
     Arguments:
@@ -8580,7 +8582,7 @@ def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_c
                                                     ptform_args=(bounds, flags_dict),
                                                     sample='rslice', # nlive=1000,
                                                     pool = pool_MPI)
-            dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file)
+            dsampler.run_nested(print_progress=print_progress, checkpoint_file=dynesty_file)
             # dlogz_init=0.001,
         else:
             print("Resuming previous run:")
@@ -8589,7 +8591,7 @@ def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_c
             ### RESUME:
             dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file,
                                                             pool = pool_MPI)
-            dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file)
+            dsampler.run_nested(resume=True, print_progress=print_progress, checkpoint_file=dynesty_file)
                 # dlogz_init=0.001,
 
 
@@ -8608,7 +8610,7 @@ def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_c
                                                         pool.prior_transform, ndim,
                                                         sample='rslice', # nlive=1000,
                                                         pool = pool)
-                dsampler.run_nested(print_progress=True, checkpoint_file=dynesty_file) #  dlogz_init=0.001,
+                dsampler.run_nested(print_progress=print_progress, checkpoint_file=dynesty_file) #  dlogz_init=0.001,
 
         else:
             print("Resuming previous run:")
@@ -8620,7 +8622,7 @@ def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_c
                 ### RESUME:
                 dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file,
                                                                 pool = pool)
-                dsampler.run_nested(resume=True, print_progress=True, checkpoint_file=dynesty_file) # dlogz_init=0.001,
+                dsampler.run_nested(resume=True, print_progress=print_progress, checkpoint_file=dynesty_file) # dlogz_init=0.001,
 
     print('SUCCESS: dynesty results ready!\n')
 
@@ -8671,6 +8673,9 @@ if __name__ == "__main__":
         "If False, use CAMO data only for deceleration (by default is False). " \
         "When gnerating json simulations filr if False create a combination EMCCD CAMO data and if True EMCCD only",
         action="store_true")
+    
+    arg_parser.add_argument('-progr', '--print_progress', action="store_true",
+        help="Print progress updates during the dynesty run.")
 
     arg_parser.add_argument('-new','--new_dynesty',
         help="If active restart a new dynesty run if not resume from existing .dynesty if found. " \
@@ -8721,6 +8726,6 @@ if __name__ == "__main__":
                           use_all_cameras=cml_args.all_cameras, only_plot=cml_args.only_plot, cores=cml_args.cores,
                           pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior, save_backup=cml_args.not_backup,
                           use_wake_data=cml_args.use_wake_data, noise_wake_limit=cml_args.noise_wake_limit, region_method=cml_args.region_method,
-                          priorFile_to_update_with_posteriors=cml_args.priorposteriorupdate)
+                          priorFile_to_update_with_posteriors=cml_args.priorposteriorupdate, print_progress=cml_args.print_progress)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

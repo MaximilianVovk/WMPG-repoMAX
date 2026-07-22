@@ -598,7 +598,7 @@ def extract_other_prop(input_dirfile, output_dir_show, name_distr="", lambda_val
 
         # load the variable names
         variables = list(flags_dict.keys())
-
+        flag_total_rho = False
         if recompute_eenres:
             print(f"\nRecomputing .eenres for {folder_name}.")
             check_flag = False  
@@ -1466,7 +1466,7 @@ if __name__ == "__main__":
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Validation_nlive\nlive500
     # C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\3.2)Iron Letter\irons-rho_eta100-noPoros\Tau03
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\JB_NEW\JB-ironNEW",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Iron Letter\Validation\NewBase-rho2000-10000newLumEff",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

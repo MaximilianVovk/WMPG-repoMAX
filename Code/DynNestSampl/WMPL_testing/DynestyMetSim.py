@@ -1437,21 +1437,36 @@ def _worker_simulate_and_interp(sample_equal_row, sample_row):
             if mass_at_erosion_change is None:
                 idx = np.nanargmin(np.abs(h_raw - erosion_height_change))
                 mass_at_erosion_change = mass[idx]
+
+            erosion_dyn_press_change = sim_real.leading_frag_dyn_press_arr[np.nanargmin(np.abs(h_raw - erosion_height_change))]
+
             # compute rho_mass_weighted
             erosion_rho_change = const_saved.erosion_rho_change
-            rho_mass_weighted = const_saved.rho*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + erosion_rho_change*(mass_at_erosion_change/const_saved.m_init)
-            rho_volume_weighted = const_saved.m_init/((abs(const_saved.m_init-mass_at_erosion_change)/const_saved.rho) + (mass_at_erosion_change/erosion_rho_change))
-            # print(f"rho_mass_weighted: {rho_mass_weighted} rho_volume_weighted: {rho_volume_weighted} and rho: {const_saved.rho}")
-            erosion_dyn_press_change = sim_real.leading_frag_dyn_press_arr[np.nanargmin(np.abs(h_raw - erosion_height_change))]
-            erosion_coeff_mass_weighted = const_saved.erosion_coeff*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + const_saved.erosion_coeff_change*(mass_at_erosion_change/const_saved.m_init)
-            sigma_mass_weighted = const_saved.sigma*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + const_saved.erosion_sigma_change*(mass_at_erosion_change/const_saved.m_init)
+            if 'erosion_rho_change' in variables:
+                rho_mass_weighted = const_saved.rho*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + erosion_rho_change*(mass_at_erosion_change/const_saved.m_init)
+                rho_volume_weighted = const_saved.m_init/((abs(const_saved.m_init-mass_at_erosion_change)/const_saved.rho) + (mass_at_erosion_change/erosion_rho_change))
+            else:
+                rho_mass_weighted = const_saved.rho
+                rho_volume_weighted = const_saved.rho
+
+            if 'erosion_coeff_change' in variables:
+                erosion_coeff_mass_weighted = const_saved.erosion_coeff*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + const_saved.erosion_coeff_change*(mass_at_erosion_change/const_saved.m_init)
+            else:
+                erosion_coeff_mass_weighted = const_saved.erosion_coeff
+
+            if 'erosion_sigma_change' in variables:
+                sigma_mass_weighted = const_saved.sigma*(abs(const_saved.m_init-mass_at_erosion_change)/const_saved.m_init) + const_saved.erosion_sigma_change*(mass_at_erosion_change/const_saved.m_init)
+            else:
+                sigma_mass_weighted = const_saved.sigma
+
         else:
+            mass_at_erosion_change = const_saved.mass_at_erosion_change
+            erosion_dyn_press_change = None
             rho_mass_weighted = const_saved.rho
             rho_volume_weighted = const_saved.rho
-            erosion_dyn_press_change = None
-            mass_at_erosion_change = const_saved.mass_at_erosion_change
             erosion_coeff_mass_weighted = const_saved.erosion_coeff
             sigma_mass_weighted = const_saved.sigma
+            
         # compute the erosion energy per surface and per mass because by default const_saved.energy_per_cs_before_erosion and const_saved.energy_per_mass_before_erosion are empty
         eeucs_curr, eeum_curr = energyReceivedBeforeErosion(const_saved)
 

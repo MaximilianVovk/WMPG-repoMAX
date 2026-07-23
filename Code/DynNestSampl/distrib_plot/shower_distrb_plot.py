@@ -2048,9 +2048,14 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             rho_meteor_begin_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
             rho_meteor_begin_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
 
-            rho_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_rho_change')]
-            rho_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_rho_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_rho_change')]
-            rho_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_rho_change')] - summary_df_meteor['Median'].values[variables.index('erosion_rho_change')]
+            if flag_total_rho:
+                rho_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_rho_change')]
+                rho_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_rho_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_rho_change')]
+                rho_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_rho_change')] - summary_df_meteor['Median'].values[variables.index('erosion_rho_change')]
+            else:
+                rho_meteor_change_median = summary_df_meteor['Median'].values[variables.index('rho')]
+                rho_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
+                rho_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
 
             eta_meteor_begin_median = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
             eta_meteor_begin_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
@@ -9679,7 +9684,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Iron Letter\Validation\NewBase-rho2000-10000newLumEff", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

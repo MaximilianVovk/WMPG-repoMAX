@@ -1714,6 +1714,8 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             # copy the best guess values
             guess = dynesty_run_results.samples[sim_num].copy()
             flag_total_rho = False
+            flag_total_eta = False
+            flag_total_sigma = False
             # load the variable names
             variables_sing = list(flags_dict.keys())
             for i, variable in enumerate(variables_sing):
@@ -1727,6 +1729,10 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                     obs_data.noise_lum = guess[i]
                 if variable == 'erosion_rho_change':
                     flag_total_rho = True
+                if variable == 'erosion_sigma_change':
+                    flag_total_sigma = True
+                if variable == 'erosion_coeff_change':
+                    flag_total_eta = True
 
             row = [esc_tex(base_name)]
             for var_name in variables:
@@ -1944,7 +1950,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 main_mass_exhaustion_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
                 main_bottom_ht_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
 
-                if flag_total_rho:
+                if flag_total_rho or flag_total_eta or flag_total_sigma:
                     
                     # find erosion change height
                     if 'erosion_height_change' in variables_sing:
@@ -1965,23 +1971,38 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                         rho, rho_lo, rho_hi = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
 
                     else:
+                        if flag_total_rho:
+                            x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
+                            rho_lo = (rho - rho_lo) #/1.96
+                            rho_hi = (rho_hi - rho) #/1.96
+                            rho_corrected.append(x_valid_rho)
+                        else:
+                            x_valid_rho = samples[:, variables_sing.index('rho')].astype(float)
+                            rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
+                            rho_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
+                            rho = summary_df_meteor['Median'].values[variables.index('rho')]
 
-                        x_valid_rho, rho, rho_lo, rho_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('rho')].astype(float), samples[:, variables_sing.index('erosion_rho_change')].astype(float), mass_before, m_init, w)
-                    rho_lo = (rho - rho_lo) #/1.96
-                    rho_hi = (rho_hi - rho) #/1.96
-                    rho_corrected.append(x_valid_rho)
-                    
-                    x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
-                    eta_lo = (eta - eta_lo) #/1.96
-                    eta_hi = (eta_hi - eta) #/1.96
-                    eta_corrected.append(x_valid_eta)
+                    if flag_total_eta:
+                        x_valid_eta, eta, eta_lo, eta_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('erosion_coeff')].astype(float), samples[:, variables_sing.index('erosion_coeff_change')].astype(float), mass_before, m_init, w)
+                        eta_lo = (eta - eta_lo) #/1.96
+                        eta_hi = (eta_hi - eta) #/1.96
+                        eta_corrected.append(x_valid_eta)
+                    else:
+                        x_valid_eta = samples[:, variables_sing.index('erosion_coeff')].astype(float)
+                        eta_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
+                        eta_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+                        eta = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
 
-                    # erosion_sigma_change
-                    x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
-                    sigma_lo = (sigma - sigma_lo) #/1.96
-                    sigma_hi = (sigma_hi - sigma) #/1.96
-                    sigma_corrected.append(x_valid_sigma)
-
+                    if flag_total_sigma:
+                        x_valid_sigma, sigma, sigma_lo, sigma_hi = weighted_var_eros_height_change(samples[:, variables_sing.index('sigma')].astype(float), samples[:, variables_sing.index('erosion_sigma_change')].astype(float), mass_before, m_init, w)
+                        sigma_lo = (sigma - sigma_lo) #/1.96
+                        sigma_hi = (sigma_hi - sigma) #/1.96
+                        sigma_corrected.append(x_valid_sigma)
+                    else:
+                        x_valid_sigma = samples[:, variables_sing.index('sigma')].astype(float)
+                        sigma_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
+                        sigma_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
+                        sigma = summary_df_meteor['Median'].values[variables.index('sigma')]
 
                 else:
                     rho_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
@@ -2065,13 +2086,23 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             sigma_meteor_begin_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
             sigma_meteor_begin_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
 
-            eta_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')]
-            eta_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff_change')]
-            eta_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff_change')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')]
+            if flag_total_eta:
+                eta_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')]
+                eta_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff_change')]
+                eta_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff_change')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')]
+            else:
+                eta_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+                eta_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
+                eta_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
 
-            sigma_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')]
-            sigma_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_sigma_change')]
-            sigma_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_sigma_change')] - summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')]
+            if flag_total_sigma:
+                sigma_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')]
+                sigma_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_sigma_change')]
+                sigma_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_sigma_change')] - summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')]
+            else:
+                sigma_meteor_change_median = summary_df_meteor['Median'].values[variables.index('sigma')]
+                sigma_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
+                sigma_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
 
             erosion_height_start_median = summary_df_meteor['Median'].values[variables.index('erosion_height_start')]
             erosion_height_start_lo = summary_df_meteor['Median'].values[variables.index('erosion_height_start')] - summary_df_meteor['Low95'].values[variables.index('erosion_height_start')]

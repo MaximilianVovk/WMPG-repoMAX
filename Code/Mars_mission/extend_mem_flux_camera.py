@@ -6,20 +6,29 @@ result through an empirical METEORCAM mass-speed detection model.
 The script is designed for a MEM run performed at 10 g, but the reference mass
 is configurable. It:
 
-1. Reads and combines HiDensity/LoDensity cube_avg.txt files.
-2. Uses the Grün cumulative mass-scaling equation used by MEM 3:
+1. By default, reads every HiDensity/LoDensity flux_N.txt pair and the
+   matching state-vector row in input.txt.
+2. Treats the MEM trajectory as a fictitious sampling observer near 100 km
+   altitude. For every angular-speed cell it removes only that observer's
+   Mars-relative orbital velocity, recovers the meteoroid velocity in the
+   Mars-centred frame at the same sampling position, projects the result onto
+   the requested local surface, and re-bins by Mars-relative speed.
+3. Uses the Grün cumulative mass-scaling equation used by MEM 3:
 
        F(>m, v) = F_MEM(>m_ref, v) * g(m)/g(m_ref)
 
-3. Converts cumulative fluxes into finite mass bins:
+4. Converts cumulative fluxes into finite mass bins:
 
        F([m1,m2), v) = F_MEM(>m_ref, v) * [g(m1)-g(m2)]/g(m_ref)
 
-4. Loads the detection-likelihood pickle written by the Mars synthetic-speed
+5. Loads the detection-likelihood pickle written by the Mars synthetic-speed
    script, or fits a compatible NumPy logistic model from its CSV output.
-5. Integrates detection probability within each mass bin.
-6. Saves incident and camera-detectable mass-speed flux grids, plots, CSV and
+6. Integrates detection probability within each mass bin.
+7. Saves incident and camera-detectable mass-speed flux grids, plots, CSV and
    JSON/text summaries.
+
+The older cube_avg.txt pathway is retained with
+``--environment-source cube-average``.
 
 Important MEM interpretation:
 - Cube face fluxes are not the same as total cross-sectional flux.
@@ -219,6 +228,723 @@ def combine_mem_cube_files(paths: Iterable[str | Path]) -> tuple[np.ndarray, dic
         total_cross_sectional = np.nan
 
     return speeds, combined, float(total_cross_sectional), cubes
+
+
+
+@dataclass(frozen=True)
+class TrajectoryState:
+    index: int
+    julian_date: float
+    position_km: np.ndarray
+    velocity_kms: np.ndarray
+
+
+@dataclass
+class MemFluxGrid:
+    path: Path
+    elevation_low_deg: np.ndarray
+    azimuth_low_deg: np.ndarray
+    speed_labels_raw_kms: np.ndarray
+    speed_midpoints_kms: np.ndarray
+    flux_m2_yr: np.ndarray
+    elevation_step_deg: float
+    azimuth_step_deg: float
+    speed_label_shift_kms: float
+
+
+@dataclass
+class DetailedFluxResult:
+    mars_speed_midpoints_kms: np.ndarray
+    transformed_speed_flux_m2_yr: np.ndarray
+    spacecraft_speed_midpoints_kms: np.ndarray
+    spacecraft_surface_flux_m2_yr: np.ndarray
+    state_rows: list[dict[str, Any]]
+    flux_files: list[str]
+    trajectory_file: str
+    output_axes: str
+    speed_label_shift_kms: float
+    state_weighting: str
+    sampling_altitude_mean_km: float
+    sampling_altitude_min_km: float
+    sampling_altitude_max_km: float
+    flux_frame_scaling: str
+    selected_surface: str
+
+
+def read_trajectory_file(path: str | Path) -> list[TrajectoryState]:
+    """Read MEM's copied trajectory file, ignoring comment/header lines."""
+    path = Path(path)
+    rows: list[list[float]] = []
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            parts = line.split()
+            if len(parts) < 7:
+                continue
+            try:
+                rows.append([float(value) for value in parts[:7]])
+            except ValueError:
+                continue
+
+    if not rows:
+        raise ValueError(f"No seven-column state vectors were found in {path}.")
+
+    return [
+        TrajectoryState(
+            index=index,
+            julian_date=float(row[0]),
+            position_km=np.asarray(row[1:4], dtype=float),
+            velocity_kms=np.asarray(row[4:7], dtype=float),
+        )
+        for index, row in enumerate(rows, start=1)
+    ]
+
+
+def discover_trajectory_file(
+    mem_directory: str | Path,
+    explicit: str | Path | None = None,
+) -> Path:
+    root = Path(mem_directory)
+    if explicit:
+        path = Path(explicit)
+        if not path.exists():
+            raise FileNotFoundError(f"Trajectory input file does not exist: {path}")
+        return path.resolve()
+
+    exact = root / "input.txt"
+    if exact.exists():
+        return exact.resolve()
+
+    matches = sorted(root.rglob("input.txt"))
+    if not matches:
+        raise FileNotFoundError(
+            f"No input.txt trajectory copy was found under {root}. "
+            "Supply --trajectory-file explicitly."
+        )
+    return matches[0].resolve()
+
+
+def _indexed_files(directory: Path, stem: str) -> dict[int, Path]:
+    pattern = re.compile(rf"^{re.escape(stem)}_(\d+)\.txt$", re.IGNORECASE)
+    indexed: dict[int, Path] = {}
+    if not directory.exists():
+        return indexed
+    for path in directory.iterdir():
+        if path.is_file():
+            match = pattern.match(path.name)
+            if match:
+                indexed[int(match.group(1))] = path.resolve()
+    return indexed
+
+
+def discover_flux_pairs(mem_directory: str | Path) -> list[tuple[int, Path, Path]]:
+    """Find matching HiDensity/LoDensity flux_N.txt products."""
+    root = Path(mem_directory)
+    high_dirs = [
+        path for path in root.rglob("*")
+        if path.is_dir() and path.name.lower() == "hidensity"
+    ]
+    low_dirs = [
+        path for path in root.rglob("*")
+        if path.is_dir() and path.name.lower() == "lodensity"
+    ]
+    if not high_dirs or not low_dirs:
+        raise FileNotFoundError(
+            f"Could not find both HiDensity and LoDensity folders under {root}."
+        )
+
+    high_dir = sorted(high_dirs, key=lambda path: len(path.parts))[0]
+    low_dir = sorted(low_dirs, key=lambda path: len(path.parts))[0]
+    high = _indexed_files(high_dir, "flux")
+    low = _indexed_files(low_dir, "flux")
+
+    common = sorted(set(high) & set(low))
+    if not common:
+        raise FileNotFoundError(
+            f"No matching flux_N.txt pairs were found in {high_dir} and {low_dir}."
+        )
+
+    missing_high = sorted(set(low) - set(high))
+    missing_low = sorted(set(high) - set(low))
+    if missing_high or missing_low:
+        raise ValueError(
+            "HiDensity and LoDensity flux files do not form complete pairs. "
+            f"Missing HiDensity indices: {missing_high[:10]}; "
+            f"missing LoDensity indices: {missing_low[:10]}."
+        )
+
+    return [(index, high[index], low[index]) for index in common]
+
+
+def _infer_regular_step(values: np.ndarray, name: str) -> float:
+    unique = np.unique(np.asarray(values, dtype=float))
+    differences = np.diff(np.sort(unique))
+    differences = differences[differences > 1.0e-10]
+    if differences.size == 0:
+        raise ValueError(f"Could not infer {name} resolution.")
+    return float(np.median(differences))
+
+
+def _correct_speed_labels(
+    labels: np.ndarray,
+    mode: str,
+) -> tuple[np.ndarray, float]:
+    """
+    Correct legacy MEM headers that printed velocity-bin midpoints rounded down.
+
+    With 1 km/s bins, an old header may contain 0,1,...,59 although the true
+    bin midpoints are 0.5,1.5,...,59.5 km/s.
+    """
+    labels = np.asarray(labels, dtype=float)
+    if labels.size < 1:
+        raise ValueError("The flux file contains no speed labels.")
+
+    width = float(np.median(np.diff(labels))) if labels.size > 1 else 1.0
+    if width <= 0.0:
+        raise ValueError("Speed labels are not strictly increasing.")
+
+    if mode == "none":
+        shift = 0.0
+    elif mode == "add-half-bin":
+        shift = 0.5 * width
+    elif mode == "auto":
+        regular = np.allclose(
+            labels,
+            labels[0] + np.arange(labels.size) * width,
+            rtol=0.0,
+            atol=1.0e-8,
+        )
+        shift = 0.5 * width if regular and abs(float(labels[0])) < 1.0e-8 else 0.0
+    else:
+        raise ValueError(f"Unknown speed-label mode: {mode}")
+
+    return labels + shift, float(shift)
+
+
+def read_mem_flux_file(
+    path: str | Path,
+    speed_label_mode: str = "auto",
+) -> MemFluxGrid:
+    """Read one MEM flux_N.txt angular-speed grid."""
+    path = Path(path)
+    speed_labels: np.ndarray | None = None
+    rows: list[list[float]] = []
+
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            cleaned = line.lstrip("#").strip()
+            tokens = cleaned.split()
+            upper = [token.upper() for token in tokens]
+            if "PHI1" in upper and "THETA1" in upper:
+                theta_index = upper.index("THETA1")
+                try:
+                    speed_labels = np.asarray(
+                        [float(value) for value in tokens[theta_index + 1:]],
+                        dtype=float,
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Could not parse speed labels in {path}: {line.strip()}"
+                    ) from exc
+                continue
+
+            if speed_labels is None:
+                continue
+            parts = line.split()
+            if len(parts) != speed_labels.size + 2:
+                continue
+            try:
+                rows.append([float(value) for value in parts])
+            except ValueError:
+                continue
+
+    if speed_labels is None:
+        raise ValueError(f"No PHI1 THETA1 speed-header line was found in {path}.")
+    if not rows:
+        raise ValueError(f"No angular flux rows were found in {path}.")
+
+    array = np.asarray(rows, dtype=float)
+    elevations = array[:, 0]
+    azimuths = array[:, 1]
+    flux = array[:, 2:]
+    corrected_speed, shift = _correct_speed_labels(speed_labels, speed_label_mode)
+
+    return MemFluxGrid(
+        path=path.resolve(),
+        elevation_low_deg=elevations,
+        azimuth_low_deg=azimuths,
+        speed_labels_raw_kms=speed_labels,
+        speed_midpoints_kms=corrected_speed,
+        flux_m2_yr=flux,
+        elevation_step_deg=_infer_regular_step(elevations, "elevation"),
+        azimuth_step_deg=_infer_regular_step(azimuths, "azimuth"),
+        speed_label_shift_kms=shift,
+    )
+
+
+def _assert_matching_flux_grids(first: MemFluxGrid, second: MemFluxGrid) -> None:
+    checks = (
+        np.array_equal(first.elevation_low_deg, second.elevation_low_deg),
+        np.array_equal(first.azimuth_low_deg, second.azimuth_low_deg),
+        np.allclose(first.speed_midpoints_kms, second.speed_midpoints_kms),
+        first.flux_m2_yr.shape == second.flux_m2_yr.shape,
+    )
+    if not all(checks):
+        raise ValueError(
+            f"Flux grids do not match: {first.path} and {second.path}."
+        )
+
+
+def angular_bin_radiants(grid: MemFluxGrid) -> np.ndarray:
+    """
+    Return representative radiant unit vectors in the selected MEM output frame.
+
+    The elevation representative is the equal-solid-angle midpoint of each
+    rectangular angular cell.
+    """
+    phi1 = np.radians(grid.elevation_low_deg)
+    phi2 = np.radians(
+        np.minimum(grid.elevation_low_deg + grid.elevation_step_deg, 90.0)
+    )
+    phi_mid = np.arcsin(
+        np.clip(0.5 * (np.sin(phi1) + np.sin(phi2)), -1.0, 1.0)
+    )
+    theta_mid = np.radians(
+        np.mod(grid.azimuth_low_deg + 0.5 * grid.azimuth_step_deg, 360.0)
+    )
+    cos_phi = np.cos(phi_mid)
+    return np.column_stack(
+        (
+            cos_phi * np.cos(theta_mid),
+            cos_phi * np.sin(theta_mid),
+            np.sin(phi_mid),
+        )
+    )
+
+
+def body_fixed_basis(
+    position_km: np.ndarray,
+    velocity_kms: np.ndarray,
+) -> np.ndarray:
+    """
+    MEM planet-origin body-fixed basis in trajectory coordinates.
+
+    +x is velocity/ram, +y is angular momentum, and +z = +x cross +y.
+    """
+    r = np.asarray(position_km, dtype=float)
+    v = np.asarray(velocity_kms, dtype=float)
+    v_norm = float(np.linalg.norm(v))
+    if v_norm <= 0.0:
+        raise ValueError("A body-fixed MEM frame requires non-zero velocity.")
+    x_hat = v / v_norm
+    y_vector = np.cross(r, x_hat)
+    y_norm = float(np.linalg.norm(y_vector))
+    if y_norm <= 0.0:
+        raise ValueError("Could not construct body-fixed frame from parallel r and v.")
+    y_hat = y_vector / y_norm
+    z_hat = np.cross(x_hat, y_hat)
+    z_hat /= np.linalg.norm(z_hat)
+    return np.column_stack((x_hat, y_hat, z_hat))
+
+
+def _rotate_about_x(vectors: np.ndarray, angle_deg: float) -> np.ndarray:
+    angle = math.radians(float(angle_deg))
+    c, s = math.cos(angle), math.sin(angle)
+    rotation = np.array(
+        [[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]],
+        dtype=float,
+    )
+    return np.asarray(vectors, dtype=float) @ rotation.T
+
+
+def convert_inertial_axes(
+    vectors: np.ndarray,
+    output_axes: str,
+    trajectory_axes: str,
+) -> np.ndarray:
+    if output_axes == trajectory_axes:
+        return np.asarray(vectors, dtype=float)
+    obliquity_deg = 23.439291111
+    if output_axes == "ecliptic" and trajectory_axes == "equatorial":
+        return _rotate_about_x(vectors, obliquity_deg)
+    if output_axes == "equatorial" and trajectory_axes == "ecliptic":
+        return _rotate_about_x(vectors, -obliquity_deg)
+    raise ValueError(
+        f"Unsupported inertial-axis conversion: {output_axes} -> {trajectory_axes}"
+    )
+
+
+def detect_flux_output_axes(mem_directory: str | Path) -> str | None:
+    """Try to read the selected output axes from MEM's options.txt."""
+    root = Path(mem_directory)
+    candidates = [root / "options.txt"] + sorted(root.rglob("options.txt"))
+    seen: set[Path] = set()
+    for path in candidates:
+        if path in seen or not path.exists():
+            continue
+        seen.add(path)
+        content = path.read_text(encoding="utf-8", errors="replace").lower()
+        relevant_lines = [
+            line for line in content.splitlines()
+            if "output" in line and ("axes" in line or "frame" in line)
+        ]
+        relevant = "\n".join(relevant_lines) if relevant_lines else content
+        if "body-fixed" in relevant or "body fixed" in relevant:
+            return "body-fixed"
+        if "equatorial" in relevant:
+            return "equatorial"
+        if "ecliptic" in relevant:
+            return "ecliptic"
+    return None
+
+
+def state_weights(
+    states: list[TrajectoryState],
+    mode: str,
+) -> dict[int, float]:
+    if not states:
+        raise ValueError("No trajectory states were supplied.")
+    if mode == "equal" or len(states) == 1:
+        value = 1.0 / len(states)
+        return {state.index: value for state in states}
+    if mode != "time":
+        raise ValueError(f"Unknown state-weighting mode: {mode}")
+
+    ordered = sorted(states, key=lambda state: state.julian_date)
+    times = np.asarray([state.julian_date for state in ordered], dtype=float)
+    dt = np.diff(times)
+    if np.any(dt <= 0.0):
+        raise ValueError("Time weighting requires strictly increasing Julian dates.")
+    closure = float(np.median(dt))
+    previous = np.concatenate(([closure], dt))
+    following = np.concatenate((dt, [closure]))
+    widths = 0.5 * (previous + following)
+    widths /= np.sum(widths)
+    return {
+        state.index: float(weight)
+        for state, weight in zip(ordered, widths)
+    }
+
+
+def detailed_surface_factor(
+    radiant_vectors: np.ndarray,
+    basis: np.ndarray,
+    mode: str,
+    selected_direction: str,
+) -> np.ndarray:
+    """Projected-area factor for the requested plane/cube interpretation."""
+    components = np.asarray(radiant_vectors, dtype=float) @ np.asarray(basis, dtype=float)
+    positive = np.clip(components, 0.0, None)
+    negative = np.clip(-components, 0.0, None)
+
+    face_map = {
+        "+x ram": positive[:, 0],
+        "-x wake": negative[:, 0],
+        "+y port": positive[:, 1],
+        "-y starboard": negative[:, 1],
+        "+z zenith": positive[:, 2],
+        "-z nadir": negative[:, 2],
+    }
+
+    if mode == "zenith":
+        return face_map["+z zenith"]
+    if mode == "selected-direction":
+        if selected_direction not in face_map:
+            raise ValueError(
+                "Detailed flux_N mode supports only the six body-fixed cube faces: "
+                + ", ".join(face_map)
+            )
+        return face_map[selected_direction]
+    if mode == "six-face-sum":
+        return np.sum(np.column_stack(list(face_map.values())), axis=1)
+    if mode == "six-face-mean":
+        return np.mean(np.column_stack(list(face_map.values())), axis=1)
+    if mode == "cross-sectional-normalized":
+        return np.ones(len(radiant_vectors), dtype=float)
+    raise ValueError(f"Unsupported flux mode: {mode}")
+
+
+def transform_flux_files_to_mars_frame(
+    mem_directory: str | Path,
+    trajectory_file: str | Path | None,
+    output_axes: str,
+    trajectory_axes: str,
+    speed_label_mode: str,
+    state_weighting_mode: str,
+    flux_mode: str,
+    selected_direction: str,
+    mars_speed_bin_width_kms: float,
+    mars_radius_km: float,
+    expected_sampling_altitude_km: float,
+    sampling_altitude_tolerance_km: float,
+    skip_sampling_altitude_check: bool,
+    flux_frame_scaling: str,
+) -> DetailedFluxResult:
+    """
+    Remove the velocity of the fictitious MEM sampling observer.
+
+    MEM reports speed and flux relative to each input state vector. Here the
+    input trajectory is assumed to be a fictitious Mars orbiter sampling the
+    meteoroid environment near the atmospheric reference altitude (normally
+    100 km). For each angular-speed cell:
+
+        v_mars = v_rel_to_sampler + v_sampler
+
+    The recovered ``v_mars`` is already the meteoroid speed at that same
+    100-km sampling position. The real camera altitude is deliberately not
+    used in this transformation.
+
+    ``flux_frame_scaling='number-density'`` converts the directional flux to
+    the stationary Mars frame using F = n v before projecting it onto the
+    selected local plane. ``preserve-mem-flux`` changes only the speed/radiant
+    assignment and keeps the original MEM cell flux amplitude as a diagnostic
+    approximation.
+    """
+    root = Path(mem_directory).resolve()
+    trajectory_path = discover_trajectory_file(root, trajectory_file)
+    states = read_trajectory_file(trajectory_path)
+    states_by_index = {state.index: state for state in states}
+    pairs = discover_flux_pairs(root)
+
+    missing_states = [
+        index for index, _, _ in pairs if index not in states_by_index
+    ]
+    if missing_states:
+        raise ValueError(
+            f"Flux files have no matching trajectory rows for {missing_states[:10]}."
+        )
+
+    selected_states = [states_by_index[index] for index, _, _ in pairs]
+    weights = state_weights(selected_states, state_weighting_mode)
+
+    resolved_axes = output_axes
+    if resolved_axes == "auto":
+        detected_axes = detect_flux_output_axes(root)
+        resolved_axes = detected_axes or "body-fixed"
+        if detected_axes is None:
+            print(
+                "Could not determine output axes from options.txt; assuming body-fixed."
+            )
+
+    if mars_speed_bin_width_kms <= 0.0:
+        raise ValueError("--mars-speed-bin-width-kms must be positive.")
+    if flux_frame_scaling not in {"number-density", "preserve-mem-flux"}:
+        raise ValueError(
+            "--flux-frame-scaling must be 'number-density' or 'preserve-mem-flux'."
+        )
+
+    sampling_altitudes = np.asarray(
+        [np.linalg.norm(state.position_km) - float(mars_radius_km)
+         for state in selected_states],
+        dtype=float,
+    )
+    if np.any(~np.isfinite(sampling_altitudes)):
+        raise ValueError("Could not determine the MEM sampling altitude from input.txt.")
+
+    altitude_min = float(np.min(sampling_altitudes))
+    altitude_max = float(np.max(sampling_altitudes))
+    altitude_mean = float(np.mean(sampling_altitudes))
+    max_altitude_error = float(
+        np.max(np.abs(sampling_altitudes - float(expected_sampling_altitude_km)))
+    )
+    if (
+        not skip_sampling_altitude_check
+        and max_altitude_error > float(sampling_altitude_tolerance_km)
+    ):
+        raise ValueError(
+            "The selected MEM input trajectory is not the expected atmospheric "
+            f"sampling orbit. Expected {expected_sampling_altitude_km:.3f} ± "
+            f"{sampling_altitude_tolerance_km:.3f} km, but the matched flux_N "
+            f"states span {altitude_min:.3f} to {altitude_max:.3f} km "
+            f"(mean {altitude_mean:.3f} km). The 5720-km camera trajectory must "
+            "not be used for this frame correction; select the input.txt used for "
+            "the fictitious ~100-km MEM sampling run."
+        )
+
+    transformed_histograms: list[tuple[float, np.ndarray]] = []
+    raw_histograms: list[tuple[float, np.ndarray]] = []
+    state_rows: list[dict[str, Any]] = []
+    all_flux_files: list[str] = []
+    common_raw_speeds: np.ndarray | None = None
+    common_shift: float | None = None
+    selected_surface = "+z zenith" if flux_mode == "zenith" else selected_direction
+
+    for state_index, high_path, low_path in pairs:
+        state = states_by_index[state_index]
+        high = read_mem_flux_file(high_path, speed_label_mode)
+        low = read_mem_flux_file(low_path, speed_label_mode)
+        _assert_matching_flux_grids(high, low)
+        all_flux_files.extend([str(high.path), str(low.path)])
+
+        if common_raw_speeds is None:
+            common_raw_speeds = high.speed_midpoints_kms.copy()
+            common_shift = float(high.speed_label_shift_kms)
+        elif not np.allclose(common_raw_speeds, high.speed_midpoints_kms):
+            raise ValueError("Speed grids differ between flux_N files.")
+
+        # MEM values are integrated fluxes per angular and speed cell.
+        cell_flux = np.asarray(high.flux_m2_yr + low.flux_m2_yr, dtype=float)
+        radiants_output = angular_bin_radiants(high)
+        basis = body_fixed_basis(state.position_km, state.velocity_kms)
+
+        if resolved_axes == "body-fixed":
+            radiants_trajectory = radiants_output @ basis.T
+        else:
+            radiants_trajectory = convert_inertial_axes(
+                radiants_output,
+                resolved_axes,
+                trajectory_axes,
+            )
+
+        r_sc = float(np.linalg.norm(state.position_km))
+        sampling_altitude_km = r_sc - float(mars_radius_km)
+        v_sampler = np.asarray(state.velocity_kms, dtype=float)
+        speed_rel = np.asarray(high.speed_midpoints_kms, dtype=float)
+
+        # Diagnostic: what MEM reports on the chosen face before removing the
+        # fictitious observer velocity.
+        raw_factor = detailed_surface_factor(
+            radiants_trajectory,
+            basis,
+            flux_mode,
+            selected_direction,
+        )
+        raw_by_speed = np.sum(cell_flux * raw_factor[:, None], axis=0)
+        raw_histograms.append((weights[state_index], raw_by_speed))
+
+        # The angular coordinates specify radiants. Physical velocity is opposite
+        # to the radiant. Add the fictitious observer velocity to recover the
+        # Mars-centred meteoroid velocity at this same ~100-km position.
+        v_rel_vectors = -radiants_trajectory[:, None, :] * speed_rel[None, :, None]
+        v_mars_vectors = v_rel_vectors + v_sampler[None, None, :]
+        speed_mars = np.linalg.norm(v_mars_vectors, axis=2)
+
+        radiant_mars = np.divide(
+            -v_mars_vectors,
+            speed_mars[:, :, None],
+            out=np.zeros_like(v_mars_vectors),
+            where=speed_mars[:, :, None] > 0.0,
+        )
+        stationary_surface_factor = detailed_surface_factor(
+            radiant_mars.reshape(-1, 3),
+            basis,
+            flux_mode,
+            selected_direction,
+        ).reshape(speed_mars.shape)
+
+        if flux_frame_scaling == "number-density":
+            # MEM directional flux is relative to the moving fictitious observer.
+            # Preserve the inferred directional number density n = F/v, then form
+            # the stationary-frame flux n*v_mars.
+            frame_ratio = np.divide(
+                speed_mars,
+                speed_rel[None, :],
+                out=np.zeros_like(speed_mars),
+                where=speed_rel[None, :] > 0.0,
+            )
+        else:
+            # Diagnostic approximation: only move cells to the Mars-relative
+            # speed/radiant while preserving their MEM amplitudes.
+            frame_ratio = np.ones_like(speed_mars)
+
+        transformed_cell_flux = (
+            cell_flux * frame_ratio * stationary_surface_factor
+        )
+
+        # No propagation from the real camera orbit is performed. The recovered
+        # speed is already the Mars-relative meteoroid speed at the MEM sampling
+        # position near 100 km.
+        bin_index = np.floor(
+            speed_mars / float(mars_speed_bin_width_kms)
+        ).astype(int)
+        valid = (
+            np.isfinite(speed_mars)
+            & np.isfinite(transformed_cell_flux)
+            & (transformed_cell_flux > 0.0)
+            & (bin_index >= 0)
+        )
+        histogram = (
+            np.bincount(
+                bin_index[valid].ravel(),
+                weights=transformed_cell_flux[valid].ravel(),
+            )
+            if np.any(valid)
+            else np.zeros(1, dtype=float)
+        )
+        transformed_histograms.append((weights[state_index], histogram))
+
+        transformed_total = float(np.sum(transformed_cell_flux))
+        weighted_speed = (
+            float(np.sum(speed_mars * transformed_cell_flux) / transformed_total)
+            if transformed_total > 0.0
+            else np.nan
+        )
+        state_rows.append(
+            {
+                "state_index": state_index,
+                "julian_date": state.julian_date,
+                "sampling_radius_km": r_sc,
+                "sampling_altitude_km": sampling_altitude_km,
+                "fictitious_sampler_speed_kms": float(np.linalg.norm(v_sampler)),
+                "raw_mem_surface_flux_m2_yr": float(np.sum(raw_by_speed)),
+                "stationary_mars_surface_flux_m2_yr": transformed_total,
+                "stationary_flux_weighted_speed_kms": weighted_speed,
+                "state_weight": float(weights[state_index]),
+            }
+        )
+
+    max_bins = max(len(histogram) for _, histogram in transformed_histograms)
+    transformed_average = np.zeros(max_bins, dtype=float)
+    for weight, histogram in transformed_histograms:
+        transformed_average[:len(histogram)] += float(weight) * histogram
+
+    if common_raw_speeds is None:
+        raise ValueError("No detailed flux files were processed.")
+    raw_average = np.zeros_like(common_raw_speeds, dtype=float)
+    for weight, histogram in raw_histograms:
+        raw_average += float(weight) * histogram
+
+    mars_midpoints = (
+        np.arange(max_bins, dtype=float) + 0.5
+    ) * float(mars_speed_bin_width_kms)
+
+    return DetailedFluxResult(
+        mars_speed_midpoints_kms=mars_midpoints,
+        transformed_speed_flux_m2_yr=transformed_average,
+        spacecraft_speed_midpoints_kms=common_raw_speeds,
+        spacecraft_surface_flux_m2_yr=raw_average,
+        state_rows=state_rows,
+        flux_files=all_flux_files,
+        trajectory_file=str(trajectory_path),
+        output_axes=resolved_axes,
+        speed_label_shift_kms=float(common_shift or 0.0),
+        state_weighting=state_weighting_mode,
+        sampling_altitude_mean_km=altitude_mean,
+        sampling_altitude_min_km=altitude_min,
+        sampling_altitude_max_km=altitude_max,
+        flux_frame_scaling=flux_frame_scaling,
+        selected_surface=selected_surface,
+    )
+
+
+def save_state_transform_csv(
+    path: Path,
+    rows: list[dict[str, Any]],
+) -> None:
+    fields = [
+        "state_index",
+        "julian_date",
+        "sampling_radius_km",
+        "sampling_altitude_km",
+        "fictitious_sampler_speed_kms",
+        "raw_mem_surface_flux_m2_yr",
+        "stationary_mars_surface_flux_m2_yr",
+        "stationary_flux_weighted_speed_kms",
+        "state_weight",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def parse_directions(text: str) -> list[str]:
@@ -726,31 +1452,76 @@ def save_reference_speed_plot(
     fig, ax = plt.subplots(figsize=(10, 7))
     positive = selected_flux > 0.0
     ax.plot(
-        speeds[positive], selected_flux[positive], marker="o", linewidth=2.0,
+        speeds[positive],
+        selected_flux[positive],
+        marker="o",
+        linewidth=2.0,
         markersize=4,
         label=(
             f"Flux used ({flux_mode}), total={np.sum(selected_flux):.6e} #/m²/yr"
         ),
     )
 
-    raw = np.asarray(diagnostics["six_face_or_selected_sum_speed_flux"], dtype=float)
-    raw_positive = raw > 0.0
-    if flux_mode not in {"six-face-sum", "zenith", "selected-direction"}:
-        ax.plot(
-            speeds[raw_positive], raw[raw_positive], marker=".", linestyle="--",
-            label=f"Selected cube-face sum, total={np.sum(raw):.6e} #/m²/yr",
+    if (
+        "comparison_speed_kms" in diagnostics
+        and "comparison_flux_m2_yr" in diagnostics
+    ):
+        comparison_speed = np.asarray(
+            diagnostics["comparison_speed_kms"], dtype=float
         )
-
-    if flux_mode in {"zenith", "selected-direction"}:
-        direction_name = str(diagnostics.get("selected_direction_name", "+z zenith"))
+        comparison_flux = np.asarray(
+            diagnostics["comparison_flux_m2_yr"], dtype=float
+        )
+        mask = comparison_flux > 0.0
+        ax.plot(
+            comparison_speed[mask],
+            comparison_flux[mask],
+            marker=".",
+            linestyle="--",
+            label=(
+                "Original spacecraft-relative surface flux, "
+                f"total={np.sum(comparison_flux):.6e} #/m²/yr"
+            ),
+        )
         ax.set_title(
-            f"MEM {direction_name} flux for m ≥ {reference_mass_g:g} g"
+            f"MEM flux transformed to Mars-relative speed for m ≥ {reference_mass_g:g} g"
         )
     else:
-        ax.set_title(f"MEM reference speed distribution for m ≥ {reference_mass_g:g} g")
+        raw = np.asarray(
+            diagnostics.get(
+                "six_face_or_selected_sum_speed_flux",
+                selected_flux,
+            ),
+            dtype=float,
+        )
+        raw_positive = raw > 0.0
+        if flux_mode not in {"six-face-sum", "zenith", "selected-direction"}:
+            ax.plot(
+                speeds[raw_positive],
+                raw[raw_positive],
+                marker=".",
+                linestyle="--",
+                label=(
+                    "Selected cube-face sum, "
+                    f"total={np.sum(raw):.6e} #/m²/yr"
+                ),
+            )
+        if flux_mode in {"zenith", "selected-direction"}:
+            direction_name = str(
+                diagnostics.get("selected_direction_name", "+z zenith")
+            )
+            ax.set_title(
+                f"MEM {direction_name} flux for m ≥ {reference_mass_g:g} g"
+            )
+        else:
+            ax.set_title(
+                f"MEM reference speed distribution for m ≥ {reference_mass_g:g} g"
+            )
 
     ax.set_yscale("log")
-    ax.set_xlabel("Speed [km/s]")
+    ax.set_xlabel(
+        str(diagnostics.get("speed_axis_label", "Speed [km/s]"))
+    )
     ax.set_ylabel("Cumulative flux per speed bin [#/m²/yr]")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend()
@@ -959,7 +1730,14 @@ def save_text_summary(path: Path, summary: dict[str, Any]) -> None:
     lines = [
         "MEM mass extension and METEORCAM detectable-flux summary",
         "="*62,
+        f"Environment source: {summary.get('environment_source', 'cube-average')}",
         f"MEM cube files: {len(summary['mem_cube_files'])}",
+        f"MEM detailed flux files: {len(summary.get('mem_flux_files', []))}",
+        f"Trajectory file: {summary.get('trajectory_file')}",
+        f"Resolved flux output axes: {summary.get('flux_output_axes')}",
+        f"Legacy speed-label shift: {summary.get('speed_label_shift_kms', 0.0):.6g} km/s",
+        f"State weighting: {summary.get('state_weighting')}",
+        f"Mars speed location: {summary.get('mars_speed_location')}",
         f"Reference limiting mass: {summary['reference_mass_g']:.6g} g",
         f"Mass interval integrated: {summary['mass_range_g'][0]:.6g} to {summary['mass_range_g'][1]:.6g} g",
         f"Flux mode: {summary['flux_mode']}",
@@ -1007,14 +1785,101 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mem-directory",
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\Test-Flux-surface\test-surf-mars - allorbit",
-        help="MEM output directory containing HiDensity/LoDensity cube_avg.txt files.",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\METEORCAM\MEM-10gFlux-100km\Flux_0-30-60-90deg",
+        help=(
+            "MEM output directory containing input.txt and HiDensity/LoDensity "
+            "flux_N.txt files. The cube_avg.txt pathway remains available."
+        ),
+    )
+    parser.add_argument(
+        "--environment-source",
+        choices=["detailed-flux", "cube-average"],
+        default="detailed-flux",
+        help=(
+            "Default detailed-flux transforms every flux_N angular-speed cell "
+            "using its matching state vector. cube-average retains the old method."
+        ),
+    )
+    parser.add_argument(
+        "--trajectory-file",
+        default=None,
+        help="Explicit MEM trajectory file. Default: <mem-directory>/input.txt.",
+    )
+    parser.add_argument(
+        "--flux-output-axes",
+        choices=["auto", "body-fixed", "equatorial", "ecliptic"],
+        default="auto",
+        help=(
+            "Axes used by flux_N angles. auto reads options.txt and otherwise "
+            "assumes body-fixed."
+        ),
+    )
+    parser.add_argument(
+        "--trajectory-axes",
+        choices=["equatorial", "ecliptic"],
+        default="equatorial",
+        help="Inertial axes of input.txt state vectors. Default: equatorial.",
+    )
+    parser.add_argument(
+        "--speed-label-mode",
+        choices=["auto", "none", "add-half-bin"],
+        default="auto",
+        help=(
+            "Correct legacy integer speed labels. auto maps 0,1,... to "
+            "0.5,1.5,... when appropriate."
+        ),
+    )
+    parser.add_argument(
+        "--state-weighting",
+        choices=["equal", "time"],
+        default="equal",
+        help="Average instantaneous flux_N environments equally or by time spacing.",
+    )
+    parser.add_argument(
+        "--mars-speed-bin-width-kms",
+        type=float,
+        default=1.0,
+        help="Output Mars-relative speed-bin width [km/s]. Default: 1.",
+    )
+    parser.add_argument("--mars-radius-km", type=float, default=3389.5)
+    parser.add_argument(
+        "--expected-mem-altitude-km",
+        type=float,
+        default=100.0,
+        help=(
+            "Expected altitude of the fictitious MEM sampling trajectory [km]. "
+            "Default: 100. This is not the real camera altitude."
+        ),
+    )
+    parser.add_argument(
+        "--sampling-altitude-tolerance-km",
+        type=float,
+        default=25.0,
+        help=(
+            "Maximum allowed difference from --expected-mem-altitude-km before "
+            "the script stops. Default: 25 km."
+        ),
+    )
+    parser.add_argument(
+        "--skip-sampling-altitude-check",
+        action="store_true",
+        help="Process the trajectory even when it is not near the expected altitude.",
+    )
+    parser.add_argument(
+        "--flux-frame-scaling",
+        choices=["number-density", "preserve-mem-flux"],
+        default="number-density",
+        help=(
+            "number-density removes the fictitious observer motion from both "
+            "speed and directional flux using F=n*v. preserve-mem-flux changes "
+            "only speed/radiant bin assignment as a diagnostic."
+        ),
     )
     parser.add_argument(
         "--cube-file",
         action="append",
         default=None,
-        help="Explicit cube_avg.txt path. Repeat for multiple files; overrides discovery.",
+        help="Explicit cube_avg.txt path for --environment-source cube-average.",
     )
     parser.add_argument(
         "--reference-mass-g",
@@ -1046,10 +1911,10 @@ def parse_args() -> argparse.Namespace:
         ],
         default="zenith",
         help=(
-            "Flux used for the mass-speed integration. Default: zenith, which "
-            "uses only the MEM '+z zenith' column. Use selected-direction with "
-            "--selected-direction to choose another individual MEM direction. "
-            "The previous cross-sectional and six-face modes remain available."
+            "Flux used for the mass-speed integration. In detailed-flux mode, "
+            "zenith projects every transformed angular cell onto the body-fixed "
+            "+z surface. Use selected-direction for another cube face. The "
+            "cross-sectional and six-face modes remain available."
         ),
     )
     parser.add_argument(
@@ -1057,20 +1922,21 @@ def parse_args() -> argparse.Namespace:
         choices=DIRECTIONS,
         default="+z zenith",
         help=(
-            "Individual MEM flux column used when --flux-mode selected-direction. "
-            "Default: +z zenith. This option is ignored by --flux-mode zenith, "
-            "which always selects +z zenith."
+            "Surface used when --flux-mode selected-direction. Detailed-flux "
+            "mode supports the six ram/wake/port/starboard/zenith/nadir faces; "
+            "cube-average mode also supports the remaining MEM columns. "
+            "Default: +z zenith."
         ),
     )
 
     parser.add_argument(
         "--camera-model",
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\All\Mars_detection_likelihood_model.pkl",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\METEORCAM\All\10FPS\Mars_detection_likelihood_model.pkl",
         help="Mars_detection_*_likelihood_model.pkl from the fireball fitting script.",
     )
     parser.add_argument(
         "--camera-csv",
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\All\Mars_detection_velocity_mass_summary.csv",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\METEORCAM\All\10FPS\Mars_detection_velocity_mass_summary.csv",
         help="Likelihood/synthetic CSV used to fit a NumPy logistic camera model.",
     )
     parser.add_argument(
@@ -1121,7 +1987,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-directory",
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\METEORCAM\FPS-10corrV",
         help="Output directory. Default: <mem-directory>/MEM_camera_flux_extension.",
     )
     parser.add_argument(
@@ -1178,16 +2044,59 @@ def main() -> None:
     )
     output_directory.mkdir(parents=True, exist_ok=True)
 
-    cube_paths = [Path(path).resolve() for path in args.cube_file] if args.cube_file else discover_cube_files(mem_directory)
-    speeds, combined_direction_flux, total_cross_flux, cubes = combine_mem_cube_files(cube_paths)
+    detailed_result: DetailedFluxResult | None = None
+    cubes: list[MemCubeData] = []
+    total_cross_flux = np.nan
     directions = parse_directions(args.directions)
-    reference_flux, diagnostics = reference_speed_flux(
-        combined_direction_flux,
-        directions,
-        total_cross_flux,
-        args.flux_mode,
-        selected_direction=args.selected_direction,
-    )
+
+    if args.environment_source == "detailed-flux":
+        detailed_result = transform_flux_files_to_mars_frame(
+            mem_directory=mem_directory,
+            trajectory_file=args.trajectory_file,
+            output_axes=args.flux_output_axes,
+            trajectory_axes=args.trajectory_axes,
+            speed_label_mode=args.speed_label_mode,
+            state_weighting_mode=args.state_weighting,
+            flux_mode=args.flux_mode,
+            selected_direction=args.selected_direction,
+            mars_speed_bin_width_kms=float(args.mars_speed_bin_width_kms),
+            mars_radius_km=float(args.mars_radius_km),
+            expected_sampling_altitude_km=float(args.expected_mem_altitude_km),
+            sampling_altitude_tolerance_km=float(args.sampling_altitude_tolerance_km),
+            skip_sampling_altitude_check=bool(args.skip_sampling_altitude_check),
+            flux_frame_scaling=args.flux_frame_scaling,
+        )
+        speeds = detailed_result.mars_speed_midpoints_kms
+        reference_flux = detailed_result.transformed_speed_flux_m2_yr
+        diagnostics = {
+            "reference_speed_flux": reference_flux,
+            "reference_speed_flux_total": float(np.sum(reference_flux)),
+            "comparison_speed_kms": detailed_result.spacecraft_speed_midpoints_kms,
+            "comparison_flux_m2_yr": detailed_result.spacecraft_surface_flux_m2_yr,
+            "selected_direction_name": detailed_result.selected_surface,
+            "individual_direction_total": float(np.sum(reference_flux)),
+            "selected_direction_sum_total": float(np.sum(reference_flux)),
+            "selected_direction_mean_total": float(np.sum(reference_flux)),
+            "speed_axis_label": (
+                "Mars-relative meteoroid speed at MEM sampling altitude [km/s]"
+            ),
+        }
+    else:
+        cube_paths = (
+            [Path(path).resolve() for path in args.cube_file]
+            if args.cube_file
+            else discover_cube_files(mem_directory)
+        )
+        speeds, combined_direction_flux, total_cross_flux, cubes = (
+            combine_mem_cube_files(cube_paths)
+        )
+        reference_flux, diagnostics = reference_speed_flux(
+            combined_direction_flux,
+            directions,
+            total_cross_flux,
+            args.flux_mode,
+            selected_direction=args.selected_direction,
+        )
 
     mass_edges_g = parse_mass_edges(args.mass_edges_g)
     if mass_edges_g[0] < float(args.reference_mass_g) - 1.0e-12:
@@ -1237,6 +2146,7 @@ def main() -> None:
         "summary_json": output_directory/f"{prefix}_summary.json",
         "summary_txt": output_directory/f"{prefix}_summary.txt",
         "camera_model_pickle": output_directory/f"{prefix}_camera_model_used.pkl",
+        "state_transform_csv": output_directory/f"{prefix}_state_transform_summary.csv",
     }
 
     save_reference_speed_plot(
@@ -1272,6 +2182,11 @@ def main() -> None:
         incident, detectable, probability,
         float(args.visible_probability_threshold),
     )
+    if detailed_result is not None:
+        save_state_transform_csv(
+            outputs["state_transform_csv"],
+            detailed_result.state_rows,
+        )
 
     with outputs["camera_model_pickle"].open("wb") as fh:
         pickle.dump(camera_model, fh, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1279,7 +2194,41 @@ def main() -> None:
     summary: dict[str, Any] = {
         "format_version": 1,
         "mem_directory": str(mem_directory),
+        "environment_source": args.environment_source,
         "mem_cube_files": [str(cube.path) for cube in cubes],
+        "mem_flux_files": (
+            detailed_result.flux_files if detailed_result is not None else []
+        ),
+        "trajectory_file": (
+            detailed_result.trajectory_file if detailed_result is not None else None
+        ),
+        "flux_output_axes": (
+            detailed_result.output_axes if detailed_result is not None else None
+        ),
+        "speed_label_shift_kms": (
+            detailed_result.speed_label_shift_kms
+            if detailed_result is not None
+            else 0.0
+        ),
+        "state_weighting": (
+            detailed_result.state_weighting if detailed_result is not None else None
+        ),
+        "mem_sampling_altitude_mean_km": (
+            detailed_result.sampling_altitude_mean_km
+            if detailed_result is not None else None
+        ),
+        "mem_sampling_altitude_min_km": (
+            detailed_result.sampling_altitude_min_km
+            if detailed_result is not None else None
+        ),
+        "mem_sampling_altitude_max_km": (
+            detailed_result.sampling_altitude_max_km
+            if detailed_result is not None else None
+        ),
+        "flux_frame_scaling": (
+            detailed_result.flux_frame_scaling
+            if detailed_result is not None else None
+        ),
         "reference_mass_g": float(args.reference_mass_g),
         "mass_edges_g": mass_edges_g,
         "mass_range_g": [float(mass_edges_g[0]), float(mass_edges_g[-1])],
@@ -1317,9 +2266,12 @@ def main() -> None:
         ),
         "outputs": {key: str(value) for key, value in outputs.items()},
         "interpretation_note": (
-            "The probability-weighted detectable flux integrates P(camera detection) "
-            "within each mass bin. The binary visible-region flux instead includes the "
-            "entire incident cell only when its mean probability is above the selected threshold."
+            "Detailed-flux mode removes the orbital velocity of the fictitious MEM "
+            "sampling observer at approximately 100 km and recovers the "
+            "Mars-relative meteoroid speed at the same position before the "
+            "camera model is applied. The real 5720-km camera altitude is not "
+            "used in this velocity transformation. Probability-weighted detectable flux "
+            "integrates P(camera detection) within each mass bin."
         ),
     }
 
@@ -1328,7 +2280,24 @@ def main() -> None:
     save_text_summary(outputs["summary_txt"], summary)
 
     print("MEM mass extension completed.")
-    print(f"Cube files combined: {len(cubes)}")
+    print(f"Environment source: {args.environment_source}")
+    if detailed_result is not None:
+        print(f"Instantaneous states transformed: {len(detailed_result.state_rows)}")
+        print(f"Flux files combined: {len(detailed_result.flux_files)}")
+        print(f"Resolved MEM output axes: {detailed_result.output_axes}")
+        print(
+            "MEM sampling altitude: "
+            f"{detailed_result.sampling_altitude_mean_km:.3f} km mean "
+            f"({detailed_result.sampling_altitude_min_km:.3f}-"
+            f"{detailed_result.sampling_altitude_max_km:.3f} km)"
+        )
+        print(f"Flux frame scaling: {detailed_result.flux_frame_scaling}")
+        print(
+            "Speed-label shift applied: "
+            f"{detailed_result.speed_label_shift_kms:.3f} km/s"
+        )
+    else:
+        print(f"Cube files combined: {len(cubes)}")
     print(f"Reference flux used: {np.sum(reference_flux):.8e} #/m^2/yr")
     print(f"Incident flux {mass_edges_g[0]:g}-{mass_edges_g[-1]:g} g: {incident_total:.8e} #/m^2/yr")
     print(f"Camera-detectable flux: {detectable_total:.8e} #/m^2/yr")

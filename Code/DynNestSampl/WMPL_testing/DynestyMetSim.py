@@ -7931,21 +7931,32 @@ def runSimulationDynesty(parameter_guess, real_event, var_names, fix_var, flag_w
 
     """
 
-    # build the const to run the
+    # Build and validate the constants before entering the Cython integrator.
     const_nominal = constructConstants(parameter_guess, real_event, var_names, fix_var)
+    validateMetSimConstants(const_nominal)
 
-    try:
-        # Run the simulation
-        frag_main, results_list, wake_results = runSimulation(const_nominal, compute_wake=flag_wake)
-        simulation_MetSim_object = SimulationResults(const_nominal, frag_main, results_list, wake_results)
-    except ZeroDivisionError as e:
-        # avoid error to break the code
-        print(f"Error during simulation: {e}")
-        # run again with the nominal values to avoid the error
-        const_nominal = Constants()
-        # Run the simulation
-        frag_main, results_list, wake_results = runSimulation(const_nominal, compute_wake=False)
-        simulation_MetSim_object = SimulationResults(const_nominal, frag_main, results_list, wake_results)
+    # Do not replace a failed sample with an unrelated nominal simulation.
+    # The likelihood wrapper will reject recoverable numerical failures with -inf.
+    with np.errstate(over="raise", invalid="raise", divide="raise"):
+        frag_main, results_list, wake_results = runSimulation(
+            const_nominal, compute_wake=flag_wake
+        )
+
+    if results_list is None or len(results_list) == 0:
+        raise InvalidMetSimSample("MetSim returned an empty results list")
+
+    simulation_MetSim_object = SimulationResults(
+        const_nominal, frag_main, results_list, wake_results
+    )
+
+    required_arrays = (
+        "time_arr", "leading_frag_height_arr", "leading_frag_vel_arr",
+        "leading_frag_length_arr", "luminosity_arr",
+    )
+    for name in required_arrays:
+        array = np.asarray(getattr(simulation_MetSim_object, name, []), dtype=float)
+        if array.size == 0 or not np.any(np.isfinite(array)):
+            raise InvalidMetSimSample(f"MetSim returned no finite values in {name}")
 
     return simulation_MetSim_object
 
@@ -8248,6 +8259,133 @@ def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_l
 # Function: dynesty
 ###############################################################################
 
+class InvalidMetSimSample(ValueError):
+    """A physically invalid or numerically unstable MetSim parameter sample."""
+
+
+_SIM_FAILURE_COUNTS = defaultdict(int)
+
+
+def isRecoverableMetsimError(exc):
+    """
+    Return True only for errors that indicate a bad numerical sample.
+
+    Do not treat arbitrary exceptions as recoverable, otherwise programming
+    errors can be silently hidden inside a long Dynesty run.
+    """
+    if isinstance(exc, (InvalidMetSimSample, FloatingPointError, OverflowError, ZeroDivisionError)):
+        return True
+
+    message = str(exc).lower()
+    if isinstance(exc, TypeError):
+        return ("complex" in message and "double" in message) or "non-zero imaginary" in message
+
+    if isinstance(exc, ValueError):
+        numerical_markers = (
+            "math domain", "non-finite", "must be positive", "must be finite",
+            "invalid metsim", "negative mass", "grain mass", "mass_percent",
+        )
+        return any(marker in message for marker in numerical_markers)
+
+    return False
+
+
+def ReportRejectedSample(exc, var_names, values, limit_per_error=3):
+    """Print only the first few rejected samples of each error type per worker."""
+    key = (type(exc).__name__, str(exc).splitlines()[0][:160])
+    _SIM_FAILURE_COUNTS[key] += 1
+    count = _SIM_FAILURE_COUNTS[key]
+    if count > limit_per_error:
+        return
+
+    try:
+        params = {name: float(value) for name, value in zip(var_names, values)}
+    except Exception:
+        params = dict(zip(var_names, values))
+
+    print(
+        f"Rejected MetSim sample [{count}/{limit_per_error}] "
+        f"{type(exc).__name__}: {exc}; parameters={params}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def RequireFinitePositive(name, value, allow_zero=False):
+    """Validate one optional scalar parameter."""
+    if value is None:
+        return
+    try:
+        value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise InvalidMetSimSample(f"{name} must be a finite scalar, got {value!r}") from exc
+
+    if not np.isfinite(value):
+        raise InvalidMetSimSample(f"{name} must be finite, got {value!r}")
+    if allow_zero:
+        if value < 0:
+            raise InvalidMetSimSample(f"{name} must be non-negative, got {value!r}")
+    elif value <= 0:
+        raise InvalidMetSimSample(f"{name} must be positive, got {value!r}")
+
+
+def validateMetSimConstants(const):
+    """Reject invalid constants before entering the Cython RK4 integrator."""
+    for name in ("dt", "m_init", "v_init", "rho", "rho_grain",
+                 "erosion_mass_min", "erosion_mass_max"):
+        if hasattr(const, name):
+            RequireFinitePositive(name, getattr(const, name))
+
+    # Zero sigma/erosion can be used deliberately to disable a process, but
+    # negative values are never physically meaningful.
+    for name in ("sigma", "erosion_coeff"):
+        if hasattr(const, name):
+            RequireFinitePositive(name, getattr(const, name), allow_zero=True)
+
+    if hasattr(const, "erosion_mass_min") and hasattr(const, "erosion_mass_max"):
+        if float(const.erosion_mass_min) > float(const.erosion_mass_max):
+            raise InvalidMetSimSample(
+                f"erosion_mass_min ({const.erosion_mass_min}) exceeds "
+                f"erosion_mass_max ({const.erosion_mass_max})"
+            )
+
+    if hasattr(const, "zenith_angle"):
+        zenith_angle = float(const.zenith_angle)
+        if not np.isfinite(zenith_angle) or not (0.0 <= zenith_angle <= np.pi/2):
+            raise InvalidMetSimSample(
+                f"zenith_angle must be in [0, pi/2] radians, got {zenith_angle}"
+            )
+
+    for index, entry in enumerate(getattr(const, "fragmentation_entries", []) or []):
+        prefix = f"fragmentation_entries[{index}]"
+        for name in ("height", "sigma", "erosion_coeff", "grain_mass_min",
+                     "grain_mass_max", "mass_index", "gamma"):
+            value = getattr(entry, name, None)
+            if value is not None:
+                RequireFinitePositive(f"{prefix}.{name}", value)
+
+        number = getattr(entry, "number", None)
+        if number is not None and int(number) < 1:
+            raise InvalidMetSimSample(f"{prefix}.number must be at least 1, got {number}")
+
+        mass_percent = getattr(entry, "mass_percent", None)
+        if mass_percent is not None:
+            mass_percent = float(mass_percent)
+            if not np.isfinite(mass_percent) or not (0.0 < mass_percent <= 100.0):
+                raise InvalidMetSimSample(
+                    f"{prefix}.mass_percent must be in (0, 100], got {mass_percent}"
+                )
+
+        grain_min = getattr(entry, "grain_mass_min", None)
+        grain_max = getattr(entry, "grain_mass_max", None)
+        if grain_min is not None and grain_max is not None and float(grain_min) > float(grain_max):
+            raise InvalidMetSimSample(
+                f"{prefix}.grain_mass_min ({grain_min}) exceeds grain_mass_max ({grain_max})"
+            )
+
+    return const
+
+
 def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout=20, wake_data=None):
     """ Calculate the log-likelihood for Dynesty.
 
@@ -8265,6 +8403,16 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
         log_likelihood: [float] Calculated log-likelihood (or -np.inf if invalid/timeout).
 
     """
+
+    # Work on a private float copy. Log transforms below must not mutate the
+    # array owned by Dynesty or another caller.
+    try:
+        guess_var = np.asarray(guess_var, dtype=float).copy()
+    except (TypeError, ValueError):
+        return -np.inf
+
+    if guess_var.ndim != 1 or guess_var.size != len(flags_dict) or not np.all(np.isfinite(guess_var)):
+        return -np.inf
 
     flag_wake = False
     if wake_data is not None:
@@ -8337,22 +8485,29 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
 
     ### ONLY on LINUX ###
 
-    # check if the OS is not Linux
-    if os.name == 'nt':
-        # If not Linux, run the simulation without timeout
-        simulation_results = runSimulationDynesty(guess_var, obs_metsim_obj, var_names, fix_var, flag_wake=flag_wake)
-    else:
-        # Set timeout handler
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(timeout)  # Start the timer for timeout
-        # get simulated LC intensity onthe object
-        try: # try to run the simulation
-            simulation_results = runSimulationDynesty(guess_var, obs_metsim_obj, var_names, fix_var, flag_wake=flag_wake)
-        except TimeoutException:
-            print('timeout')
-            return -np.inf  # immediately return -np.inf if times out
-        finally:
-            signal.alarm(0)  # Cancel alarm
+    try:
+        if os.name == 'nt':
+            # Windows has no SIGALRM; run without the Unix timeout.
+            simulation_results = runSimulationDynesty(
+                guess_var, obs_metsim_obj, var_names, fix_var, flag_wake=flag_wake
+            )
+        else:
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(timeout)
+            try:
+                simulation_results = runSimulationDynesty(
+                    guess_var, obs_metsim_obj, var_names, fix_var, flag_wake=flag_wake
+                )
+            finally:
+                signal.alarm(0)
+    except TimeoutException as exc:
+        ReportRejectedSample(exc, var_names, guess_var)
+        return -np.inf
+    except Exception as exc:
+        if isRecoverableMetsimError(exc):
+            ReportRejectedSample(exc, var_names, guess_var)
+            return -np.inf
+        raise
 
     ### LUM CALC ###
 
@@ -8486,8 +8641,13 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
     log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
     if flag_wake:
         # weight by the number of points in the wake to avoid overweighting the wake if there are many points
+        if tot_num_values <= 0:
+            return -np.inf
         log_likelihood_tot += ((len(obs_metsim_obj.lag)+len(obs_metsim_obj.luminosity))/tot_num_values)*log_likelihood_wake
         # log_likelihood_tot += ((np.max([len(obs_metsim_obj.lag),len(obs_metsim_obj.luminosity)]))/tot_num_values)*log_likelihood_wake
+
+    if not np.isfinite(log_likelihood_tot):
+        return -np.inf
     # elif logLtype=="wake":
     #     log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
     #     # Wake terms at selected heights
@@ -8516,17 +8676,22 @@ def priorDynesty(cube, bounds, flags_dict):
         x: [ndarray] Transformed parameter values in the prior space.
 
     """
-    x = np.array(cube)  # Copy u to avoid modifying it directly
+    # Clip only exact numerical endpoints. ppf(0) and ppf(1) can produce
+    # infinities for unbounded priors, which are never valid MetSim inputs.
+    cube = np.asarray(cube, dtype=float)
+    eps = np.finfo(float).eps
+    cube_safe = np.clip(cube, eps, 1.0 - eps)
+    x = cube_safe.copy()
     param_names = list(flags_dict.keys())
     i_prior=0
     for (min_or_sigma, MAX_or_mean), param_name in zip(bounds, param_names):
         # check if the flags_dict at index i is empty
         if 'norm' in flags_dict[param_name]:
-            x[i_prior] = norm.ppf(cube[i_prior], loc=MAX_or_mean, scale=min_or_sigma)
+            x[i_prior] = norm.ppf(cube_safe[i_prior], loc=MAX_or_mean, scale=min_or_sigma)
         elif 'invgamma' in flags_dict[param_name]:
-            x[i_prior] = invgamma.ppf(cube[i_prior], min_or_sigma, scale=MAX_or_mean*(min_or_sigma + 1))
+            x[i_prior] = invgamma.ppf(cube_safe[i_prior], min_or_sigma, scale=MAX_or_mean*(min_or_sigma + 1))
         else:
-            x[i_prior] = cube[i_prior]*(MAX_or_mean - min_or_sigma) + min_or_sigma  # Scale and shift
+            x[i_prior] = cube_safe[i_prior]*(MAX_or_mean - min_or_sigma) + min_or_sigma  # Scale and shift
         i_prior += 1
 
     return x

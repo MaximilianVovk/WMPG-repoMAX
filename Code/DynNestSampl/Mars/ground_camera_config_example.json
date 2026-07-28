@@ -1,0 +1,34 @@
+{
+  "cameras": [
+    {
+      "name": "EMCCD",
+      "limiting_magnitude": 7.0,
+      "fps": 32.0,
+      "minimum_frames": 4.0,
+      "horizontal_fov_deg": 9.7,
+      "vertical_fov_deg": 9.7,
+      "pointing_mode": "horizon-anchored",
+      "lower_elevation_deg": 5.0,
+      "boresight_zenith_deg": null,
+      "vertical_optical_depth": 0.0,
+      "airmass_floor_elevation_deg": 5.0,
+      "fov_residence_mode": "minimum-dimension",
+      "transverse_speed_factor": 1.0
+    },
+    {
+      "name": "METEORCAM",
+      "limiting_magnitude": 4.0,
+      "fps": 10.0,
+      "minimum_frames": 4.0,
+      "horizontal_fov_deg": 46.0,
+      "vertical_fov_deg": 46.0,
+      "pointing_mode": "horizon-anchored",
+      "lower_elevation_deg": 5.0,
+      "boresight_zenith_deg": null,
+      "vertical_optical_depth": 0.0,
+      "airmass_floor_elevation_deg": 5.0,
+      "fov_residence_mode": "minimum-dimension",
+      "transverse_speed_factor": 1.0
+    }
+  ]
+}

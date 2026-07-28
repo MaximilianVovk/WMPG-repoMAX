@@ -49,8 +49,8 @@ def read_mem_flux_file(filepath):
 # Input files
 # -------------------------------------------------------------------
 
-file1 = r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\METEORCAM\Test-Flux-surface\Flux_0-30-60-90deg\HiDensity\cube_avg.txt"
-file2 = r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\METEORCAM\Test-Flux-surface\Flux_0-30-60-90deg\LoDensity\cube_avg.txt"
+file1 = r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\Strawman\Orbits\MEM_20deg10_10-6\HiDensity\cube_avg.txt"
+file2 = r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\Strawman\Orbits\MEM_20deg10_10-6\LoDensity\cube_avg.txt"
 
 speeds1, data1 = read_mem_flux_file(file1)
 speeds2, data2 = read_mem_flux_file(file2)
@@ -105,6 +105,6 @@ plt.legend()
 plt.tight_layout()
 
 # High-resolution output
-plt.savefig(r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\METEORCAM\Test-Flux-surface\summed_flux_selected_directions_highres.png", dpi=600, bbox_inches="tight")
+plt.savefig(r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\Strawman\Orbits\MEM_20deg10_10-6\summed_flux_selected_directions_highres.png", dpi=600, bbox_inches="tight")
 
 plt.show()

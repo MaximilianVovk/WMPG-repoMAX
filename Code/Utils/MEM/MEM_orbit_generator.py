@@ -79,7 +79,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--true-anomaly-deg", type=float, default=0.0,
                         help="Initial true anomaly at the first sample [deg].")
 
-    parser.add_argument("--num-points", type=int, default=6,
+    parser.add_argument("--num-points", type=int, default=101,
                         help="Number of sampled state vectors over one orbit. Default: 6")
     parser.add_argument("--start-date", default="2033-01-01T00:00:00",
                         help="UTC start date/time in ISO format. Default: 2033-01-01T00:00:00")

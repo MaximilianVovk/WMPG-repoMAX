@@ -23,6 +23,7 @@ import shutil
 import signal
 import sys
 import time
+import traceback
 import warnings
 from dataclasses import dataclass, field
 from typing import Any, Iterator
@@ -79,6 +80,7 @@ class TimeoutException(Exception):
 
 def timeout_handler(signum, frame):
     raise TimeoutException("Function execution timed out")
+
 
 # create a txt file where you save everything that has been printed
 class Logger(object):
@@ -1394,7 +1396,7 @@ def _worker_simulate_and_interp(sample_equal_row, sample_row):
         h  = np.asarray(sim.leading_frag_height_arr)
         ok = ~np.isnan(h)
         if np.count_nonzero(ok) < 4:
-            return None
+            return {"error": "Simulation produced fewer than four finite height points"}
         h  = h[ok]
         order = np.argsort(h)  # increasing
         h   = h[order]
@@ -1494,8 +1496,8 @@ def _worker_simulate_and_interp(sample_equal_row, sample_row):
         #         const_backup[var] = getattr(const_saved, var)
 
         return lum_hl, mag_hl, vel_hv, lag_hv, const_backup
-    except Exception:
-        return None
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 def _quantiles_from_samples(arr_2d, qs):
     """arr_2d shape (S,H). Returns dict of quantiles along axis=0 ignoring NaNs."""
@@ -1536,51 +1538,104 @@ def _maybe_integrate_luminosity(sim, obs_data):
         # be silent and keep raw arrays if integration fails for any reason
         pass
 
+def _finite_values_and_weights(values, weights=None, context="distribution"):
+    """Return finite 1-D values and normalized matching weights.
+
+    Invalid posterior simulations are represented by NaN. They must be removed
+    before calling dynesty quantiles or NumPy histograms. This helper also makes
+    data restored from ``.tolist()`` backups numeric again.
+    """
+    values_arr = np.asarray(values, dtype=float).reshape(-1)
+
+    if weights is None:
+        mask = np.isfinite(values_arr)
+        weights_arr = None
+    else:
+        weights_arr = np.asarray(weights, dtype=float).reshape(-1)
+        if weights_arr.size != values_arr.size:
+            raise ValueError(
+                f"{context}: values/weights length mismatch "
+                f"({values_arr.size} != {weights_arr.size})"
+            )
+        mask = np.isfinite(values_arr) & np.isfinite(weights_arr) & (weights_arr >= 0.0)
+
+    dropped = int(values_arr.size - np.count_nonzero(mask))
+    values_arr = values_arr[mask]
+    if weights_arr is not None:
+        weights_arr = weights_arr[mask]
+
+    if values_arr.size == 0:
+        raise ValueError(f"{context}: no finite values are available")
+
+    if weights_arr is not None:
+        weight_sum = float(np.sum(weights_arr))
+        if not np.isfinite(weight_sum) or weight_sum <= 0.0:
+            raise ValueError(f"{context}: finite weights have a non-positive sum")
+        weights_arr = weights_arr/weight_sum
+
+    if dropped:
+        print(f"[{context}] Dropped {dropped} non-finite value/weight pairs.")
+
+    return values_arr, weights_arr
+
+
 def _plot_distrib_weighted(rho_mass_weighted_list, weights, output_folder="", file_name="name",var_name="var", label="var", colors='black', ax_dist=None):
     if not DYNESTY_FOUND:
         return np.nan, np.nan, np.nan
 
     print("Creating distribution plot...")
-    var_corrected_lo, var_corrected_median, var_corrected_hi = _quantile(rho_mass_weighted_list, [0.025, 0.5, 0.975], weights=weights)
+    values, weights_use = _finite_values_and_weights(
+        rho_mass_weighted_list, weights, context=f"{var_name} distribution"
+    )
+
+    var_corrected_lo, var_corrected_median, var_corrected_hi = _quantile(
+        values, [0.025, 0.5, 0.975], weights=weights_use
+    )
+
     if ax_dist is None:
-        # Create figure tau
         fig = plt.figure(figsize=(8, 6))
         ax_dist = fig.add_subplot(111)
         save_file = True
     else:
+        fig = ax_dist.figure
         save_file = False
 
     smooth = 0.02
-    lo, hi = np.min(rho_mass_weighted_list), np.max(rho_mass_weighted_list)
+    lo, hi = float(np.min(values)), float(np.max(values))
+    if not hi > lo:
+        # np.histogram requires a non-zero finite range when range is explicit.
+        delta = max(abs(lo)*1e-6, 1e-12)
+        lo, hi = lo - delta, hi + delta
+
     nbins = int(round(10./smooth))
-    hist, edges = np.histogram(rho_mass_weighted_list, bins=nbins, weights=weights, range=(lo, hi))
+    hist, edges = np.histogram(values, bins=nbins, weights=weights_use, range=(lo, hi))
     hist = norm_kde(hist, 10.0)
     bin_centers = 0.5*(edges[:-1] + edges[1:])
 
     ax_dist.fill_between(bin_centers, hist, color=colors, alpha=0.6)
-
-    # Percentile lines
     ax_dist.axvline(var_corrected_median, color=colors, linestyle='--', linewidth=1.5)
     ax_dist.axvline(var_corrected_lo, color=colors, linestyle='--', linewidth=1.5)
     ax_dist.axvline(var_corrected_hi, color=colors, linestyle='--', linewidth=1.5)
 
-    # Title and formatting
     plus = var_corrected_hi - var_corrected_median
     minus = var_corrected_median - var_corrected_lo
     fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    title = rf"Tot N. Runs {len(rho_mass_weighted_list)} — {label} = {fmt(var_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    title = rf"Tot N. finite runs {len(values)} — {label} = {fmt(var_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
     ax_dist.set_title(title, fontsize=20)
-    # ax_dist.tick_params(axis='x', labelbottom=False)
     ax_dist.tick_params(axis='y', left=False, labelleft=False)
     ax_dist.set_ylabel("")
     ax_dist.set_xlabel(f'{label}', fontsize=20)
     ax_dist.spines['left'].set_visible(False)
     ax_dist.spines['right'].set_visible(False)
     ax_dist.spines['top'].set_visible(False)
-    # x axis from 0 to tau_corrected*2
-    # ax_dist.set_xlim(0, var_corrected_hi+var_corrected_median)
+
     if save_file:
-        plt.savefig(os.path.join(output_folder, f"{file_name}_{var_name}_distribution.png"), bbox_inches='tight')
+        fig.savefig(
+            os.path.join(output_folder, f"{file_name}_{var_name}_distribution.png"),
+            bbox_inches='tight'
+        )
+        plt.close(fig)
+
     return var_corrected_median, var_corrected_lo, var_corrected_hi
 
 def posteriorBandsVsHeightParallel(
@@ -1637,11 +1692,32 @@ def posteriorBandsVsHeightParallel(
     rng = np.random.default_rng(seed)
     variables = list(flags_dict.keys())
 
-    # weights -> equal-weight resampling
-    logwt = np.asarray(dynesty_results.logwt)
-    w = np.exp(logwt - np.max(logwt))
-    w /= np.sum(w)
-    samples_eq = dynesty.utils.resample_equal(dynesty_results.samples, w)
+    # Validate the Results object before equal-weight resampling.
+    samples_raw = np.asarray(dynesty_results.samples, dtype=float)
+    w = np.asarray(dynesty_results.importance_weights(), dtype=float).reshape(-1)
+    if samples_raw.ndim != 2 or samples_raw.shape[0] != w.size:
+        raise ValueError(
+            f"Posterior samples/weights shape mismatch: {samples_raw.shape} versus {w.shape}"
+        )
+
+    valid_rows = np.all(np.isfinite(samples_raw), axis=1) & np.isfinite(w) & (w >= 0.0)
+    dropped_rows = int(samples_raw.shape[0] - np.count_nonzero(valid_rows))
+    samples_raw = samples_raw[valid_rows]
+    w = w[valid_rows]
+    weight_sum = float(np.sum(w))
+    if samples_raw.shape[0] == 0 or not np.isfinite(weight_sum) or weight_sum <= 0.0:
+        raise RuntimeError("Dynesty posterior has no finite samples with usable importance weights")
+    w = w/weight_sum
+
+    if dropped_rows:
+        print(f"[{file_name}] Dropped {dropped_rows} invalid posterior rows before resampling.")
+    print(
+        f"[{file_name}] Posterior diagnostics: {samples_raw.shape[0]} finite samples, "
+        f"weight sum={np.sum(w):.6f}, finite logL="
+        f"{np.count_nonzero(np.isfinite(np.asarray(dynesty_results.logl, dtype=float)))}"
+    )
+
+    samples_eq = dynesty.utils.resample_equal(samples_raw, w)
     if nsamples is not None and nsamples < samples_eq.shape[0]:
         idx_keep = rng.choice(samples_eq.shape[0], size=nsamples, replace=False)
         samples_eq = samples_eq[idx_keep]
@@ -1655,6 +1731,7 @@ def posteriorBandsVsHeightParallel(
     vel_samples = np.full((S, H_v), np.nan)
     lag_samples = np.full((S, H_v), np.nan)
     const_backups = [None]*S  # to store const backups if needed
+    failure_reasons = defaultdict(int)
 
     align_height = np.max(obs_data.height_lag) if hasattr(obs_data, 'height_lag') and len(obs_data.height_lag) > 0 \
                    else np.max(obs_data.height_lum)
@@ -1676,7 +1753,7 @@ def posteriorBandsVsHeightParallel(
         ) as ex:
             # submit and keep a map to their sample index
             future_to_idx = {
-                ex.submit(_worker_simulate_and_interp, samples_eq[sidx], dynesty_results.samples[sidx]): sidx
+                ex.submit(_worker_simulate_and_interp, samples_eq[sidx], samples_eq[sidx]): sidx
                 for sidx in range(S)
             }
 
@@ -1684,7 +1761,9 @@ def posteriorBandsVsHeightParallel(
             for fut in as_completed(future_to_idx):
                 sidx = future_to_idx[fut]
                 res = fut.result()
-                if res is not None:
+                if isinstance(res, dict) and "error" in res:
+                    failure_reasons[res["error"]] += 1
+                elif res is not None:
                     lum_hl, mag_hl, vel_hl, lag_hl, const_backup = res
                     lum_samples[sidx] = lum_hl
                     mag_samples[sidx] = mag_hl
@@ -1704,8 +1783,10 @@ def posteriorBandsVsHeightParallel(
         _init_worker(obs_data, variables, flags_dict, fixed_values, align_height)
         done = 0
         for sidx in range(S):
-            res = _worker_simulate_and_interp(samples_eq[sidx], dynesty_results.samples[sidx])
-            if res is not None:
+            res = _worker_simulate_and_interp(samples_eq[sidx], samples_eq[sidx])
+            if isinstance(res, dict) and "error" in res:
+                failure_reasons[res["error"]] += 1
+            elif res is not None:
                 lum_hl, mag_hl, vel_hl, lag_hl, const_backup = res
                 lum_samples[sidx] = lum_hl
                 mag_samples[sidx] = mag_hl
@@ -1714,6 +1795,20 @@ def posteriorBandsVsHeightParallel(
                 const_backups[sidx] = const_backup
             done += 1
             print(f"[{file_name}] {done}/{S} simulations done", flush=True)
+
+    successful = sum(const is not None for const in const_backups)
+    print(f"[{file_name}] Successful posterior simulations: {successful}/{S}")
+    if failure_reasons:
+        print(f"[{file_name}] Most common posterior-simulation failures:")
+        for reason, count in sorted(failure_reasons.items(), key=lambda item: item[1], reverse=True)[:5]:
+            print(f"  {count:6d} x {reason}")
+    if successful == 0:
+        common_reason = max(failure_reasons, key=failure_reasons.get) if failure_reasons else "unknown failure"
+        raise RuntimeError(
+            "All posterior-band MetSim simulations failed. The Dynesty checkpoint is preserved, "
+            "but uncertainty bands and mass-weighted-density products cannot be generated. "
+            f"Most common failure: {common_reason}"
+        )
 
     # Quantile bands
     qs = {
@@ -1774,9 +1869,17 @@ def posteriorBandsVsHeightParallel(
             rho_mass_weighted_list.append(np.nan)
             rho_volume_weighted_list.append(np.nan)
 
-    # from list to numpy array
-    rho_mass_weighted_list = np.array(rho_mass_weighted_list)
-    rho_low95_real, rho_median_real, rho_high95_real = _quantile(rho_mass_weighted_list, [0.025, 0.5, 0.975], weights=w)
+    # These simulations came from equal-weight resampled posterior points, so
+    # their derived rho values must also be summarized with equal weights.
+    rho_mass_weighted_list = np.asarray(rho_mass_weighted_list, dtype=float)
+    rho_finite = rho_mass_weighted_list[np.isfinite(rho_mass_weighted_list)]
+    if rho_finite.size:
+        rho_low95_real, rho_median_real, rho_high95_real = _quantile(
+            rho_finite, [0.025, 0.5, 0.975], weights=None
+        )
+    else:
+        print(f"[{file_name}] Warning: no finite mass-weighted density values were produced.")
+        rho_low95_real = rho_median_real = rho_high95_real = np.nan
 
     return {
         'samples_eq': samples_eq,
@@ -1817,8 +1920,30 @@ def _plot_bands_obs_best(
     if output_folder:
         os.makedirs(output_folder, exist_ok=True)
 
-    heights_km_lum = np.asarray(hl)/1000.0
-    heights_km_lag = np.asarray(hv)/1000.0
+    # Backups store arrays with .tolist(); restore numeric arrays at the plotting boundary.
+    def _numeric_band_dict(band_dict, name):
+        if not isinstance(band_dict, dict):
+            raise TypeError(f"{name} must be a dictionary of quantile arrays")
+        return {key: np.asarray(value, dtype=float) for key, value in band_dict.items()}
+
+    bands_lum = _numeric_band_dict(bands_lum, "bands_lum")
+    bands_mag = _numeric_band_dict(bands_mag, "bands_mag")
+    bands_vel = _numeric_band_dict(bands_vel, "bands_vel")
+    bands_lag = _numeric_band_dict(bands_lag, "bands_lag")
+    best_lum = np.asarray(best_lum, dtype=float)
+    best_mag = np.asarray(best_mag, dtype=float)
+    best_vel = np.asarray(best_vel, dtype=float)
+    best_lag = np.asarray(best_lag, dtype=float)
+
+    for attr in (
+        "height_lum", "height_lag", "luminosity", "absolute_magnitudes",
+        "velocities", "lag", "stations_lum", "stations_lag",
+    ):
+        if hasattr(obs_data, attr):
+            setattr(obs_data, attr, np.asarray(getattr(obs_data, attr)))
+
+    heights_km_lum = np.asarray(hl, dtype=float)/1000.0
+    heights_km_lag = np.asarray(hv, dtype=float)/1000.0
 
     fig = plt.figure(figsize=(15, 4))
     gs  = gridspec.GridSpec(1, 4, figure=fig, wspace=0.3)
@@ -2331,12 +2456,28 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     # logwt_shifted = logwt - np.max(logwt)
     # weights = np.exp(logwt_shifted)
 
-    weights = dynesty_run_results.importance_weights()
+    samples_results = np.asarray(dynesty_run_results.samples, dtype=float)
+    logl_results = np.asarray(dynesty_run_results.logl, dtype=float)
+    weights = np.asarray(dynesty_run_results.importance_weights(), dtype=float).copy()
 
-    # Normalize so that sum(weights) = 1
-    weights /= np.sum(weights)
+    print(
+        "Dynesty result diagnostics: "
+        f"samples={samples_results.shape}, "
+        f"non-finite sample values={np.size(samples_results) - np.count_nonzero(np.isfinite(samples_results))}, "
+        f"finite logL={np.count_nonzero(np.isfinite(logl_results))}/{logl_results.size}, "
+        f"finite weights={np.count_nonzero(np.isfinite(weights))}/{weights.size}"
+    )
 
-    samples_equal = dynesty_run_results.samples.copy()
+    weights[~np.isfinite(weights) | (weights < 0.0)] = 0.0
+    weight_sum = float(np.sum(weights))
+    if not np.isfinite(weight_sum) or weight_sum <= 0.0:
+        raise RuntimeError(
+            "Dynesty importance weights are all invalid. Check whether every likelihood was -inf "
+            "and inspect the checkpoint before plotting."
+        )
+    weights /= weight_sum
+
+    samples_equal = samples_results.copy()
 
     # all_samples = dynesty.utils.resample_equal(dynesty_run_results.samples, weights)
 
@@ -2835,12 +2976,19 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             summary_df_sml: [pandas.DataFrame] DataFrame containing statistics with only log transformations applied.
 
         """
-        samples = results.samples               # shape (nsamps, ndim)
-        weights = results.importance_weights()  # shape (nsamps,)
+        samples = np.asarray(results.samples, dtype=float)  # shape (nsamps, ndim)
+        weights = np.asarray(results.importance_weights(), dtype=float).reshape(-1)
 
-        # normalize weights
+        if samples.ndim != 2 or samples.shape[0] != weights.size:
+            raise ValueError(f"Summary samples/weights mismatch: {samples.shape} versus {weights.shape}")
+
+        # normalize only finite, non-negative weights
         w = weights.copy()
-        w /= np.sum(w)
+        w[~np.isfinite(w) | (w < 0.0)] = 0.0
+        w_sum = float(np.sum(w))
+        if not np.isfinite(w_sum) or w_sum <= 0.0:
+            raise RuntimeError("Cannot summarize posterior: importance weights are invalid")
+        w /= w_sum
 
         # find the single sample index with highest weight
         mode_idx = np.nanargmax(w)   # index of peak-weight sample
@@ -2850,16 +2998,15 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         rows_sml = []
         for i, (var, lab) in enumerate(zip(variables, labels_plot)):
             x = samples[:, i].astype(float)
-            # mask out NaNs
-            mask = ~np.isnan(x)
+            # Keep only finite coordinates with usable weights.
+            mask = np.isfinite(x) & np.isfinite(w) & (w >= 0.0)
             x_valid = x[mask]
             w_valid = w[mask]
-            if x_valid.size == 0:
-                rows.append((var, lab, *([np.nan]*5)))
-                rows_sml.append((var, lab, *([np.nan]*5)))
+            if x_valid.size == 0 or np.sum(w_valid) <= 0.0:
+                rows.append((var, lab, *([np.nan]*6)))
+                rows_sml.append((var, lab, *([np.nan]*6)))
                 continue
-            # renormalize
-            w_valid /= np.sum(w_valid)
+            w_valid = w_valid/np.sum(w_valid)
 
             # weighted quantiles
             low95, med, high95 = _quantile(x_valid,
@@ -2870,16 +3017,23 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             # simple mode from max-weight sample
             mode_value = mode_raw[i]
 
-            # mode via corner logic
-            lo, hi = np.min(x), np.max(x)
-            if isinstance(smooth, int):
-                hist, edges = np.histogram(x, bins=smooth, weights=w, range=(lo,hi))
+            # mode via corner logic, using the same finite subset.
+            lo, hi = float(np.min(x_valid)), float(np.max(x_valid))
+            if not hi > lo:
+                mode_Ndim = lo
             else:
-                nbins = int(round(10./smooth))
-                hist, edges = np.histogram(x, bins=nbins, weights=w, range=(lo,hi))
-                hist = norm_kde(hist, 10.0)
-            centers = 0.5*(edges[1:] + edges[:-1])
-            mode_Ndim = centers[np.argmax(hist)]
+                if isinstance(smooth, int):
+                    hist, edges = np.histogram(
+                        x_valid, bins=smooth, weights=w_valid, range=(lo, hi)
+                    )
+                else:
+                    nbins = int(round(10./smooth))
+                    hist, edges = np.histogram(
+                        x_valid, bins=nbins, weights=w_valid, range=(lo, hi)
+                    )
+                    hist = norm_kde(hist, 10.0)
+                centers = 0.5*(edges[1:] + edges[:-1])
+                mode_Ndim = centers[np.argmax(hist)]
 
             # now apply your log & unit transforms *after* computing stats
             def transform(v):
@@ -3075,15 +3229,15 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 # backup_small = pickle.load(f)
                 backup_small = load_gzip_pickle_with_fallback(backup_file_check)
 
-            bands_lum = backup_small['bands']['lum']
-            bands_mag = backup_small['bands']['mag']
-            bands_vel = backup_small['bands']['vel']
-            bands_lag = backup_small['bands']['lag']
+            bands_lum = {k: np.asarray(v, dtype=float) for k, v in backup_small['bands']['lum'].items()}
+            bands_mag = {k: np.asarray(v, dtype=float) for k, v in backup_small['bands']['mag'].items()}
+            bands_vel = {k: np.asarray(v, dtype=float) for k, v in backup_small['bands']['vel'].items()}
+            bands_lag = {k: np.asarray(v, dtype=float) for k, v in backup_small['bands']['lag'].items()}
 
-            best_lum = backup_small['best_guess']['luminosity']
-            best_mag = backup_small['best_guess']['abs_magnitude']
-            best_vel = backup_small['best_guess']['velocity']
-            best_lag = backup_small['best_guess']['lag']
+            best_lum = np.asarray(backup_small['best_guess']['luminosity'], dtype=float)
+            best_mag = np.asarray(backup_small['best_guess']['abs_magnitude'], dtype=float)
+            best_vel = np.asarray(backup_small['best_guess']['velocity'], dtype=float)
+            best_lag = np.asarray(backup_small['best_guess']['lag'], dtype=float)
 
             hl = np.asarray(obs_data.height_lum)
             hv = np.asarray(obs_data.height_lag)
@@ -3175,13 +3329,10 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             #     backup_small = pickle.load(f)
 
         rho_median_real, rho_lo_real, rho_hi_real = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
-        rho_total_arr = backup_small['dynesty']['rho_array']
+        rho_total_arr = np.asarray(backup_small['dynesty']['rho_array'], dtype=float)
 
-        # If all the weights are available, run the full weights:
-        if len(weights) != len(rho_total_arr):
-            weights_plot = None
-        else:
-            weights_plot = weights
+        # rho_array is generated from equal-weight posterior resampling.
+        weights_plot = None
 
         _plot_distrib_weighted(
             rho_total_arr,
@@ -3412,16 +3563,21 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     for i in range(ndim):
         ax = axes[i]
         x = samples[:, i].astype(float)
-        mask = ~np.isnan(x)
+        mask = np.isfinite(x) & np.isfinite(w) & (w >= 0.0)
         x_valid = x[mask]
         w_valid = w[mask]
 
-        if x_valid.size == 0:
+        if x_valid.size == 0 or np.sum(w_valid) <= 0.0:
+            print(f"Skipping marginal plot for {variables[i]}: no finite weighted samples")
             ax.axis('off')
             continue
+        w_valid = w_valid/np.sum(w_valid)
 
         # Compute histogram
-        lo, hi = np.min(x_valid), np.max(x_valid)
+        lo, hi = float(np.min(x_valid)), float(np.max(x_valid))
+        if not hi > lo:
+            delta = max(abs(lo)*1e-6, 1e-12)
+            lo, hi = lo - delta, hi + delta
         if isinstance(smooth, int):
             hist, edges = np.histogram(x_valid, bins=smooth, weights=w_valid, range=(lo, hi))
         else:
@@ -5971,13 +6127,27 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                 try:
                     dsampler = dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, 
                                               pool_MPI=pool_MPI, wake_data=wake_data, print_progress=print_progress)
-                    plotDynestyResults(dsampler.results, obs_data, flags_dict, fixed_values, out_folder, base_name, log_file_path, cml_args.cores, save_backup=save_backup, finish_run=True, wake_data=wake_data)
+                    try:
+                        plotDynestyResults(
+                            dsampler.results, obs_data, flags_dict, fixed_values,
+                            out_folder, base_name, log_file_path, cml_args.cores,
+                            save_backup=save_backup, finish_run=True, wake_data=wake_data
+                        )
+                    except Exception as plot_exc:
+                        plot_trace = traceback.format_exc()
+                        message = (
+                            f"\nDynesty sampling completed, but post-processing/plotting failed: "
+                            f"{plot_exc}\n{plot_trace}\n"
+                        )
+                        with open(log_file_path, "a") as log_file:
+                            log_file.write(message)
+                        print(message)
 
                 except Exception as e:
                     # Open the file in append mode and write the error message
                     with open(log_file_path, "a") as log_file:
-                        log_file.write(f"\nError encountered in dynestsy run: {e}\n")
-                    print(f"\nError encountered in dynestsy run: {e}\n")
+                        log_file.write(f"\nError encountered in dynesty sampling: {e}\n{traceback.format_exc()}\n")
+                    print(f"\nError encountered in dynesty sampling: {e}\n")
                     # now try and plot the dynesty file results
                     try:
                         dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
@@ -8266,9 +8436,8 @@ class InvalidMetSimSample(ValueError):
 _SIM_FAILURE_COUNTS = defaultdict(int)
 
 
-def isRecoverableMetsimError(exc):
-    """
-    Return True only for errors that indicate a bad numerical sample.
+def _is_recoverable_metsim_error(exc):
+    """Return True only for errors that indicate a bad numerical sample.
 
     Do not treat arbitrary exceptions as recoverable, otherwise programming
     errors can be silently hidden inside a long Dynesty run.
@@ -8290,7 +8459,7 @@ def isRecoverableMetsimError(exc):
     return False
 
 
-def ReportRejectedSample(exc, var_names, values, limit_per_error=3):
+def _report_rejected_sample(exc, var_names, values, limit_per_error=3):
     """Print only the first few rejected samples of each error type per worker."""
     key = (type(exc).__name__, str(exc).splitlines()[0][:160])
     _SIM_FAILURE_COUNTS[key] += 1
@@ -8311,7 +8480,7 @@ def ReportRejectedSample(exc, var_names, values, limit_per_error=3):
     )
 
 
-def RequireFinitePositive(name, value, allow_zero=False):
+def _require_finite_positive(name, value, allow_zero=False):
     """Validate one optional scalar parameter."""
     if value is None:
         return
@@ -8334,13 +8503,13 @@ def validateMetSimConstants(const):
     for name in ("dt", "m_init", "v_init", "rho", "rho_grain",
                  "erosion_mass_min", "erosion_mass_max"):
         if hasattr(const, name):
-            RequireFinitePositive(name, getattr(const, name))
+            _require_finite_positive(name, getattr(const, name))
 
     # Zero sigma/erosion can be used deliberately to disable a process, but
     # negative values are never physically meaningful.
     for name in ("sigma", "erosion_coeff"):
         if hasattr(const, name):
-            RequireFinitePositive(name, getattr(const, name), allow_zero=True)
+            _require_finite_positive(name, getattr(const, name), allow_zero=True)
 
     if hasattr(const, "erosion_mass_min") and hasattr(const, "erosion_mass_max"):
         if float(const.erosion_mass_min) > float(const.erosion_mass_max):
@@ -8362,7 +8531,7 @@ def validateMetSimConstants(const):
                      "grain_mass_max", "mass_index", "gamma"):
             value = getattr(entry, name, None)
             if value is not None:
-                RequireFinitePositive(f"{prefix}.{name}", value)
+                _require_finite_positive(f"{prefix}.{name}", value)
 
         number = getattr(entry, "number", None)
         if number is not None and int(number) < 1:
@@ -8501,11 +8670,11 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             finally:
                 signal.alarm(0)
     except TimeoutException as exc:
-        ReportRejectedSample(exc, var_names, guess_var)
+        _report_rejected_sample(exc, var_names, guess_var)
         return -np.inf
     except Exception as exc:
-        if isRecoverableMetsimError(exc):
-            ReportRejectedSample(exc, var_names, guess_var)
+        if _is_recoverable_metsim_error(exc):
+            _report_rejected_sample(exc, var_names, guess_var)
             return -np.inf
         raise
 

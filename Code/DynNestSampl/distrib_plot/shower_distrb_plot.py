@@ -32,7 +32,8 @@ from dynesty.utils import quantile as _quantile
 from scipy.ndimage import gaussian_filter as norm_kde
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 import matplotlib.cm as cm
-from matplotlib.colors import Normalize
+from matplotlib.colors import PowerNorm, Normalize
+from matplotlib import cm, colors
 from dynesty import utils as dyfunc
 from matplotlib.ticker import MaxNLocator, NullLocator, ScalarFormatter
 from scipy.stats import gaussian_kde
@@ -41,7 +42,6 @@ from multiprocessing import Pool
 from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
 from types import SimpleNamespace
 import matplotlib.gridspec as gridspec
-from matplotlib.colors import PowerNorm
 from matplotlib.patches import Patch, Polygon
 from matplotlib.collections import LineCollection
 import matplotlib.colors as mcolors
@@ -2387,7 +2387,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     tau_corrected = np.concatenate(tau_corrected)
     kinetic_energy_all = np.concatenate(kinetic_energy_all)
     kc_all = np.concatenate(kc_all)
-    
+
     def none_delete_and_replace_with_random(erosion_beg_vel_backup, variable_name):
         # count the number of None in erosion_beg_vel_backup
         none_count = sum(1 for v in erosion_beg_vel_backup if v is None)
@@ -3705,7 +3705,39 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     #     # check if the flag associated to the variable is log
     #     if 'log' in flags_dict[variable]:
     #         combined_samples_savecov[:, j] = 10**combined_samples_savecov[:, j]
- 
+    
+    # look at waht mas 2 is left
+    # print(mass_left_first_erosion_perc)
+    # print(mass_left_second_erosion_perc)
+
+    # mask_first = (
+    #     (mass_left_first_erosion_perc > 75)
+    #     | (mass_left_first_erosion_perc < 25)
+    # )
+
+    # print(
+    #     "All samples below 25% or above 75%, first erosion:\n", len(all_names[mask_first]),
+    #     all_names[mask_first]
+    # )
+
+    mask_second_below_25 = (
+        (mass_left_second_erosion_perc > 10) & (mass_left_second_erosion_perc < 15)
+    )
+
+    print(
+        "All samples below 1%, second erosion:\n", len(all_names[mask_second_below_25]),
+        all_names[mask_second_below_25]
+    )
+
+    mask_second_above_75 = (
+        (mass_left_second_erosion_perc < 75) & (mass_left_second_erosion_perc > 50)
+    )
+
+    print(
+        "All samples above 75%, second erosion:\n", len(all_names[mask_second_above_75]),
+        all_names[mask_second_above_75]
+    )
+
     # Create a CombinedResults object for the combined samples
     combined_results = CombinedResults(combined_samples, combined_weights)
 
@@ -5244,6 +5276,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # print(mass_at_erosion_change_backup)
         # print(mass_percent_2frag)
 
+        # print the name from all_samples the one with mass_left_first_erosion_perc smaller than 25 and above 75 
+        # print("mass left after first erosion", 
+
         # create a mask for values above 100 in mass_percent_2frag
         mask = mass_percent_2frag > 100
         print("Number of samples with mass percent left after 2nd fragmentation above 100%:", np.sum(mask), "out of", len(mass_percent_2frag))
@@ -5251,44 +5286,79 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         if np.any(mask):
             mass_percent_2frag[mask] = 100
 
-        def plot_color_2diffMass(initial_var, change_var, mass_percent_2frag, w,
-                                label_initial_var, label_change_var, barplot_var, output_dir_show, shower_name, initial_var_small=[], change_var_small=[], mass_percent_2frag_small=[]):
 
-            fig, ax = plt.subplots(figsize=(8, 6))
+        
+
+
+        def plot_color_2diffMass(
+            initial_var,
+            change_var,
+            mass_percent_2frag,
+            w,
+            label_initial_var,
+            label_change_var,
+            barplot_var,
+            output_dir_show,
+            shower_name,
+            initial_var_small=None,
+            change_var_small=None,
+            mass_percent_2frag_small=None,
+            n_bins=60,
+            alpha_max=0.80,
+            cmap_name="spring_r",   # use "spring" if you prefer the opposite direction
+        ):
+            """
+            Save:
+            1) original 2D distribution plot
+            2) overlay heat map where:
+                - color = mean mass left [%] in each bin (0 to 100)
+                - transparency = number of samples in each bin
+            """
+
             print("creating distribution plot for the 2 fragmentation...")
 
-            # make sure contour and scatter use same x/y convention
-            _plot_2d_distribution(ax, change_var, initial_var, w)
+            initial_var = np.asarray(initial_var, dtype=float)
+            change_var = np.asarray(change_var, dtype=float)
+            mass_percent_2frag = np.asarray(mass_percent_2frag, dtype=float)
 
-            ax.set_xlabel(label_change_var, fontsize=15)
-            ax.set_ylabel(label_initial_var, fontsize=15)
+            if initial_var_small is None:
+                initial_var_small = []
+            if change_var_small is None:
+                change_var_small = []
+            if mass_percent_2frag_small is None:
+                mass_percent_2frag_small = []
 
+            # ------------------------------------------------------------
+            # Build the plotting arrays
+            # ------------------------------------------------------------
             if len(initial_var_small) > 0 and len(change_var_small) > 0 and len(mass_percent_2frag_small) > 0:
-                size=60
-                x_log = change_var_small
-                y_log = initial_var_small
-                c_log = mass_percent_2frag_small
-                x_plot = change_var_small
-                y_plot = initial_var_small
-                c_plot = mass_percent_2frag_small
 
-            else: 
-                size= 4
-                # keep only finite values
-                mask = (
+                x_plot = np.asarray(change_var_small, dtype=float)
+                y_plot = np.asarray(initial_var_small, dtype=float)
+                c_plot = np.asarray(mass_percent_2frag_small, dtype=float)
+
+                finite_mask = (
+                    np.isfinite(x_plot) &
+                    np.isfinite(y_plot) &
+                    np.isfinite(c_plot)
+                )
+
+                x_plot = x_plot[finite_mask]
+                y_plot = y_plot[finite_mask]
+                c_plot = c_plot[finite_mask]
+
+            else:
+                finite_mask = (
                     np.isfinite(initial_var) &
                     np.isfinite(change_var) &
                     np.isfinite(mass_percent_2frag)
                 )
-                # # update the mask with only the one that have a w above the 95th percentile
-                # w_threshold = np.percentile(w, 95)
-                # mask = mask & (w > w_threshold)
 
-                x_plot = np.asarray(change_var)[mask]
-                y_plot = np.asarray(initial_var)[mask]
-                c_plot = np.asarray(mass_percent_2frag)[mask]
+                x_plot = np.asarray(change_var)[finite_mask]
+                y_plot = np.asarray(initial_var)[finite_mask]
+                c_plot = np.asarray(mass_percent_2frag)[finite_mask]
 
-                # optional downsample
+                # optional downsample for plotting if enormous
                 max_points = 50000
                 if len(x_plot) > max_points:
                     idx = np.random.choice(len(x_plot), max_points, replace=False)
@@ -5296,79 +5366,171 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     y_plot = y_plot[idx]
                     c_plot = c_plot[idx]
 
-            # check if there are egative values in c_plot
-            if np.any(c_plot < 0):
-                print("Warning: There are negative values in the color variable (mass_percent_2frag). These will be ignored in the log scale plot.")
-                x_log = x_plot
-                y_log = y_plot
-                c_log = c_plot
-            else:
-                # use log scale only if all kept color values are positive and non-constant
-                positive_mask = c_plot > 0
+            if len(x_plot) == 0:
+                print("No finite points to plot.")
+                return
 
-                x_log = x_plot[positive_mask]
-                y_log = y_plot[positive_mask]
-                c_log = c_plot[positive_mask]
+            # clip to the physical range you want for the color bar
+            c_plot = np.clip(c_plot, 0, 100)
 
-            # order them base on the highest c_log to the lowest
-            c_log_order = np.argsort(c_log)
-            x_log = x_log[c_log_order]
-            y_log = y_log[c_log_order]
-            c_log = c_log[c_log_order]
+            # ------------------------------------------------------------
+            # helper to format axes
+            # ------------------------------------------------------------
+            def _format_axes(ax):
+                ax.set_xlabel(label_change_var, fontsize=15)
+                ax.set_ylabel(label_initial_var, fontsize=15)
 
-            # # make the log of the color scale more visible by using a power norm with gamma < 1
-            # c_log = np.log10(c_log)
+                if label_change_var == r"log$_{10}$ $\eta_{2}$ [kg/MJ]":
+                    ax.plot([-5, 0], [-5, 0], color='red', linewidth=1.5, zorder=20)
 
-            vmin = np.nanmin(c_log)
-            vmax = np.nanmax(c_log)
+                if label_change_var == r"$\sigma_{2}$ [kg/MJ]":
+                    ax.plot([0, 0.05], [0, 0.05], color='red', linewidth=1.5, zorder=20)
 
-            # if np.any(c_plot < 0):
-            #     sc = ax.scatter(
-            #         x_log, y_log,
-            #         c=c_log,
-            #         s=size,
-            #         cmap='plasma',
-            #         marker='.',
-            #         linewidths=0,
-            #         edgecolors='none',
-            #         rasterized=True,
-            #         norm=Normalize(vmin=vmin,vmax=vmax)#
-            #     )
+                ax.grid(True, linestyle='--', alpha=0.5, zorder=30)
 
-            # else:
-            #     sc = ax.scatter(
-            #         x_log, y_log,
-            #         c=c_log,
-            #         s=size,
-            #         cmap='plasma',
-            #         marker='.',
-            #         linewidths=0,
-            #         edgecolors='none',
-            #         rasterized=True,
-            #         norm=PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax)#,mcolors.LogNorm(vmin=vmin, vmax=vmax) # Normalize(vmin=vmin,vmax=vmax)#
-            #     )
+            # ============================================================
+            # 1) ORIGINAL PLOT
+            # ============================================================
+            fig, ax = plt.subplots(figsize=(8, 6))
+            print("Saving original 2D distribution plot...")
 
-            # cbar = plt.colorbar(sc, ax=ax)
-            # cbar.set_label(barplot_var, fontsize=14)
+            # original 2D distribution
+            _plot_2d_distribution(ax, change_var, initial_var, w)
 
-            if label_change_var == r"log$_{10}$ $\eta_{2}$ [kg/MJ]":
-                # plot a red line from 0,0 to -5,-5
-                ax.plot([-5, 0], [-5, 0], color='red', linewidth=1.5)
-            if label_change_var == r"$\sigma_{2}$ [kg/MJ]":
-                # plot a red line from 0,0 to 0.05,0.05
-                ax.plot([0, 0.05], [0, 0.05], color='red', linewidth=1.5)
+            _format_axes(ax)
 
-            ax.grid(True, linestyle='--', alpha=0.5)
-            # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_masspercent2frag.png"), # 20190726_052141, 
-            #             bbox_inches='tight', dpi=300)
-            plt.savefig(os.path.join(output_dir_show, f"{shower_name}_color_2frag.png"), # 20190726_052141, 
-                        bbox_inches='tight', dpi=300)
-            plt.close()
-        
-        plot_color_2diffMass(rho_all, rho_change_all, mass_percent_2frag, w, r'$\rho$ [kg/m$^3$]', r"$\rho_{2}$ [kg/m$^3$]", 'Mass percent left after 2nd fragmentation [%]',output_dir_show, shower_name+'_rho')#, initial_var_small=rho_meteor_begin_median, change_var_small=rho_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
-        plot_color_2diffMass(sigma_all, sigma_change_all, mass_percent_2frag, w, r'$\sigma$ [kg/MJ]', r"$\sigma_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_sigma')#,, initial_var_small=sigma_meteor_begin_median, change_var_small=sigma_meteor_change_median, mass_percent_2frag_small=mass_left_second_erosion_perc)
-        plot_color_2diffMass(erosion_coeff_all, erosion_coeff_change_all, mass_percent_2frag, w, r'log$_{10}$ $\eta$ [kg/MJ]', r"log$_{10}$ $\eta_{2}$ [kg/MJ]", 'Mass percent left after 2nd fragmentation [%]', output_dir_show, shower_name+'_erosion_coeff')#,, initial_var_small=np.log10(eta_meteor_begin_median), change_var_small=np.log10(eta_meteor_change_median), mass_percent_2frag_small=mass_left_second_erosion_perc)
-    
+            original_path = os.path.join(output_dir_show, f"{shower_name}_color_2frag.png")
+            plt.savefig(original_path, bbox_inches='tight', dpi=300)
+            plt.close(fig)
+
+            # ============================================================
+            # 2) OVERLAY HEAT MAP
+            # ============================================================
+            fig, ax = plt.subplots(figsize=(8, 6))
+            print("Saving 2D distribution + heat map overlay...")
+
+            # first draw the base 2D distribution
+            _plot_2d_distribution(ax, change_var, initial_var, w)
+
+            # define bin edges from plotted data
+            x_edges = np.linspace(np.nanmin(x_plot), np.nanmax(x_plot), n_bins + 1)
+            y_edges = np.linspace(np.nanmin(y_plot), np.nanmax(y_plot), n_bins + 1)
+
+            # count how many samples in each bin
+            counts, _, _ = np.histogram2d(x_plot, y_plot, bins=[x_edges, y_edges])
+
+            # sum of mass-left values in each bin
+            mass_sum, _, _ = np.histogram2d(
+                x_plot, y_plot,
+                bins=[x_edges, y_edges],
+                weights=c_plot
+            )
+
+            # mean mass-left in each bin
+            mean_mass = np.divide(
+                mass_sum,
+                counts,
+                out=np.full_like(mass_sum, np.nan, dtype=float),
+                where=counts > 0
+            )
+
+            # ------------------------------------------------------------
+            # transparency = sample density
+            # more samples => less transparent
+            # ------------------------------------------------------------
+            alpha_map = np.zeros_like(counts, dtype=float)
+
+            if np.nanmax(counts) > 0:
+                # sqrt scaling gives a brighter, more readable map
+                alpha_map = np.sqrt(counts / np.nanmax(counts))
+                alpha_map *= alpha_max
+                alpha_map[counts == 0] = 0.0
+
+            # ------------------------------------------------------------
+            # turn the mean_mass map into an RGBA image so alpha can vary
+            # ------------------------------------------------------------
+            cmap = cm.get_cmap(cmap_name)
+            norm = colors.Normalize(vmin=0, vmax=100)
+
+            # transpose because histogram2d returns [xbin, ybin]
+            mean_mass_T = mean_mass.T
+            alpha_map_T = alpha_map.T
+
+            rgba = cmap(norm(mean_mass_T))
+            rgba[..., 3] = alpha_map_T   # per-pixel alpha
+            rgba[np.isnan(mean_mass_T), 3] = 0.0
+
+            # draw the heat map ABOVE the distribution, but transparent
+            ax.imshow(
+                rgba,
+                origin='lower',
+                extent=[x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]],
+                aspect='auto',
+                interpolation='nearest',
+                zorder=10
+            )
+
+            # if you still want some points explicitly on top, uncomment:
+            # ax.scatter(x_plot, y_plot, s=2, c='k', alpha=0.08, linewidths=0, zorder=12)
+
+            _format_axes(ax)
+
+            # make a colorbar with fixed 0–100 range
+            sm = cm.ScalarMappable(norm=norm, cmap=cmap)
+            sm.set_array([])
+
+            cbar = plt.colorbar(sm, ax=ax)
+            cbar.set_label(barplot_var, fontsize=14)
+            cbar.set_ticks([0, 25, 50, 75, 100])
+
+            # If you want the bar visually labeled from 100 at top to 0 at bottom,
+            # this is already the default with vmin=0, vmax=100.
+            # If you ever want to flip the visual direction, uncomment:
+            # cbar.ax.invert_yaxis()
+
+            overlay_path = os.path.join(output_dir_show, f"{shower_name}_color_2frag_heat_overlay.png")
+            plt.savefig(overlay_path, bbox_inches='tight', dpi=300)
+            plt.close(fig)
+
+            print("Saved original plot:", original_path)
+            print("Saved overlay plot:", overlay_path)
+
+        plot_color_2diffMass(
+            rho_all,
+            rho_change_all,
+            mass_percent_2frag,
+            w,
+            r'$\rho$ [kg/m$^3$]',
+            r'$\rho_{2}$ [kg/m$^3$]',
+            'Mass percent left after 2nd fragmentation [%]',
+            output_dir_show,
+            shower_name + '_rho',
+        )
+
+        plot_color_2diffMass(
+            sigma_all,
+            sigma_change_all,
+            mass_percent_2frag,
+            w,
+            r'$\sigma$ [kg/MJ]',
+            r'$\sigma_{2}$ [kg/MJ]',
+            'Mass percent left after 2nd fragmentation [%]',
+            output_dir_show,
+            shower_name + '_sigma',
+        )
+
+        plot_color_2diffMass(
+            erosion_coeff_all,
+            erosion_coeff_change_all,
+            mass_percent_2frag,
+            w,
+            r'log$_{10}$ $\eta$ [kg/MJ]',
+            r'log$_{10}$ $\eta_{2}$ [kg/MJ]',
+            'Mass percent left after 2nd fragmentation [%]',
+            output_dir_show,
+            shower_name + '_erosion_coeff',
+        )
+
     except Exception as e:
         print("Error in plotting 2D color plots for the 2 fragmentation parameters:", e)
 
@@ -9715,7 +9877,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Iron Letter\Validation\NewBase-rho2000-10000newLumEff", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

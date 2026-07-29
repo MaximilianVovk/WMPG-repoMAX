@@ -846,6 +846,44 @@ def save_json_data(self,file_name):
 
 
 
+def _ground_camera_profile_payload(sim_result, scenario_name):
+    """Return a compact, pickle-safe Mars light-curve profile for camera-yield studies.
+
+    The legacy ``file_bright_dict`` is intentionally left unchanged because many
+    plotting blocks unpack its fixed tuple layout. This companion dictionary keeps
+    the exact time and speed arrays needed to calculate duration above a limiting
+    apparent magnitude and the corresponding number of camera frames.
+    """
+    abs_mag = np.asarray(getattr(sim_result, "abs_magnitude", []), dtype=float)
+    height_km = np.asarray(getattr(sim_result, "leading_frag_height_arr", []), dtype=float)/1000.0
+    length_km = np.asarray(getattr(sim_result, "leading_frag_length_arr", []), dtype=float)/1000.0
+    time_s = np.asarray(getattr(sim_result, "time_arr", []), dtype=float)
+    speed_kms = np.asarray(getattr(sim_result, "leading_frag_vel_arr", []), dtype=float)/1000.0
+
+    sizes = [len(abs_mag), len(height_km), len(length_km), len(time_s), len(speed_kms)]
+    n = min(sizes) if sizes else 0
+    if n <= 0:
+        return {
+            "scenario": scenario_name,
+            "abs_magnitude": [],
+            "height_km": [],
+            "length_km": [],
+            "time_s": [],
+            "speed_kms": [],
+            "const": getattr(sim_result, "const", None),
+        }
+
+    return {
+        "scenario": scenario_name,
+        "abs_magnitude": abs_mag[:n],
+        "height_km": height_km[:n],
+        "length_km": length_km[:n],
+        "time_s": time_s[:n],
+        "speed_kms": speed_kms[:n],
+        "const": getattr(sim_result, "const", None),
+    }
+
+
 def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor=False):
     """
     Function to plot the distribution of the parameters from the dynesty files and save them as a table in LaTeX format.
@@ -917,6 +955,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         file_obs_data_dict = {}
         file_phys_data_dict = {}
         file_bright_dict = {}
+        file_ground_camera_dict = {}
         file_rho_jd_dict = {}
 
         # corrected rho
@@ -1585,6 +1624,17 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
                                             best_guess_obj_plot_mars_dyn_press.const,
                                             best_guess_obj_plot_mars_energy.const)
 
+                # Exact Mars time, height, magnitude, length and speed arrays for
+                # ground-camera yield calculations. Keep all trigger prescriptions;
+                # the downstream yield script splits one unit of weight among the
+                # selected scenarios so these alternatives do not multiply the flux.
+                file_ground_camera_dict[base_name] = {
+                    "single_body": _ground_camera_profile_payload(best_guess_obj_plot_single_mars, "single_body"),
+                    "rho": _ground_camera_profile_payload(best_guess_obj_plot_mars, "rho"),
+                    "dyn_pressure": _ground_camera_profile_payload(best_guess_obj_plot_mars_dyn_press, "dyn_pressure"),
+                    "energy": _ground_camera_profile_payload(best_guess_obj_plot_mars_energy, "energy"),
+                }
+
                 file_rho_jd_dict[base_name] = (rho, rho_lo,rho_hi, tj, tj_lo, tj_hi, inclin_val, Vinf_val, Vg_val, Q_val, q_val, a_val, e_val, V_val_earth, V_val_mars, Vg_val_mars, Vinf_val_mars, Vg_val_mars_min_max, Vinf_val_mars_min_max, Vg_val_denis, Vinf_val_denis)
                 # file_eeu_dict[base_name] = (eeucs, eeucs_lo, eeucs_hi, eeum, eeum_lo, eeum_hi,F_par, kc_par, lenght_par)
                 file_obs_data_dict[base_name] = (kc_par, F_par, lenght_par, beg_height/1000, end_height/1000, max_lum_height/1000, avg_vel/1000, init_mag, end_mag, max_mag, time_tot, zenith_angle, m_init_meteor_median, meteoroid_diameter_mm, erosion_beg_dyn_press, v_init_meteor_median, tau_median, tau_low95, tau_high95)
@@ -1597,6 +1647,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
                 single_meteor_payload = {
                     "file_bright_dict": {base_name: file_bright_dict[base_name]},
+                    "file_ground_camera_dict": {base_name: file_ground_camera_dict[base_name]},
                     "file_rho_jd_dict": {base_name: file_rho_jd_dict[base_name]},
                     "file_obs_data_dict": {base_name: file_obs_data_dict[base_name]},
                     "file_phys_data_dict": {base_name: file_phys_data_dict[base_name]},
@@ -1622,6 +1673,9 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
                 # Merge into the global dicts instead of overwriting them
                 for key, val in data["file_bright_dict"].items():
                     file_bright_dict[key] = val
+
+                for key, val in data.get("file_ground_camera_dict", {}).items():
+                    file_ground_camera_dict[key] = val
 
                 for key, val in data["file_rho_jd_dict"].items():
                     file_rho_jd_dict[key] = val
@@ -1649,6 +1703,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
         marsmeteor_total_path = os.path.join(input_dirfile, "all_meteors_data.marsmeteor_total")
         total_payload = {
             "file_bright_dict": file_bright_dict,
+            "file_ground_camera_dict": file_ground_camera_dict,
             "file_rho_jd_dict": file_rho_jd_dict,
             "file_obs_data_dict": file_obs_data_dict,
             "file_phys_data_dict": file_phys_data_dict,
@@ -1667,6 +1722,7 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
             total_data = pickle.load(f)
 
         file_bright_dict = total_data["file_bright_dict"]
+        file_ground_camera_dict = total_data.get("file_ground_camera_dict", {})
         file_rho_jd_dict = total_data["file_rho_jd_dict"]
         file_obs_data_dict = total_data["file_obs_data_dict"]
         file_phys_data_dict = total_data["file_phys_data_dict"]
@@ -4151,7 +4207,7 @@ if __name__ == "__main__":
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Test-15April2026",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\EMCCD_on_Mars\144-meteors",
         help="Output directory, if not given is the same as input_dir.")
     
     arg_parser.add_argument('--name', metavar='NAME', type=str,

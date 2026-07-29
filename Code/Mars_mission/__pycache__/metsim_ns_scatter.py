@@ -1,3 +1,5 @@
+### IAN ###
+
 import numpy as np
 import sys
 import os
@@ -6,8 +8,8 @@ import dynesty
 import signal
 # Makes WMPL directory visible, change this depending on where the WMPL library is located relative to your script
 sys.path.append('../../')
-import source.WesternMeteorPyLib.wmpl.MetSim.GUI as gui
-import source.WesternMeteorPyLib.wmpl.MetSim.MetSimErosion as erosion
+import wmpl.MetSim.GUI as gui
+import wmpl.MetSim.MetSimErosion as erosion
 
 #### EVENT
 event_path = '..C:\Users\maxiv\WMPG-repoMAX\Code\Mars_mission' # file path to the USG light curve, WITHOUT the .txt extension

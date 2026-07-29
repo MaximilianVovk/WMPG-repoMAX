@@ -78,7 +78,7 @@ class TimeoutException(Exception):
     """Custom exception for timeouts."""
     pass
 
-def timeout_handler(signum, frame):
+def timeoutHandler(signum, frame):
     raise TimeoutException("Function execution timed out")
 
 
@@ -143,7 +143,7 @@ def meteorAbsMagnitudeToApparent(abs_mag, distance):
     return 5*np.log10(distance/100000) + abs_mag
 
 
-def _prep_unique_sorted(x, y):
+def _prepUniqueSorted(x, y):
     o = np.argsort(x)
     x = np.asarray(x)[o]
     y = np.asarray(y)[o]
@@ -200,16 +200,16 @@ def buildGlobalTimeAxis(
     ref = max(maxh, key=maxh.get)
 
     # ref t(h)
-    href, tref = _prep_unique_sorted(h[s == ref], t[s == ref])
+    href, tref = _prepUniqueSorted(h[s == ref], t[s == ref])
     href_min, href_max = np.nanmin(href), np.nanmax(href)
-    def ref_of_h(hq): return np.interp(hq, href, tref)
+    def refOfH(hq): return np.interp(hq, href, tref)
 
     # need alignment?
     need_align = False
     for st in stations:
         if st == ref:
             continue
-        hs, ts = _prep_unique_sorted(h[s == st], t[s == st])
+        hs, ts = _prepUniqueSorted(h[s == st], t[s == st])
         h_lo = max(href_min, np.nanmin(hs))
         h_hi = min(href_max, np.nanmax(hs))
         if h_hi <= h_lo:
@@ -217,7 +217,7 @@ def buildGlobalTimeAxis(
         h_match = hs[(hs >= h_lo) & (hs <= h_hi)]
         if h_match.size < min_overlap_pts:
             continue
-        dt = ref_of_h(h_match) - np.interp(h_match, hs, ts)
+        dt = refOfH(h_match) - np.interp(h_match, hs, ts)
         if np.abs(np.nanmedian(dt)) > offset_tol:
             need_align = True
             break
@@ -234,7 +234,7 @@ def buildGlobalTimeAxis(
             if st == ref:
                 continue
             ms = (s == st)
-            hs, ts = _prep_unique_sorted(h[ms], t[ms])
+            hs, ts = _prepUniqueSorted(h[ms], t[ms])
 
             h_lo = max(href_min, np.nanmin(hs))
             h_hi = min(href_max, np.nanmax(hs))
@@ -246,16 +246,16 @@ def buildGlobalTimeAxis(
                 h_match = np.array([h_lo, h_hi], dtype=float)
 
             # time offset
-            offset_t = np.nanmedian(ref_of_h(h_match) - np.interp(h_match, hs, ts))
+            offset_t = np.nanmedian(refOfH(h_match) - np.interp(h_match, hs, ts))
             t_new[ms] = t[ms] + offset_t
 
             # length offset (match length(h) on overlap)
             if has_length:
-                href2, Lref = _prep_unique_sorted(h[s == ref], out[length_key][s == ref])
-                def Lref_of_h(hq): return np.interp(hq, href2, Lref)
+                href2, Lref = _prepUniqueSorted(h[s == ref], out[length_key][s == ref])
+                def lrefOfH(hq): return np.interp(hq, href2, Lref)
 
-                hs2, Ls = _prep_unique_sorted(h[ms], out[length_key][ms])
-                offset_L = np.nanmedian(Lref_of_h(h_match) - np.interp(h_match, hs2, Ls))
+                hs2, Ls = _prepUniqueSorted(h[ms], out[length_key][ms])
+                offset_L = np.nanmedian(lrefOfH(h_match) - np.interp(h_match, hs2, Ls))
                 L_new[ms] = out[length_key][ms] + offset_L
 
         out[time_key] = t_new
@@ -304,7 +304,7 @@ _WAKE_ANALYSIS_FIELDS = (
 )
 
 
-def _wake_container_height(wake_container):
+def _wakeContainerHeight(wake_container):
     """Return the representative height of a wake container."""
     try:
         return float(wake_container.points[0].ht)
@@ -312,7 +312,7 @@ def _wake_container_height(wake_container):
         return np.nan
 
 
-def _resolve_wake_value(value, wake_containers, ht_ref, altitudes=None,
+def _resolveWakeValue(value, wake_containers, ht_ref, altitudes=None,
                         container_attr=None, default=None):
     """Resolve a scalar or per-height wake value at ``ht_ref``.
 
@@ -321,7 +321,7 @@ def _resolve_wake_value(value, wake_containers, ht_ref, altitudes=None,
     from the nearest wake container using ``container_attr``.
     """
     wake_containers = list(wake_containers or [])
-    wake_heights = np.array([_wake_container_height(wc) for wc in wake_containers], dtype=float)
+    wake_heights = np.array([_wakeContainerHeight(wc) for wc in wake_containers], dtype=float)
 
     if wake_heights.size and np.any(np.isfinite(wake_heights)):
         container_idx = int(np.nanargmin(np.abs(wake_heights - float(ht_ref))))
@@ -372,7 +372,7 @@ def _resolve_wake_value(value, wake_containers, ht_ref, altitudes=None,
     return default
 
 
-def _wake_result_arrays(results, value_key):
+def _wakeResultArrays(results, value_key):
     """Extract one result value and its altitude from result dictionaries."""
     if not isinstance(results, (list, tuple)):
         return None, None
@@ -391,7 +391,7 @@ def _wake_result_arrays(results, value_key):
     return np.asarray(values, dtype=float), np.asarray(heights, dtype=float)
 
 
-def _attach_wake_analysis_to_containers(wake_containers, results, region_method):
+def _attachWakeAnalysisToContainers(wake_containers, results, region_method):
     """Attach noise and LogL-region metadata directly to each wake container."""
     result_lookup = {
         (int(result["site_id"]), int(result["frame_n"])): result
@@ -713,7 +713,7 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
 
         # Resolve the LogL region at this altitude. ``lenMax=None`` uses the
         # value stored directly on the nearest wake container.
-        len_max_this_height = _resolve_wake_value(
+        len_max_this_height = _resolveWakeValue(
             lenMax, wake_containers, ht_ref,
             container_attr="logl_len_max", default=100.0 if lenMax is None else 0.0,
         )
@@ -724,7 +724,7 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
         # Get the wake results
         ( wake_len_array, wake_lum_array, # Return the simulated wake at the ref ht
             obs_len_array, obs_lum_array # Return the observed wake at the ref ht
-        ) = WakeNormalizeAlignReduce(sr.wake_results[wake_res_indx_ref], wake_container_ref,
+        ) = wakeNormalizeAlignReduce(sr.wake_results[wake_res_indx_ref], wake_container_ref,
                                      normalization_method=normalization_method, align_method=align_method,
                                      lenMax=len_max_this_height, interp=interp_flag)
 
@@ -761,7 +761,7 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
             # axes[i].scatter(obs_len_array, obs_lum_array, color="red", s=5, alpha=0.75)
             for jj in range(len(obs_len_array)):
                 axes[i].plot([obs_len_array[jj],wake_len_array[jj]] , [obs_lum_array[jj], wake_lum_array[jj]], ":xk", alpha=0.75, markersize=1, linewidth=0.2)
-            noise_logl = _resolve_wake_value(
+            noise_logl = _resolveWakeValue(
                 noise_guess, wake_containers, ht_ref,
                 container_attr="noise_wake", default=1.0,
             )
@@ -1217,18 +1217,20 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
         # ax0.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr/1000,'--', color=color_sim, label='wmpl')
         # ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000,'--', color=color_sim, label='wmpl')
 
-        # integration time step in self.const.dt for luminosity integration and abs_magnitude_integration check if any sim_data.stations_lum does not have '1T' or '2T' in the name as CAMO narrowfield do not have smearing because it follows the meteor
-        if ((1/obs_data.fps_lum) > sim_data.const.dt): # and (not any('1T' in station for station in obs_data.stations_lum) or not any('2T' in station for station in obs_data.stations_lum)):
-            sim_data.luminosity_arr, sim_data.abs_magnitude = integrateLuminosity(sim_data.time_arr,sim_data.time_arr,sim_data.luminosity_arr,sim_data.const.dt,obs_data.fps_lum,sim_data.const.P_0m)
+        # Always regenerate absolute magnitude from the simulated luminosity
+        # using the same P_0m that was used for the observational luminosity.
+        sim_luminosity_plot, sim_abs_magnitude_plot, _ = prepareSimulationPhotometry(
+            sim_data, obs_data, integrate_to_camera=True
+        )
 
         # Plot simulated data
-        ax0.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
+        ax0.plot(sim_abs_magnitude_plot, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
         ax0.legend()
 
         # inerpoate the abs_magnitude_arr to the leading_frag_height_arr
         sim_mag = np.interp(obs_data.height_lum,
                                         np.flip(sim_data.leading_frag_height_arr),
-                                        np.flip(sim_data.abs_magnitude))
+                                        np.flip(sim_abs_magnitude_plot))
 
         # make the difference between the no_noise_mag and the obs_data.abs_magnitude
         sim_diff_mag = sim_mag - obs_data.absolute_magnitudes
@@ -1239,12 +1241,12 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
                     obs_data.height_lum[np.where(obs_data.stations_lum == station)]/1000, '.', \
                     color=station_colors[station], label=station)
 
-        ax4.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
+        ax4.plot(sim_luminosity_plot, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
 
         # interpolate to make sure they are the same length and discard points after height starts increasing if it does at any point obs_metsim_obj.traj.observations[0].model_ht
         sim_lum = np.interp(obs_data.height_lum,
                                         np.flip(sim_data.leading_frag_height_arr),
-                                        np.flip(sim_data.luminosity_arr))
+                                        np.flip(sim_luminosity_plot))
 
         # make the difference between the no_noise_intensity and the obs_data.luminosity_arr
         sim_diff_lum = obs_data.luminosity - sim_lum
@@ -1319,7 +1321,7 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
 # ---- globals for worker processes ----
 _GLOBALS = {}
 
-def _init_worker(obs_data, variables, flags_dict, fixed_values, align_height):
+def _initWorker(obs_data, variables, flags_dict, fixed_values, align_height):
     # set once per process to avoid re-pickling per task
     _GLOBALS['obs_data'] = obs_data
     _GLOBALS['variables'] = variables
@@ -1327,7 +1329,7 @@ def _init_worker(obs_data, variables, flags_dict, fixed_values, align_height):
     _GLOBALS['fixed_values'] = fixed_values
     _GLOBALS['align_height'] = align_height
 
-def _apply_log_flags_to_sample(sample, variables, flags_dict):
+def _applyLogFlagsToSample(sample, variables, flags_dict):
     s = np.array(sample, dtype=float).copy()
     for i, var in enumerate(variables):
         flags = flags_dict.get(var, [])
@@ -1335,7 +1337,7 @@ def _apply_log_flags_to_sample(sample, variables, flags_dict):
             s[i] = 10.0**s[i]
     return s
 
-def _compute_sim_lag(sim, obs_data):
+def _computeSimLag(sim, obs_data):
     """
     Compute lag exactly as in your snippet:
         index = argmin |h - np.max(obs_data.height_lag)|
@@ -1369,7 +1371,7 @@ def _compute_sim_lag(sim, obs_data):
     return lag
 
 
-def _worker_simulate_and_interp(sample_equal_row, sample_row):
+def _workerSimulateAndInterp(sample_equal_row, sample_row):
     """
     Runs one posterior sample through runSimulation() and returns
     (lum_at_hl, mag_at_hl, vel_at_hl, lag_at_hl) as 1D arrays.
@@ -1382,14 +1384,14 @@ def _worker_simulate_and_interp(sample_equal_row, sample_row):
         fixed_values = _GLOBALS['fixed_values']
         align_height = _GLOBALS['align_height']
 
-        pars = _apply_log_flags_to_sample(sample_equal_row, variables, flags_dict)
+        pars = _applyLogFlagsToSample(sample_equal_row, variables, flags_dict)
         sim  = runSimulationDynesty(pars, obs_data, variables, fixed_values)
 
         # NEW: integrate per your condition
-        _maybe_integrate_luminosity(sim, obs_data)
+        _maybeIntegrateLuminosity(sim, obs_data)
 
         # build lag exactly per your definition
-        sim_lag = _compute_sim_lag(sim, obs_data)
+        sim_lag = _computeSimLag(sim, obs_data)
 
 
         # prepare monotone height for interp
@@ -1419,7 +1421,7 @@ def _worker_simulate_and_interp(sample_equal_row, sample_row):
         # save the real variables not reweigted #
         #############################################################################
 
-        pars_real = _apply_log_flags_to_sample(sample_row, variables, flags_dict)
+        pars_real = _applyLogFlagsToSample(sample_row, variables, flags_dict)
         sim_real  = runSimulationDynesty(pars_real, obs_data, variables, fixed_values)
 
         const_saved = sim_real.const  # save original const
@@ -1499,46 +1501,29 @@ def _worker_simulate_and_interp(sample_equal_row, sample_row):
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
-def _quantiles_from_samples(arr_2d, qs):
+def _quantilesFromSamples(arr_2d, qs):
     """arr_2d shape (S,H). Returns dict of quantiles along axis=0 ignoring NaNs."""
     out = {}
     for name, q in qs.items():
         out[name] = np.nanquantile(arr_2d, q, axis=0, method='linear')
     return out
 
-def _maybe_integrate_luminosity(sim, obs_data):
-    """
-    If (1/fps_lum) > sim.const.dt, integrate luminosity over fps window and
-    recompute abs magnitude using obs_data.P_0m.
-    """
-    # Pull dt safely
-    dt = None
-    if hasattr(sim, 'const') and hasattr(sim.const, 'dt'):
-        dt = sim.const.dt
-    elif hasattr(sim, 'dt'):
-        dt = sim.dt
-
-    fps = getattr(obs_data, 'fps_lum', None)
-    P0m = getattr(obs_data, 'P_0m', None)
-
-    if dt is None or fps is None or P0m is None:
-        return  # nothing we can do
-
+def _maybeIntegrateLuminosity(sim, obs_data):
+    """Apply camera integration and refresh magnitude using obs_data.P_0m."""
     try:
-        if fps > 0 and (1.0/float(fps)) > float(dt):
-            L_new, mag_new = integrateLuminosity(
-                np.asarray(sim.time_arr),
-                np.asarray(sim.time_arr),            # same as your call
-                np.asarray(sim.luminosity_arr),
-                float(dt), float(fps), float(P0m)
-            )
-            sim.luminosity_arr = np.asarray(L_new)
-            sim.abs_magnitude  = np.asarray(mag_new)
+        luminosity, magnitude, P_0m = prepareSimulationPhotometry(
+            sim, obs_data, integrate_to_camera=True
+        )
+        sim.luminosity_arr = luminosity
+        sim.abs_magnitude = magnitude
+        if hasattr(sim, 'const'):
+            sim.const.P_0m = P_0m
     except Exception:
-        # be silent and keep raw arrays if integration fails for any reason
+        # Posterior workers handle invalid simulations separately. Preserve the
+        # raw arrays here if only the optional plotting conversion fails.
         pass
 
-def _finite_values_and_weights(values, weights=None, context="distribution"):
+def _finiteValuesAndWeights(values, weights=None, context="distribution"):
     """Return finite 1-D values and normalized matching weights.
 
     Invalid posterior simulations are represented by NaN. They must be removed
@@ -1579,12 +1564,12 @@ def _finite_values_and_weights(values, weights=None, context="distribution"):
     return values_arr, weights_arr
 
 
-def _plot_distrib_weighted(rho_mass_weighted_list, weights, output_folder="", file_name="name",var_name="var", label="var", colors='black', ax_dist=None):
+def _plotDistribWeighted(rho_mass_weighted_list, weights, output_folder="", file_name="name",var_name="var", label="var", colors='black', ax_dist=None):
     if not DYNESTY_FOUND:
         return np.nan, np.nan, np.nan
 
     print("Creating distribution plot...")
-    values, weights_use = _finite_values_and_weights(
+    values, weights_use = _finiteValuesAndWeights(
         rho_mass_weighted_list, weights, context=f"{var_name} distribution"
     )
 
@@ -1748,12 +1733,12 @@ def posteriorBandsVsHeightParallel(
         with ProcessPoolExecutor(
             max_workers=n_workers,
             mp_context=ctx,
-            initializer=_init_worker,
+            initializer=_initWorker,
             initargs=(obs_data, variables, flags_dict, fixed_values, align_height),
         ) as ex:
             # submit and keep a map to their sample index
             future_to_idx = {
-                ex.submit(_worker_simulate_and_interp, samples_eq[sidx], samples_eq[sidx]): sidx
+                ex.submit(_workerSimulateAndInterp, samples_eq[sidx], samples_eq[sidx]): sidx
                 for sidx in range(S)
             }
 
@@ -1780,10 +1765,10 @@ def posteriorBandsVsHeightParallel(
 
     if not ran_parallel:
         print(f"[{file_name}] Running {S} simulations sequentially...", flush=True)
-        _init_worker(obs_data, variables, flags_dict, fixed_values, align_height)
+        _initWorker(obs_data, variables, flags_dict, fixed_values, align_height)
         done = 0
         for sidx in range(S):
-            res = _worker_simulate_and_interp(samples_eq[sidx], samples_eq[sidx])
+            res = _workerSimulateAndInterp(samples_eq[sidx], samples_eq[sidx])
             if isinstance(res, dict) and "error" in res:
                 failure_reasons[res["error"]] += 1
             elif res is not None:
@@ -1816,17 +1801,17 @@ def posteriorBandsVsHeightParallel(
         "p025": 0.025, "p975": 0.975,
         "p00015": 0.00135, "p99985": 0.99865
     }
-    bands_lum = _quantiles_from_samples(lum_samples, qs)
-    bands_mag = _quantiles_from_samples(mag_samples, qs)
-    bands_vel = _quantiles_from_samples(vel_samples, qs)
-    bands_lag = _quantiles_from_samples(lag_samples, qs)
+    bands_lum = _quantilesFromSamples(lum_samples, qs)
+    bands_mag = _quantilesFromSamples(mag_samples, qs)
+    bands_vel = _quantilesFromSamples(vel_samples, qs)
+    bands_lag = _quantilesFromSamples(lag_samples, qs)
 
     # Best-guess curve (re-use your existing code)
     best_idx  = int(np.argmax(dynesty_results.logl))
-    best_pars = _apply_log_flags_to_sample(dynesty_results.samples[best_idx], variables, flags_dict)
+    best_pars = _applyLogFlagsToSample(dynesty_results.samples[best_idx], variables, flags_dict)
     sim_best  = runSimulationDynesty(best_pars, obs_data, variables, fixed_values)
-    _maybe_integrate_luminosity(sim_best, obs_data)
-    best_lag_full = _compute_sim_lag(sim_best, obs_data)
+    _maybeIntegrateLuminosity(sim_best, obs_data)
+    best_lag_full = _computeSimLag(sim_best, obs_data)
 
 
     ok = ~np.isnan(sim_best.leading_frag_height_arr)
@@ -1845,7 +1830,7 @@ def posteriorBandsVsHeightParallel(
     # from lum_samples/mag_samples/... and bands_* dicts.
 
     # ---- PLOT & SAVE ----
-    _plot_bands_obs_best(
+    _plotBandsObsBest(
         obs_data,
         hl, hv,
         bands_lum, bands_mag, bands_vel, bands_lag,
@@ -1911,7 +1896,7 @@ def posteriorBandsVsHeightParallel(
     }
 
 
-def _plot_bands_obs_best(
+def _plotBandsObsBest(
     obs_data,
     hl, hv,                                  # heights (m) used for interpolation
     bands_lum, bands_mag, bands_vel, bands_lag,
@@ -1921,15 +1906,15 @@ def _plot_bands_obs_best(
         os.makedirs(output_folder, exist_ok=True)
 
     # Backups store arrays with .tolist(); restore numeric arrays at the plotting boundary.
-    def _numeric_band_dict(band_dict, name):
+    def _numericBandDict(band_dict, name):
         if not isinstance(band_dict, dict):
             raise TypeError(f"{name} must be a dictionary of quantile arrays")
         return {key: np.asarray(value, dtype=float) for key, value in band_dict.items()}
 
-    bands_lum = _numeric_band_dict(bands_lum, "bands_lum")
-    bands_mag = _numeric_band_dict(bands_mag, "bands_mag")
-    bands_vel = _numeric_band_dict(bands_vel, "bands_vel")
-    bands_lag = _numeric_band_dict(bands_lag, "bands_lag")
+    bands_lum = _numericBandDict(bands_lum, "bands_lum")
+    bands_mag = _numericBandDict(bands_mag, "bands_mag")
+    bands_vel = _numericBandDict(bands_vel, "bands_vel")
+    bands_lag = _numericBandDict(bands_lag, "bands_lag")
     best_lum = np.asarray(best_lum, dtype=float)
     best_mag = np.asarray(best_mag, dtype=float)
     best_vel = np.asarray(best_vel, dtype=float)
@@ -2321,9 +2306,15 @@ def plotObsVsHeight(obs_data, sim_data=None, output_folder='', file_name='', col
         #         sim_data.const.dt, obs_data.fps_lum, obs_data.P_0m
         #     )
 
+        # Use a single photometric convention for every fit plot. In particular,
+        # this honors a P_0m override supplied in the prior file.
+        sim_luminosity_plot, sim_abs_magnitude_plot, _ = prepareSimulationPhotometry(
+            sim_data, obs_data, integrate_to_camera=True
+        )
+
         # SMOOTH PLOTTING using time-based sampling
-        ax_lum.plot(sim_data.luminosity_arr, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
-        ax_mag.plot(sim_data.abs_magnitude, sim_data.leading_frag_height_arr/1000, color=color_sim)
+        ax_lum.plot(sim_luminosity_plot, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
+        ax_mag.plot(sim_abs_magnitude_plot, sim_data.leading_frag_height_arr/1000, color=color_sim)
         ax_vel.plot(sim_data.leading_frag_vel_arr/1000, sim_data.leading_frag_height_arr/1000, color=color_sim)
 
         index = np.argmin(np.abs(sim_data.leading_frag_height_arr[~np.isnan(sim_data.leading_frag_height_arr)]-np.max(obs_data.height_lag)))
@@ -2336,8 +2327,8 @@ def plotObsVsHeight(obs_data, sim_data=None, output_folder='', file_name='', col
         best_line, = ax_lag.plot(sim_lag, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
 
         # RESIDUALS (interpolated at obs heights)
-        lum_res = obs_data.luminosity - np.interp(obs_data.height_lum, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_data.luminosity_arr))
-        mag_res = np.interp(obs_data.height_lum, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_data.abs_magnitude)) - obs_data.absolute_magnitudes
+        lum_res = obs_data.luminosity - np.interp(obs_data.height_lum, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_luminosity_plot))
+        mag_res = np.interp(obs_data.height_lum, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_abs_magnitude_plot)) - obs_data.absolute_magnitudes
         vel_res = (obs_data.velocities - np.interp(obs_data.height_lag, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_data.leading_frag_vel_arr)))/1000
         lag_res = obs_data.lag - np.interp(obs_data.height_lag, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_lag))
 
@@ -2726,7 +2717,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples_equal[:, i_m_init]*obs_data.velocities[0]**2)*100
         # calculate the weights calculate the weighted median and the 95 CI for tau
         # tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=weights)
-        tau_median, tau_low95, tau_high95 = _plot_distrib_weighted(
+        tau_median, tau_low95, tau_high95 = _plotDistribWeighted(
             tau,
             weights=weights,
             output_folder=output_folder,
@@ -2755,7 +2746,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             plt.subplot(2, 1, 1)
             ax = plt.gca()
             # plot the
-            _plot_distrib_weighted(
+            _plotDistribWeighted(
                 samples_equal[:, variables.index('rho')].astype(float),
                 weights=weights,
                 output_folder=output_folder,
@@ -2767,7 +2758,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             )
             plt.subplot(2, 1, 2)
             ax = plt.gca()
-            _plot_distrib_weighted(
+            _plotDistribWeighted(
                 samples_equal[:, variables.index('erosion_rho_change')].astype(float),
                 weights=weights,
                 output_folder=output_folder,
@@ -2788,7 +2779,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         else:
             rho_total_arr = samples_equal[:, variables.index('rho')].astype(float)
 
-        rho_median_approx, rho_low95_approx, rho_high95_approx = _plot_distrib_weighted(
+        rho_median_approx, rho_low95_approx, rho_high95_approx = _plotDistribWeighted(
             rho_total_arr,
             weights=weights,
             output_folder=output_folder,
@@ -2800,15 +2791,19 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     except Exception as e:
         print(f"Error calculating tau and rho distributions: {e}\nSkipping tau and rho distribution calculations.\n")
 
-    # inerpoate the abs_magnitude_arr to the leading_frag_height_arr
+    # Recompute best-fit magnitude with the prior-selected P_0m before using
+    # the residuals to estimate the magnitude noise shown in fit_plots.
+    _, best_guess_abs_magnitude_plot, _ = prepareSimulationPhotometry(
+        best_guess_obj_plot, obs_data, integrate_to_camera=True
+    )
     sim_mag = np.interp(obs_data.height_lum,
                                     np.flip(best_guess_obj_plot.leading_frag_height_arr),
-                                    np.flip(best_guess_obj_plot.abs_magnitude))
+                                    np.flip(best_guess_abs_magnitude_plot))
 
     # make the difference between the no_noise_mag and the obs_data.abs_magnitude
     sim_diff_mag = sim_mag - obs_data.absolute_magnitudes
 
-    obs_data.noise_mag = np.std(sim_diff_mag)
+    obs_data.noise_mag = np.nanstd(sim_diff_mag)
 
 
     try:
@@ -2874,7 +2869,10 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         plt.subplot(1, 3, 1)
         # put the absolute magnitude vs height plot with the obs_data and the best_guess_obj_plot
         # plt.plot(obs_data.absolute_magnitudes, obs_data.height_lum/1000, color='k', label='Observed data')
-        plt.plot(best_guess_obj_plot_kill.abs_magnitude[:-1], best_guess_obj_plot_kill.leading_frag_height_arr[:-1]/1000, color='k', label='Best Fit')
+        _, best_guess_kill_abs_magnitude_plot, _ = prepareSimulationPhotometry(
+            best_guess_obj_plot_kill, obs_data, integrate_to_camera=True
+        )
+        plt.plot(best_guess_kill_abs_magnitude_plot[:-1], best_guess_obj_plot_kill.leading_frag_height_arr[:-1]/1000, color='k', label='Best Fit')
         plt.axhspan(np.min(obs_data.height_lum)/1000, np.max(obs_data.height_lum)/1000, color='lightgray', alpha=0.5, label='Observed meteor data')
         plt.xlabel('Absolute Magnitude [-]')
         plt.ylabel('Height [km]')
@@ -3045,7 +3043,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                     v = v*1e6
                 return v
 
-            def log_transf(v):
+            def logTransf(v):
                 if 'log' in flags_dict_total.get(var, ''):
                     v = 10**v
                 return v
@@ -3064,12 +3062,12 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             rows_sml.append((
                 var,
                 lab,
-                log_transf(low95),
-                log_transf(mode_value),
-                log_transf(mode_Ndim),
-                log_transf(mean_raw),
-                log_transf(med),
-                log_transf(high95),
+                logTransf(low95),
+                logTransf(mode_value),
+                logTransf(mode_Ndim),
+                logTransf(mean_raw),
+                logTransf(med),
+                logTransf(high95),
             ))
         # sort by variable name
 
@@ -3227,7 +3225,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
              # to load the backup file later
             with gzip.open(backup_file_check, "rb") as f:
                 # backup_small = pickle.load(f)
-                backup_small = load_gzip_pickle_with_fallback(backup_file_check)
+                backup_small = loadGzipPickleWithFallback(backup_file_check)
 
             bands_lum = {k: np.asarray(v, dtype=float) for k, v in backup_small['bands']['lum'].items()}
             bands_mag = {k: np.asarray(v, dtype=float) for k, v in backup_small['bands']['mag'].items()}
@@ -3242,7 +3240,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             hl = np.asarray(obs_data.height_lum)
             hv = np.asarray(obs_data.height_lag)
 
-            _plot_bands_obs_best(
+            _plotBandsObsBest(
                 obs_data,
                 hl, hv,
                 bands_lum, bands_mag, bands_vel, bands_lag,
@@ -3334,7 +3332,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         # rho_array is generated from equal-weight posterior resampling.
         weights_plot = None
 
-        _plot_distrib_weighted(
+        _plotDistribWeighted(
             rho_total_arr,
             weights=weights_plot,
             output_folder=output_folder,
@@ -3373,7 +3371,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             truth_values_plot['noise_wake'] = obs_data.noise_wake
 
 
-        def to_scalar(x):
+        def toScalar(x):
             if isinstance(x, (list, tuple, np.ndarray)):
                 arr = np.asarray(x)
                 if arr.size == 1:
@@ -3384,7 +3382,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             return float(x) if x is not None else np.nan
 
         truths = np.array(
-            [to_scalar(truth_values_plot.get(variable, np.nan)) for variable in variables],
+            [toScalar(truth_values_plot.get(variable, np.nan)) for variable in variables],
             dtype=float
         )
 
@@ -3692,7 +3690,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     print('saving correlation plot...')
 
     # Define weighted correlation
-    def weighted_corr(x, y, w):
+    def weightedCorr(x, y, w):
         """Weighted Pearson correlation of x and y with weights w."""
         w = np.asarray(w)
         x = np.asarray(x)
@@ -3821,7 +3819,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 panel = ax[i, j]
                 x = samples[j]
                 y = samples[i]
-                weigh_corr = weighted_corr(x, y, weights)
+                weigh_corr = weightedCorr(x, y, weights)
 
                 color = cmap(norm(weigh_corr))
                 # paint the background patch
@@ -3869,7 +3867,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     corr_mat = np.zeros((ndim, ndim))
     for i in range(ndim):
         for j in range(ndim):
-            corr_mat[i, j] = weighted_corr(samples[i], samples[j], weights)
+            corr_mat[i, j] = weightedCorr(samples[i], samples[j], weights)
 
     # Wrap it in a DataFrame (so you get row/column labels)
     df_corr = pd.DataFrame(
@@ -3929,7 +3927,7 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
     flare_start_end, flare_start_init = findStrongestFlare(object_meteor.height_lum, object_meteor.absolute_magnitudes)
 
     # Helper: prefer user override, else object_meteor attr/dict
-    def get_estimate(name):
+    def getEstimate(name):
         if name in user_inputs and user_inputs[name] is not None and not (isinstance(user_inputs[name], float) and np.isnan(user_inputs[name])):
             return user_inputs[name]
         if hasattr(object_meteor, name):
@@ -4015,7 +4013,7 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
             if "log" in flags_dict[key]:
                 bounds[i] = np.log10(bounds[i][0]), np.log10(bounds[i][1])
 
-        def is_nan_safe(x):
+        def isNanSafe(x):
             try:
                 return np.isnan(float(x))
             except (TypeError, ValueError):
@@ -4024,16 +4022,16 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
         # check if any of the values are np.nan and replace them with the object_meteor values
         for i, key in enumerate(default_bounds):
             bounds[i] = list(bounds[i])
-            est = get_estimate(key)
+            est = getEstimate(key)
 
-            if is_nan_safe(bounds[i][0]) and est is not None:
+            if isNanSafe(bounds[i][0]) and est is not None:
                 est = float(est)
                 bounds[i][0] = est - 10**int(np.floor(np.log10(abs(est))))
 
-            if is_nan_safe(bounds[i][1]) and est is not None and "norm" in flags_dict[key]:
+            if isNanSafe(bounds[i][1]) and est is not None and "norm" in flags_dict[key]:
                 bounds[i][1] = float(est)
 
-            elif is_nan_safe(bounds[i][1]) and est is not None:
+            elif isNanSafe(bounds[i][1]) and est is not None:
                 est = float(est)
                 bounds[i][1] = est + 10**int(np.floor(np.log10(abs(est))))
 
@@ -4041,11 +4039,11 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
             
         # checck if stil any bounds are np.nan and raise an error
         for i, key in enumerate(default_bounds):
-            if is_nan_safe(bounds[i][0]) or is_nan_safe(bounds[i][1]):
+            if isNanSafe(bounds[i][0]) or isNanSafe(bounds[i][1]):
                 raise ValueError(f"The value for {key} is np.nan and it is not in the dictionary")
 
         fixed_values = {
-            "zenith_angle": float(get_estimate("zenith_angle") if get_estimate("zenith_angle") is not None else object_meteor.zenith_angle),
+            "zenith_angle": float(getEstimate("zenith_angle") if getEstimate("zenith_angle") is not None else object_meteor.zenith_angle),
             "rho_grain": rho_grain_real,
             "erosion_height_change": 1,
             "erosion_coeff_change": 1/1e7,
@@ -4066,7 +4064,7 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
             "np": np
         }
 
-        def safe_eval(value):
+        def safeEval(value):
             try:
                 return eval(value, {"__builtins__": {}, "np": np, **eval_ctx}, {})
             except Exception:
@@ -4085,12 +4083,12 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
 
                 if "fix" in parts:
                     val = parts[1].strip() if len(parts) > 1 else "nan"
-                    evaluated_val = safe_eval(val)
+                    evaluated_val = safeEval(val)
                     # print(f"Fixing parameter '{name}' to value: {evaluated_val}")
                     fixed_values[name] = np.nan if str(val).lower() == "nan" else evaluated_val
                     # Only proceed with fallback logic if it's numeric and NaN
                     if isinstance(fixed_values[name], (int, float)) and np.isnan(fixed_values[name]):
-                        est = get_estimate(name)
+                        est = getEstimate(name)
                         if est is not None:
                             fixed_values[name] = est
                         elif name == "erosion_height_start":
@@ -4103,8 +4101,8 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
                 max_val = parts[2].strip() if len(parts) > 2 else "nan"
                 flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
                 # Handle NaN values and default replacement
-                min_val = safe_eval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
-                max_val = safe_eval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
+                min_val = safeEval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
+                max_val = safeEval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
                 # print(f"Setting bounds for '{name}': min={min_val}, max={max_val}, flags={flags}")
 
                 min_val, max_val, flags = boundsMinMaxFlags(
@@ -4117,11 +4115,11 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
     variable_loaded = list(fixed_values.keys()) + list(flags_dict.keys())
 
     if 'v_init' not in variable_loaded:
-        fixed_values['v_init'] = float(get_estimate("v_init") if get_estimate("v_init") is not None else object_meteor.v_init)
+        fixed_values['v_init'] = float(getEstimate("v_init") if getEstimate("v_init") is not None else object_meteor.v_init)
     if 'zenith_angle' not in variable_loaded:
-        fixed_values['zenith_angle'] = float(get_estimate("zenith_angle") if get_estimate("zenith_angle") is not None else object_meteor.zenith_angle)
+        fixed_values['zenith_angle'] = float(getEstimate("zenith_angle") if getEstimate("zenith_angle") is not None else object_meteor.zenith_angle)
     if 'm_init' not in variable_loaded:
-        fixed_values['m_init'] = float(get_estimate("m_init") if get_estimate("m_init") is not None else object_meteor.m_init)
+        fixed_values['m_init'] = float(getEstimate("m_init") if getEstimate("m_init") is not None else object_meteor.m_init)
     if 'rho_grain' not in variable_loaded:
         fixed_values['rho_grain'] = rho_grain_real
     if 'erosion_height_change' not in variable_loaded:
@@ -4243,7 +4241,7 @@ def appendExtraPriorsToBounds(object_meteor, bounds, flags_dict, fixed_values, f
         "np": np
     }
 
-    def safe_eval(value):
+    def safeEval(value):
         try:
             return eval(value, {"__builtins__": {}, "np": np, **eval_ctx}, {})
         except Exception:
@@ -4252,7 +4250,7 @@ def appendExtraPriorsToBounds(object_meteor, bounds, flags_dict, fixed_values, f
     # make indexing per-fragment-type (M0, M1, F0, ...)
     type_counts = defaultdict(int)
 
-    def finalize_fragment_block():
+    def finalizeFragmentBlock():
         nonlocal current_type, current_index, current_defined_vars, extraprior_fixed
         if current_type is None:
             return
@@ -4313,7 +4311,7 @@ def appendExtraPriorsToBounds(object_meteor, bounds, flags_dict, fixed_values, f
                 continue
 
             if line.startswith('- '):
-                finalize_fragment_block()
+                finalizeFragmentBlock()
                 current_type = line[2:].strip()
                 current_index = type_counts[current_type]
                 type_counts[current_type] += 1
@@ -4329,7 +4327,7 @@ def appendExtraPriorsToBounds(object_meteor, bounds, flags_dict, fixed_values, f
 
             if "fix" in parts:
                 val = parts[1].strip() if len(parts) > 1 else "nan"
-                evaluated_val = safe_eval(val)
+                evaluated_val = safeEval(val)
                 extraprior_fixed[var_name] = np.nan if str(evaluated_val).lower() == "nan" else evaluated_val
                 # Only proceed with fallback logic if it's numeric and NaN
                 if isinstance(extraprior_fixed[var_name], (int, float)) and np.isnan(extraprior_fixed[var_name]):
@@ -4349,15 +4347,15 @@ def appendExtraPriorsToBounds(object_meteor, bounds, flags_dict, fixed_values, f
             max_val = parts[2].strip() if len(parts) > 2 else "nan"
             flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
             # Handle NaN values and default replacement
-            min_val = safe_eval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
-            max_val = safe_eval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
+            min_val = safeEval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
+            max_val = safeEval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
 
             min_val, max_val, flags = boundsMinMaxFlags(name, object_meteor, min_val, max_val, flags, default_bounds, default_flags)
 
             extraprior_flags[var_name] = flags
             extraprior_bounds.append((min_val, max_val))
 
-    finalize_fragment_block()
+    finalizeFragmentBlock()
 
     bounds.extend(extraprior_bounds)
     flags_dict.update(extraprior_flags)
@@ -4654,6 +4652,98 @@ def integrateLuminosity(all_simulated_time, time_fps, luminosity_arr, dt, fps, P
         new_luminosity_arr[i] = np.mean(luminosity_arr[mask])
         new_abs_magnitude[i] = -2.5*np.log10(new_luminosity_arr[i]/P_0m)
     return new_luminosity_arr, new_abs_magnitude
+
+
+def getPhotometricZeroPoint(obs_data=None, sim_data=None):
+    """Return the positive finite P_0m used for data/model comparisons.
+
+    The observation object's P_0m is the source of truth because the observed
+    luminosity array is constructed from the measured absolute magnitudes using
+    that value. This also reflects a P_0m override read from the prior file.
+    The simulation value is used only as a fallback.
+    """
+    candidates = []
+    if obs_data is not None:
+        candidates.append(getattr(obs_data, 'P_0m', None))
+    if sim_data is not None:
+        sim_const = getattr(sim_data, 'const', None)
+        if sim_const is not None:
+            candidates.append(getattr(sim_const, 'P_0m', None))
+        candidates.append(getattr(sim_data, 'P_0m', None))
+
+    for value in candidates:
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(value) and value > 0:
+            return value
+
+    raise ValueError(
+        "A positive finite P_0m is required to convert luminosity to absolute magnitude"
+    )
+
+
+def luminosityToAbsoluteMagnitude(luminosity, P_0m):
+    """Convert luminosity in watts to absolute magnitude using P_0m."""
+    luminosity = np.asarray(luminosity, dtype=float)
+    P_0m = float(P_0m)
+    if not np.isfinite(P_0m) or P_0m <= 0:
+        raise ValueError(f"P_0m must be positive and finite, got {P_0m!r}")
+
+    magnitude = np.full(luminosity.shape, np.nan, dtype=float)
+    valid = np.isfinite(luminosity) & (luminosity > 0)
+    magnitude[valid] = -2.5*np.log10(luminosity[valid]/P_0m)
+    return magnitude
+
+
+def prepareSimulationPhotometry(sim_data, obs_data, integrate_to_camera=True):
+    """Return plotting luminosity and magnitude with one consistent P_0m.
+
+    SimulationResults.abs_magnitude may have been cached by WMPL using its
+    original/default P_0m. For every comparison plot, magnitude is therefore
+    regenerated from the simulated luminosity using obs_data.P_0m, including a
+    P_0m value overridden in the prior file.
+
+    Camera exposure integration is performed on a copy, so calling several plot
+    functions for the same simulation cannot integrate the light curve twice.
+    """
+    if sim_data is None:
+        raise ValueError("sim_data cannot be None")
+
+    P_0m = getPhotometricZeroPoint(obs_data=obs_data, sim_data=sim_data)
+    luminosity = np.asarray(sim_data.luminosity_arr, dtype=float).copy()
+
+    if integrate_to_camera:
+        dt = getattr(getattr(sim_data, 'const', None), 'dt', getattr(sim_data, 'dt', None))
+        fps = getattr(obs_data, 'fps_lum', None)
+        time_arr = np.asarray(getattr(sim_data, 'time_arr', []), dtype=float)
+
+        try:
+            dt = float(dt)
+            fps = float(fps)
+            can_integrate = (
+                np.isfinite(dt) and dt > 0 and
+                np.isfinite(fps) and fps > 0 and
+                time_arr.size == luminosity.size and
+                (1.0/fps) > dt
+            )
+        except (TypeError, ValueError):
+            can_integrate = False
+
+        if can_integrate:
+            luminosity, _ = integrateLuminosity(
+                time_arr,
+                time_arr,
+                luminosity,
+                dt,
+                fps,
+                P_0m,
+            )
+            luminosity = np.asarray(luminosity, dtype=float)
+
+    magnitude = luminosityToAbsoluteMagnitude(luminosity, P_0m)
+    return luminosity, magnitude, P_0m
 
 
 class ObservationData:
@@ -5386,7 +5476,7 @@ class ObservationData:
 
         return None  # Return None if no match is found
 
-    def _photometric_adjustment(self,unique_stations,peak_abs_mag_CAMO):
+    def _photometricAdjustment(self,unique_stations,peak_abs_mag_CAMO):
 
         print("NOTE: Applying photometric adjustment to mach the luminosity of the two stations")
 
@@ -5483,9 +5573,9 @@ class ObservationData:
         if 'time_lag' in data_dict.keys():
 
             # Convert lists back to numpy arrays where necessary
-            def restore_data(obj):
+            def restoreData(obj):
                 if isinstance(obj, dict):
-                    return {k: restore_data(v) for k, v in obj.items()}
+                    return {k: restoreData(v) for k, v in obj.items()}
 
                 elif isinstance(obj, list):
                     # If all items are numeric, convert to np.array of floats
@@ -5497,12 +5587,12 @@ class ObservationData:
                         return np.array(obj, dtype=str)
 
                     # Otherwise, recurse in case it's a nested list
-                    return [restore_data(v) for v in obj]
+                    return [restoreData(v) for v in obj]
 
                 else:
                     return obj
 
-            restored_dict = restore_data(data_dict)
+            restored_dict = restoreData(data_dict)
             self.__dict__.update(restored_dict)
 
             # check if self.fps exist for old version of the code
@@ -5703,7 +5793,7 @@ class ObservationData:
             if hasattr(self, 'const'):
                 self.const = self.const.__dict__
 
-            self.new_json_file_save = self._save_json_data()
+            self.new_json_file_save = self._saveJSONData()
 
             if self.noise_wake is not np.nan:
                 print("Genenerating noisy wake data...")
@@ -5735,7 +5825,7 @@ class ObservationData:
         c_profiles=None
         start_frame=32
 
-        def _safe_get( arr, i, default=None):
+        def _safeGet( arr, i, default=None):
             """Safely get arr[i], returning default if arr is None or too short."""
             if arr is None:
                 return default
@@ -5745,7 +5835,7 @@ class ObservationData:
                 return default
 
 
-        def _alternate_station_ids(n_frames, start_with=1):
+        def _alternateStationIDs(n_frames, start_with=1):
             """Return alternating station ids like 1,2,1,2,..."""
             out = []
             current = start_with
@@ -5758,7 +5848,7 @@ class ObservationData:
 
         # If no station information is given, alternate 1 and 2
         if stations_each_wake is None:
-            site_ids = _alternate_station_ids(n_frames)
+            site_ids = _alternateStationIDs(n_frames)
         else:
             site_ids = []
             for i, st in enumerate(stations_each_wake):
@@ -5807,18 +5897,18 @@ class ObservationData:
                 if intens_sum_arr[j] > 1 and j%3 == 0:  # Only include points with significant luminosity and at intervals to reduce data size
                     point = {
                         "n": j-start_frame,
-                        "th": None if th_arr is None else float(_safe_get(th_arr, j)),
-                        "phi": None if phi_arr is None else float(_safe_get(phi_arr, j)),
+                        "th": None if th_arr is None else float(_safeGet(th_arr, j)),
+                        "phi": None if phi_arr is None else float(_safeGet(phi_arr, j)),
                         "intens_sum": float(intens_sum_arr[j]),
-                        "amp": float(_safe_get(amp_arr, j, 0.0)),
-                        "r": float(_safe_get(r_arr, j, 0.0)) if _safe_get(r_arr, j) is not None else 0.0,
+                        "amp": float(_safeGet(amp_arr, j, 0.0)),
+                        "r": float(_safeGet(r_arr, j, 0.0)) if _safeGet(r_arr, j) is not None else 0.0,
                         "b": None if b_arr is None else (
-                            None if _safe_get(b_arr, j) is None else float(_safe_get(b_arr, j))
+                            None if _safeGet(b_arr, j) is None else float(_safeGet(b_arr, j))
                         ),
                         "c": None if c_arr is None else (
-                            None if _safe_get(c_arr, j) is None else float(_safe_get(c_arr, j))
+                            None if _safeGet(c_arr, j) is None else float(_safeGet(c_arr, j))
                         ),
-                        "state_vect_dist": None if svd_arr is None else float(_safe_get(svd_arr, j)),
+                        "state_vect_dist": None if svd_arr is None else float(_safeGet(svd_arr, j)),
                         "ht": None if ht_frame is None else float(ht_frame),
                         "leading_frag_length": float(length_array[j]),
                     }
@@ -5898,7 +5988,7 @@ class ObservationData:
         return time_sampled,stations
 
 
-    def _save_json_data(self):
+    def _saveJSONData(self):
         """Save the object to a JSON file."""
 
         # Deep copy to avoid modifying the original object
@@ -6308,7 +6398,7 @@ class RestoredDynestyResults:
         for k in self.keys():
             yield k, self.get(k)
 
-    def importance_weights(self) -> np.ndarray:
+    def importanceWeights(self) -> np.ndarray:
         """
         Reconstruct normalized posterior weights (same concept as dynesty's importance_weights()).
         """
@@ -6324,6 +6414,7 @@ class RestoredDynestyResults:
         if not np.isfinite(s) or s <= 0:
             raise ValueError("Importance weights are not finite/positive after reconstruction.")
         return w / s
+    importance_weights = importanceWeights  # Compatibility alias required by Python/dynesty.
 
     def summary(self) -> str:
         # Prefer stored exact text so printing reproduces exactly
@@ -6353,7 +6444,7 @@ class RestoredDynestyResults:
 
 
 class RemappingUnpickler(pickle.Unpickler):
-    def find_class(self, module, name):
+    def findClass(self, module, name):
         # --- NumPy compatibility ---
         if module == "numpy._core.numeric":
             module = "numpy.core.numeric"
@@ -6367,9 +6458,10 @@ class RemappingUnpickler(pickle.Unpickler):
             module = "dynesty.internal_samplers"
 
         return super().find_class(module, name)
+    find_class = findClass  # Compatibility alias required by Python/dynesty.
 
 
-def load_gzip_pickle_with_fallback(path):
+def loadGzipPickleWithFallback(path):
     # First try normal loading
     try:
         with gzip.open(path, "rb") as f:
@@ -6383,15 +6475,16 @@ def load_gzip_pickle_with_fallback(path):
         return RemappingUnpickler(f).load()
 
 class RemappingUnpickler(pickle.Unpickler):
-    def find_class(self, module, name):
+    def findClass(self, module, name):
         if module == "numpy._core.numeric":
             module = "numpy.core.numeric"
         elif module == "dynesty.internal_samplers":
             module = "dynesty.nestedsamplers"
         return super().find_class(module, name)
+    find_class = findClass  # Compatibility alias required by Python/dynesty.
 
 
-def load_gzip_pickle_with_fallback(path):
+def loadGzipPickleWithFallback(path):
     try:
         with gzip.open(path, "rb") as f:
             return pickle.load(f)
@@ -6404,7 +6497,7 @@ def load_gzip_pickle_with_fallback(path):
 
 def restoreBackupDynesty(backup_file: str):
     print(f"Loading existing backup file: {backup_file}")
-    backup_small = load_gzip_pickle_with_fallback(backup_file)
+    backup_small = loadGzipPickleWithFallback(backup_file)
 
     d = backup_small["dynesty"]
 
@@ -6455,7 +6548,7 @@ def saveWakeContainersJson(wake_containers, out_json_path, metadata=None):
         out_json_path
     """
 
-    def to_json_safe(x):
+    def toJSONSafe(x):
         # numpy scalars -> python scalars
         if isinstance(x, np.integer):
             return int(x)
@@ -6479,7 +6572,7 @@ def saveWakeContainersJson(wake_containers, out_json_path, metadata=None):
             "site_id": int(wc.site_id),
             "frame_n": int(wc.frame_n),
             "wake_analysis": {
-                field_name: to_json_safe(getattr(wc, field_name, None))
+                field_name: toJSONSafe(getattr(wc, field_name, None))
                 for field_name in _WAKE_ANALYSIS_FIELDS
                 if hasattr(wc, field_name)
             },
@@ -6488,17 +6581,17 @@ def saveWakeContainersJson(wake_containers, out_json_path, metadata=None):
 
         for p in wc.points:
             wc_dict["points"].append({
-                "n": to_json_safe(p.n),
-                "th": to_json_safe(p.th),
-                "phi": to_json_safe(p.phi),
-                "intens_sum": to_json_safe(p.intens_sum),
-                "amp": to_json_safe(p.amp),
-                "r": to_json_safe(p.r),
-                "b": to_json_safe(p.b),
-                "c": to_json_safe(p.c),
-                "state_vect_dist": to_json_safe(p.state_vect_dist),
-                "ht": to_json_safe(p.ht),
-                "leading_frag_length": to_json_safe(getattr(p, "leading_frag_length", 0.0)),
+                "n": toJSONSafe(p.n),
+                "th": toJSONSafe(p.th),
+                "phi": toJSONSafe(p.phi),
+                "intens_sum": toJSONSafe(p.intens_sum),
+                "amp": toJSONSafe(p.amp),
+                "r": toJSONSafe(p.r),
+                "b": toJSONSafe(p.b),
+                "c": toJSONSafe(p.c),
+                "state_vect_dist": toJSONSafe(p.state_vect_dist),
+                "ht": toJSONSafe(p.ht),
+                "leading_frag_length": toJSONSafe(getattr(p, "leading_frag_length", 0.0)),
             })
 
         payload["wake_containers"].append(wc_dict)
@@ -6521,7 +6614,7 @@ def loadWakeContainersJson(json_path):
         (wake_containers, metadata)
     """
 
-    def from_json_safe(x):
+    def fromJSONSafe(x):
         # restore None -> np.nan for numeric fields
         return np.nan if x is None else x
 
@@ -6534,22 +6627,22 @@ def loadWakeContainersJson(json_path):
 
         for field_name, field_value in wc_d.get("wake_analysis", {}).items():
             if field_name in _WAKE_ANALYSIS_FIELDS:
-                setattr(wc, field_name, from_json_safe(field_value))
+                setattr(wc, field_name, fromJSONSafe(field_value))
 
         for p in wc_d.get("points", []):
             wc.addPoint(
-                from_json_safe(p["n"]),
-                from_json_safe(p["th"]),
-                from_json_safe(p["phi"]),
-                from_json_safe(p["intens_sum"]),
-                from_json_safe(p["amp"]),
-                from_json_safe(p["r"]),
-                from_json_safe(p["b"]),
-                from_json_safe(p["c"]),
-                from_json_safe(p["state_vect_dist"]),
-                from_json_safe(p["ht"]),
+                fromJSONSafe(p["n"]),
+                fromJSONSafe(p["th"]),
+                fromJSONSafe(p["phi"]),
+                fromJSONSafe(p["intens_sum"]),
+                fromJSONSafe(p["amp"]),
+                fromJSONSafe(p["r"]),
+                fromJSONSafe(p["b"]),
+                fromJSONSafe(p["c"]),
+                fromJSONSafe(p["state_vect_dist"]),
+                fromJSONSafe(p["ht"]),
             )
-            wc.points[-1].leading_frag_length = from_json_safe(p.get("leading_frag_length", 0.0))
+            wc.points[-1].leading_frag_length = fromJSONSafe(p.get("leading_frag_length", 0.0))
 
         wake_containers.append(wc)
 
@@ -7001,7 +7094,7 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
     #     except Exception:
     #         return value
 
-    def safe_eval(value):
+    def safeEval(value):
         """Evaluate numeric expressions safely; return np.nan if it can't be evaluated."""
         if not isinstance(value, str):
             return value
@@ -7032,7 +7125,7 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
             # Handle fixed values
             if "fix" in parts:
                 val = parts[1].strip() if len(parts) > 1 else "nan"
-                val_fixed = safe_eval(val)
+                val_fixed = safeEval(val)
                 if not np.isnan(val_fixed):
                     if name == "noise_lag":
                         noise_lag_prior = val_fixed
@@ -7050,8 +7143,8 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
             max_val = parts[2].strip() if len(parts) > 2 else "nan"
             flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
 
-            min_val = safe_eval(min_val)
-            max_val = safe_eval(max_val)
+            min_val = safeEval(min_val)
+            max_val = safeEval(max_val)
 
             if np.isnan(max_val):
                 continue
@@ -7075,7 +7168,7 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
     return noise_lag_prior, noise_lum_prior, noise_wake_prior, fps, P_0m
 
 
-def find_wake_signal_extent(x, y, peak_fraction=0.05, buffer_m=20.0,
+def findWakeSignalExtent(x, y, peak_fraction=0.05, buffer_m=20.0,
                              smooth_window=7, min_tail_points=10):
                 # fit smooth gaussian to wake profile find cut off for noise
     order = np.argsort(x)[::-1]  # head first, tail last
@@ -7228,7 +7321,7 @@ def computeWakeNoiseXAltitude(
         # fit. The same boundary is used as the wake likelihood cutoff.
         if x.size:
             if region_method == "adaptive":
-                noise_start_x = find_wake_signal_extent(
+                noise_start_x = findWakeSignalExtent(
                     x, y, peak_fraction=peak_fraction, buffer_m=buffer_m
                 )[0]
             else:
@@ -7384,7 +7477,7 @@ def computeWakeNoiseXAltitude(
     noises = noises[np.isfinite(noises)]
     overall_noise = float(np.median(noises)) if noises.size else np.nan
 
-    _attach_wake_analysis_to_containers(wake_containers, results, region_method)
+    _attachWakeAnalysisToContainers(wake_containers, results, region_method)
 
     if save_plots:
         print(f"saved all noise fit in: {output_dir}")
@@ -8304,7 +8397,7 @@ def addFragToConst(const_nominal, var_frag_dic):
     return const_nominal
 
 
-def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_len_shift=50, normalization_method="peak", align_method="correlate", lenMax=0, interp=True):
+def wakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_len_shift=50, normalization_method="peak", align_method="correlate", lenMax=0, interp=True):
     """ Extract the wake from the simulation results.
 
     Arguments:
@@ -8429,6 +8522,7 @@ def WakeNormalizeAlignReduce(wake_ref, wake_container_ref, peak_region=20, max_l
 # Function: dynesty
 ###############################################################################
 
+
 class InvalidMetSimSample(ValueError):
     """A physically invalid or numerically unstable MetSim parameter sample."""
 
@@ -8436,7 +8530,7 @@ class InvalidMetSimSample(ValueError):
 _SIM_FAILURE_COUNTS = defaultdict(int)
 
 
-def _is_recoverable_metsim_error(exc):
+def _isRecoverableMetSimError(exc):
     """Return True only for errors that indicate a bad numerical sample.
 
     Do not treat arbitrary exceptions as recoverable, otherwise programming
@@ -8459,7 +8553,7 @@ def _is_recoverable_metsim_error(exc):
     return False
 
 
-def _report_rejected_sample(exc, var_names, values, limit_per_error=3):
+def _reportRejectedSample(exc, var_names, values, limit_per_error=3):
     """Print only the first few rejected samples of each error type per worker."""
     key = (type(exc).__name__, str(exc).splitlines()[0][:160])
     _SIM_FAILURE_COUNTS[key] += 1
@@ -8480,7 +8574,7 @@ def _report_rejected_sample(exc, var_names, values, limit_per_error=3):
     )
 
 
-def _require_finite_positive(name, value, allow_zero=False):
+def _requireFinitePositive(name, value, allow_zero=False):
     """Validate one optional scalar parameter."""
     if value is None:
         return
@@ -8503,13 +8597,13 @@ def validateMetSimConstants(const):
     for name in ("dt", "m_init", "v_init", "rho", "rho_grain",
                  "erosion_mass_min", "erosion_mass_max"):
         if hasattr(const, name):
-            _require_finite_positive(name, getattr(const, name))
+            _requireFinitePositive(name, getattr(const, name))
 
     # Zero sigma/erosion can be used deliberately to disable a process, but
     # negative values are never physically meaningful.
     for name in ("sigma", "erosion_coeff"):
         if hasattr(const, name):
-            _require_finite_positive(name, getattr(const, name), allow_zero=True)
+            _requireFinitePositive(name, getattr(const, name), allow_zero=True)
 
     if hasattr(const, "erosion_mass_min") and hasattr(const, "erosion_mass_max"):
         if float(const.erosion_mass_min) > float(const.erosion_mass_max):
@@ -8531,7 +8625,7 @@ def validateMetSimConstants(const):
                      "grain_mass_max", "mass_index", "gamma"):
             value = getattr(entry, name, None)
             if value is not None:
-                _require_finite_positive(f"{prefix}.{name}", value)
+                _requireFinitePositive(f"{prefix}.{name}", value)
 
         number = getattr(entry, "number", None)
         if number is not None and int(number) < 1:
@@ -8661,7 +8755,7 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
                 guess_var, obs_metsim_obj, var_names, fix_var, flag_wake=flag_wake
             )
         else:
-            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.signal(signal.SIGALRM, timeoutHandler)
             signal.alarm(timeout)
             try:
                 simulation_results = runSimulationDynesty(
@@ -8670,11 +8764,11 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             finally:
                 signal.alarm(0)
     except TimeoutException as exc:
-        _report_rejected_sample(exc, var_names, guess_var)
+        _reportRejectedSample(exc, var_names, guess_var)
         return -np.inf
     except Exception as exc:
-        if _is_recoverable_metsim_error(exc):
-            _report_rejected_sample(exc, var_names, guess_var)
+        if _isRecoverableMetSimError(exc):
+            _reportRejectedSample(exc, var_names, guess_var)
             return -np.inf
         raise
 
@@ -8738,14 +8832,14 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             # Resolve the per-altitude likelihood region directly from the
             # wake container. resultsXalt_wake is only a fallback for older
             # in-memory objects that do not yet carry the metadata.
-            len_max_this_height = _resolve_wake_value(
+            len_max_this_height = _resolveWakeValue(
                 None, wake_data, ht_ref, container_attr="logl_len_max", default=None
             )
             if len_max_this_height is None:
-                len_max_values, len_max_heights = _wake_result_arrays(
+                len_max_values, len_max_heights = _wakeResultArrays(
                     getattr(obs_metsim_obj, "resultsXalt_wake", None), "logl_len_max"
                 )
-                len_max_this_height = _resolve_wake_value(
+                len_max_this_height = _resolveWakeValue(
                     len_max_values, wake_data, ht_ref, altitudes=len_max_heights,
                     default=100.0,
                 )
@@ -8754,18 +8848,18 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
             (
                 _, wake_lum_array, # Return the simulated wake at the ref ht
                 _, obs_lum_array # Return the observed wake at the ref ht
-            ) = WakeNormalizeAlignReduce(simulation_results.wake_results[wake_indices[jj]], wake_container_ref,
+            ) = wakeNormalizeAlignReduce(simulation_results.wake_results[wake_indices[jj]], wake_container_ref,
                                         normalization_method=normalization_method, align_method=align_method,
                                         lenMax=len_max_this_height, interp=True)
 
             # Use per-height noise unless noise_wake is sampled/fixed as a
             # scalar, in which case noise_wake_array is cleared above.
             if getattr(obs_metsim_obj, "noise_wake_array", None) is not None:
-                noise_wake_this_height = _resolve_wake_value(
+                noise_wake_this_height = _resolveWakeValue(
                     None, wake_data, ht_ref, container_attr="noise_wake", default=None
                 )
                 if noise_wake_this_height is None:
-                    noise_wake_this_height = _resolve_wake_value(
+                    noise_wake_this_height = _resolveWakeValue(
                         obs_metsim_obj.noise_wake_array, wake_data, ht_ref,
                         altitudes=getattr(obs_metsim_obj, "altitudes_noises_wake", None),
                         default=obs_metsim_obj.noise_wake,

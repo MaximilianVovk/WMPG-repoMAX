@@ -13,8 +13,10 @@ dynamic pressure, and erosion energy). They are retained as alternative
 profiles, but their weights sum to one per physical meteor so they do not
 multiply the population rate.
 
-The estimator is intentionally a first-order, height-sliced trade study. Each
-meteor is assigned to the height bin containing its peak absolute brightness.
+The estimator is intentionally a first-order, height-sliced trade study. MEM
+sets the population abundance in each Mars-relative speed bin, while the meteor
+library supplies conditional Martian detection properties at the 100-km speed.
+Each meteor is assigned to the height bin containing its peak absolute brightness.
 For every profile and camera, the code integrates the area of the atmospheric
 shell inside the FOV for which the profile is bright for enough frames. MEM
 flux is then distributed over peak-height bins using the observed/simulated
@@ -42,18 +44,20 @@ Required inputs
 Outputs
 -------
 * height_speed_grid.csv
-* height_summary.csv
+* height_summary.csv (detectable heights only by default)
+* height_summary_all.csv (diagnostic, including rejected heights)
 * profile_diagnostics.csv
 * summary.json / summary.txt
 * annual_detections_by_height.png
 * effective_area_by_height.png
 * frames_by_height.png
 * speed_height_rate.png
+* speed_support_diagnostics.csv
 * MEM_Mars_corrected_speed_flux.csv (saved in --mem-directory)
 * MEM_Mars_corrected_state_transform_summary.csv (saved in --mem-directory)
 * MEM_Mars_corrected_cache.json (saved in --mem-directory)
 
-All camera plots use peak luminous height on the vertical axis.
+All camera plots use peak luminous height on the vertical axis. By default, height bins with no frame-qualified detection cells are omitted from the main height products.
 Only NumPy and Matplotlib are required.
 """
 
@@ -136,7 +140,13 @@ class MeteorProfile:
     length_km: np.ndarray
     speed_kms: np.ndarray
     initial_mass_kg: float
+    # Median luminous-track speed. This is used only for FOV residence time.
     representative_speed_kms: float
+    # Mars-relative speed at the MEM reference altitude (100 km by default).
+    population_speed_kms: float
+    population_speed_reference_height_km: float
+    population_speed_method: str
+    population_speed_height_offset_km: float
     peak_height_km: float
     peak_abs_mag: float
 
@@ -147,6 +157,10 @@ class ProfileCameraMetric:
     scenario: str
     scenario_weight: float
     representative_speed_kms: float
+    population_speed_kms: float
+    population_speed_reference_height_km: float
+    population_speed_method: str
+    population_speed_height_offset_km: float
     peak_height_km: float
     peak_abs_mag: float
     geometric_fov_area_km2: float
@@ -225,6 +239,61 @@ def _const_value(const: Any, name: str, default: float = np.nan) -> float:
     return _finite_scalar(getattr(const, name, default), default)
 
 
+def _speed_at_reference_height(
+    height_km: np.ndarray,
+    speed_kms: np.ndarray,
+    reference_height_km: float,
+    fallback_speed_kms: float,
+) -> tuple[float, str, float]:
+    """Return Mars-relative profile speed at a requested atmospheric height.
+
+    The first time-ordered crossing is linearly interpolated. If the luminous
+    profile does not cross the reference height, the nearest valid profile point
+    is used. The simulation initial speed is retained only as a final fallback.
+    """
+    height = np.asarray(height_km, dtype=float).reshape(-1)
+    speed = np.asarray(speed_kms, dtype=float).reshape(-1)
+    n = min(len(height), len(speed))
+    height = height[:n]
+    speed = speed[:n]
+    valid = np.isfinite(height) & np.isfinite(speed) & (speed > 0.0)
+    height = height[valid]
+    speed = speed[valid]
+    reference = float(reference_height_km)
+
+    if len(height) >= 1:
+        exact = np.flatnonzero(np.isclose(height, reference, rtol=0.0, atol=1.0e-9))
+        if exact.size:
+            index = int(exact[0])
+            return float(speed[index]), "exact_profile_point", 0.0
+
+    if len(height) >= 2:
+        for index in range(len(height) - 1):
+            h0, h1 = float(height[index]), float(height[index + 1])
+            v0, v1 = float(speed[index]), float(speed[index + 1])
+            if np.isclose(h0, h1):
+                continue
+            if (h0 - reference)*(h1 - reference) <= 0.0:
+                fraction = np.clip((reference - h0)/(h1 - h0), 0.0, 1.0)
+                value = v0 + fraction*(v1 - v0)
+                if np.isfinite(value) and value > 0.0:
+                    return float(value), "interpolated_profile_crossing", 0.0
+
+    if len(height) >= 1:
+        index = int(np.argmin(np.abs(height - reference)))
+        return (
+            float(speed[index]),
+            "nearest_profile_point",
+            float(abs(height[index] - reference)),
+        )
+
+    fallback = float(fallback_speed_kms)
+    if np.isfinite(fallback) and fallback > 0.0:
+        return fallback, "simulation_initial_speed_fallback", float("nan")
+
+    return float("nan"), "unavailable", float("nan")
+
+
 def _prepare_profile(
     meteor_name: str,
     scenario: str,
@@ -235,6 +304,7 @@ def _prepare_profile(
     time_s: Iterable[float] | None,
     speed_kms: Iterable[float] | None,
     const: Any,
+    population_speed_reference_height_km: float,
 ) -> MeteorProfile | None:
     mag = np.asarray(abs_mag, dtype=float).reshape(-1)
     height = np.asarray(height_km, dtype=float).reshape(-1)
@@ -310,8 +380,21 @@ def _prepare_profile(
     if not np.isfinite(representative_speed) or representative_speed <= 0.0:
         return None
 
-    # Fill missing speed samples with the profile representative speed.
+    # Fill missing speed samples with the luminous-track median. This array is
+    # used for duration/FOV calculations, not for the MEM population mapping.
     speed = np.where(np.isfinite(speed) & (speed > 0.0), speed, representative_speed)
+
+    initial_speed = _const_value(const, "v_init")/1000.0
+    population_speed, population_method, population_height_offset = (
+        _speed_at_reference_height(
+            height_km=height,
+            speed_kms=speed,
+            reference_height_km=population_speed_reference_height_km,
+            fallback_speed_kms=initial_speed,
+        )
+    )
+    if not np.isfinite(population_speed) or population_speed <= 0.0:
+        return None
 
     peak_index = int(np.nanargmin(mag))
     initial_mass = _const_value(const, "m_init")
@@ -327,6 +410,10 @@ def _prepare_profile(
         speed_kms=speed,
         initial_mass_kg=initial_mass,
         representative_speed_kms=representative_speed,
+        population_speed_kms=population_speed,
+        population_speed_reference_height_km=float(population_speed_reference_height_km),
+        population_speed_method=population_method,
+        population_speed_height_offset_km=population_height_offset,
         peak_height_km=float(height[peak_index]),
         peak_abs_mag=float(mag[peak_index]),
     )
@@ -336,6 +423,7 @@ def load_mars_profiles(
     path: str | Path,
     scenarios: tuple[str, ...],
     include_single_body: bool = False,
+    population_speed_reference_height_km: float = 100.0,
 ) -> tuple[list[MeteorProfile], dict[str, Any]]:
     with Path(path).open("rb") as fh:
         payload = pickle.load(fh)
@@ -371,6 +459,7 @@ def load_mars_profiles(
                     time_s=record.get("time_s"),
                     speed_kms=record.get("speed_kms"),
                     const=record.get("const", record),
+                    population_speed_reference_height_km=population_speed_reference_height_km,
                 )
                 if profile is not None:
                     profiles.append(profile)
@@ -407,6 +496,7 @@ def load_mars_profiles(
                     time_s=None,
                     speed_kms=None,
                     const=values[const_i],
+                    population_speed_reference_height_km=population_speed_reference_height_km,
                 )
                 if profile is not None:
                     profiles.append(profile)
@@ -415,11 +505,31 @@ def load_mars_profiles(
         raise ValueError("No usable Martian light-curve profiles were loaded.")
 
     unique_meteors = sorted({profile.meteor_name for profile in profiles})
+    speed_methods: dict[str, int] = {}
+    for profile in profiles:
+        speed_methods[profile.population_speed_method] = (
+            speed_methods.get(profile.population_speed_method, 0) + 1
+        )
+    offsets = np.asarray(
+        [profile.population_speed_height_offset_km for profile in profiles],
+        dtype=float,
+    )
+    finite_offsets = offsets[np.isfinite(offsets)]
     diagnostics = {
         "profile_count": len(profiles),
         "physical_meteor_count": len(unique_meteors),
         "used_exact_time_velocity_profiles": used_exact_profiles,
         "selected_scenarios": selected,
+        "population_speed_reference_height_km": float(
+            population_speed_reference_height_km
+        ),
+        "population_speed_methods": speed_methods,
+        "nearest_profile_height_offset_median_km": (
+            float(np.median(finite_offsets)) if finite_offsets.size else np.nan
+        ),
+        "nearest_profile_height_offset_max_km": (
+            float(np.max(finite_offsets)) if finite_offsets.size else np.nan
+        ),
     }
     return profiles, diagnostics
 
@@ -1906,6 +2016,10 @@ def profile_camera_metric(
         scenario=profile.scenario,
         scenario_weight=profile.scenario_weight,
         representative_speed_kms=profile.representative_speed_kms,
+        population_speed_kms=profile.population_speed_kms,
+        population_speed_reference_height_km=profile.population_speed_reference_height_km,
+        population_speed_method=profile.population_speed_method,
+        population_speed_height_offset_km=profile.population_speed_height_offset_km,
         peak_height_km=profile.peak_height_km,
         peak_abs_mag=profile.peak_abs_mag,
         geometric_fov_area_km2=geometric_area,
@@ -1940,6 +2054,139 @@ def weighted_mean(values: np.ndarray, weights: np.ndarray, default: float = np.n
     return float(np.sum(values[good]*weights[good])/np.sum(weights[good]))
 
 
+def _aggregate_unique_meteor_support(
+    meteor_names: np.ndarray,
+    profile_speeds_kms: np.ndarray,
+    kernel: np.ndarray,
+    target_speed_kms: float,
+    sigma_kms: float,
+) -> tuple[float, float, int]:
+    """Return effective unique-meteor support for one target speed."""
+    names = np.asarray(meteor_names, dtype=object)
+    speeds = np.asarray(profile_speeds_kms, dtype=float)
+    kernel = np.asarray(kernel, dtype=float)
+    unique_names, inverse = np.unique(names, return_inverse=True)
+    meteor_weights = np.zeros(len(unique_names), dtype=float)
+    np.add.at(meteor_weights, inverse, kernel)
+    total = float(np.sum(meteor_weights))
+    square_sum = float(np.sum(meteor_weights**2))
+    effective_count = total**2/square_sum if square_sum > 0.0 else 0.0
+
+    nearest_distance = np.inf
+    within_two_sigma = 0
+    for meteor_index in range(len(unique_names)):
+        mask = inverse == meteor_index
+        distances = np.abs(speeds[mask] - float(target_speed_kms))
+        distances = distances[np.isfinite(distances)]
+        if distances.size == 0:
+            continue
+        distance = float(np.min(distances))
+        nearest_distance = min(nearest_distance, distance)
+        if distance <= 2.0*float(sigma_kms):
+            within_two_sigma += 1
+    return float(effective_count), float(nearest_distance), int(within_two_sigma)
+
+
+def _blend_arrays(left: np.ndarray, right: np.ndarray, alpha: float) -> np.ndarray:
+    """Linearly blend arrays while retaining finite values from either side."""
+    left = np.asarray(left, dtype=float)
+    right = np.asarray(right, dtype=float)
+    out = np.full(np.broadcast_shapes(left.shape, right.shape), np.nan, dtype=float)
+    left_b = np.broadcast_to(left, out.shape)
+    right_b = np.broadcast_to(right, out.shape)
+    both = np.isfinite(left_b) & np.isfinite(right_b)
+    out[both] = (1.0 - float(alpha))*left_b[both] + float(alpha)*right_b[both]
+    only_left = np.isfinite(left_b) & ~np.isfinite(right_b)
+    only_right = ~np.isfinite(left_b) & np.isfinite(right_b)
+    out[only_left] = left_b[only_left]
+    out[only_right] = right_b[only_right]
+    return out
+
+
+def _conditional_height_model(
+    target_speed_kms: float,
+    branch_mask: np.ndarray,
+    profile_names: np.ndarray,
+    profile_speed: np.ndarray,
+    profile_height: np.ndarray,
+    profile_weight: np.ndarray,
+    profile_area_m2: np.ndarray,
+    profile_geom_area_m2: np.ndarray,
+    profile_duration: np.ndarray,
+    profile_frames: np.ndarray,
+    profile_mag: np.ndarray,
+    height_edges_km: np.ndarray,
+    sigma_kms: float,
+    minimum_kernel_weight: float,
+) -> dict[str, Any]:
+    """Estimate conditional Martian detection properties at one speed."""
+    branch = np.asarray(branch_mask, dtype=bool)
+    kernel = (
+        np.exp(-0.5*((profile_speed - float(target_speed_kms))/sigma_kms)**2)
+        * profile_weight
+        * branch
+    )
+    total_kernel = float(np.sum(kernel))
+    n_height = len(height_edges_km) - 1
+    population_fraction = np.zeros(n_height, dtype=float)
+    mean_area = np.zeros(n_height, dtype=float)
+    mean_geom_area = np.zeros(n_height, dtype=float)
+    mean_duration = np.zeros(n_height, dtype=float)
+    mean_frames = np.zeros(n_height, dtype=float)
+    mean_mag = np.full(n_height, np.nan, dtype=float)
+    profile_support = np.zeros(n_height, dtype=float)
+
+    effective_count, nearest_distance, within_two_sigma = (
+        _aggregate_unique_meteor_support(
+            meteor_names=profile_names[branch],
+            profile_speeds_kms=profile_speed[branch],
+            kernel=kernel[branch],
+            target_speed_kms=float(target_speed_kms),
+            sigma_kms=float(sigma_kms),
+        )
+        if np.any(branch)
+        else (0.0, np.inf, 0)
+    )
+
+    if total_kernel > float(minimum_kernel_weight):
+        for height_index, (low, high) in enumerate(
+            zip(height_edges_km[:-1], height_edges_km[1:])
+        ):
+            if height_index == n_height - 1:
+                in_height = (profile_height >= low) & (profile_height <= high)
+            else:
+                in_height = (profile_height >= low) & (profile_height < high)
+            weights = kernel*in_height
+            support = float(np.sum(weights))
+            if support <= float(minimum_kernel_weight):
+                continue
+            population_fraction[height_index] = support/total_kernel
+            mean_area[height_index] = weighted_mean(profile_area_m2, weights, 0.0)
+            mean_geom_area[height_index] = weighted_mean(
+                profile_geom_area_m2, weights, 0.0
+            )
+            mean_duration[height_index] = weighted_mean(
+                profile_duration, weights, 0.0
+            )
+            mean_frames[height_index] = weighted_mean(profile_frames, weights, 0.0)
+            mean_mag[height_index] = weighted_mean(profile_mag, weights, np.nan)
+            profile_support[height_index] = support
+
+    return {
+        "population_fraction": population_fraction,
+        "mean_effective_area_m2": mean_area,
+        "mean_geometric_area_m2": mean_geom_area,
+        "mean_duration_s": mean_duration,
+        "mean_frames": mean_frames,
+        "mean_peak_abs_mag": mean_mag,
+        "profile_support": profile_support,
+        "total_kernel": total_kernel,
+        "effective_meteor_count": effective_count,
+        "nearest_speed_distance_kms": nearest_distance,
+        "unique_meteors_within_2sigma": within_two_sigma,
+    }
+
+
 def build_height_speed_grid(
     profiles: list[MeteorProfile],
     metrics: list[ProfileCameraMetric],
@@ -1948,84 +2195,458 @@ def build_height_speed_grid(
     height_edges_km: np.ndarray,
     speed_kernel_sigma_kms: float,
     minimum_kernel_weight: float,
+    minimum_effective_meteors: float,
+    maximum_nearest_speed_distance_kms: float,
+    slow_branch_max_kms: float,
+    fast_branch_min_kms: float,
+    intermediate_mode: str,
+    minimum_detected_frames: float,
+    aggregate_frame_filter: str,
     night_fraction: float,
     clear_fraction: float,
     duty_cycle: float,
 ) -> dict[str, np.ndarray]:
+    """Map MEM speed flux to height with explicit template-support treatment.
+
+    MEM fixes the abundance in every Mars-relative speed bin. The meteor library
+    supplies only P(height, brightness, duration, area | speed). Population
+    matching uses each profile's Mars speed at the MEM reference altitude, while
+    the median luminous-track speed remains reserved for camera residence time.
+
+    Slow and fast branches are estimated independently. In interpolation mode,
+    the code automatically chooses the highest empirically supported slow MEM bin
+    and the lowest empirically supported fast MEM bin as interpolation anchors.
+    This avoids relying on nominal 25/45-km/s boundaries when those exact bins are
+    themselves weakly sampled.
+    """
     if len(profiles) != len(metrics):
         raise ValueError("Profiles and camera metrics must have equal length.")
-    profile_speed = np.asarray([item.representative_speed_kms for item in profiles])
+    if float(fast_branch_min_kms) <= float(slow_branch_max_kms):
+        raise ValueError("Fast-branch minimum must exceed slow-branch maximum.")
+    if intermediate_mode not in {"interpolate", "exclude", "empirical"}:
+        raise ValueError(
+            "intermediate_mode must be interpolate, exclude, or empirical."
+        )
+    if aggregate_frame_filter not in {"hard", "none"}:
+        raise ValueError("aggregate_frame_filter must be 'hard' or 'none'.")
+    if float(minimum_detected_frames) < 0.0:
+        raise ValueError("minimum_detected_frames must be non-negative.")
+
+    profile_names = np.asarray([item.meteor_name for item in profiles], dtype=object)
+    profile_speed = np.asarray([item.population_speed_kms for item in profiles])
     profile_height = np.asarray([item.peak_height_km for item in profiles])
     profile_weight = np.asarray([item.scenario_weight for item in profiles])
-    profile_area_m2 = np.asarray([item.detectable_effective_area_km2 for item in metrics])*1.0e6
-    profile_geom_area_m2 = np.asarray([item.geometric_fov_area_km2 for item in metrics])*1.0e6
-    profile_duration = np.asarray([item.area_weighted_visible_duration_s for item in metrics])
+    profile_area_m2 = np.asarray(
+        [item.detectable_effective_area_km2 for item in metrics]
+    )*1.0e6
+    profile_geom_area_m2 = np.asarray(
+        [item.geometric_fov_area_km2 for item in metrics]
+    )*1.0e6
+    profile_duration = np.asarray(
+        [item.area_weighted_visible_duration_s for item in metrics]
+    )
     profile_frames = np.asarray([item.area_weighted_frames for item in metrics])
     profile_mag = np.asarray([item.peak_abs_mag for item in metrics])
 
     n_height = len(height_edges_km) - 1
     n_speed = len(mem_speeds_kms)
-    population_fraction = np.zeros((n_height, n_speed), dtype=float)
-    mean_effective_area_m2 = np.zeros((n_height, n_speed), dtype=float)
-    mean_geometric_area_m2 = np.zeros((n_height, n_speed), dtype=float)
-    mean_duration_s = np.zeros((n_height, n_speed), dtype=float)
-    mean_frames = np.zeros((n_height, n_speed), dtype=float)
-    mean_peak_abs_mag = np.full((n_height, n_speed), np.nan, dtype=float)
-    profile_support = np.zeros((n_height, n_speed), dtype=float)
+    shape = (n_height, n_speed)
+    population_fraction = np.zeros(shape, dtype=float)
+    population_fraction_lower = np.zeros(shape, dtype=float)
+    population_fraction_upper = np.zeros(shape, dtype=float)
+    mean_effective_area_m2 = np.zeros(shape, dtype=float)
+    mean_effective_area_lower_m2 = np.zeros(shape, dtype=float)
+    mean_effective_area_upper_m2 = np.zeros(shape, dtype=float)
+    mean_geometric_area_m2 = np.zeros(shape, dtype=float)
+    mean_duration_s = np.zeros(shape, dtype=float)
+    mean_frames = np.zeros(shape, dtype=float)
+    mean_peak_abs_mag = np.full(shape, np.nan, dtype=float)
+    profile_support = np.zeros(shape, dtype=float)
+
+    effective_meteor_count = np.zeros(n_speed, dtype=float)
+    nearest_profile_speed_distance_kms = np.full(n_speed, np.inf, dtype=float)
+    unique_meteors_within_2sigma = np.zeros(n_speed, dtype=int)
+    empirical_supported = np.zeros(n_speed, dtype=bool)
+    model_available = np.zeros(n_speed, dtype=bool)
+    mapping_method = np.full(n_speed, "unsupported", dtype=object)
 
     sigma = max(float(speed_kernel_sigma_kms), 1.0e-6)
-    for speed_index, speed in enumerate(mem_speeds_kms):
-        kernel = np.exp(-0.5*((profile_speed - speed)/sigma)**2)*profile_weight
-        total_kernel = float(np.sum(kernel))
-        if total_kernel <= minimum_kernel_weight:
+    minimum_effective = max(float(minimum_effective_meteors), 0.0)
+    maximum_distance = float(maximum_nearest_speed_distance_kms)
+    slow_mask = profile_speed <= float(slow_branch_max_kms)
+    fast_mask = profile_speed >= float(fast_branch_min_kms)
+    all_mask = np.isfinite(profile_speed)
+
+    # First pass: calculate only empirical models and their unique-meteor support.
+    empirical_models: list[dict[str, Any] | None] = [None]*n_speed
+    empirical_methods = np.full(n_speed, "unsupported", dtype=object)
+    for speed_index, speed_value in enumerate(mem_speeds_kms):
+        speed = float(speed_value)
+        if speed <= float(slow_branch_max_kms):
+            branch_mask = slow_mask
+            method = "empirical_slow_branch"
+        elif speed >= float(fast_branch_min_kms):
+            branch_mask = fast_mask
+            method = "empirical_fast_branch"
+        elif intermediate_mode == "empirical":
+            branch_mask = all_mask
+            method = "empirical_sparse_intermediate"
+        else:
+            branch_mask = None
+            method = (
+                "intermediate_to_interpolate"
+                if intermediate_mode == "interpolate"
+                else "excluded_intermediate"
+            )
+
+        empirical_methods[speed_index] = method
+        if branch_mask is None:
+            mapping_method[speed_index] = method
             continue
 
-        for height_index, (low, high) in enumerate(zip(height_edges_km[:-1], height_edges_km[1:])):
-            if height_index == n_height - 1:
-                in_height = (profile_height >= low) & (profile_height <= high)
-            else:
-                in_height = (profile_height >= low) & (profile_height < high)
-            weights = kernel*in_height
-            support = float(np.sum(weights))
-            if support <= minimum_kernel_weight:
-                continue
+        model = _conditional_height_model(
+            speed, branch_mask, profile_names, profile_speed, profile_height,
+            profile_weight, profile_area_m2, profile_geom_area_m2,
+            profile_duration, profile_frames, profile_mag, height_edges_km,
+            sigma, minimum_kernel_weight,
+        )
+        effective_meteor_count[speed_index] = model["effective_meteor_count"]
+        nearest_profile_speed_distance_kms[speed_index] = model[
+            "nearest_speed_distance_kms"
+        ]
+        unique_meteors_within_2sigma[speed_index] = model[
+            "unique_meteors_within_2sigma"
+        ]
+        enough_effective = (
+            minimum_effective <= 0.0
+            or model["effective_meteor_count"] >= minimum_effective
+        )
+        close_enough = (
+            maximum_distance <= 0.0
+            or model["nearest_speed_distance_kms"] <= maximum_distance
+        )
+        supported = (
+            model["total_kernel"] > minimum_kernel_weight
+            and enough_effective
+            and close_enough
+        )
+        empirical_supported[speed_index] = supported
+        if supported:
+            empirical_models[speed_index] = model
+            mapping_method[speed_index] = method
+        else:
+            mapping_method[speed_index] = "unsupported_" + method
 
-            population_fraction[height_index, speed_index] = support/total_kernel
-            mean_effective_area_m2[height_index, speed_index] = weighted_mean(
-                profile_area_m2, weights, default=0.0
-            )
-            mean_geometric_area_m2[height_index, speed_index] = weighted_mean(
-                profile_geom_area_m2, weights, default=0.0
-            )
-            mean_duration_s[height_index, speed_index] = weighted_mean(
-                profile_duration, weights, default=0.0
-            )
-            mean_frames[height_index, speed_index] = weighted_mean(
-                profile_frames, weights, default=0.0
-            )
-            mean_peak_abs_mag[height_index, speed_index] = weighted_mean(
-                profile_mag, weights, default=np.nan
-            )
-            profile_support[height_index, speed_index] = support
+    # Supported anchors are selected from the actual MEM speed grid, not forced
+    # to lie exactly at the nominal slow/fast branch boundaries.
+    slow_supported_indices = [
+        index for index, speed in enumerate(mem_speeds_kms)
+        if float(speed) <= float(slow_branch_max_kms)
+        and empirical_models[index] is not None
+    ]
+    fast_supported_indices = [
+        index for index, speed in enumerate(mem_speeds_kms)
+        if float(speed) >= float(fast_branch_min_kms)
+        and empirical_models[index] is not None
+    ]
+    slow_anchor_index = max(slow_supported_indices) if slow_supported_indices else None
+    fast_anchor_index = min(fast_supported_indices) if fast_supported_indices else None
+    anchors_available = (
+        slow_anchor_index is not None
+        and fast_anchor_index is not None
+        and float(mem_speeds_kms[fast_anchor_index])
+        > float(mem_speeds_kms[slow_anchor_index])
+    )
+    slow_anchor_speed = (
+        float(mem_speeds_kms[slow_anchor_index])
+        if slow_anchor_index is not None else np.nan
+    )
+    fast_anchor_speed = (
+        float(mem_speeds_kms[fast_anchor_index])
+        if fast_anchor_index is not None else np.nan
+    )
+    slow_anchor = (
+        empirical_models[slow_anchor_index]
+        if slow_anchor_index is not None else None
+    )
+    fast_anchor = (
+        empirical_models[fast_anchor_index]
+        if fast_anchor_index is not None else None
+    )
+
+    def copy_empirical_model(speed_index: int, model: dict[str, Any]) -> None:
+        for key, target in (
+            ("population_fraction", population_fraction),
+            ("mean_effective_area_m2", mean_effective_area_m2),
+            ("mean_geometric_area_m2", mean_geometric_area_m2),
+            ("mean_duration_s", mean_duration_s),
+            ("mean_frames", mean_frames),
+            ("mean_peak_abs_mag", mean_peak_abs_mag),
+            ("profile_support", profile_support),
+        ):
+            target[:, speed_index] = model[key]
+        population_fraction_lower[:, speed_index] = model["population_fraction"]
+        population_fraction_upper[:, speed_index] = model["population_fraction"]
+        mean_effective_area_lower_m2[:, speed_index] = model[
+            "mean_effective_area_m2"
+        ]
+        mean_effective_area_upper_m2[:, speed_index] = model[
+            "mean_effective_area_m2"
+        ]
+        model_available[speed_index] = True
+
+    # Second pass: copy empirical bins and fill only the unsupported interval
+    # between the two supported anchors when interpolation is requested.
+    for speed_index, speed_value in enumerate(mem_speeds_kms):
+        model = empirical_models[speed_index]
+        if model is not None:
+            copy_empirical_model(speed_index, model)
+            continue
+
+        speed = float(speed_value)
+        can_interpolate = (
+            intermediate_mode == "interpolate"
+            and anchors_available
+            and slow_anchor is not None
+            and fast_anchor is not None
+            and slow_anchor_speed < speed < fast_anchor_speed
+        )
+        if not can_interpolate:
+            if intermediate_mode == "interpolate" and mapping_method[speed_index] == "intermediate_to_interpolate":
+                mapping_method[speed_index] = "interpolation_unavailable"
+            continue
+
+        alpha = (
+            (speed - slow_anchor_speed)/(fast_anchor_speed - slow_anchor_speed)
+        )
+        alpha = float(np.clip(alpha, 0.0, 1.0))
+        population_fraction[:, speed_index] = _blend_arrays(
+            slow_anchor["population_fraction"],
+            fast_anchor["population_fraction"], alpha,
+        )
+        mean_effective_area_m2[:, speed_index] = _blend_arrays(
+            slow_anchor["mean_effective_area_m2"],
+            fast_anchor["mean_effective_area_m2"], alpha,
+        )
+        mean_geometric_area_m2[:, speed_index] = _blend_arrays(
+            slow_anchor["mean_geometric_area_m2"],
+            fast_anchor["mean_geometric_area_m2"], alpha,
+        )
+        mean_duration_s[:, speed_index] = _blend_arrays(
+            slow_anchor["mean_duration_s"], fast_anchor["mean_duration_s"], alpha,
+        )
+        mean_frames[:, speed_index] = _blend_arrays(
+            slow_anchor["mean_frames"], fast_anchor["mean_frames"], alpha,
+        )
+        mean_peak_abs_mag[:, speed_index] = _blend_arrays(
+            slow_anchor["mean_peak_abs_mag"],
+            fast_anchor["mean_peak_abs_mag"], alpha,
+        )
+        profile_support[:, speed_index] = _blend_arrays(
+            slow_anchor["profile_support"], fast_anchor["profile_support"], alpha,
+        )
+
+        # Lower bound: claim no rate from the unsupported speed interval.
+        population_fraction_lower[:, speed_index] = 0.0
+        mean_effective_area_lower_m2[:, speed_index] = 0.0
+
+        # Upper bound: take a conservative per-height envelope of the complete
+        # slow-anchor model, complete fast-anchor model, and nominal blend. This
+        # guarantees that the upper rate is not below the nominal rate in any
+        # height-speed cell. The upper distribution is an uncertainty envelope,
+        # not a separately normalized physical population model.
+        slow_factor = (
+            slow_anchor["population_fraction"]
+            * slow_anchor["mean_effective_area_m2"]
+        )
+        fast_factor = (
+            fast_anchor["population_fraction"]
+            * fast_anchor["mean_effective_area_m2"]
+        )
+        nominal_factor = (
+            population_fraction[:, speed_index]
+            * mean_effective_area_m2[:, speed_index]
+        )
+        factor_stack = np.vstack((slow_factor, fast_factor, nominal_factor))
+        choice = np.nanargmax(np.where(np.isfinite(factor_stack), factor_stack, -np.inf), axis=0)
+        upper_population_options = np.vstack((
+            slow_anchor["population_fraction"],
+            fast_anchor["population_fraction"],
+            population_fraction[:, speed_index],
+        ))
+        upper_area_options = np.vstack((
+            slow_anchor["mean_effective_area_m2"],
+            fast_anchor["mean_effective_area_m2"],
+            mean_effective_area_m2[:, speed_index],
+        ))
+        column = np.arange(n_height)
+        population_fraction_upper[:, speed_index] = upper_population_options[choice, column]
+        mean_effective_area_upper_m2[:, speed_index] = upper_area_options[choice, column]
+
+        effective_meteor_count[speed_index] = float(
+            (1.0 - alpha)*slow_anchor["effective_meteor_count"]
+            + alpha*fast_anchor["effective_meteor_count"]
+        )
+        nearest_profile_speed_distance_kms[speed_index] = float(
+            np.min(np.abs(profile_speed[np.isfinite(profile_speed)] - speed))
+        )
+        all_kernel = (
+            np.exp(-0.5*((profile_speed - speed)/sigma)**2)
+            * profile_weight
+            * all_mask
+        )
+        _, _, within_two_sigma = _aggregate_unique_meteor_support(
+            profile_names[all_mask], profile_speed[all_mask], all_kernel[all_mask],
+            speed, sigma,
+        )
+        unique_meteors_within_2sigma[speed_index] = within_two_sigma
+        model_available[speed_index] = True
+        mapping_method[speed_index] = "interpolated_supported_anchors"
+
+    # Individual elevation strips were already rejected in
+    # profile_camera_metric when visible_duration*FPS < camera.minimum_frames.
+    # This second, deliberately conservative filter acts on the population-
+    # weighted height-speed cell. It prevents a small minority of favourable
+    # profiles/lines of sight from leaving a non-zero annual rate in a cell whose
+    # average frame yield is below the trigger.
+    minimum_frames = float(minimum_detected_frames)
+    mean_effective_area_before_frame_cut_m2 = mean_effective_area_m2.copy()
+    mean_effective_area_lower_before_frame_cut_m2 = (
+        mean_effective_area_lower_m2.copy()
+    )
+    mean_effective_area_upper_before_frame_cut_m2 = (
+        mean_effective_area_upper_m2.copy()
+    )
+
+    frame_threshold_pass = (
+        model_available[None, :]
+        & np.isfinite(mean_frames)
+        & (mean_frames + 1.0e-12 >= minimum_frames)
+        & (population_fraction > 0.0)
+        & (mean_effective_area_m2 > 0.0)
+    )
+
+    prefilter_full_time_rate = (
+        mem_flux_m2_yr[None, :]
+        * population_fraction
+        * mean_effective_area_m2
+    )
+    prefilter_full_time_rate_lower = (
+        mem_flux_m2_yr[None, :]
+        * population_fraction_lower
+        * mean_effective_area_lower_m2
+    )
+    prefilter_full_time_rate_upper = (
+        mem_flux_m2_yr[None, :]
+        * population_fraction_upper
+        * mean_effective_area_upper_m2
+    )
+
+    if aggregate_frame_filter == "hard":
+        mean_effective_area_m2 = np.where(
+            frame_threshold_pass, mean_effective_area_m2, 0.0
+        )
+        mean_effective_area_lower_m2 = np.where(
+            frame_threshold_pass, mean_effective_area_lower_m2, 0.0
+        )
+        mean_effective_area_upper_m2 = np.where(
+            frame_threshold_pass, mean_effective_area_upper_m2, 0.0
+        )
+
+    retained_cell = (
+        model_available[None, :]
+        & (population_fraction > 0.0)
+        & (mean_effective_area_m2 > 0.0)
+    )
+    height_frame_detectable = np.any(retained_cell, axis=1)
+    excluded_by_frame_threshold = (
+        (population_fraction > 0.0)
+        & (mean_effective_area_before_frame_cut_m2 > 0.0)
+        & ~frame_threshold_pass
+    )
 
     full_time_rate = (
         mem_flux_m2_yr[None, :]
         * population_fraction
         * mean_effective_area_m2
     )
-    observing_factor = float(night_fraction)*float(clear_fraction)*float(duty_cycle)
+    full_time_rate_lower = (
+        mem_flux_m2_yr[None, :]
+        * population_fraction_lower
+        * mean_effective_area_lower_m2
+    )
+    full_time_rate_upper = (
+        mem_flux_m2_yr[None, :]
+        * population_fraction_upper
+        * mean_effective_area_upper_m2
+    )
+    observing_factor = (
+        float(night_fraction)*float(clear_fraction)*float(duty_cycle)
+    )
     observable_rate = full_time_rate*observing_factor
+    observable_rate_lower = full_time_rate_lower*observing_factor
+    observable_rate_upper = full_time_rate_upper*observing_factor
+
+    total_mem_flux = float(np.sum(mem_flux_m2_yr))
+    empirical_flux = float(np.sum(mem_flux_m2_yr[empirical_supported]))
+    modelled_flux = float(np.sum(mem_flux_m2_yr[model_available]))
+    interpolated_mask = mapping_method == "interpolated_supported_anchors"
+    interpolated_flux = float(np.sum(mem_flux_m2_yr[interpolated_mask]))
+    height_fraction_sum = np.sum(population_fraction, axis=0)
+    covered_flux = float(np.sum(mem_flux_m2_yr*height_fraction_sum))
+
+    def fraction(value: float) -> float:
+        return value/total_mem_flux if total_mem_flux > 0.0 else 0.0
 
     return {
         "population_fraction": population_fraction,
+        "population_fraction_lower": population_fraction_lower,
+        "population_fraction_upper": population_fraction_upper,
         "mean_effective_area_m2": mean_effective_area_m2,
+        "mean_effective_area_lower_m2": mean_effective_area_lower_m2,
+        "mean_effective_area_upper_m2": mean_effective_area_upper_m2,
+        "mean_effective_area_before_frame_cut_m2": (
+            mean_effective_area_before_frame_cut_m2
+        ),
+        "mean_effective_area_lower_before_frame_cut_m2": (
+            mean_effective_area_lower_before_frame_cut_m2
+        ),
+        "mean_effective_area_upper_before_frame_cut_m2": (
+            mean_effective_area_upper_before_frame_cut_m2
+        ),
         "mean_geometric_area_m2": mean_geometric_area_m2,
         "mean_duration_s": mean_duration_s,
         "mean_frames": mean_frames,
+        "minimum_detected_frames": np.asarray(minimum_frames),
+        "aggregate_frame_filter": np.asarray(aggregate_frame_filter),
+        "frame_threshold_pass": frame_threshold_pass,
+        "excluded_by_frame_threshold": excluded_by_frame_threshold,
+        "retained_cell": retained_cell,
+        "height_frame_detectable": height_frame_detectable,
+        "prefilter_annual_events_full_time_lower": prefilter_full_time_rate_lower,
+        "prefilter_annual_events_full_time": prefilter_full_time_rate,
+        "prefilter_annual_events_full_time_upper": prefilter_full_time_rate_upper,
         "mean_peak_abs_mag": mean_peak_abs_mag,
         "profile_support": profile_support,
+        "effective_meteor_count": effective_meteor_count,
+        "nearest_profile_speed_distance_kms": nearest_profile_speed_distance_kms,
+        "unique_meteors_within_2sigma": unique_meteors_within_2sigma,
+        "empirical_supported": empirical_supported,
+        "model_available": model_available,
+        "mapping_method": mapping_method,
+        "height_fraction_sum": height_fraction_sum,
+        "slow_interpolation_anchor_speed_kms": np.asarray(slow_anchor_speed),
+        "fast_interpolation_anchor_speed_kms": np.asarray(fast_anchor_speed),
+        "empirical_supported_mem_flux_fraction": np.asarray(fraction(empirical_flux)),
+        "modelled_mem_flux_fraction": np.asarray(fraction(modelled_flux)),
+        "interpolated_mem_flux_fraction": np.asarray(fraction(interpolated_flux)),
+        "height_range_coverage_fraction": np.asarray(fraction(covered_flux)),
+        "annual_events_full_time_lower": full_time_rate_lower,
         "annual_events_full_time": full_time_rate,
+        "annual_events_full_time_upper": full_time_rate_upper,
+        "annual_events_observable_lower": observable_rate_lower,
         "annual_events_observable": observable_rate,
+        "annual_events_observable_upper": observable_rate_upper,
     }
 
 
@@ -2071,10 +2692,23 @@ def save_height_speed_csv(
 ) -> None:
     fields = [
         "camera", "height_low_km", "height_high_km", "height_mid_km",
-        "speed_kms", "mem_flux_m2_yr", "population_fraction",
-        "mean_geometric_area_km2", "mean_detectable_effective_area_km2",
+        "speed_kms", "mem_flux_m2_yr", "mapping_method",
+        "empirical_supported", "model_available",
+        "effective_physical_meteor_count",
+        "nearest_template_speed_distance_kms",
+        "unique_physical_meteors_within_2sigma",
+        "height_fraction_sum_for_speed",
+        "population_fraction_lower", "population_fraction_nominal",
+        "population_fraction_upper",
+        "mean_geometric_area_km2",
+        "mean_detectable_effective_area_before_frame_cut_km2",
+        "mean_detectable_effective_area_km2",
         "mean_peak_abs_mag", "mean_visible_duration_s", "mean_frames",
-        "annual_events_full_time", "annual_events_observable",
+        "minimum_detected_frames", "frame_threshold_pass",
+        "excluded_by_frame_threshold", "retained_cell",
+        "annual_events_full_time_lower", "annual_events_full_time_nominal",
+        "annual_events_full_time_upper", "annual_events_observable_lower",
+        "annual_events_observable_nominal", "annual_events_observable_upper",
     ]
     with path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
@@ -2088,15 +2722,67 @@ def save_height_speed_csv(
                     "height_mid_km": 0.5*(low + high),
                     "speed_kms": speed,
                     "mem_flux_m2_yr": flux[vi],
-                    "population_fraction": grid["population_fraction"][hi, vi],
+                    "mapping_method": grid["mapping_method"][vi],
+                    "empirical_supported": bool(grid["empirical_supported"][vi]),
+                    "model_available": bool(grid["model_available"][vi]),
+                    "effective_physical_meteor_count": grid["effective_meteor_count"][vi],
+                    "nearest_template_speed_distance_kms": grid["nearest_profile_speed_distance_kms"][vi],
+                    "unique_physical_meteors_within_2sigma": grid["unique_meteors_within_2sigma"][vi],
+                    "height_fraction_sum_for_speed": grid["height_fraction_sum"][vi],
+                    "population_fraction_lower": grid["population_fraction_lower"][hi, vi],
+                    "population_fraction_nominal": grid["population_fraction"][hi, vi],
+                    "population_fraction_upper": grid["population_fraction_upper"][hi, vi],
                     "mean_geometric_area_km2": grid["mean_geometric_area_m2"][hi, vi]/1.0e6,
+                    "mean_detectable_effective_area_before_frame_cut_km2": (
+                        grid["mean_effective_area_before_frame_cut_m2"][hi, vi]/1.0e6
+                    ),
                     "mean_detectable_effective_area_km2": grid["mean_effective_area_m2"][hi, vi]/1.0e6,
                     "mean_peak_abs_mag": grid["mean_peak_abs_mag"][hi, vi],
                     "mean_visible_duration_s": grid["mean_duration_s"][hi, vi],
                     "mean_frames": grid["mean_frames"][hi, vi],
-                    "annual_events_full_time": grid["annual_events_full_time"][hi, vi],
-                    "annual_events_observable": grid["annual_events_observable"][hi, vi],
+                    "minimum_detected_frames": float(grid["minimum_detected_frames"]),
+                    "frame_threshold_pass": bool(grid["frame_threshold_pass"][hi, vi]),
+                    "excluded_by_frame_threshold": bool(
+                        grid["excluded_by_frame_threshold"][hi, vi]
+                    ),
+                    "retained_cell": bool(grid["retained_cell"][hi, vi]),
+                    "annual_events_full_time_lower": grid["annual_events_full_time_lower"][hi, vi],
+                    "annual_events_full_time_nominal": grid["annual_events_full_time"][hi, vi],
+                    "annual_events_full_time_upper": grid["annual_events_full_time_upper"][hi, vi],
+                    "annual_events_observable_lower": grid["annual_events_observable_lower"][hi, vi],
+                    "annual_events_observable_nominal": grid["annual_events_observable"][hi, vi],
+                    "annual_events_observable_upper": grid["annual_events_observable_upper"][hi, vi],
                 })
+
+
+def save_speed_support_csv(
+    path: Path,
+    speeds: np.ndarray,
+    flux: np.ndarray,
+    grid: dict[str, np.ndarray],
+) -> None:
+    fields = [
+        "speed_kms", "mem_flux_m2_yr", "mapping_method",
+        "empirical_supported", "model_available",
+        "effective_physical_meteor_count",
+        "nearest_template_speed_distance_kms",
+        "unique_physical_meteors_within_2sigma", "height_fraction_sum",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer.writeheader()
+        for index, speed in enumerate(speeds):
+            writer.writerow({
+                "speed_kms": float(speed),
+                "mem_flux_m2_yr": float(flux[index]),
+                "mapping_method": grid["mapping_method"][index],
+                "empirical_supported": bool(grid["empirical_supported"][index]),
+                "model_available": bool(grid["model_available"][index]),
+                "effective_physical_meteor_count": float(grid["effective_meteor_count"][index]),
+                "nearest_template_speed_distance_kms": float(grid["nearest_profile_speed_distance_kms"][index]),
+                "unique_physical_meteors_within_2sigma": int(grid["unique_meteors_within_2sigma"][index]),
+                "height_fraction_sum": float(grid["height_fraction_sum"][index]),
+            })
 
 
 def save_height_summary_csv(
@@ -2104,35 +2790,81 @@ def save_height_summary_csv(
     camera: CameraConfig,
     height_edges: np.ndarray,
     grid: dict[str, np.ndarray],
-) -> list[dict[str, float | str]]:
-    rows: list[dict[str, float | str]] = []
+    detectable_only: bool = True,
+) -> list[dict[str, float | str | bool]]:
+    """
+    Save height-binned results.
+
+    The main summary uses detectable_only=True and omits height bins for which no
+    speed cell survives the aggregate frame threshold. A second all-height
+    diagnostic CSV is written by main() with detectable_only=False.
+    """
+    rows: list[dict[str, float | str | bool]] = []
+    threshold = float(grid["minimum_detected_frames"])
     for hi, (low, high) in enumerate(zip(height_edges[:-1], height_edges[1:])):
-        rates = grid["annual_events_observable"][hi, :]
-        full_rates = grid["annual_events_full_time"][hi, :]
-        weight = full_rates
+        frame_detectable = bool(grid["height_frame_detectable"][hi])
+        if detectable_only and not frame_detectable:
+            continue
+
+        nominal = grid["annual_events_observable"][hi, :]
+        nominal_full = grid["annual_events_full_time"][hi, :]
+        prefilter_full = grid["prefilter_annual_events_full_time"][hi, :]
         row = {
             "camera": camera.name,
             "height_low_km": float(low),
             "height_high_km": float(high),
             "height_mid_km": float(0.5*(low + high)),
-            "annual_events_full_time": float(np.sum(full_rates)),
-            "annual_events_observable": float(np.sum(rates)),
+            "height_width_km": float(high - low),
+            "height_retained_after_frame_filter": frame_detectable,
+            "minimum_detected_frames": threshold,
+            "maximum_population_weighted_frames": float(
+                np.nanmax(grid["mean_frames"][hi, :])
+                if np.any(np.isfinite(grid["mean_frames"][hi, :]))
+                else 0.0
+            ),
+            "frame_passing_speed_bin_count": int(
+                np.count_nonzero(grid["frame_threshold_pass"][hi, :])
+            ),
+            "retained_speed_bin_count": int(
+                np.count_nonzero(grid["retained_cell"][hi, :])
+            ),
+            "annual_events_full_time_rejected_by_frame_filter": float(
+                np.sum(prefilter_full - nominal_full)
+            ),
+            "annual_events_full_time_lower": float(
+                np.sum(grid["annual_events_full_time_lower"][hi, :])
+            ),
+            "annual_events_full_time": float(np.sum(nominal_full)),
+            "annual_events_full_time_upper": float(
+                np.sum(grid["annual_events_full_time_upper"][hi, :])
+            ),
+            "annual_events_observable_lower": float(
+                np.sum(grid["annual_events_observable_lower"][hi, :])
+            ),
+            "annual_events_observable": float(np.sum(nominal)),
+            "annual_events_observable_upper": float(
+                np.sum(grid["annual_events_observable_upper"][hi, :])
+            ),
             "rate_weighted_effective_area_km2": weighted_mean(
-                grid["mean_effective_area_m2"][hi, :]/1.0e6, weight, default=0.0
+                grid["mean_effective_area_m2"][hi, :]/1.0e6,
+                nominal_full, default=0.0,
             ),
             "rate_weighted_visible_duration_s": weighted_mean(
-                grid["mean_duration_s"][hi, :], weight, default=0.0
+                grid["mean_duration_s"][hi, :], nominal_full, default=0.0,
             ),
             "rate_weighted_frames": weighted_mean(
-                grid["mean_frames"][hi, :], weight, default=0.0
+                grid["mean_frames"][hi, :], nominal_full, default=0.0,
             ),
             "rate_weighted_peak_abs_mag": weighted_mean(
-                grid["mean_peak_abs_mag"][hi, :], weight, default=np.nan
+                grid["mean_peak_abs_mag"][hi, :], nominal_full, default=np.nan,
             ),
         }
         rows.append(row)
 
-    fields = list(rows[0].keys()) if rows else []
+    fields = list(rows[0].keys()) if rows else [
+        "camera", "height_low_km", "height_high_km", "height_mid_km",
+        "height_retained_after_frame_filter",
+    ]
     with path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
@@ -2157,22 +2889,40 @@ def save_camera_plots(
     rows: list[dict[str, float | str]],
     grid: dict[str, np.ndarray],
 ) -> dict[str, str]:
-    height_mid = 0.5*(height_edges[:-1] + height_edges[1:])
     outputs: dict[str, str] = {}
+    if not rows:
+        print(
+            f"{camera.name}: no height bins survive the aggregate "
+            f"{float(grid['minimum_detected_frames']):g}-frame threshold; "
+            "no camera plots were generated."
+        )
+        return outputs
 
-    full_rate = np.asarray([row["annual_events_full_time"] for row in rows], dtype=float)
-    observable_rate = np.asarray([row["annual_events_observable"] for row in rows], dtype=float)
+    height_mid = np.asarray([row["height_mid_km"] for row in rows], dtype=float)
+    height_width = np.asarray([row["height_width_km"] for row in rows], dtype=float)
+
+    full_nominal = np.asarray([row["annual_events_full_time"] for row in rows], dtype=float)
+    obs_lower = np.asarray([row["annual_events_observable_lower"] for row in rows], dtype=float)
+    obs_nominal = np.asarray([row["annual_events_observable"] for row in rows], dtype=float)
+    obs_upper = np.asarray([row["annual_events_observable_upper"] for row in rows], dtype=float)
     fig, ax = plt.subplots(figsize=(9, 6))
-    height_width = np.diff(height_edges)
     ax.barh(
-        height_mid, full_rate, height=0.85*height_width, alpha=0.45,
-        label="Full-time geometric rate",
+        height_mid, full_nominal, height=0.85*height_width, alpha=0.35,
+        label="Full-time nominal",
     )
     ax.barh(
-        height_mid, observable_rate, height=0.55*height_width, alpha=0.8,
-        label="Night/clear/duty adjusted",
+        height_mid, obs_nominal, height=0.55*height_width, alpha=0.8,
+        label="Observable nominal",
     )
-    ax.set_xlabel("Expected meteors per year (MEM time unit)")
+    xerr = np.vstack((
+        np.maximum(obs_nominal - obs_lower, 0.0),
+        np.maximum(obs_upper - obs_nominal, 0.0),
+    ))
+    ax.errorbar(
+        obs_nominal, height_mid, xerr=xerr, fmt="none", capsize=3,
+        label="Sparse-speed lower/upper range",
+    )
+    ax.set_xlabel("Expected meteors per year")
     ax.set_ylabel("Peak luminous height [km]")
     ax.set_title(f"{camera.name}: predicted detections by peak height")
     ax.grid(True, axis="x", alpha=0.3)
@@ -2214,7 +2964,21 @@ def save_camera_plots(
     plt.close(fig)
     outputs["frames_by_height_plot"] = str(path)
 
-    rate_grid = np.asarray(grid["annual_events_observable"], dtype=float)
+    rate_grid_full = np.asarray(grid["annual_events_observable"], dtype=float)
+    detectable_height_indices = np.flatnonzero(grid["height_frame_detectable"])
+    if detectable_height_indices.size:
+        first_height = int(detectable_height_indices[0])
+        last_height = int(detectable_height_indices[-1])
+        plot_height_edges = height_edges[first_height:last_height + 2]
+        rate_grid = rate_grid_full[first_height:last_height + 1, :].copy()
+        local_keep = grid["height_frame_detectable"][
+            first_height:last_height + 1
+        ]
+        rate_grid[~local_keep, :] = 0.0
+    else:
+        plot_height_edges = height_edges
+        rate_grid = np.zeros_like(rate_grid_full)
+
     speed_edges = np.empty(len(speeds) + 1, dtype=float)
     if len(speeds) == 1:
         speed_edges[:] = [speeds[0] - 0.5, speeds[0] + 0.5]
@@ -2224,14 +2988,14 @@ def save_camera_plots(
         speed_edges[-1] = speeds[-1] + (speeds[-1] - speed_edges[-2])
     fig, ax = plt.subplots(figsize=(10, 7))
     mesh = ax.pcolormesh(
-        speed_edges, height_edges, np.ma.masked_less_equal(rate_grid, 0.0),
+        speed_edges, plot_height_edges, np.ma.masked_less_equal(rate_grid, 0.0),
         shading="flat", norm=_positive_norm(rate_grid),
     )
     cbar = fig.colorbar(mesh, ax=ax)
-    cbar.set_label("Expected observable meteors per year per height-speed cell")
-    ax.set_xlabel("Mars-relative meteoroid speed [km/s]")
+    cbar.set_label("Nominal observable meteors/year per height-speed cell")
+    ax.set_xlabel("Mars-relative meteoroid speed at reference height [km/s]")
     ax.set_ylabel("Peak luminous height [km]")
-    ax.set_title(f"{camera.name}: speed-height detection yield")
+    ax.set_title(f"{camera.name}: nominal speed-height detection yield")
     ax.grid(True, alpha=0.2)
     fig.tight_layout()
     path = output_dir/f"{prefix}_speed_height_rate.png"
@@ -2245,6 +3009,7 @@ def save_camera_plots(
 def save_text_summary(path: Path, summary: dict[str, Any]) -> None:
     camera = summary["camera"]
     lower, upper = summary["elevation_bounds_deg"]
+    support = summary["speed_template_support"]
     lines = [
         "Ground-based Mars meteor camera yield estimate",
         "="*56,
@@ -2258,21 +3023,39 @@ def save_text_summary(path: Path, summary: dict[str, Any]) -> None:
         "",
         f"Physical meteors in template library: {summary['profile_library']['physical_meteor_count']}",
         f"Scenario profiles used: {summary['profile_library']['profile_count']}",
-        f"Exact time/velocity arrays available: {summary['profile_library']['used_exact_time_velocity_profiles']}",
+        f"Population matching speed height: {support['population_speed_reference_height_km']:.3f} km",
         f"MEM total reference flux: {summary['mem_flux']['total_reference_flux_m2_yr']:.8e} #/m^2/yr",
+        f"Empirically supported MEM flux fraction: {support['empirical_supported_mem_flux_fraction']:.4f}",
+        f"MEM flux fraction with nominal model: {support['modelled_mem_flux_fraction']:.4f}",
+        f"Interpolated intermediate MEM flux fraction: {support['interpolated_mem_flux_fraction']:.4f}",
+        f"Slow interpolation anchor: {support['slow_interpolation_anchor_speed_kms']:.3f} km/s",
+        f"Fast interpolation anchor: {support['fast_interpolation_anchor_speed_kms']:.3f} km/s",
         "",
-        f"Full-time geometric detections/year: {summary['annual_events_full_time']:.8e}",
+        f"Aggregate frame filter: {summary['frame_threshold_filter']['mode']}",
+        f"Frame threshold: {summary['frame_threshold_filter']['minimum_frames']:.3f}",
+        f"Height bins retained: {summary['frame_threshold_filter']['height_bins_retained']} / {summary['frame_threshold_filter']['height_bins_total']}",
+        f"Height-speed cells rejected by frame filter: {summary['frame_threshold_filter']['height_speed_cells_rejected']}",
+        f"Full-time rate before frame filter: {summary['frame_threshold_filter']['full_time_events_per_year_before_filter']:.8e}",
+        f"Full-time rate removed by frame filter: {summary['frame_threshold_filter']['full_time_events_per_year_rejected']:.8e}",
+        "",
+        f"Full-time detections/year lower: {summary['annual_events_full_time_lower']:.8e}",
+        f"Full-time detections/year nominal: {summary['annual_events_full_time']:.8e}",
+        f"Full-time detections/year upper: {summary['annual_events_full_time_upper']:.8e}",
         f"Night fraction: {summary['night_fraction']:.4f}",
         f"Clear-sky fraction: {summary['clear_fraction']:.4f}",
         f"Operational duty cycle: {summary['duty_cycle']:.4f}",
-        f"Observable detections/year: {summary['annual_events_observable']:.8e}",
-        f"Nominal night-only rate (half of full-time rate): {0.5*summary['annual_events_full_time']:.8e}",
+        f"Observable detections/year lower: {summary['annual_events_observable_lower']:.8e}",
+        f"Observable detections/year nominal: {summary['annual_events_observable']:.8e}",
+        f"Observable detections/year upper: {summary['annual_events_observable_upper']:.8e}",
         "",
         "Interpretation:",
-        "Each physical meteor contributes unit population weight split equally among",
-        "its selected Mars trigger scenarios. The altitude rows represent unique",
-        "peak-brightness bins, so summing over height does not count the same profile",
-        "at every 5-km luminous segment.",
+        "MEM fixes the population abundance independently in every Mars-relative",
+        "speed bin. The Earth-observed templates provide only conditional Martian",
+        "height, brightness, duration and detectable area at the 100-km speed.",
+        "Slow and fast branches are estimated separately. The nominal intermediate",
+        "estimate blends the branch-anchor distributions; the lower bound excludes",
+        "that sparse interval and the upper bound is a conservative per-height envelope",
+        "of the slow anchor, fast anchor and nominal blend.",
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -2351,7 +3134,7 @@ def parse_args() -> argparse.Namespace:
             "the cached files."
         ),
     )
-    parser.add_argument("--output-directory", default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\EMCCD_on_Mars")
+    parser.add_argument("--output-directory", default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\EMCCD_on_Mars\detection-new")
     parser.add_argument("--output-prefix", default="Mars_ground_camera")
 
     parser.add_argument(
@@ -2364,6 +3147,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--meteorcam-fov-deg", type=float, default=46.0)
     parser.add_argument("--minimum-frames-emccd", type=float, default=4.0)
     parser.add_argument("--minimum-frames-meteorcam", type=float, default=4.0)
+    parser.add_argument(
+        "--aggregate-frame-filter",
+        choices=["hard", "none"],
+        default="hard",
+        help=(
+            "After the per-profile/per-elevation trigger test, also reject an "
+            "entire height-speed cell when its population-weighted frame yield is "
+            "below the camera minimum. Default: hard. Use none only for diagnostics."
+        ),
+    )
+    parser.add_argument(
+        "--keep-undetectable-heights",
+        action="store_true",
+        help=(
+            "Keep height rows with no surviving frame-qualified speed cells in the "
+            "main height summary and one-dimensional plots. By default they are "
+            "omitted; the *_height_summary_all.csv diagnostic always retains them."
+        ),
+    )
 
     parser.add_argument(
         "--pointing-mode", choices=["horizon-anchored", "boresight"],
@@ -2378,14 +3180,46 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height-min-km", type=float, default=55.0)
     parser.add_argument("--height-max-km", type=float, default=110.0)
     parser.add_argument("--height-step-km", type=float, default=5.0)
+    parser.add_argument(
+        "--population-speed-reference-height-km", type=float, default=100.0,
+        help=(
+            "Atmospheric height at which Mars profile speeds are matched to the "
+            "corrected MEM speed bins. Default: 100 km."
+        ),
+    )
     parser.add_argument("--speed-kernel-sigma-kms", type=float, default=2.0)
     parser.add_argument("--minimum-kernel-weight", type=float, default=1.0e-10)
+    parser.add_argument(
+        "--minimum-effective-meteors", type=float, default=10.0,
+        help=(
+            "Minimum effective number of unique physical meteors required for an "
+            "empirical speed bin. Trigger scenarios are aggregated per meteor."
+        ),
+    )
+    parser.add_argument(
+        "--maximum-nearest-speed-distance-kms", type=float, default=3.0,
+        help=(
+            "Reject an empirical speed bin when the nearest Martian template speed "
+            "is farther away. Use 0 to disable."
+        ),
+    )
+    parser.add_argument("--slow-branch-max-kms", type=float, default=25.0)
+    parser.add_argument("--fast-branch-min-kms", type=float, default=45.0)
+    parser.add_argument(
+        "--intermediate-mode",
+        choices=["interpolate", "exclude", "empirical"],
+        default="interpolate",
+        help=(
+            "Treatment of the sparsely sampled speed interval between the slow and "
+            "fast branches. Default interpolation also produces lower/upper rates."
+        ),
+    )
     parser.add_argument("--elevation-subdivisions", type=int, default=120)
 
     parser.add_argument("--night-fraction", type=float, default=0.5)
-    parser.add_argument("--clear-fraction", type=float, default=1.0)
+    parser.add_argument("--clear-fraction", type=float, default=0.5)
     parser.add_argument("--duty-cycle", type=float, default=1.0)
-    parser.add_argument("--vertical-optical-depth", type=float, default=0.0)
+    parser.add_argument("--vertical-optical-depth", type=float, default=0.3)
 
     return parser.parse_args()
 
@@ -2402,6 +3236,7 @@ def main() -> None:
         args.marsmeteor_total,
         scenarios=scenarios,
         include_single_body=False,
+        population_speed_reference_height_km=args.population_speed_reference_height_km,
     )
     detailed_mem_result = None
     if args.mem_directory:
@@ -2458,11 +3293,17 @@ def main() -> None:
         mem_diagnostics["outputs"] = mem_aux_outputs
 
     combined_summary: dict[str, Any] = {
-        "format_version": 2,
+        "format_version": 4,
         "profile_library": profile_diagnostics,
         "mem_flux": mem_diagnostics,
         "height_edges_km": height_edges,
         "speed_kernel_sigma_kms": float(args.speed_kernel_sigma_kms),
+        "population_speed_reference_height_km": float(args.population_speed_reference_height_km),
+        "slow_branch_max_kms": float(args.slow_branch_max_kms),
+        "fast_branch_min_kms": float(args.fast_branch_min_kms),
+        "intermediate_mode": args.intermediate_mode,
+        "aggregate_frame_filter": args.aggregate_frame_filter,
+        "keep_undetectable_heights": bool(args.keep_undetectable_heights),
         "night_fraction": float(args.night_fraction),
         "clear_fraction": float(args.clear_fraction),
         "duty_cycle": float(args.duty_cycle),
@@ -2495,6 +3336,13 @@ def main() -> None:
             height_edges_km=height_edges,
             speed_kernel_sigma_kms=args.speed_kernel_sigma_kms,
             minimum_kernel_weight=args.minimum_kernel_weight,
+            minimum_effective_meteors=args.minimum_effective_meteors,
+            maximum_nearest_speed_distance_kms=args.maximum_nearest_speed_distance_kms,
+            slow_branch_max_kms=args.slow_branch_max_kms,
+            fast_branch_min_kms=args.fast_branch_min_kms,
+            intermediate_mode=args.intermediate_mode,
+            minimum_detected_frames=camera.minimum_frames,
+            aggregate_frame_filter=args.aggregate_frame_filter,
             night_fraction=args.night_fraction,
             clear_fraction=args.clear_fraction,
             duty_cycle=args.duty_cycle,
@@ -2503,18 +3351,34 @@ def main() -> None:
         profile_csv = root_output/f"{prefix}_profile_diagnostics.csv"
         grid_csv = root_output/f"{prefix}_height_speed_grid.csv"
         height_csv = root_output/f"{prefix}_height_summary.csv"
+        height_all_csv = root_output/f"{prefix}_height_summary_all.csv"
+        speed_support_csv = root_output/f"{prefix}_speed_support_diagnostics.csv"
         summary_json = root_output/f"{prefix}_summary.json"
         summary_txt = root_output/f"{prefix}_summary.txt"
 
         save_profile_diagnostics(profile_csv, metrics)
         save_height_speed_csv(grid_csv, camera, height_edges, mem_speeds, mem_flux, grid)
-        height_rows = save_height_summary_csv(height_csv, camera, height_edges, grid)
+        save_speed_support_csv(speed_support_csv, mem_speeds, mem_flux, grid)
+        save_height_summary_csv(
+            height_all_csv, camera, height_edges, grid, detectable_only=False
+        )
+        height_rows = save_height_summary_csv(
+            height_csv,
+            camera,
+            height_edges,
+            grid,
+            detectable_only=not args.keep_undetectable_heights,
+        )
         plot_outputs = save_camera_plots(
             root_output, prefix, camera, height_edges, mem_speeds, height_rows, grid
         )
 
+        full_time_lower = float(np.sum(grid["annual_events_full_time_lower"]))
         full_time_total = float(np.sum(grid["annual_events_full_time"]))
+        full_time_upper = float(np.sum(grid["annual_events_full_time_upper"]))
+        observable_lower = float(np.sum(grid["annual_events_observable_lower"]))
         observable_total = float(np.sum(grid["annual_events_observable"]))
+        observable_upper = float(np.sum(grid["annual_events_observable_upper"]))
         lower, upper = camera.elevation_bounds_deg()
         camera_summary = {
             "camera": asdict(camera),
@@ -2525,13 +3389,64 @@ def main() -> None:
             "night_fraction": float(args.night_fraction),
             "clear_fraction": float(args.clear_fraction),
             "duty_cycle": float(args.duty_cycle),
+            "annual_events_full_time_lower": full_time_lower,
             "annual_events_full_time": full_time_total,
+            "annual_events_full_time_upper": full_time_upper,
+            "annual_events_observable_lower": observable_lower,
             "annual_events_observable": observable_total,
+            "annual_events_observable_upper": observable_upper,
             "annual_events_night_only_half": 0.5*full_time_total,
+            "frame_threshold_filter": {
+                "mode": args.aggregate_frame_filter,
+                "minimum_frames": float(camera.minimum_frames),
+                "height_bins_retained": int(
+                    np.count_nonzero(grid["height_frame_detectable"])
+                ),
+                "height_bins_total": int(len(height_edges) - 1),
+                "height_bins_omitted_from_main_outputs": int(
+                    0 if args.keep_undetectable_heights else
+                    np.count_nonzero(~grid["height_frame_detectable"])
+                ),
+                "height_speed_cells_passing": int(
+                    np.count_nonzero(grid["frame_threshold_pass"])
+                ),
+                "height_speed_cells_rejected": int(
+                    np.count_nonzero(grid["excluded_by_frame_threshold"])
+                ),
+                "full_time_events_per_year_before_filter": float(
+                    np.sum(grid["prefilter_annual_events_full_time"])
+                ),
+                "full_time_events_per_year_rejected": float(
+                    np.sum(
+                        grid["prefilter_annual_events_full_time"]
+                        - grid["annual_events_full_time"]
+                    )
+                ),
+            },
+            "speed_template_support": {
+                "population_speed_reference_height_km": float(args.population_speed_reference_height_km),
+                "speed_kernel_sigma_kms": float(args.speed_kernel_sigma_kms),
+                "minimum_effective_meteors": float(args.minimum_effective_meteors),
+                "maximum_nearest_speed_distance_kms": float(args.maximum_nearest_speed_distance_kms),
+                "slow_branch_max_kms": float(args.slow_branch_max_kms),
+                "fast_branch_min_kms": float(args.fast_branch_min_kms),
+                "intermediate_mode": args.intermediate_mode,
+                "slow_interpolation_anchor_speed_kms": float(grid["slow_interpolation_anchor_speed_kms"]),
+                "fast_interpolation_anchor_speed_kms": float(grid["fast_interpolation_anchor_speed_kms"]),
+                "empirical_supported_mem_flux_fraction": float(grid["empirical_supported_mem_flux_fraction"]),
+                "modelled_mem_flux_fraction": float(grid["modelled_mem_flux_fraction"]),
+                "interpolated_mem_flux_fraction": float(grid["interpolated_mem_flux_fraction"]),
+                "height_range_coverage_fraction": float(grid["height_range_coverage_fraction"]),
+                "empirical_supported_speed_bin_count": int(np.count_nonzero(grid["empirical_supported"])),
+                "modelled_speed_bin_count": int(np.count_nonzero(grid["model_available"])),
+                "total_speed_bin_count": int(len(mem_speeds)),
+            },
             "outputs": {
                 "profile_diagnostics_csv": str(profile_csv),
                 "height_speed_grid_csv": str(grid_csv),
                 "height_summary_csv": str(height_csv),
+                "height_summary_all_csv": str(height_all_csv),
+                "speed_support_diagnostics_csv": str(speed_support_csv),
                 "summary_json": str(summary_json),
                 "summary_txt": str(summary_txt),
                 **plot_outputs,
@@ -2541,7 +3456,13 @@ def main() -> None:
                 "The atmospheric footprint is the spherical-shell wedge intersected by the rectangular camera FOV.",
                 "For each elevation strip, the complete light curve is shifted from absolute to apparent magnitude using the range to a vertical column through the peak location.",
                 "The default frame residence limit uses the smaller FOV dimension and assumes transverse speed equal to meteoroid speed.",
+                "Individual elevation strips are rejected when visible_duration multiplied by FPS is below the camera minimum-frame trigger.",
+                "With --aggregate-frame-filter hard, a complete height-speed cell is also removed when its population-weighted frame yield is below the trigger; heights with no retained cells are omitted from the main summary and plots.",
                 "Alternative trigger scenarios split one unit of weight per physical meteor and do not multiply the MEM flux.",
+                "The MEM population mapping uses each Martian profile speed at the configured reference altitude (100 km by default), not its median luminous-flight speed.",
+                "The median luminous-flight speed is retained only for the approximate FOV residence-time calculation.",
+                "MEM fixes the total population flux independently in every Mars-relative speed bin; the meteor library supplies conditional height, brightness, duration and area.",
+                "Slow and fast template branches are estimated separately. The sparse intermediate interval is handled according to --intermediate-mode, with lower/nominal/upper rates in interpolation mode.",
                 "The MEM speed distribution is reconstructed from every paired HiDensity/LoDensity flux_N file after removing the velocity of the fictitious sampling observer at each state.",
                 "The corrected MEM speed-flux distribution, state summary and validation metadata are cached in the MEM input folder and reused when unchanged.",
                 "All generated camera plots place peak luminous height on the vertical axis.",
@@ -2554,8 +3475,27 @@ def main() -> None:
         combined_summary["cameras"].append(camera_summary)
 
         print(
-            f"{camera.name}: full-time={full_time_total:.6e}/yr, "
-            f"observable={observable_total:.6e}/yr, elevation={lower:.2f}–{upper:.2f} deg"
+            f"{camera.name}: full-time={full_time_lower:.6f} / "
+            f"{full_time_total:.6f} / {full_time_upper:.6f} per yr "
+            "(lower/nominal/upper)"
+        )
+        print(
+            f"{camera.name}: observable={observable_lower:.6f} / "
+            f"{observable_total:.6f} / {observable_upper:.6f} per yr; "
+            f"elevation={lower:.2f}–{upper:.2f} deg"
+        )
+        print(
+            f"{camera.name}: empirical MEM-flux support="
+            f"{float(grid['empirical_supported_mem_flux_fraction']):.3f}; "
+            f"nominal model coverage={float(grid['modelled_mem_flux_fraction']):.3f}; "
+            f"interpolated fraction={float(grid['interpolated_mem_flux_fraction']):.3f}"
+        )
+        print(
+            f"{camera.name}: aggregate frame filter={args.aggregate_frame_filter}; "
+            f"retained heights={np.count_nonzero(grid['height_frame_detectable'])}/"
+            f"{len(height_edges)-1}; removed "
+            f"{np.sum(grid['prefilter_annual_events_full_time'] - grid['annual_events_full_time']):.6f} "
+            "full-time events/yr"
         )
 
     combined_path = root_output/f"{args.output_prefix}_combined_summary.json"

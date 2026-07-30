@@ -2403,25 +2403,25 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         erosion_beg_vel_backup[i] = np.random.uniform(min_val, max_val)
         return erosion_beg_vel_backup
 
-    # try:
-    energy_per_cs_before_erosion_backup = np.array(energy_per_cs_before_erosion_backup)/1e6
-    energy_per_mass_before_erosion_backup = np.array(energy_per_mass_before_erosion_backup)/1e6
-    erosion_beg_vel_backup = none_delete_and_replace_with_random(erosion_beg_vel_backup, 'erosion_beg_vel_backup')
-    erosion_beg_vel_backup = np.array(erosion_beg_vel_backup)/1000
-    erosion_beg_mass_backup = none_delete_and_replace_with_random(erosion_beg_mass_backup, 'erosion_beg_mass_backup')
-    erosion_beg_mass_backup = np.array(erosion_beg_mass_backup)
-    erosion_beg_dyn_press_backup = none_delete_and_replace_with_random(erosion_beg_dyn_press_backup, 'erosion_beg_dyn_press_backup')
-    erosion_beg_dyn_press_backup = np.array(erosion_beg_dyn_press_backup)/1000
-    mass_at_erosion_change_backup = none_delete_and_replace_with_random(mass_at_erosion_change_backup, 'mass_at_erosion_change_backup')
-    mass_at_erosion_change_backup = np.array(mass_at_erosion_change_backup)
-    dyn_press_at_erosion_change_backup = none_delete_and_replace_with_random(dyn_press_at_erosion_change_backup, 'dyn_press_at_erosion_change_backup')
-    dyn_press_at_erosion_change_backup = np.array(dyn_press_at_erosion_change_backup)/1000
-    main_mass_exhaustion_ht_backup = none_delete_and_replace_with_random(main_mass_exhaustion_ht_backup, 'main_mass_exhaustion_ht_backup')
-    main_mass_exhaustion_ht_backup = np.array(main_mass_exhaustion_ht_backup) /1000   # convert to km
-    main_bottom_ht_backup = none_delete_and_replace_with_random(main_bottom_ht_backup, 'main_bottom_ht_backup')
-    main_bottom_ht_backup = np.array(main_bottom_ht_backup) /1000   # convert to km
-    # except:
-    #     print("No backup data available.")
+    try:
+        energy_per_cs_before_erosion_backup = np.array(energy_per_cs_before_erosion_backup)/1e6
+        energy_per_mass_before_erosion_backup = np.array(energy_per_mass_before_erosion_backup)/1e6
+        erosion_beg_vel_backup = none_delete_and_replace_with_random(erosion_beg_vel_backup, 'erosion_beg_vel_backup')
+        erosion_beg_vel_backup = np.array(erosion_beg_vel_backup)/1000
+        erosion_beg_mass_backup = none_delete_and_replace_with_random(erosion_beg_mass_backup, 'erosion_beg_mass_backup')
+        erosion_beg_mass_backup = np.array(erosion_beg_mass_backup)
+        erosion_beg_dyn_press_backup = none_delete_and_replace_with_random(erosion_beg_dyn_press_backup, 'erosion_beg_dyn_press_backup')
+        erosion_beg_dyn_press_backup = np.array(erosion_beg_dyn_press_backup)/1000
+        mass_at_erosion_change_backup = none_delete_and_replace_with_random(mass_at_erosion_change_backup, 'mass_at_erosion_change_backup')
+        mass_at_erosion_change_backup = np.array(mass_at_erosion_change_backup)
+        dyn_press_at_erosion_change_backup = none_delete_and_replace_with_random(dyn_press_at_erosion_change_backup, 'dyn_press_at_erosion_change_backup')
+        dyn_press_at_erosion_change_backup = np.array(dyn_press_at_erosion_change_backup)/1000
+        main_mass_exhaustion_ht_backup = none_delete_and_replace_with_random(main_mass_exhaustion_ht_backup, 'main_mass_exhaustion_ht_backup')
+        main_mass_exhaustion_ht_backup = np.array(main_mass_exhaustion_ht_backup) /1000   # convert to km
+        main_bottom_ht_backup = none_delete_and_replace_with_random(main_bottom_ht_backup, 'main_bottom_ht_backup')
+        main_bottom_ht_backup = np.array(main_bottom_ht_backup) /1000   # convert to km
+    except:
+        print("No backup data available.")
 
     # erosion_beg_mass_backup = erosion_beg_mass_backup
     # print('energy_per_cs_before_erosion_backup',energy_per_cs_before_erosion_backup)
@@ -9877,7 +9877,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Iron Letter\irons-rho_eta100-noPoros\Tau008", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

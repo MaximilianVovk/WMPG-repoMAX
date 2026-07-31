@@ -31,8 +31,8 @@ def get_logz_values(root_dir):
 
 def main():
     # Define the two model directories
-    dir1 = r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP-1frag-0417"
-    dir2 = r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\CAMO+EMCCD\CAP-2frag-0417"
+    dir1 = r"C:\Users\maxiv\Documents\UWO\Papers\4)Iron Letter\iron-1rho"
+    dir2 = r"C:\Users\maxiv\Documents\UWO\Papers\4)Iron Letter\irons-rho_eta100-noPoros\Best_iron-fit"
 
     # Extract logz values for each
     vals1 = get_logz_values(dir1)
@@ -47,12 +47,12 @@ def main():
     header.append(r"    \centering")
     header.append(r"    \renewcommand{\arraystretch}{1.2}")
     header.append(r"    \setlength{\tabcolsep}{4pt}")
-    header.append(r"    \caption{Summary of logz values for 1frag and 2frag models. The Difference column shows 1frag (logz) - 2frag (logz). The last column confirm if a second fragmentation was observed with CAMO narrow-field camera.}")
+    header.append(r"    \caption{Summary of logz values for 1frag and 2frag models. The Difference column shows 1frag (logz) - 2frag (logz).") # The last column confirm if a second fragmentation was observed with CAMO narrow-field camera.}")
     header.append(r"    \label{tab:frag_logz_summary}")
     header.append(r"    \resizebox{\textwidth}{!}{%")
     header.append(r"    \begin{tabular}{|l|c|c|c|c|}")
     header.append(r"    \hline")
-    header.append(r"    Timestamp & 1frag (logz) & 2frag (logz) & Difference & 2fr \\")
+    header.append(r"    Timestamp & 1frag (logz) & 2frag (logz) & Difference\\") # & 2fr \\")
     header.append(r"    \hline")
     rows = []
     for ts in common:
@@ -73,7 +73,7 @@ def main():
         col1 = f"${v1:.3f} \pm {u1:.3f}$"
         col2 = f"${v2:.3f} \pm {u2:.3f}$"
         col3 = f"${diff:.3f}$" # \ln(e^{{{v1:.3f}}} - e^{{{v2:.3f}}}) = 
-        rows.append(f"    {ts} & {col1} & {col2} & {col3} & No\\\\")
+        rows.append(f"    {ts} & {col1} & {col2} & {col3} \\\\") # & No\\\\")
         rows.append(r"    \hline")
 
     footer = []

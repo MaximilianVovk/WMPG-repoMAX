@@ -8162,6 +8162,23 @@ def constructConstants(parameter_guess, real_event, var_names, fix_var, dir_path
         for i, var in enumerate(var_names_fix):
             const_nominal.__dict__[var] = fix_var[var]
 
+    # If a second-stage property is not explicitly sampled or fixed,
+    # inherit the corresponding first-stage value.
+    inherited_change_parameters = {
+        "erosion_coeff_change": "erosion_coeff",
+        "erosion_rho_change": "rho",
+        "erosion_sigma_change": "sigma",
+    }
+
+    for change_parameter, base_parameter in inherited_change_parameters.items():
+
+        if change_parameter in var_dic or change_parameter in fix_var:
+            continue
+
+        const_nominal.__dict__[change_parameter] = copy.deepcopy(
+            const_nominal.__dict__[base_parameter]
+        )
+
     # fuse var_frag_dic and fix_var_frag_dic
     if var_frag_dic or fix_var_frag_dic:
         combined_frag_dic = {}

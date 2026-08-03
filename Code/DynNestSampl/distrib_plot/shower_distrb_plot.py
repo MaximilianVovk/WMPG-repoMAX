@@ -5574,7 +5574,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plus = rho_corrected_hi - rho_corrected_median
     minus = rho_corrected_median - rho_corrected_lo
     fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    valtoput=r"\rho_{eff}"
+    title = rf"Tot N.{len(tj)} — ${valtoput}$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
     ax_dist.set_title(title, fontsize=20)
     # ax_dist.tick_params(axis='x', labelbottom=False)
     ax_dist.tick_params(axis='y', left=False, labelleft=False)
@@ -5588,7 +5589,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     peak_x = bin_centers[peak_idx]
     peak_y = hist[peak_idx]
     # annotate the value
-    ax_dist.annotate(f'Peak: {rho_corrected_peak:.4g}', xy=(peak_x, peak_y), xytext=(peak_x, peak_y),  fontsize=15) # arrowprops=dict(facecolor='black', shrink=0.05),
+    # ax_dist.annotate(f'Peak: {rho_corrected_peak:.4g}', xy=(peak_x, peak_y), xytext=(peak_x, peak_y),  fontsize=15) # arrowprops=dict(facecolor='black', shrink=0.05),
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"), bbox_inches='tight')
     plt.close()
     print("Rho distribution plot saved:",os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"))
@@ -9877,7 +9878,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Iron Letter\irons-rho_eta100-noPoros\Tau008", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Iron Letter\Validation\largePrior-EnegyLumEff", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

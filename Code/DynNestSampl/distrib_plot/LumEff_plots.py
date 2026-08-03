@@ -176,7 +176,8 @@ def tau_vida_icarus2024(v_kms, m_kg):
 if __name__ == "__main__":
     v_vals = np.linspace(11, 72, 100)
     m_vals = [10**-6, 10**-7, 10**-8, 10**-9, 10**-10]  # kg
-    P_0m = [840,935.0,1000,1500,2500]  # W
+    m_vals_B = [10**-6, 10**-3, 10**0, 10**3, 10**6]  # kg
+    P_0m = [1500] # [840,935.0,1000,1500,2500]  # W
 
     plt.figure(figsize=(12, 6))
 
@@ -187,7 +188,7 @@ if __name__ == "__main__":
         tau_vals = tau_vida_icarus2024(v_vals, m)
         plt.plot(v_vals, tau_vals, label=f'Vida et al. (2024) m = $10^{{{int(np.log10(m))}}}$ kg', color=colors[i % len(colors)], ls='-')
     
-    for i, m in enumerate(m_vals):
+    for i, m in enumerate(m_vals_B):
         tau_vals = tau_borovicka2020(v_vals, m)
         plt.plot(v_vals, tau_vals, label=f'Borovička et al. (2020) m = $10^{{{int(np.log10(m))}}}$ kg', color=colors[i % len(colors)], ls='--')
     
@@ -196,9 +197,12 @@ if __name__ == "__main__":
     
     # cycle though a different set of colors for the Pecina & Ceplecha lines
     colors = plt.cm.viridis(np.linspace(0, 1, len(P_0m)))
-    for i, P_0m_s in enumerate(P_0m):
-        tau_pecina_vals = luminous_efficiency_tau_PecinaCeplecha1983(v_vals, P_0m_s)
-        plt.plot(v_vals, tau_pecina_vals, label=f'Pecina & Ceplecha (1983) $P_{{0M}} = {P_0m_s}$ W', color=colors[i % len(colors)], ls='-.')
+    # for i, P_0m_s in enumerate(P_0m):
+    #     tau_pecina_vals = luminous_efficiency_tau_PecinaCeplecha1983(v_vals, P_0m_s)
+    #     plt.plot(v_vals, tau_pecina_vals, label=f'Pecina & Ceplecha (1983) $P_{{0M}} = {P_0m_s}$ W', color=colors[i % len(colors)], ls='-.')
+
+    tau_pecina_vals = luminous_efficiency_tau_PecinaCeplecha1983(v_vals, P_0m[0])
+    plt.plot(v_vals, tau_pecina_vals, label=f'Pecina & Ceplecha (1983) $P_{{0M}} = {P_0m[0]}$ W', color='magenta', ls='-.')
 
     # plt.title('Luminous Efficiency τ(v,m) from Vida et al. (Icarus 2024)')
     plt.xlabel('Velocity (km/s)')

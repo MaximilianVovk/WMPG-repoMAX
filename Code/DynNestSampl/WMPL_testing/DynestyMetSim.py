@@ -2377,6 +2377,197 @@ def plotObsVsHeight(obs_data, sim_data=None, output_folder='', file_name='', col
     plt.close(fig)
 
 
+def plotBestFitLumEfficiency(sim_results, obs_data, output_folder='', file_name=''):
+    """Plot and summarize the luminous efficiency of the best-fit simulation.
+
+    For ``lum_eff_type == 0``, ``const.lum_eff`` is already the fixed luminous
+    efficiency in percent, so it is used directly and no efficiency model is
+    re-evaluated.
+
+    For all varying luminous-efficiency models, the simulation already contains
+    the luminosity-weighted total efficiency in ``tau_total_arr`` (ratio). The
+    reported statistics are therefore computed directly from the best-fit
+    simulation as ``100*tau_total_arr``. When photometric observations are
+    available, the median/range are evaluated only over the observed height
+    interval so that unobserved parts of the simulated trajectory do not bias
+    the summary.
+
+    Returns:
+        tau_median, tau_min, tau_max: Luminous efficiency statistics in percent.
+    """
+
+    const = sim_results.const
+    lum_eff_type = int(getattr(const, 'lum_eff_type', 0))
+
+    heights = np.asarray(sim_results.leading_frag_height_arr, dtype=float)
+    finite_heights = np.isfinite(heights)
+    if not np.any(finite_heights):
+        raise ValueError('Best-fit simulation has no finite leading-fragment heights.')
+
+    # Observed photometric height interval, used for the reported summary.
+    obs_heights = np.asarray(getattr(obs_data, 'height_lum', []), dtype=float).reshape(-1)
+    obs_heights = obs_heights[np.isfinite(obs_heights)]
+    if obs_heights.size:
+        obs_h_min = float(np.nanmin(obs_heights))
+        obs_h_max = float(np.nanmax(obs_heights))
+    else:
+        obs_h_min = None
+        obs_h_max = None
+
+    # Type 0 is already given in percent in the constants. Do not recompute it.
+    if lum_eff_type == 0:
+        tau_median = float(const.lum_eff)
+        tau_min = tau_median
+        tau_max = tau_median
+        tau_total_pct = np.full(heights.shape, tau_median, dtype=float)
+        summary_region = 'fixed luminous efficiency'
+
+    else:
+        # MetSim stores tau arrays as ratios; convert to percent for plotting/reporting.
+        tau_total_pct = 100.0*np.asarray(sim_results.tau_total_arr, dtype=float)
+
+        valid = finite_heights & np.isfinite(tau_total_pct) & (tau_total_pct > 0.0)
+
+        # Ignore timesteps with no emitted light, where a total luminous efficiency
+        # is not observationally meaningful.
+        luminosity = np.asarray(getattr(sim_results, 'luminosity_arr', []), dtype=float)
+        if luminosity.shape == tau_total_pct.shape:
+            valid &= np.isfinite(luminosity) & (luminosity > 0.0)
+
+        summary_mask = valid.copy()
+        summary_region = 'full simulated luminous trajectory'
+
+        # Prefer the portion of the simulation constrained by photometry.
+        if obs_h_min is not None and obs_h_max is not None:
+            observed_mask = valid & (heights >= obs_h_min) & (heights <= obs_h_max)
+            if np.any(observed_mask):
+                summary_mask = observed_mask
+                summary_region = 'observed photometric height range'
+
+        tau_values = tau_total_pct[summary_mask]
+        if tau_values.size == 0:
+            raise ValueError('No finite positive luminous-efficiency values in the best-fit simulation.')
+
+        tau_median = float(np.nanmedian(tau_values))
+        tau_min = float(np.nanmin(tau_values))
+        tau_max = float(np.nanmax(tau_values))
+
+    # Save the best-fit luminous-efficiency curve beside the other fit plots.
+    plot_dir = output_folder # os.path.join(output_folder, 'fit_plots')
+    # os.makedirs(plot_dir, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(6, 7))
+
+    # Total luminous efficiency.
+    valid_total = finite_heights & np.isfinite(tau_total_pct)
+    ax.plot(tau_total_pct[valid_total], heights[valid_total]/1000.0,
+            color='k', linewidth=1.5, label='Total')
+
+    # Main and erosion/grain contributions, matching the WMPL GUI convention.
+    if lum_eff_type != 0:
+        tau_main = 100.0*np.asarray(getattr(sim_results, 'tau_main_arr', []), dtype=float)
+        if tau_main.shape == heights.shape:
+            mask = finite_heights & np.isfinite(tau_main)
+            ax.plot(tau_main[mask], heights[mask]/1000.0,
+                    color='blue', linestyle='solid', linewidth=1, alpha=0.6, label='Main')
+
+        tau_eroded = 100.0*np.asarray(getattr(sim_results, 'tau_eroded_arr', []), dtype=float)
+        if tau_eroded.shape == heights.shape:
+            mask = finite_heights & np.isfinite(tau_eroded)
+            ax.plot(tau_eroded[mask], heights[mask]/1000.0,
+                    color='purple', linestyle='dashed', linewidth=1, alpha=0.6, label='Erosion')
+
+        # Individual complex-fragmentation contributions, when MetSim populated them.
+        main_f_label = False
+        main_ef_label = False
+        grains_ef_label = False
+        grains_d_label = False
+
+        for frag_entry in (getattr(const, 'fragmentation_entries', None) or []):
+
+            main_height = np.asarray(getattr(frag_entry, 'main_height_data', []), dtype=float)
+            main_tau = np.asarray(getattr(frag_entry, 'main_tau', []), dtype=float)
+            if main_height.size and main_tau.size and main_height.shape == main_tau.shape:
+                label = None
+                line_color = None
+
+                if frag_entry.frag_type == 'F':
+                    line_color = 'blue'
+                    if not main_f_label:
+                        label = 'Main F'
+                        main_f_label = True
+
+                elif frag_entry.frag_type == 'EF':
+                    line_color = 'green'
+                    if not main_ef_label:
+                        label = 'Main EF'
+                        main_ef_label = True
+
+                if line_color is not None:
+                    mask = np.isfinite(main_height) & np.isfinite(main_tau)
+                    ax.plot(100.0*main_tau[mask], main_height[mask]/1000.0,
+                            color=line_color, linestyle='dashed', linewidth=1,
+                            alpha=0.5, label=label)
+
+            grains_height = np.asarray(getattr(frag_entry, 'grains_height_data', []), dtype=float)
+            grains_tau = np.asarray(getattr(frag_entry, 'grains_tau', []), dtype=float)
+            if grains_height.size and grains_tau.size and grains_height.shape == grains_tau.shape:
+                label = None
+                line_color = None
+
+                if frag_entry.frag_type == 'EF':
+                    line_color = 'purple'
+                    if not grains_ef_label:
+                        label = 'Grains EF'
+                        grains_ef_label = True
+
+                elif frag_entry.frag_type == 'D':
+                    line_color = 'red'
+                    if not grains_d_label:
+                        label = 'Grains D'
+                        grains_d_label = True
+
+                if line_color is not None:
+                    mask = np.isfinite(grains_height) & np.isfinite(grains_tau)
+                    ax.plot(100.0*grains_tau[mask], grains_height[mask]/1000.0,
+                            color=line_color, linestyle='dashed', linewidth=1,
+                            alpha=0.5, label=label)
+
+    # Mark the interval over which the median is calculated.
+    if obs_h_min is not None and obs_h_max is not None:
+        ax.axhspan(obs_h_min/1000.0, obs_h_max/1000.0,
+                   color='lightgray', alpha=0.25, label='Observed photometry')
+
+    ax.axvline(tau_median, color='gray', linestyle=':', linewidth=1.2,
+               label=f'Median = {tau_median:.3f}%')
+
+    # y-axis is height in km is ranges from (obs_h_min-1000)/1000.0 and (obs_h_max+1000)/1000.0
+    if obs_h_min is not None and obs_h_max is not None:
+        ax.set_ylim((obs_h_min-1000)/1000.0, (obs_h_max+1000)/1000.0)
+
+    ax.set_ylabel('Height [km]')
+    ax.set_xlabel('Luminous efficiency [%]')
+    ax.grid(True, linestyle='--', color='lightgray')
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+
+    out_path = os.path.join(plot_dir, file_name + '_lum_eff_vs_height.png')
+    fig.savefig(out_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+
+    if lum_eff_type == 0:
+        print(f'Luminous efficiency: {tau_median:.4f} % (fixed; lum_eff_type=0)')
+    else:
+        print(
+            f'Best-fit luminous efficiency: median {tau_median:.4f} %, '
+            f'range ({tau_min:.4f} - {tau_max:.4f}) % over the {summary_region}'
+        )
+
+    print(f'Saved best-fit luminous-efficiency plot: {out_path}')
+
+    return tau_median, tau_min, tau_max
+
+
 def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, output_folder='', file_name='', log_file='', cores=None, save_backup=False, finish_run=False, wake_data=None):
     """ Plot the dynesty results (trace plots, corner plots) and save them.
 
@@ -2711,22 +2902,17 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
 
     best_guess_obj_plot = runSimulationDynesty(best_guess, obs_data, variables, fixed_values, flag_wake=flag_wake)
 
+    tau_median = np.nan
+    tau_min = np.nan
+    tau_max = np.nan
     try:
-        # find the index of m_init in variables
-        i_m_init = variables.index('m_init')
-        tau = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))*2/(samples_equal[:, i_m_init]*obs_data.velocities[0]**2)*100
-        # calculate the weights calculate the weighted median and the 95 CI for tau
-        # tau_low95, tau_median, tau_high95 = _quantile(tau, [0.025, 0.5, 0.975],  weights=weights)
-        tau_median, tau_low95, tau_high95 = _plotDistribWeighted(
-            tau,
-            weights=weights,
-            output_folder=output_folder,
-            file_name=file_name,
-            var_name='tau',
-            label='$\\tau$ [%]',
-            colors='olive')
-        print(f"Tau: {tau_median:.4f} 95CI ({tau_low95:.4f} - {tau_high95:.4f}) %")
+        tau_median, tau_min, tau_max = plotBestFitLumEfficiency(
+            best_guess_obj_plot, obs_data, output_folder=output_folder, file_name=file_name
+        )
+    except Exception as e:
+        print(f"Error summarizing best-fit luminous efficiency: {e}")
 
+    try:
         # find erosion change height
         if 'erosion_height_change' in variables and 'm_init' in variables:
             erosion_height_change = best_guess[variables.index('erosion_height_change')]
@@ -2789,7 +2975,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         # rho_low95_approx, rho_median_approx, rho_high95_approx = _quantile(rho_total_arr, [0.025, 0.5, 0.975], weights=weights)
         print(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3")
     except Exception as e:
-        print(f"Error calculating tau and rho distributions: {e}\nSkipping tau and rho distribution calculations.\n")
+        print(f"Error calculating rho distributions: {e}\nSkipping rho distribution calculations.\n")
 
     # Recompute best-fit magnitude with the prior-selected P_0m before using
     # the residuals to estimate the magnitude noise shown in fit_plots.
@@ -2805,19 +2991,6 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
 
     obs_data.noise_mag = np.nanstd(sim_diff_mag)
 
-
-    try:
-
-        lum_eff_val = tau_median
-        # fid the fixed_values that have the lum_eff
-        for key in fixed_values.keys():
-            # exact name is lum_eff
-            if 'lum_eff' == key:
-                print(f"Fixed value for {key}: {fixed_values[key]}")
-                lum_eff_val = fixed_values[key]
-                break
-    except Exception as e:
-        print(f"Error finding lum_eff in fixed_values: {e}\nUsing tau_median as lum_eff_val.\n")
 
     try:
         # make a timer so that it does not take too much in
@@ -2906,9 +3079,9 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
 
     # try:
     #     # find the index of m_init in variables
-    #     tau_real = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))/(simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val)*100
+    #     tau_real = (calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m))/(simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/(tau_median/100.0))*100
     #     print(f"first heigth obs: {np.max(obs_data.height_lum):.2f} m, last height obs: {obs_data.height_lum[-1]:.2f} m, first height sim: {best_guess_obj_plot.leading_frag_height_arr[index_up]:.2f} m, last height sim: {best_guess_obj_plot.leading_frag_height_arr[index_down]:.2f} m")
-    #     print(f"total radiated energy:", calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m), "J and total simulated radiated energy:",simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/lum_eff_val,"J")
+    #     print(f"total radiated energy:", calcRadiatedEnergy(np.array(obs_data.time_lum), np.array(obs_data.absolute_magnitudes), P_0m=obs_data.P_0m), "J and total simulated radiated energy:",simpson(np.array(best_guess_obj_plot.luminosity_arr[index_up:index_down]),x=np.array(best_guess_obj_plot.time_arr[index_up:index_down]))/(tau_median/100.0),"J")
     #     print(f"Tau real best fit: {tau_real:.4f} %")
     # except Exception as e:
     #     print("Error calculating tau real:", e)
@@ -3487,7 +3660,13 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         f.write("logz i.e. final estimated evidence\n")
         # f.write("H info.gain i.e. big H very small peak posterior, low H broad posterior distribution no need for a lot of live points\n")
         try:
-            f.write(f"\nTau: {tau_median:.2f} 95CI ({tau_low95:.2f} - {tau_high95:.2f}) %\n")
+            if int(best_guess_obj_plot.const.lum_eff_type) == 0:
+                f.write(f"\nLuminous efficiency: {tau_median:.2f} % (fixed; lum_eff_type=0)\n")
+            else:
+                f.write(
+                    f"\nBest-fit luminous efficiency: median {tau_median:.2f} %, "
+                    f"range ({tau_min:.2f} - {tau_max:.2f}) % over observed photometric heights\n"
+                )
             f.write(f"Approx. mass weighted $\\rho$ : {rho_median_approx:.2f} 95CI ({rho_low95_approx:.2f} - {rho_high95_approx:.2f}) kg/m^3\n")
             if save_backup:
                 f.write(f"Real mass weighted $\\rho$ : {rho_median_real:.2f} 95CI ({rho_lo_real:.2f} - {rho_hi_real:.2f}) kg/m^3\n")
@@ -6701,9 +6880,9 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
         # Compute first so every container receives its per-height noise and
         # LogL-region metadata before the wake JSON is written.
         wake_noise_plots_dir = os.path.join(out_folder, "wake_noise_plots")
-        os.makedirs(wake_noise_plots_dir, exist_ok=True)
+        # os.makedirs(wake_noise_plots_dir, exist_ok=True)
         computeWakeNoiseXAltitude(
-            wake_data, save_plots=True, output_dir=wake_noise_plots_dir,
+            wake_data, save_plots=False, output_dir=wake_noise_plots_dir,
             x_threshold=noise_wake_limit, region_method=region_method,
         )
         saveWakeContainersJson(

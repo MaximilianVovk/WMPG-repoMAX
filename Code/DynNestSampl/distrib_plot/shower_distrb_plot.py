@@ -11,6 +11,7 @@ import os
 
 from matplotlib.lines import Line2D
 import numpy as np
+import pandas as pd
 
 # Add the parent directory to the sys.path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -68,6 +69,7 @@ variable_map = {
     'zenith_angle': r"$z_c$ [rad]",
     'm_init': r"$m_0$ [kg]",
     'rho': r"$\rho$ [kg/m$^3$]",
+    'rho_beg': r"$\rho_1$ [kg/m$^3$]",
     'sigma': r"$\sigma$ [kg/MJ]",
     'erosion_height_start': r"$h_e$ [km]",
     'erosion_coeff': r"$\eta$ [kg/MJ]",
@@ -113,6 +115,7 @@ variable_map_plot = {
     'zenith_angle': r"$z_c$ [rad]",
     'm_init': r"$m_0$ [kg]",
     'rho': r"$\rho$ [kg/m$^3$]",
+    'rho_beg': r"$\rho_1$ [kg/m$^3$]",
     'sigma': r"$\sigma$ [kg/J]",
     'erosion_height_start': r"$h_e$ [m]",
     'erosion_coeff': r"$\eta$ [kg/J]",
@@ -157,6 +160,7 @@ fmt_kind = {
     'zenith_angle': "fixed2",
     'm_init': "sci",
     'rho': "int",
+    'rho_beg': "int",
     'sigma': "sci",
     'erosion_height_start': "fixed2",
     'erosion_coeff': "sci",
@@ -328,6 +332,757 @@ def find_close_in_list(target_code: str, candidates, tol_seconds: int = 3):
         if dt <= tol_seconds and (best_abs_dt is None or dt < best_abs_dt):
             best, best_abs_dt = cand, dt
     return best
+
+
+def classify_ci_change(
+    begin_median, begin_lo, begin_hi,
+    change_median, change_lo, change_hi
+):
+    """
+    Classify the change between two fitted stages using their 95% CIs.
+
+    The *_lo and *_hi inputs used in this script are asymmetric ERROR WIDTHS,
+    not absolute CI limits. Therefore the actual intervals are reconstructed as:
+
+        begin  = [begin_median  - begin_lo,  begin_median  + begin_hi]
+        change = [change_median - change_lo, change_median + change_hi]
+
+    Classes
+    -------
+    homogenus
+        The two 95% CIs overlap or touch. The data therefore do not require a
+        material change in this parameter.
+    avocado
+        The complete begin-stage CI is above the complete change-stage CI.
+    coconut
+        The complete begin-stage CI is below the complete change-stage CI.
+    None
+        One or more values are non-finite.
+    """
+
+    begin_median = np.asarray(begin_median, dtype=float)
+    begin_lo = np.asarray(begin_lo, dtype=float)
+    begin_hi = np.asarray(begin_hi, dtype=float)
+    change_median = np.asarray(change_median, dtype=float)
+    change_lo = np.asarray(change_lo, dtype=float)
+    change_hi = np.asarray(change_hi, dtype=float)
+
+    begin_low95 = begin_median - begin_lo
+    begin_high95 = begin_median + begin_hi
+    change_low95 = change_median - change_lo
+    change_high95 = change_median + change_hi
+
+    valid = (
+        np.isfinite(begin_median)
+        & np.isfinite(begin_lo)
+        & np.isfinite(begin_hi)
+        & np.isfinite(change_median)
+        & np.isfinite(change_lo)
+        & np.isfinite(change_hi)
+    )
+
+    classes = np.full(begin_median.shape, None, dtype=object)
+
+    # Same material / no statistically resolved change: the two 95% CIs overlap.
+    homogenus = (
+        valid
+        & (begin_high95 >= change_low95)
+        & (change_high95 >= begin_low95)
+    )
+
+    # Distinct intervals: preserve the previous avocado/coconut direction.
+    avocado = valid & (begin_low95 > change_high95)
+    coconut = valid & (begin_high95 < change_low95)
+
+    classes[homogenus] = "homogenus"
+    classes[avocado] = "avocado"
+    classes[coconut] = "coconut"
+
+    bounds = {
+        "begin_low95": begin_low95,
+        "begin_high95": begin_high95,
+        "change_low95": change_low95,
+        "change_high95": change_high95,
+    }
+
+    return classes, bounds
+
+def _triangle_parameter_names(param_specs):
+    """Return stable CSV/correlation names for triangle parameters."""
+    names = []
+    used = {}
+    for i, spec in enumerate(param_specs):
+        name = str(spec.get("name", f"param_{i + 1}"))
+        if name in used:
+            used[name] += 1
+            name = f"{name}_{used[name]}"
+        else:
+            used[name] = 1
+        names.append(name)
+    return names
+
+
+def event_ci_correlation_matrix(param_specs):
+    """
+    Calculate the same event-level Pearson correlations shown in the upper
+    triangle of plot_event_ci_triangle.
+
+    Parameters marked with ``log=True`` are transformed to log10 before the
+    correlation is calculated. Each pair uses its own finite-value mask, just
+    like the plotted triangle.
+    """
+    npar = len(param_specs)
+    names = _triangle_parameter_names(param_specs)
+    corr = np.full((npar, npar), np.nan, dtype=float)
+
+    prepared = []
+    for spec in param_specs:
+        scale = float(spec.get("scale", 1.0))
+        med = np.asarray(spec["median"], dtype=float) * scale
+        prepared.append(med)
+
+    for i in range(npar):
+        yi = prepared[i]
+        yi_log = bool(param_specs[i].get("log", False))
+
+        for j in range(i, npar):
+            xj = prepared[j]
+            xj_log = bool(param_specs[j].get("log", False))
+
+            finite = np.isfinite(xj) & np.isfinite(yi)
+            if xj_log:
+                finite &= xj > 0
+            if yi_log:
+                finite &= yi > 0
+
+            if np.count_nonzero(finite) < 2:
+                continue
+
+            xx = xj[finite].copy()
+            yy = yi[finite].copy()
+
+            if xj_log:
+                xx = np.log10(xx)
+            if yi_log:
+                yy = np.log10(yy)
+
+            if np.nanstd(xx) <= 0 or np.nanstd(yy) <= 0:
+                continue
+
+            r = float(np.clip(np.corrcoef(xx, yy)[0, 1], -1.0, 1.0))
+            corr[i, j] = r
+            corr[j, i] = r
+
+    return pd.DataFrame(corr, index=names, columns=names)
+
+
+def save_event_ci_parameter_csv(param_specs, event_names, out_path, extra_columns=None):
+    """
+    Save one row per event with the plotted/scaled median and actual 95% CI
+    bounds for every triangle parameter.
+    """
+    event_names = np.asarray(event_names).astype(str)
+    n_events = event_names.shape[0]
+    names = _triangle_parameter_names(param_specs)
+
+    data = {"meteor": event_names}
+
+    for name, spec in zip(names, param_specs):
+        scale = float(spec.get("scale", 1.0))
+        median = np.asarray(spec["median"], dtype=float) * scale
+        err_lo = np.asarray(spec["lo"], dtype=float) * abs(scale)
+        err_hi = np.asarray(spec["hi"], dtype=float) * abs(scale)
+
+        if median.shape[0] != n_events or err_lo.shape[0] != n_events or err_hi.shape[0] != n_events:
+            raise RuntimeError(
+                f"Triangle CSV length mismatch for '{name}': "
+                f"median/lo/hi = {median.shape[0]}/{err_lo.shape[0]}/{err_hi.shape[0]}, "
+                f"events = {n_events}."
+            )
+
+        data[f"{name}_median"] = median
+        data[f"{name}_low95"] = median - err_lo
+        data[f"{name}_high95"] = median + err_hi
+
+    if extra_columns:
+        for key, values in extra_columns.items():
+            arr = np.asarray(values)
+            if arr.ndim == 0:
+                arr = np.repeat(arr, n_events)
+            if arr.shape[0] != n_events:
+                raise RuntimeError(
+                    f"Extra CSV column '{key}' has length {arr.shape[0]}, expected {n_events}."
+                )
+            data[str(key)] = arr
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    pd.DataFrame(data).to_csv(out_path, index=False)
+    print("Saved event CI parameter CSV:", out_path)
+    return out_path
+
+
+def subset_triangle_parameters(param_specs, event_mask):
+    """Return triangle parameter dictionaries filtered to an event-level mask."""
+    event_mask = np.asarray(event_mask, dtype=bool)
+    filtered = []
+
+    for spec in param_specs:
+        new_spec = dict(spec)
+        for key in ("median", "lo", "hi"):
+            arr = np.asarray(spec[key])
+            if arr.shape[0] != event_mask.shape[0]:
+                raise RuntimeError(
+                    f"Triangle parameter '{spec.get('name', spec.get('label', '?'))}' "
+                    f"has {arr.shape[0]} events but classification mask has {event_mask.shape[0]}."
+                )
+            new_spec[key] = arr[event_mask]
+        filtered.append(new_spec)
+
+    return filtered
+
+
+
+def save_event_class_correlations(
+    classification_name,
+    class_event_masks,
+    event_names,
+    triangle_parameters,
+    output_dir,
+    shower_name,
+    event_extra_columns=None,
+):
+    """
+    Save event-level CI triangle products for every class in an existing
+    meteor classification.
+
+    For each non-empty class this writes:
+      1) the event-level CI triangle PNG,
+      2) the Pearson correlation-matrix CSV used by the upper triangle,
+      3) the filtered event parameter CSV (median, Low95, High95).
+
+    Parameters
+    ----------
+    classification_name : str
+        Stable name of the classification, e.g. ``Tj_class`` or ``k_c_class``.
+    class_event_masks : dict[str, array-like of bool]
+        Event-level masks, all aligned with ``event_names``.
+    event_names : array-like
+        One meteor/event name per event.
+    triangle_parameters : list[dict]
+        Full event-level parameter specification used by plot_event_ci_triangle.
+    output_dir : str
+        Existing class output directory. Products are stored in an
+        ``event_correlations`` subfolder.
+    shower_name : str
+        Prefix used in output filenames.
+    event_extra_columns : dict[str, array-like], optional
+        Extra event-level values to append to each filtered event CSV, such as
+        Tj, diameter, eccentricity, or k_c.
+    """
+    if triangle_parameters is None:
+        return
+
+    event_names = np.asarray(event_names).astype(str)
+    n_events = event_names.shape[0]
+
+    corr_dir = os.path.join(output_dir, "event_correlations")
+    os.makedirs(corr_dir, exist_ok=True)
+
+    if event_extra_columns is None:
+        event_extra_columns = {}
+
+    # Validate extra event-level columns once.
+    prepared_extra = {}
+    for key, values in event_extra_columns.items():
+        arr = np.asarray(values)
+        if arr.ndim == 0:
+            arr = np.repeat(arr, n_events)
+        if arr.shape[0] != n_events:
+            raise RuntimeError(
+                f"{classification_name}: extra event column '{key}' has "
+                f"length {arr.shape[0]}, expected {n_events}."
+            )
+        prepared_extra[str(key)] = arr
+
+    print(f"Creating event-level correlations for {classification_name}...")
+
+    for class_label, raw_mask in class_event_masks.items():
+        event_mask = np.asarray(raw_mask, dtype=bool)
+
+        if event_mask.shape[0] != n_events:
+            raise RuntimeError(
+                f"{classification_name} / {class_label}: event mask has "
+                f"length {event_mask.shape[0]}, expected {n_events}."
+            )
+
+        n_class_events = int(np.count_nonzero(event_mask))
+        if n_class_events == 0:
+            print(
+                f"  Skipping {classification_name} / {class_label}: "
+                "no events in this class."
+            )
+            continue
+
+        filtered_triangle = subset_triangle_parameters(
+            triangle_parameters,
+            event_mask,
+        )
+        filtered_names = event_names[event_mask]
+
+        # Windows-safe, compact class name for filenames.
+        safe_class = re.sub(r'[^A-Za-z0-9._-]+', '_', str(class_label)).strip('_')
+        safe_classification = re.sub(
+            r'[^A-Za-z0-9._-]+', '_', str(classification_name)
+        ).strip('_')
+        base_name = f"{shower_name}_{safe_classification}_{safe_class}"
+
+        triangle_png = os.path.join(
+            corr_dir,
+            f"{base_name}_event_parameter_CI_triangle.png",
+        )
+        corr_csv = os.path.join(
+            corr_dir,
+            f"{base_name}_event_parameter_CI_correlation_matrix.csv",
+        )
+        parameter_csv = os.path.join(
+            corr_dir,
+            f"{base_name}_event_parameter_CI_values.csv",
+        )
+
+        plot_event_ci_triangle(
+            filtered_triangle,
+            triangle_png,
+            corr_csv_path=corr_csv,
+        )
+
+        extra_columns = {
+            "classification": np.repeat(classification_name, n_class_events),
+            "class": np.repeat(str(class_label), n_class_events),
+        }
+        for key, arr in prepared_extra.items():
+            extra_columns[key] = arr[event_mask]
+
+        save_event_ci_parameter_csv(
+            filtered_triangle,
+            filtered_names,
+            parameter_csv,
+            extra_columns=extra_columns,
+        )
+
+        print(
+            f"  Saved {classification_name} / {class_label}: "
+            f"{n_class_events} events"
+        )
+
+
+def plot_event_ci_triangle(
+    param_specs,
+    out_path,
+    figsize_per_dim=1.7,
+    corr_csv_path=None,
+):
+    """
+    Fast event-level triangle plot using posterior medians and asymmetric 95% CIs.
+
+    Lower triangle : median-vs-median scatter with x/y 95% CI error bars.
+                     Points and error bars are black.
+
+    Diagonal       : histogram of the event medians in black.
+
+    Upper triangle : Pearson r between event medians.
+                     Background colour:
+                         r = -1 -> blue
+                         r =  0 -> white
+                         r = +1 -> red
+
+                     For parameters displayed on logarithmic axes,
+                     r is calculated in log10 space.
+
+    If ``corr_csv_path`` is supplied, the exact correlation matrix used for
+    the upper triangle is also written to CSV.
+    """
+
+    npar = len(param_specs)
+    if npar == 0:
+        return None
+
+    corr_df = event_ci_correlation_matrix(param_specs)
+
+    if corr_csv_path is not None:
+        os.makedirs(os.path.dirname(corr_csv_path), exist_ok=True)
+        corr_df.to_csv(corr_csv_path, float_format="%.6f")
+        print("Saved event CI correlation CSV:", corr_csv_path)
+
+    fig, axes = plt.subplots(
+        npar,
+        npar,
+        figsize=(figsize_per_dim * npar, figsize_per_dim * npar),
+        squeeze=False,
+    )
+
+    corr_cmap = plt.colormaps["bwr"]
+    corr_norm = Normalize(vmin=-1.0, vmax=1.0)
+
+    prepared = []
+    for spec in param_specs:
+        scale = float(spec.get("scale", 1.0))
+        med = np.asarray(spec["median"], dtype=float) * scale
+        lo = np.asarray(spec["lo"], dtype=float) * abs(scale)
+        hi = np.asarray(spec["hi"], dtype=float) * abs(scale)
+        prepared.append((med, lo, hi))
+
+    for i in range(npar):
+        y, ylo, yhi = prepared[i]
+        y_is_log = bool(param_specs[i].get("log", False))
+
+        for j in range(npar):
+            ax = axes[i, j]
+            x, xlo, xhi = prepared[j]
+            x_is_log = bool(param_specs[j].get("log", False))
+
+            # ----------------------------------------------------------
+            # Upper triangle: correlation coefficient + coloured square
+            # ----------------------------------------------------------
+            if j > i:
+                r = corr_df.iloc[i, j]
+                r_text = f"{r:.2f}" if np.isfinite(r) else "--"
+
+                if np.isfinite(r):
+                    ax.set_facecolor(corr_cmap(corr_norm(r)))
+                else:
+                    ax.set_facecolor("white")
+
+                ax.text(
+                    0.5,
+                    0.5,
+                    r_text,
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                    fontsize=10,
+                    color="black",
+                    fontweight="bold",
+                )
+                ax.set_xticks([])
+                ax.set_yticks([])
+                for spine in ax.spines.values():
+                    spine.set_visible(True)
+                    spine.set_linewidth(0.4)
+                    spine.set_color("0.6")
+                continue
+
+            # ----------------------------------------------------------
+            # Diagonal: distribution of event medians
+            # ----------------------------------------------------------
+            if i == j:
+                finite = np.isfinite(x)
+                if x_is_log:
+                    finite &= x > 0
+
+                if np.any(finite):
+                    ax.hist(
+                        x[finite],
+                        bins="auto",
+                        histtype="step",
+                        color="black",
+                        linewidth=1.3,
+                    )
+
+                if x_is_log:
+                    ax.set_xscale("log")
+                ax.set_yticks([])
+
+            # ----------------------------------------------------------
+            # Lower triangle: black medians + asymmetric 95% CI bars
+            # ----------------------------------------------------------
+            else:
+                finite = (
+                    np.isfinite(x)
+                    & np.isfinite(xlo)
+                    & np.isfinite(xhi)
+                    & np.isfinite(y)
+                    & np.isfinite(ylo)
+                    & np.isfinite(yhi)
+                    & (xlo >= 0)
+                    & (xhi >= 0)
+                    & (ylo >= 0)
+                    & (yhi >= 0)
+                )
+
+                if x_is_log:
+                    finite &= (x > 0) & ((x - xlo) > 0)
+                if y_is_log:
+                    finite &= (y > 0) & ((y - ylo) > 0)
+
+                if np.any(finite):
+                    ax.errorbar(
+                        x[finite],
+                        y[finite],
+                        xerr=np.vstack([xlo[finite], xhi[finite]]),
+                        yerr=np.vstack([ylo[finite], yhi[finite]]),
+                        fmt="o",
+                        color="black",
+                        markerfacecolor="black",
+                        markeredgecolor="black",
+                        ecolor="black",
+                        markersize=2.8,
+                        elinewidth=0.5,
+                        capsize=0,
+                        alpha=0.55,
+                        rasterized=True,
+                    )
+
+                if x_is_log:
+                    ax.set_xscale("log")
+                if y_is_log:
+                    ax.set_yscale("log")
+
+            # ----------------------------------------------------------
+            # Labels only around outside
+            # ----------------------------------------------------------
+            if i == npar - 1:
+                ax.set_xlabel(param_specs[j]["label"], fontsize=8)
+                ax.tick_params(axis="x", labelsize=6, rotation=35)
+            else:
+                ax.set_xticklabels([])
+
+            if j == 0 and i > 0:
+                ax.set_ylabel(param_specs[i]["label"], fontsize=8)
+                ax.tick_params(axis="y", labelsize=6)
+            elif j != 0:
+                ax.set_yticklabels([])
+
+    fig.subplots_adjust(wspace=0.08, hspace=0.08, right=0.91)
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+    print("Saved event CI triangle plot:", out_path)
+    return out_path
+
+
+def run_structure_class_plots(
+    parameter_name,
+    event_classes,
+    event_names,
+    names_per_sample,
+    rho_samp,
+    w_all,
+    output_dir_rho,
+    shower_name,
+    lo_all,
+    hi_all,
+    nbins,
+    xlim,
+    vars_to_plot,
+    plot_correl_flag,
+    panel_func,
+    grid_func,
+    triangle_parameters=None,
+):
+    """Create the three Homogenus/Avocado/Coconut class products for one parameter."""
+
+    print(f"Creating {parameter_name} structure-class plots...")
+
+    event_classes = np.asarray(event_classes, dtype=object)
+    event_names = np.asarray(event_names).astype(str)
+    names_per_sample = np.asarray(names_per_sample).astype(str)
+
+    if event_classes.shape[0] != event_names.shape[0]:
+        raise RuntimeError(
+            f"Length mismatch for {parameter_name}: "
+            f"{event_classes.shape[0]} classes vs {event_names.shape[0]} events."
+        )
+
+    out_dir = os.path.join(output_dir_rho, f"{parameter_name}_class")
+    os.makedirs(out_dir, exist_ok=True)
+
+    class_by_name = {
+        str(name): cls
+        for name, cls in zip(event_names, event_classes)
+    }
+
+    sample_classes = np.array(
+        [class_by_name.get(str(name), None) for name in names_per_sample],
+        dtype=object,
+    )
+
+    finite = np.isfinite(rho_samp) & np.isfinite(w_all)
+    class_order = ["homogenus", "avocado", "coconut"]
+
+    sample_masks = {
+        cls: finite & (sample_classes == cls)
+        for cls in class_order
+    }
+    event_counts = {
+        cls: int(np.sum(event_classes == cls))
+        for cls in class_order
+    }
+
+    print(f"\n{parameter_name.upper()} structural classification:")
+    for cls in class_order:
+        print(f"  {cls.capitalize():8s}: {event_counts[cls]} meteors")
+
+    # --------------------------------------------------------------
+    # Three stacked rho distributions
+    # --------------------------------------------------------------
+    fig, axes = plt.subplots(3, 1, figsize=(10, 20), sharex=True)
+
+    for ax, cls in zip(axes, class_order):
+        mask = sample_masks[cls]
+        title = f"Tot N. {event_counts[cls]} {cls.capitalize()}"
+
+        if np.any(mask):
+            panel_func(
+                ax,
+                rho_samp[mask],
+                w_all[mask],
+                title,
+                lo_all,
+                hi_all,
+                nbins,
+                xlim,
+            )
+        else:
+            ax.text(
+                0.5, 0.5,
+                f"{title}\nNo events in this class",
+                transform=ax.transAxes,
+                ha="center", va="center",
+                fontsize=16,
+            )
+            ax.set_xlim(xlim)
+
+    axes[-1].tick_params(axis="x", labelbottom=True)
+    axes[-1].set_xlabel(r"$\rho$ [kg/m$^3$]", fontsize=20)
+    axes[-1].set_xticks(np.arange(0, 9000, 2000))
+    for ax in axes:
+        ax.tick_params(labelsize=20)
+
+    out_rho = os.path.join(
+        out_dir,
+        f"{shower_name}_rho_by_{parameter_name}_class_threepanels_weighted.png",
+    )
+    fig.savefig(out_rho, bbox_inches="tight", dpi=300)
+    plt.close(fig)
+    print("Saved:", out_rho)
+
+    # --------------------------------------------------------------
+    # Pairwise weighted distribution tests
+    # --------------------------------------------------------------
+    groups = {
+        cls: sample_masks[cls]
+        for cls in class_order
+        if np.any(sample_masks[cls])
+    }
+
+    if len(groups) >= 2:
+        weighted_tests_table(
+            values=rho_samp,
+            weights=w_all,
+            groups=groups,
+            resample_n=8000,
+            random_seed=123,
+            caption=(
+                rf"Pairwise tests on $\rho$ by {parameter_name} structural "
+                rf"class (weighted posteriors)."
+            ),
+            label=f"tab:rho_{parameter_name}_weighted_tests",
+            save_path=os.path.join(
+                out_dir,
+                f"{shower_name}_rho_{parameter_name}_weighted_tests.tex",
+            ),
+        )
+    else:
+        print(
+            f"Skipping {parameter_name} weighted pairwise tests: "
+            "fewer than two non-empty classes."
+        )
+
+    # --------------------------------------------------------------
+    # Event-level CI triangle correlations for EACH structural class
+    # --------------------------------------------------------------
+    if triangle_parameters is not None:
+        corr_dir = os.path.join(out_dir, "event_correlations")
+        os.makedirs(corr_dir, exist_ok=True)
+
+        for cls in class_order:
+            event_mask = event_classes == cls
+            n_class_events = int(np.sum(event_mask))
+
+            if n_class_events == 0:
+                print(
+                    f"Skipping {parameter_name} {cls} event correlation: "
+                    "no events in this class."
+                )
+                continue
+
+            filtered_triangle = subset_triangle_parameters(
+                triangle_parameters,
+                event_mask,
+            )
+            filtered_names = event_names[event_mask]
+
+            safe_cls = str(cls).lower().replace(" ", "_")
+            base_name = f"{shower_name}_{parameter_name}_{safe_cls}"
+
+            triangle_png = os.path.join(
+                corr_dir,
+                f"{base_name}_event_parameter_CI_triangle.png",
+            )
+            corr_csv = os.path.join(
+                corr_dir,
+                f"{base_name}_event_parameter_CI_correlation_matrix.csv",
+            )
+            parameter_csv = os.path.join(
+                corr_dir,
+                f"{base_name}_event_parameter_CI_values.csv",
+            )
+
+            plot_event_ci_triangle(
+                filtered_triangle,
+                triangle_png,
+                corr_csv_path=corr_csv,
+            )
+
+            save_event_ci_parameter_csv(
+                filtered_triangle,
+                filtered_names,
+                parameter_csv,
+                extra_columns={
+                    f"{parameter_name}_class": np.repeat(cls, n_class_events),
+                },
+            )
+
+    # --------------------------------------------------------------
+    # Existing multi-variable class grids
+    # --------------------------------------------------------------
+    cuts = [
+        (
+            sample_masks[cls],
+            f"Tot N. {event_counts[cls]} {cls.capitalize()}",
+        )
+        for cls in class_order
+    ]
+
+    out_grid = os.path.join(
+        out_dir,
+        f"{shower_name}_by_{parameter_name}_grid.png",
+    )
+
+    fig_grid, axes_grid = grid_func(
+        vars_list=vars_to_plot,
+        cuts_list=cuts,
+        weights_all=w_all,
+        nbins=int(round(10.0 / 0.02)),
+        smooth=0.02,
+        out_path=out_grid,
+        plot_correl_flag=plot_correl_flag,
+    )
+    plt.close(fig_grid)
+    print("Saved:", out_grid)
+
+    return sample_classes, sample_masks, event_counts
+
 
 def _weighted_quantile(x, q, w):
     x = np.asarray(x); w = np.asarray(w)
@@ -611,7 +1366,7 @@ def correlation_plots_all(
     n_jobs=None):
 
     ndim = len(variables_corr)
-    labels_plot_copy_plot = [variable_map[variable] for variable in variables_corr]
+    labels_plot_copy_plot = [variable_map.get(variable, str(variable)) for variable in variables_corr]
 
     print(f"Before removing NaNs/Infs: {combined_samples_cov_plot.shape[0]} samples available for correlation plotting.")
     mask_valid = np.ones(combined_samples_cov_plot.shape[0], dtype=bool)
@@ -1849,7 +2604,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                         backup_small = pickle.load(f)
                     break
             
-            if backup_file is not None:
+            try:
 
                 x_valid_rho = []
                 x_valid_eta = []
@@ -1938,7 +2693,8 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                         if not np.isnan(samples_new_equal[:, i]).all():
                             samples_aligned[:, i] = np.array(samples_new_equal[:, i])
 
-            else:
+            except Exception as e:
+                print(f"Error in backup file: {e}")
                 # fill with None for as may values like np.full(shape=5, fill_value=None) in samples[:, variables_sing.index('erosion_coeff')].astype(float)
                 energy_per_cs_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
                 energy_per_mass_before_erosion_backup.append(np.full(shape=len(samples[:, variables_sing.index('m_init')].astype(float)), fill_value=None))
@@ -2324,6 +3080,18 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     final_mass_perc = np.array([v[28] for v in file_obs_data_dict.values()])
     kc_lo = np.array([v[29] for v in file_obs_data_dict.values()])
     kc_hi = np.array([v[30] for v in file_obs_data_dict.values()])
+
+    # create a csv that has the name as the first column and the rest of the values as the other columns
+    csv_file_path = os.path.join(output_dir_show, "shower_distrb_plot_data.csv")
+    with open(csv_file_path, "w", newline="") as csvfile:
+        # pandas dataframe to csv
+        panda_df = pd.DataFrame.from_dict(file_obs_data_dict, orient='index', columns=['kc_par', 'F_par', 'lenght_par', 'beg_height', 'end_height', 'max_lum_height', 'avg_vel', 'init_mag', 'end_mag', 'max_mag', 'time_tot', 'zenith_angle', 'm_init_med', 'meteoroid_diameter_mm', 'erosion_beg_dyn_press', 'v_init_meteor_median', 'kinetic_energy_median', 'kinetic_energy_lo', 'kinetic_energy_hi', 'tau_median', 'tau_low95', 'tau_high95', 'kc_par_eros_height', 'eeucs_event', 'eeum_event', 'tot_energy', 'mass_left_first_erosion_perc', 'mass_left_second_erosion_perc', 'final_mass_perc','kc_lo','kc_hi'])
+        # add file_rho_jd_dict and file_radiance_rho_dict_helio to the panda_df
+        panda_df_rho_jd = pd.DataFrame.from_dict(file_rho_jd_dict, orient='index', columns=['rho', 'rho_lo', 'rho_hi', 'tj', 'tj_lo', 'tj_hi', 'inclin_val', 'Vg_val', 'Q_val', 'q_val', 'a_val', 'e_val'])
+        panda_df_radiance_rho_helio = pd.DataFrame.from_dict(file_radiance_rho_dict_helio, orient='index', columns=['lg_min_la_sun_helio', 'lg_helio_lo', 'lg_helio_hi', 'bg_helio', 'bg_helio_lo', 'bg_helio_hi'])
+        panda_df = pd.concat([panda_df, panda_df_rho_jd, panda_df_radiance_rho_helio], axis=1)
+        panda_df.to_csv(csvfile, index_label="Meteor")
+        print(f"Saved shower distrb plot data to: {csv_file_path}")            
 
     eta_meteor_begin = np.array([v[0] for v in file_phys_data_dict.values()])
     eta_corr = np.array([v[1] for v in file_phys_data_dict.values()])
@@ -3721,8 +4489,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # )
 
     mask_second_below_25 = (
-        (mass_left_second_erosion_perc > 10) & (mass_left_second_erosion_perc < 15)
-    )
+        (mass_left_second_erosion_perc < 1)
+    ) # (mass_left_second_erosion_perc < 75) & 
 
     print(
         "All samples below 1%, second erosion:\n", len(all_names[mask_second_below_25]),
@@ -3730,8 +4498,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     )
 
     mask_second_above_75 = (
-        (mass_left_second_erosion_perc < 75) & (mass_left_second_erosion_perc > 50)
-    )
+        (mass_left_second_erosion_perc > 75)
+    ) # (mass_left_second_erosion_perc < 75) & 
 
     print(
         "All samples above 75%, second erosion:\n", len(all_names[mask_second_above_75]),
@@ -6134,13 +6902,264 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     print("Mass distribution plot saved:", os.path.join(output_dir_show, f"{shower_name}_mass_distribution_all.png"))
 
 
-
     if plot_class:
         ### create new directory for rho plots ###
+
+
+        print("Creating event-level triangle plot...")
+        # ================================================================
+        # FAST EVENT-LEVEL TRIANGLE PLOT
+        # ================================================================
+        # This uses one median + asymmetric 95% CI per meteor rather than all
+        # posterior samples, so it runs before the heavier class plots.
+        triangle_parameters = [
+            {
+                "name": "m_init",
+                "label": r"$m_0$ [kg]",
+                "median": m_init_meteor_median,
+                "lo": m_init_meteor_lo,
+                "hi": m_init_meteor_hi,
+                "log": True,
+            },
+            {
+                "name": "v_init",
+                "label": r"$v_0$ [km/s]",
+                "median": v_init_meteor_median,
+                "lo": v_init_meteor_lo,
+                "hi": v_init_meteor_hi,
+            },
+            {
+                "name": "rho_begin",
+                "label": r"$\rho_1$ [kg/m$^3$]",
+                "median": rho_meteor_begin_median,
+                "lo": rho_meteor_begin_lo,
+                "hi": rho_meteor_begin_hi,
+            },
+            {
+                "name": "rho_change",
+                "label": r"$\rho_2$ [kg/m$^3$]",
+                "median": rho_meteor_change_median,
+                "lo": rho_meteor_change_lo,
+                "hi": rho_meteor_change_hi,
+            },
+            {
+                "name": "eta_begin",
+                "label": r"$\eta_1$ [kg/MJ]",
+                "median": eta_meteor_begin_median,
+                "lo": eta_meteor_begin_lo,
+                "hi": eta_meteor_begin_hi,
+                "log": True,
+            },
+            {
+                "name": "eta_change",
+                "label": r"$\eta_2$ [kg/MJ]",
+                "median": eta_meteor_change_median,
+                "lo": eta_meteor_change_lo,
+                "hi": eta_meteor_change_hi,
+                "log": True,
+            },
+            {
+                "name": "sigma_begin",
+                "label": r"$\sigma_1$ [kg/MJ]",
+                "median": sigma_meteor_begin_median,
+                "lo": sigma_meteor_begin_lo,
+                "hi": sigma_meteor_begin_hi,
+                "log": True,
+            },
+            {
+                "name": "sigma_change",
+                "label": r"$\sigma_2$ [kg/MJ]",
+                "median": sigma_meteor_change_median,
+                "lo": sigma_meteor_change_lo,
+                "hi": sigma_meteor_change_hi,
+                "log": True,
+            },
+            {
+                "name": "erosion_height_start",
+                "label": r"$h_{e1}$ [km]",
+                "median": erosion_height_start_median,
+                "lo": erosion_height_start_lo,
+                "hi": erosion_height_start_hi,
+            },
+            {
+                "name": "erosion_height_change",
+                "label": r"$h_{e2}$ [km]",
+                "median": erosion_height_change_median,
+                "lo": erosion_height_change_lo,
+                "hi": erosion_height_change_hi,
+            },
+            {
+                "name": "erosion_mass_index",
+                "label": r"$s$",
+                "median": erosion_mass_index_median,
+                "lo": erosion_mass_index_lo,
+                "hi": erosion_mass_index_hi,
+            },
+            {
+                "name": "erosion_mass_min",
+                "label": r"$m_l$ [kg]",
+                "median": erosion_mass_min_median,
+                "lo": erosion_mass_min_lo,
+                "hi": erosion_mass_min_hi,
+                "log": True,
+            },
+            {
+                "name": "erosion_mass_max",
+                "label": r"$m_u$ [kg]",
+                "median": erosion_mass_max_median,
+                "lo": erosion_mass_max_lo,
+                "hi": erosion_mass_max_hi,
+                "log": True,
+            },
+        ]
+
+        plot_event_ci_triangle(
+            triangle_parameters,
+            os.path.join(
+                output_dir_show,
+                f"{shower_name}_event_parameter_CI_triangle.png",
+            ),
+            corr_csv_path=os.path.join(
+                output_dir_show,
+                f"{shower_name}_event_parameter_CI_correlation_matrix.csv",
+            ),
+        )
+
+        # Save the event values used by the global triangle as well.
+        event_names_triangle = np.asarray(list(file_phys_data_dict.keys()), dtype=str)
+        save_event_ci_parameter_csv(
+            triangle_parameters,
+            event_names_triangle,
+            os.path.join(
+                output_dir_show,
+                f"{shower_name}_event_parameter_CI_values.csv",
+            ),
+        )
+
+        # # ================================================================
+        # # SAVE EVENT-LEVEL TRIANGLE PARAMETERS TO CSV
+        # # ================================================================
+
+        # triangle_csv_names = [
+        #     "m_init",
+        #     "v_init",
+        #     "rho_begin",
+        #     "rho_change",
+        #     "eta_begin",
+        #     "eta_change",
+        #     "sigma_begin",
+        #     "sigma_change",
+        #     "erosion_height_start",
+        #     "erosion_height_change",
+        #     "erosion_mass_index",
+        #     "erosion_mass_min",
+        #     "erosion_mass_max",
+        # ]
+
+        # # Check that names correspond to triangle_parameters
+        # if len(triangle_csv_names) != len(triangle_parameters):
+        #     raise RuntimeError(
+        #         "triangle_csv_names and triangle_parameters have different lengths."
+        #     )
+
+        # csv_data = {
+        #     "meteor": np.asarray(all_names).astype(str)
+        # }
+
+
+        # for name, spec in zip(triangle_csv_names, triangle_parameters):
+
+        #     # Apply exactly the same scaling used in the triangle plot
+        #     scale = float(spec.get("scale", 1.0))
+
+        #     median = np.asarray(spec["median"], dtype=float) * scale
+        #     err_lo = np.asarray(spec["lo"], dtype=float) * abs(scale)
+        #     err_hi = np.asarray(spec["hi"], dtype=float) * abs(scale)
+
+        #     # Convert error widths to actual 95% CI bounds
+        #     low95 = median - err_lo
+        #     high95 = median + err_hi
+
+        #     csv_data[f"{name}_median"] = median
+        #     csv_data[f"{name}_low95"] = low95
+        #     csv_data[f"{name}_high95"] = high95
+
+
+        # # Create dataframe
+        # df_triangle = pd.DataFrame(csv_data)
+
+
+        # # Optional: also save the three structural classifications
+        # df_triangle["sigma_class"] = sigma_structure_class
+        # df_triangle["eta_class"] = eta_structure_class
+        # df_triangle["rho_class"] = rho_structure_class
+
+
+        # # Save CSV
+        # triangle_csv_path = os.path.join(
+        #     output_dir_show,
+        #     f"{shower_name}_event_parameter_CI_triangle.csv"
+        # )
+
+        # df_triangle.to_csv(
+        #     triangle_csv_path,
+        #     index=False
+        # )
+
+        # print("Saved event CI triangle CSV:", triangle_csv_path)
 
         # create a new folder for the rho plots
         output_dir_rho = os.path.join(output_dir_show, "classes")
         os.makedirs(output_dir_rho, exist_ok=True)
+
+        # ================================================================
+        # STRUCTURAL CLASSIFICATION FROM THE PER-EVENT 95% CIs
+        # ================================================================
+        # The *_lo/*_hi arrays are asymmetric error widths, therefore the
+        # classifier reconstructs the actual interval as median-lo/median+hi.
+        sigma_structure_class, sigma_ci_bounds = classify_ci_change(
+            sigma_meteor_begin_median,
+            sigma_meteor_begin_lo,
+            sigma_meteor_begin_hi,
+            sigma_meteor_change_median,
+            sigma_meteor_change_lo,
+            sigma_meteor_change_hi,
+        )
+
+        eta_structure_class, eta_ci_bounds = classify_ci_change(
+            eta_meteor_begin_median,
+            eta_meteor_begin_lo,
+            eta_meteor_begin_hi,
+            eta_meteor_change_median,
+            eta_meteor_change_lo,
+            eta_meteor_change_hi,
+        )
+
+        rho_structure_class, rho_ci_bounds = classify_ci_change(
+            rho_meteor_begin_median,
+            rho_meteor_begin_lo,
+            rho_meteor_begin_hi,
+            rho_meteor_change_median,
+            rho_meteor_change_lo,
+            rho_meteor_change_hi,
+        )
+
+        for parameter_name, structure_classes in [
+            ("sigma", sigma_structure_class),
+            ("eta", eta_structure_class),
+            ("rho", rho_structure_class),
+        ]:
+            # if rho then invert coconut with avocado in structure_classes
+            if parameter_name == "rho":
+                # save the structure classes to a variable
+                var_avocado=(structure_classes == "avocado")
+                var_coconut=(structure_classes == "coconut")
+                structure_classes = np.where(var_avocado, "coconut", structure_classes)
+                structure_classes = np.where(var_coconut, "avocado", structure_classes)
+            print(f"\n{parameter_name.upper()} CI classification (event level):")
+            print("  Homogenus :", np.sum(structure_classes == "homogenus"))
+            print("  Avocado :", np.sum(structure_classes == "avocado"))
+            print("  Coconut :", np.sum(structure_classes == "coconut"))
 
         # ### CORNER PLOT ###
         # # takes forever, so run it last
@@ -6470,9 +7489,6 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             for i, (cut_mask, cut_title) in enumerate(cuts_list):
                 # how many are true in (cut_mask)
                 True_count = np.sum(cut_mask)
-                if True_count != 0:
-                    # make the array_for_cov with as many columns as array_for_cov and as many rows as the one flagged in cut_mask
-                    array_for_cov = np.full((True_count, len(vars_list)), np.nan, float)
 
                 for j, vinfo in enumerate(vars_list):
 
@@ -6509,16 +7525,6 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         v_use = vals[m_red]
                         w_use = (weights_all[pm][m_red] if np.ndim(weights_all) else None)
 
-                    try:
-                        if np.any(v_use):
-                            array_for_cov[:, j] = v_use  # for covariance later
-                    except:
-                        if np.any(v_use):
-                            print(f"Warning: variable '{vinfo.get('name','?')}' has {len(v_use)} values but array_for_cov has {array_for_cov.shape[0]} rows. Resizing array_for_cov to fit.")
-                            # increase or decreease the number of rows in array_for_cov to match v_use
-                            array_for_cov = np.resize(array_for_cov, (len(v_use), len(vars_list)))
-                            array_for_cov[:, j] = v_use  # for covariance later
-
                     # show xticks only on the bottom cut-row of each band
                     hide_xticks = (i != ncuts - 1)
 
@@ -6540,21 +7546,77 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
                 if plot_correl_flag:
                     output_folder = os.path.dirname(out_path) if out_path else None
-                    # # use regex to get from Tot N.30 the rest so get rid of the Tot N.numbers part
-                    # regex = r"Tot N\.\d+\s*[-—]?\s*"
-                    # title_cov_new = re.sub(regex, "", cut_title).strip()
-                    # # check if title_cov_new has forbidden characte for windows and delete them
                     title_cov_new = re.sub(r'[<>:"/\\|?*]', '', cut_title)
-                    if np.any(v_use):
-                        print(f"  Plotting correlation for cut '{cut_title}' with {len(v_use)} points...")
-                        # correlation plots all(combined_samples_cov_plot, variables_corr, combined_weights, output_dir_show, shower_name_short)
+
+                    # Build ONE common full-sample mask for all variables. This is
+                    # essential when some variables use base_mask (e.g. rho < 4000).
+                    # The old code resized array_for_cov separately for each variable,
+                    # which could misalign columns and weights.
+                    corr_mask = np.asarray(cut_mask, bool).copy()
+                    corr_mask &= np.isfinite(weights_all)
+
+                    corr_full_values = []
+                    corr_ok = True
+
+                    for vinfo_corr in vars_list:
+                        vals_corr = np.asarray(vinfo_corr["values"], float)
+
+                        # Reconstruct a full-length array if this variable was stored
+                        # in reduced space using parent_mask.
+                        if vals_corr.shape[0] == Nfull:
+                            vals_full_corr = vals_corr
+                        else:
+                            pm_corr = vinfo_corr.get("parent_mask", None)
+                            if pm_corr is None:
+                                print(
+                                    f"Skipping correlation for '{cut_title}': variable "
+                                    f"'{vinfo_corr.get('name','?')}' is reduced but has no parent_mask."
+                                )
+                                corr_ok = False
+                                break
+                            pm_corr = np.asarray(pm_corr, bool)
+                            if pm_corr.shape[0] != Nfull or pm_corr.sum() != vals_corr.shape[0]:
+                                print(
+                                    f"Skipping correlation for '{cut_title}': invalid parent_mask "
+                                    f"for '{vinfo_corr.get('name','?')}'."
+                                )
+                                corr_ok = False
+                                break
+                            vals_full_corr = np.full(Nfull, np.nan, dtype=float)
+                            vals_full_corr[pm_corr] = vals_corr
+
+                        base_corr = vinfo_corr.get("base_mask", None)
+                        if base_corr is not None:
+                            corr_mask &= np.asarray(base_corr, bool)
+
+                        corr_mask &= np.isfinite(vals_full_corr)
+                        corr_full_values.append(vals_full_corr)
+
+                    n_corr = int(np.sum(corr_mask)) if corr_ok else 0
+
+                    if corr_ok and n_corr >= 2:
+                        array_for_cov = np.column_stack([
+                            vals_full[corr_mask] for vals_full in corr_full_values
+                        ])
+                        weights_for_cov = weights_all[corr_mask]
+
+                        print(
+                            f"  Plotting correlation for cut '{cut_title}' "
+                            f"with {n_corr} common valid points..."
+                        )
+
                         correlation_plots_all(
-                        array_for_cov,
-                        all_variables,  
-                        w_use,
-                        output_folder,
-                        shower_name_short=title_cov_new,
-                        name_covar_fold=title_cov_new
+                            array_for_cov,
+                            all_variables,
+                            weights_for_cov,
+                            output_folder,
+                            shower_name_short=title_cov_new,
+                            name_covar_fold=title_cov_new
+                        )
+                    elif corr_ok:
+                        print(
+                            f"Skipping correlation for cut '{cut_title}': "
+                            f"only {n_corr} common valid points."
                         )
 
             # Tick label sizes
@@ -7173,6 +8235,22 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         if not os.path.exists(out_path):
             os.makedirs(out_path)
 
+        # Event-level correlation products for the standard Tisserand classes.
+        tj_finite_event = np.isfinite(tj)
+        save_event_class_correlations(
+            classification_name="Tj_class",
+            class_event_masks={
+                "AST": tj_finite_event & (tj >= 3.0),
+                "JFC": tj_finite_event & (tj >= 2.0) & (tj < 3.0),
+                "HTC": tj_finite_event & (tj < 2.0),
+            },
+            event_names=event_names_like,
+            triangle_parameters=triangle_parameters,
+            output_dir=out_path,
+            shower_name=shower_name,
+            event_extra_columns={"Tj": tj},
+        )
+
         # ---------- Class masks at SAMPLE level ----------
         finite = np.isfinite(rho_samp) & np.isfinite(tj_samples) & np.isfinite(w_all)
         ast_m = finite & (tj_samples >= 3.0)
@@ -7310,8 +8388,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             if r.size > 0:
                 # make the x axis log scale and the y axis linear scale
                 hist, edges = np.histogram(r, bins=nbins, range=(lo_all, hi_all), density=True, weights=w_all[mask] if np.any(w_all[mask]) else None)
-                # put the x axis in log scale but keep the original values for the histogram (don't log-transform the data, just the axis)
-                plt.xscale('log')
+                # Density is plotted over (-100, 8300), so keep this axis linear.
+                # A logarithmic axis cannot include zero or negative x limits.
+                plt.xscale('linear')
                 bin_centers = 0.5 * (edges[:-1] + edges[1:])
                 # color blue for TJ > 2 and red for TJ < 2
                 color_plot = 'blue' if label == "TJ > 2" else 'red'
@@ -7667,7 +8746,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             os.makedirs(out_path)
 
         # ---------- Class masks at SAMPLE level ----------
-        ast_m5over = finite & (tj_samples >= 4.0)
+        ast_m5over = finite & (tj_samples >= 5.0)
         ast_m45 = finite & (tj_samples >= 4.0) & (tj_samples < 5.0)
         ast_m32 = finite & (tj_samples >= 3.05) & (tj_samples < 4.0)
         ast_jfc_mix = finite & (tj_samples >= 2.8) & (tj_samples < 3.05)
@@ -7675,6 +8754,27 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         htc_m21 = finite & (tj_samples >= 1.0) & (tj_samples < 2.0)
         htc_m10 = finite & (tj_samples >= 0) & (tj_samples < 1)
         htc_m0low = finite & (tj_samples < 0)
+
+        # Event-level correlation products for the detailed Tisserand cuts.
+        tj_finite_event = np.isfinite(tj)
+        save_event_class_correlations(
+            classification_name="Tj_all_class",
+            class_event_masks={
+                "AST_Tj_ge_5": tj_finite_event & (tj >= 5.0),
+                "AST_4_to_5": tj_finite_event & (tj >= 4.0) & (tj < 5.0),
+                "AST_3.05_to_4": tj_finite_event & (tj >= 3.05) & (tj < 4.0),
+                "mix_2.8_to_3.05": tj_finite_event & (tj >= 2.8) & (tj < 3.05),
+                "JFC_2_to_2.8": tj_finite_event & (tj >= 2.0) & (tj < 2.8),
+                "HTC_1_to_2": tj_finite_event & (tj >= 1.0) & (tj < 2.0),
+                "HTC_0_to_1": tj_finite_event & (tj >= 0.0) & (tj < 1.0),
+                "HTC_Tj_lt_0": tj_finite_event & (tj < 0.0),
+            },
+            event_names=event_names_like,
+            triangle_parameters=triangle_parameters,
+            output_dir=out_path,
+            shower_name=shower_name,
+            event_extra_columns={"Tj": tj},
+        )
 
         # find the number of tj above 5
         num_tj_above_5 = tj[tj >= 5].shape[0]
@@ -7762,218 +8862,69 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.close(fig)
 
 
-        ### Structure change plots ###
-
-        print("Creating structure sigma change plots for rho...")
-
-        out_path = os.path.join(output_dir_rho, f"sigma_class")
-        # create the folder if does not exist
-        if not os.path.exists(out_path):
-            os.makedirs(out_path)
-
-        sigma_meteor_begin_median_c = np.asarray(sigma_meteor_begin_median, float)  # per-event Tj (same length as event_names_like)
-        if sigma_meteor_begin_median_c.shape[0] != event_names_like.shape[0]:
-            raise RuntimeError("Length mismatch: event_names vs ablat.")
-
-        sigma_meteor_change_median_c = np.asarray(sigma_meteor_change_median, float)  # per-event Tj (same length as event_names_like)
-        if sigma_meteor_change_median_c.shape[0] != event_names_like.shape[0]:
-            raise RuntimeError("Length mismatch: event_names vs ablat.")
-
-        # dict: base_name -> Tj
-        sigma_meteor_begin_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, sigma_meteor_begin_median_c)}
-        sigma_meteor_change_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, sigma_meteor_change_median_c)}
-
-        # Map each sample's base_name -> Tj (NaN if missing)
-        sigma_meteor_begin_med_samples = np.array([sigma_meteor_begin_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
-        sigma_meteor_change_med_samples = np.array([sigma_meteor_change_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
-
-        # # ---------- Class masks at SAMPLE level ----------
-        # finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
-        # big_kg = finite & (m_init_med_samples >= 10**(-4))
-        # medium_b_kg = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
-        # medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
-        # small_kg = finite & (m_init_med_samples < 10**(-5))
-
-        # # find the number of mass
-        # num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
-        # num_medium_b_kg = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
-        # num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
-        # num_small_kg = m_init_med[m_init_med < 10**(-5)].shape[0]
-
-        # ---------- Class masks at SAMPLE level ----------
-        finite = np.isfinite(rho_samp) & np.isfinite(sigma_meteor_begin_med_samples) & np.isfinite(w_all) & np.isfinite(sigma_meteor_change_med_samples)
-        high_sigmainit_than_sigmachange = finite & (sigma_meteor_begin_med_samples > sigma_meteor_change_med_samples)
-        low_sigmainit_than_sigmachange = finite & (sigma_meteor_begin_med_samples <= sigma_meteor_change_med_samples)
-
-        # find the number of mass
-        num_sigma_high = sigma_meteor_begin_median_c[sigma_meteor_begin_median_c > sigma_meteor_change_median_c].shape[0]
-        num_sigma_low = sigma_meteor_begin_median_c[sigma_meteor_begin_median_c <= sigma_meteor_change_median_c].shape[0]
-
-        # ---------- Figure with three stacked panels ----------
-        fig, axes = plt.subplots(2, 1, figsize=(10, 15), sharex=True)
-
-        _panel_like_top(axes[0], rho_samp[high_sigmainit_than_sigmachange], w_all[high_sigmainit_than_sigmachange], "Tot N." + str(num_sigma_high) + " avocado", lo_all, hi_all, nbins, xlim)
-        _panel_like_top(axes[1], rho_samp[low_sigmainit_than_sigmachange], w_all[low_sigmainit_than_sigmachange], "Tot N." + str(num_sigma_low) + " coconut", lo_all, hi_all, nbins, xlim)
-        # _panel_like_top(axes[4], rho_samp[small_kg], w_all[small_kg], "Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
-
-        # Bottom labels/ticks to match your style
-        axes[1].tick_params(axis='x', labelbottom=True)
-        axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-        axes[1].set_xticks(np.arange(0, 9000, 2000))
-        for ax in axes:
-            ax.tick_params(labelsize=20)
-
-        # Save
-        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
-        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
-        plt.close()
-        print("Saved:", out_path_rho)
-        
-        # ### rho distribution plot ###
-
-        # Build group masks (any number of groups works)
-        groups = {
-            "avocado": high_sigmainit_than_sigmachange,
-            "coconut": low_sigmainit_than_sigmachange,
-        }
-
-        tex, results = weighted_tests_table(
-            values=rho_samp,
-            weights=w_all,
-            groups=groups,
-            resample_n=8000,                 # bump up for smoother p-values
-            random_seed=123,
-            caption=r"Pairwise tests on $\rho$ by mass (weighted posteriors).",
-            label="tab:rho_sigma_weighted_tests",
-            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_mass.tex"),
+        # ================================================================
+        # STRUCTURE CLASSES: 95% CI overlap -> Homogenus; disjoint ->
+        # Avocado/Coconut according to the direction of the change.
+        # ================================================================
+        sigma_sample_classes, sigma_masks, sigma_counts = run_structure_class_plots(
+            parameter_name="sigma",
+            event_classes=sigma_structure_class,
+            event_names=event_names_like,
+            names_per_sample=names_per_sample,
+            rho_samp=rho_samp,
+            w_all=w_all,
+            output_dir_rho=output_dir_rho,
+            shower_name=shower_name,
+            lo_all=lo_all,
+            hi_all=hi_all,
+            nbins=nbins,
+            xlim=xlim,
+            vars_to_plot=vars_to_plot,
+            plot_correl_flag=plot_correl_flag,
+            panel_func=_panel_like_top,
+            grid_func=plot_by_cuts_and_vars,
+            triangle_parameters=triangle_parameters,
         )
 
-        # mass cuts
-        cuts = [
-            (high_sigmainit_than_sigmachange, rf"Tot N." + str(num_sigma_high) + " avocado"),
-            (low_sigmainit_than_sigmachange, rf"Tot N." + str(num_sigma_low) + " coconut"),
-        ]
-
-        # --- Call the plotter ---
-        out_path = os.path.join(out_path, f"{shower_name}_by_sigma_grid.png")
-        fig, axes = plot_by_cuts_and_vars(
-            vars_list=vars_to_plot,
-            cuts_list=cuts,
-            weights_all=w_all,
-            nbins=int(round(10.0 / 0.02)),
-            smooth=0.02,
-            out_path=out_path,
-            plot_correl_flag=plot_correl_flag
-        )
-        print("Saved:", out_path)
-        plt.close(fig)
-
-
-        ### Structure change plots ###
-
-        print("Creating structure eta change plots for rho...")
-
-        out_path = os.path.join(output_dir_rho, f"eta_class")
-        # create the folder if does not exist
-        if not os.path.exists(out_path):
-            os.makedirs(out_path)
-
-        eta_meteor_begin_median_c = np.asarray(eta_meteor_begin_median, float)  # per-event Tj (same length as event_names_like)
-        if eta_meteor_begin_median_c.shape[0] != event_names_like.shape[0]:
-            raise RuntimeError("Length mismatch: event_names vs ablat.")
-
-        eta_meteor_change_median_c = np.asarray(eta_meteor_change_median, float)  # per-event Tj (same length as event_names_like)
-        if eta_meteor_change_median_c.shape[0] != event_names_like.shape[0]:
-            raise RuntimeError("Length mismatch: event_names vs ablat.")
-
-        # dict: base_name -> Tj
-        eta_meteor_begin_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, eta_meteor_begin_median_c)}
-        eta_meteor_change_med_by_name = {str(n): float(v) for n, v in zip(event_names_like, eta_meteor_change_median_c)}
-
-        # Map each sample's base_name -> Tj (NaN if missing)
-        eta_meteor_begin_med_samples = np.array([eta_meteor_begin_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
-        eta_meteor_change_med_samples = np.array([eta_meteor_change_med_by_name.get(n, np.nan) for n in names_per_sample], dtype=float)
-
-        # # ---------- Class masks at SAMPLE level ----------
-        # finite = np.isfinite(rho_samp) & np.isfinite(m_init_med_samples) & np.isfinite(w_all)
-        # big_kg = finite & (m_init_med_samples >= 10**(-4))
-        # medium_b_kg = finite & (m_init_med_samples >= 5*10**(-5)) & (m_init_med_samples < 10**(-4))
-        # medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 5*10**(-5))
-        # small_kg = finite & (m_init_med_samples < 10**(-5))
-
-        # # find the number of mass
-        # num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
-        # num_medium_b_kg = m_init_med[(m_init_med >= 5*10**(-5)) & (m_init_med < 10**(-4))].shape[0]
-        # num_medium_s_kg = m_init_med[(m_init_med >= 10**(-5)) & (m_init_med < 5*10**(-5))].shape[0]
-        # num_small_kg = m_init_med[m_init_med < 10**(-5)].shape[0]
-
-        # ---------- Class masks at SAMPLE level ----------
-        finite = np.isfinite(rho_samp) & np.isfinite(eta_meteor_begin_med_samples) & np.isfinite(w_all) & np.isfinite(eta_meteor_change_med_samples)
-        high_etainit_than_etachange = finite & (eta_meteor_begin_med_samples > eta_meteor_change_med_samples)
-        low_etainit_than_etachange = finite & (eta_meteor_begin_med_samples <= eta_meteor_change_med_samples)
-
-        # find the number of mass
-        num_eta_high = eta_meteor_begin_median_c[eta_meteor_begin_median_c > eta_meteor_change_median_c].shape[0]
-        num_eta_low = eta_meteor_begin_median_c[eta_meteor_begin_median_c <= eta_meteor_change_median_c].shape[0]
-
-        # ---------- Figure with three stacked panels ----------
-        fig, axes = plt.subplots(2, 1, figsize=(10, 15), sharex=True)
-
-        _panel_like_top(axes[0], rho_samp[high_etainit_than_etachange], w_all[high_etainit_than_etachange], "Tot N." + str(num_eta_high) + " avocado", lo_all, hi_all, nbins, xlim)
-        _panel_like_top(axes[1], rho_samp[low_etainit_than_etachange], w_all[low_etainit_than_etachange], "Tot N." + str(num_eta_low) + " coconut", lo_all, hi_all, nbins, xlim)
-        # _panel_like_top(axes[4], rho_samp[small_kg], w_all[small_kg], "Tot N." + str(num_small_kg) + " below 10$^{-5.5}$ kg", lo_all, hi_all, nbins, xlim)
-
-        # Bottom labels/ticks to match your style
-        axes[1].tick_params(axis='x', labelbottom=True)
-        axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-        axes[1].set_xticks(np.arange(0, 9000, 2000))
-        for ax in axes:
-            ax.tick_params(labelsize=20)
-
-        # Save
-        out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_mass_threepanels_weighted.png")
-        plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
-        plt.close()
-        print("Saved:", out_path_rho)
-        
-        # ### rho distribution plot ###
-
-        # Build group masks (any number of groups works)
-        groups = {
-            "avocado": high_etainit_than_etachange,
-            "coconut": low_etainit_than_etachange,
-        }
-
-        tex, results = weighted_tests_table(
-            values=rho_samp,
-            weights=w_all,
-            groups=groups,
-            resample_n=8000,                 # bump up for smoother p-values
-            random_seed=123,
-            caption=r"Pairwise tests on $\rho$ by mass (weighted posteriors).",
-            label="tab:rho_eta_weighted_tests",
-            save_path=os.path.join(out_path, f"{shower_name}_rho_weighted_tests_mass.tex"),
+        eta_sample_classes, eta_masks, eta_counts = run_structure_class_plots(
+            parameter_name="eta",
+            event_classes=eta_structure_class,
+            event_names=event_names_like,
+            names_per_sample=names_per_sample,
+            rho_samp=rho_samp,
+            w_all=w_all,
+            output_dir_rho=output_dir_rho,
+            shower_name=shower_name,
+            lo_all=lo_all,
+            hi_all=hi_all,
+            nbins=nbins,
+            xlim=xlim,
+            vars_to_plot=vars_to_plot,
+            plot_correl_flag=plot_correl_flag,
+            panel_func=_panel_like_top,
+            grid_func=plot_by_cuts_and_vars,
+            triangle_parameters=triangle_parameters,
         )
 
-        # mass cuts
-        cuts = [
-            (high_etainit_than_etachange, rf"Tot N." + str(num_eta_high) + " avocado"),
-            (low_etainit_than_etachange, rf"Tot N." + str(num_eta_low) + " coconut"),
-        ]
-
-        # --- Call the plotter ---
-        out_path = os.path.join(out_path, f"{shower_name}_by_eta_grid.png")
-        fig, axes = plot_by_cuts_and_vars(
-            vars_list=vars_to_plot,
-            cuts_list=cuts,
-            weights_all=w_all,
-            nbins=int(round(10.0 / 0.02)),
-            smooth=0.02,
-            out_path=out_path,
-            plot_correl_flag=plot_correl_flag
+        rho_sample_classes, rho_masks, rho_counts = run_structure_class_plots(
+            parameter_name="rho",
+            event_classes=rho_structure_class,
+            event_names=event_names_like,
+            names_per_sample=names_per_sample,
+            rho_samp=rho_samp,
+            w_all=w_all,
+            output_dir_rho=output_dir_rho,
+            shower_name=shower_name,
+            lo_all=lo_all,
+            hi_all=hi_all,
+            nbins=nbins,
+            xlim=xlim,
+            vars_to_plot=vars_to_plot,
+            plot_correl_flag=plot_correl_flag,
+            panel_func=_panel_like_top,
+            grid_func=plot_by_cuts_and_vars,
+            triangle_parameters=triangle_parameters,
         )
-        print("Saved:", out_path)
-        plt.close(fig)
 
         ### mass change plots ###
 
@@ -8014,6 +8965,24 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         medium_s_kg = finite & (m_init_med_samples >= 10**(-5)) & (m_init_med_samples < 10**(-4.5))
         small_b_kg = finite & (m_init_med_samples >= 10**(-5.5)) & (m_init_med_samples < 10**(-5))
         small_kg = finite & (m_init_med_samples < 10**(-5.5))
+
+        # Event-level correlation products for the mass classes.
+        mass_finite_event = np.isfinite(m_init_med)
+        save_event_class_correlations(
+            classification_name="mass_class",
+            class_event_masks={
+                "above_1e-4_kg": mass_finite_event & (m_init_med >= 10**(-4)),
+                "1e-4.5_to_1e-4_kg": mass_finite_event & (m_init_med >= 10**(-4.5)) & (m_init_med < 10**(-4)),
+                "1e-5_to_1e-4.5_kg": mass_finite_event & (m_init_med >= 10**(-5)) & (m_init_med < 10**(-4.5)),
+                "1e-5.5_to_1e-5_kg": mass_finite_event & (m_init_med >= 10**(-5.5)) & (m_init_med < 10**(-5)),
+                "below_1e-5.5_kg": mass_finite_event & (m_init_med < 10**(-5.5)),
+            },
+            event_names=event_names_like,
+            triangle_parameters=triangle_parameters,
+            output_dir=out_path,
+            shower_name=shower_name,
+            event_extra_columns={"mass_class_value_kg": m_init_med},
+        )
 
         # find the number of mass
         num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
@@ -8148,6 +9117,23 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         medium_b = finite & (meteoroid_diameter_mm_samples >= 5) & (meteoroid_diameter_mm_samples < 7.5)
         medium_s = finite & (meteoroid_diameter_mm_samples >= 2.5) & (meteoroid_diameter_mm_samples < 5)
         small = finite & (meteoroid_diameter_mm_samples < 2.5)
+
+        # Event-level correlation products for the diameter classes.
+        diameter_finite_event = np.isfinite(meteoroid_diameter_mm)
+        save_event_class_correlations(
+            classification_name="diameter_class",
+            class_event_masks={
+                "above_7.5_mm": diameter_finite_event & (meteoroid_diameter_mm >= 7.5),
+                "5_to_7.5_mm": diameter_finite_event & (meteoroid_diameter_mm >= 5.0) & (meteoroid_diameter_mm < 7.5),
+                "2.5_to_5_mm": diameter_finite_event & (meteoroid_diameter_mm >= 2.5) & (meteoroid_diameter_mm < 5.0),
+                "below_2.5_mm": diameter_finite_event & (meteoroid_diameter_mm < 2.5),
+            },
+            event_names=event_names_like,
+            triangle_parameters=triangle_parameters,
+            output_dir=out_path,
+            shower_name=shower_name,
+            event_extra_columns={"diameter_mm": meteoroid_diameter_mm},
+        )
 
         # find the number of mass
         num_big = meteoroid_diameter_mm[meteoroid_diameter_mm >= 7.5].shape[0]
@@ -8286,6 +9272,23 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         e_medium_high = finite & (e_val_samples >= 0.6) & (e_val_samples < 0.8)
         e_medium_low = finite & (e_val_samples >= 0.4) & (e_val_samples < 0.6)
         e_low = finite & (e_val_samples < 0.4)
+        # Event-level correlation products for the eccentricity classes.
+        eccentricity_finite_event = np.isfinite(e_val)
+        save_event_class_correlations(
+            classification_name="eccentricity_class",
+            class_event_masks={
+                "e_ge_0.8": eccentricity_finite_event & (e_val >= 0.8),
+                "e_0.6_to_0.8": eccentricity_finite_event & (e_val >= 0.6) & (e_val < 0.8),
+                "e_0.4_to_0.6": eccentricity_finite_event & (e_val >= 0.4) & (e_val < 0.6),
+                "e_lt_0.4": eccentricity_finite_event & (e_val < 0.4),
+            },
+            event_names=event_names_like,
+            triangle_parameters=triangle_parameters,
+            output_dir=out_path,
+            shower_name=shower_name,
+            event_extra_columns={"eccentricity": e_val},
+        )
+
         # find the number of eccentricity
         num_e_high = e_val[e_val >= 0.8].shape[0]
         num_e_medium_high = e_val[(e_val >= 0.6) & (e_val < 0.8)].shape[0]
@@ -8370,6 +9373,23 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         kc_medium_high = finite & (kc_par_samples >= 91) & (kc_par_samples < 95)
         kc_medium_low = finite & (kc_par_samples >= 85) & (kc_par_samples < 91)
         # kc_low = finite & (kc_par_samples < 85)
+        # Event-level correlation products for the k_c classes.
+        kc_finite_event = np.isfinite(kc_par)
+        save_event_class_correlations(
+            classification_name="k_c_class",
+            class_event_masks={
+                "kc_ge_100": kc_finite_event & (kc_par >= 100.0),
+                "kc_95_to_100": kc_finite_event & (kc_par >= 95.0) & (kc_par < 100.0),
+                "kc_91_to_95": kc_finite_event & (kc_par >= 91.0) & (kc_par < 95.0),
+                "kc_85_to_91": kc_finite_event & (kc_par >= 85.0) & (kc_par < 91.0),
+            },
+            event_names=event_names_like,
+            triangle_parameters=triangle_parameters,
+            output_dir=out_path,
+            shower_name=shower_name,
+            event_extra_columns={"k_c": kc_par},
+        )
+
         # find the number of kc_par
         num_kc_high = kc_par[kc_par >= 100].shape[0]
         num_kc_high_low = kc_par[(kc_par >= 95) & (kc_par < 100)].shape[0]
@@ -8449,6 +9469,19 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             apex_num = np.count_nonzero(apex_mask)
             anti_num = np.count_nonzero(anti_mask)
             
+            # Event-level correlation products for Apex / Antihelion.
+            save_event_class_correlations(
+                classification_name="apex_anti_class",
+                class_event_masks={
+                    "Apex": apex_mask,
+                    "Antihelion": anti_mask,
+                },
+                event_names=event_names_like,
+                triangle_parameters=triangle_parameters,
+                output_dir=out_path,
+                shower_name=shower_name,
+            )
+
             # Dict: event_name -> bool (below / above)
             apex_by_name = {str(n): bool(b) for n, b in zip(event_names_like, apex_mask)}
             anti_by_name = {str(n): bool(b) for n, b in zip(event_names_like, anti_mask)}
@@ -8535,6 +9568,23 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # (Optional) sanity check
         if event_names_like.shape[0] != Vg_val.shape[0]:
             raise RuntimeError("Length mismatch: event_names_like vs Vg_val/beg_height")
+
+        # Event-level correlation products for the begin-height A/C classes.
+        save_event_class_correlations(
+            classification_name="AC_class",
+            class_event_masks={
+                "group_C": above_curve_event,
+                "group_A": below_curve_event,
+            },
+            event_names=event_names_like,
+            triangle_parameters=triangle_parameters,
+            output_dir=out_path,
+            shower_name=shower_name,
+            event_extra_columns={
+                "begin_height": beg_height,
+                "classification_height_threshold": h_thr,
+            },
+        )
 
         # Count events in each class
         num_below = np.count_nonzero(below_curve_event)
@@ -9268,36 +10318,24 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 name_to_rho = {}
                 name_to_sigma_class = {}
                 name_to_eta_class = {}
+                name_to_rho_class = {}
 
                 if plot_class:
                     print("Creating ternary plot with Fe, Mg, Na values...")
 
-                    for name_i, rho_i, sigma_init_i, sigma_change_i, eta_init_i, eta_change_i in zip(
+                    # Reuse the exact same 95%-CI structural classifications
+                    # used by the class plots. Do not reclassify from medians.
+                    for name_i, rho_i, sigma_cls_i, eta_cls_i, rho_cls_i in zip(
                         all_names,
                         rho,
-                        sigma_meteor_begin_median_c,
-                        sigma_meteor_change_median_c,
-                        eta_meteor_begin_median_c,
-                        eta_meteor_change_median_c,
+                        sigma_structure_class,
+                        eta_structure_class,
+                        rho_structure_class,
                     ):
-
-                        name_to_rho[name_i] = rho_i
-
-                        if np.isfinite(sigma_init_i) and np.isfinite(sigma_change_i):
-                            if sigma_init_i > sigma_change_i:
-                                name_to_sigma_class[name_i] = "avocado"
-                            else:
-                                name_to_sigma_class[name_i] = "coconut"
-                        else:
-                            name_to_sigma_class[name_i] = None
-
-                        if np.isfinite(eta_init_i) and np.isfinite(eta_change_i):
-                            if eta_init_i > eta_change_i:
-                                name_to_eta_class[name_i] = "avocado"
-                            else:
-                                name_to_eta_class[name_i] = "coconut"
-                        else:
-                            name_to_eta_class[name_i] = None
+                        name_to_rho[str(name_i)] = rho_i
+                        name_to_sigma_class[str(name_i)] = sigma_cls_i
+                        name_to_eta_class[str(name_i)] = eta_cls_i
+                        name_to_rho_class[str(name_i)] = rho_cls_i
 
                     model_name_list = list(all_names)
 
@@ -9308,6 +10346,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     matched_rho = []
                     matched_sigma_class = []
                     matched_eta_class = []
+                    matched_rho_class = []
                     matched_dt = []
 
                     for meteor_id in df_spec["ID"].astype(str).values:
@@ -9323,12 +10362,14 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                             matched_rho.append(np.nan)
                             matched_sigma_class.append(None)
                             matched_eta_class.append(None)
+                            matched_rho_class.append(None)
                             matched_dt.append(np.nan)
                         else:
                             matched_model_names.append(matched_name)
                             matched_rho.append(name_to_rho.get(matched_name, np.nan))
                             matched_sigma_class.append(name_to_sigma_class.get(matched_name, None))
                             matched_eta_class.append(name_to_eta_class.get(matched_name, None))
+                            matched_rho_class.append(name_to_rho_class.get(matched_name, None))
 
                             try:
                                 dt_s = (
@@ -9344,7 +10385,9 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     df_spec["rho_match"] = matched_rho
                     df_spec["sigma_class"] = matched_sigma_class
                     df_spec["eta_class"] = matched_eta_class
+                    df_spec["rho_class"] = matched_rho_class
                     df_spec["delta_t_s"] = matched_dt
+                    to_plotclass = "eta_class"
 
                     # Only plot rows with matched rho
                     df_plot = df_spec[np.isfinite(df_spec["rho_match"])].copy()
@@ -9474,11 +10517,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         sigma_handles = []
 
                         if plot_class == True and show_sigma_overlay == True:
-                            print("Add the coconut or avocado model for sigma...")
+                            print("Add the homogenus/avocado/coconut model for sigma...")
 
                             class_styles = {
-                                "avocado": "h",   # black circle outline
-                                "coconut": "s",   # black square outline
+                                "homogenus": "o",   # overlapping 95% CIs
+                                "avocado": "h",   # begin CI entirely above change CI
+                                "coconut": "s",   # begin CI entirely below change CI
                             }
 
                             # if True, only show overlay for Iron meteors
@@ -9492,7 +10536,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                             for sigma_name, marker_style in class_styles.items():
 
                                 mask_sigma = ( # eta_class
-                                    df_plot["sigma_class"].astype(str).str.lower() == sigma_name
+                                    df_plot["eta_class"].astype(str).str.lower() == sigma_name
                                 ).values
 
                                 final_mask = sigma_mask_global & mask_sigma
@@ -9647,8 +10691,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                         if len(sigma_handles) > 0:
                             ax.legend(
                                 handles=sigma_handles,
-                                title=r"$\sigma$ structure",
-                                # title=r"$\eta$ structure",
+                                # title=r"$\sigma$ structure",
+                                title=r"$\eta$ structure",
                                 loc="upper right",
                                 fontsize=11,
                                 title_fontsize=12,
@@ -9665,8 +10709,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
                         ternary_plot_path = os.path.join(
                             output_dir_show,
-                            # f"{shower_name}_ternary_FeMgNa_rho_etaClass.png"
-                            f"{shower_name}_ternary_FeMgNa_rho_sigmaClass.png"
+                            f"{shower_name}_ternary_FeMgNa_rho_etaClass.png"
+                            # f"{shower_name}_ternary_FeMgNa_rho_sigmaClass.png"
                         )
 
                         fig.savefig(
@@ -9878,7 +10922,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\4)Iron Letter\Validation\largePrior-EnegyLumEff", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Uniform_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final-verybest2frag\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -9926,4 +10970,4 @@ if __name__ == "__main__":
                        tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, 
                        energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, 
                        mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all,
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=True) # cml_args.radiance_plot cml_args.correl_plot

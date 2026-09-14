@@ -32,7 +32,7 @@ def get_logz_values(root_dir):
 def main():
     # Define the two model directories
     dir1 = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic-1frag"
-    dir2 = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\test_2massleft\2frag-results"
+    dir2 = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony"
 
     # Extract logz values for each
     vals1 = get_logz_values(dir1)

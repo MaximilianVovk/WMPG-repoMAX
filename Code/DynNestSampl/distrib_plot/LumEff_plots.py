@@ -202,7 +202,7 @@ if __name__ == "__main__":
     #     plt.plot(v_vals, tau_pecina_vals, label=f'Pecina & Ceplecha (1983) $P_{{0M}} = {P_0m_s}$ W', color=colors[i % len(colors)], ls='-.')
 
     tau_pecina_vals = luminous_efficiency_tau_PecinaCeplecha1983(v_vals, P_0m[0])
-    plt.plot(v_vals, tau_pecina_vals, label=f'Pecina & Ceplecha (1983) $P_{{0M}} = {P_0m[0]}$ W', color='magenta', ls='-.')
+    plt.plot(v_vals, tau_pecina_vals, label=f'Pecina & Ceplecha (1983)', color='magenta', ls='-.') #  $P_{{0M}} = {P_0m[0]}$ W
 
     # plt.title('Luminous Efficiency τ(v,m) from Vida et al. (Icarus 2024)')
     plt.xlabel('Velocity (km/s)')

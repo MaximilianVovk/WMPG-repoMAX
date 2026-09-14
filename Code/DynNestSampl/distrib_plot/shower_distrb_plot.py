@@ -334,6 +334,549 @@ def find_close_in_list(target_code: str, candidates, tol_seconds: int = 3):
     return best
 
 
+# ============================================================================
+# MANUSCRIPT LATEX TABLE HELPERS
+# ============================================================================
+# Optional explicit path to the CAMO manual-review workbook.  If left as None,
+# the script first checks the CAMO_REVIEW_XLSX environment variable and then
+# looks beside output_dir_show for a file named
+# Stony_CAMO_blind_manual_review_withPics*.xlsx.
+CAMO_REVIEW_XLSX = None
+
+
+def _abc_display_class(value):
+    """Map internal structural labels to manuscript ABC names."""
+    if value is None:
+        return None
+    key = str(value).strip().lower()
+    return {
+        "avocado": "Avocado",
+        "homogenus": "Banana",
+        "homogeneous": "Banana",
+        "banana": "Banana",
+        "coconut": "Coconut",
+        "single": "Single-stage",
+        "single-stage": "Single-stage",
+    }.get(key, str(value).strip())
+
+
+def _rho_abc_display_class(value):
+    """Density-class naming used in the manuscript table.
+
+    The fitted prior requires rho_2 >= rho_1.  The generic classifier therefore
+    calls a resolved increase 'coconut'.  In the manuscript density table this
+    branch is displayed as density-Avocado, leaving density-Coconut unavailable.
+    """
+    if value is None:
+        return None
+    key = str(value).strip().lower()
+    return {
+        "coconut": "Avocado",
+        "homogenus": "Banana",
+        "homogeneous": "Banana",
+        "banana": "Banana",
+        "avocado": "Coconut",
+        "single": "Single-stage",
+        "single-stage": "Single-stage",
+    }.get(key, str(value).strip())
+
+
+def _write_tex_table(path, lines):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).rstrip() + "\n")
+    print("Saved manuscript LaTeX table:", path)
+    return path
+
+
+def _resolve_camo_review_path(output_dir_show, explicit_path=None):
+    """Find the CAMO narrow-field manual-review workbook without hard failure."""
+    candidates = []
+    if explicit_path:
+        candidates.append(str(explicit_path))
+    env_path = os.environ.get("CAMO_REVIEW_XLSX")
+    if env_path:
+        candidates.append(env_path)
+
+    basenames = [
+        "Stony_CAMO_blind_manual_review_withPics.xlsx",
+        "Stony_CAMO_blind_manual_review_withPics(1).xlsx",
+    ]
+
+    roots = []
+    if output_dir_show:
+        out_abs = os.path.abspath(output_dir_show)
+        roots.extend([
+            out_abs,
+            os.path.dirname(out_abs),
+            os.path.dirname(os.path.dirname(out_abs)),
+        ])
+    roots.append(os.getcwd())
+
+    # Direct expected filenames first.
+    for root in roots:
+        if not root:
+            continue
+        for base in basenames:
+            candidates.append(os.path.join(root, base))
+
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+
+    # Then look only in the candidate directories (not recursively through the
+    # whole project tree, which can be very large).
+    for root in roots:
+        if not root or not os.path.isdir(root):
+            continue
+        try:
+            for name in os.listdir(root):
+                if (
+                    name.lower().startswith("stony_camo_blind_manual_review_withpics")
+                    and name.lower().endswith(".xlsx")
+                ):
+                    return os.path.abspath(os.path.join(root, name))
+        except OSError:
+            pass
+
+    return None
+
+
+def _match_camo_review_to_model_events(model_event_names, camo_df, tolerance_s=2):
+    """Return CAMO review rows aligned to model events, using exact IDs then ±2 s."""
+    model_event_names = np.asarray(model_event_names).astype(str)
+    camo_df = camo_df.copy()
+    camo_df["Event"] = camo_df["Event"].astype(str).str.strip()
+
+    event_ids = camo_df["Event"].tolist()
+    exact_index = {event_id: idx for idx, event_id in enumerate(event_ids)}
+
+    matched_rows = []
+    matched_event_ids = []
+    offsets_s = []
+
+    for model_id in model_event_names:
+        model_id = str(model_id).strip()
+        matched_id = model_id if model_id in exact_index else None
+
+        if matched_id is None:
+            try:
+                matched_id = find_close_in_list(
+                    model_id,
+                    event_ids,
+                    tol_seconds=int(tolerance_s),
+                )
+            except Exception:
+                matched_id = None
+
+        if matched_id is None:
+            matched_rows.append(None)
+            matched_event_ids.append(None)
+            offsets_s.append(np.nan)
+            continue
+
+        idx = exact_index[matched_id]
+        matched_rows.append(camo_df.iloc[idx])
+        matched_event_ids.append(matched_id)
+        try:
+            dt_s = (
+                _normalize_code_to_dt(matched_id)
+                - _normalize_code_to_dt(model_id)
+            ).total_seconds()
+        except Exception:
+            dt_s = np.nan
+        offsets_s.append(dt_s)
+
+    return matched_rows, matched_event_ids, np.asarray(offsets_s, dtype=float)
+
+
+def generate_manuscript_latex_tables(
+    output_dir_show,
+    shower_name,
+    model_event_names,
+    group_A_mask,
+    group_C_mask,
+    rho_eff,
+    erosion_height_start,
+    erosion_height_change,
+    P_e1,
+    P_e2,
+    E_S,
+    E_V,
+    mass_left_e1,
+    mass_left_e2,
+    grain_mass_index,
+    eta_1,
+    eta_2,
+    eta_structure_class,
+    sigma_structure_class,
+    rho_structure_class,
+    camo_review_path=None,
+):
+    """Write the manuscript A/C, CAMO, flare, and ABC tables as .tex files.
+
+    The output values are calculated from the current event arrays every run,
+    so table numbers stay synchronized with changes to the classification or
+    the A/C boundary.
+    """
+    event_names = np.asarray(model_event_names).astype(str)
+    n_events = len(event_names)
+
+    group_A_mask = np.asarray(group_A_mask, dtype=bool)
+    group_C_mask = np.asarray(group_C_mask, dtype=bool)
+    if len(group_A_mask) != n_events or len(group_C_mask) != n_events:
+        raise RuntimeError(
+            "Manuscript table event/mask mismatch: "
+            f"events={n_events}, A={len(group_A_mask)}, C={len(group_C_mask)}"
+        )
+
+    table_dir = os.path.join(output_dir_show, "manuscript_tables")
+    os.makedirs(table_dir, exist_ok=True)
+    safe_shower = re.sub(r"[^A-Za-z0-9._-]+", "_", str(shower_name)).strip("_") or "sample"
+
+    created = []
+    combined_blocks = []
+
+    # ------------------------------------------------------------------
+    # A/C structural median table
+    # ------------------------------------------------------------------
+    def _as_float(values):
+        arr = np.asarray(values, dtype=float)
+        if len(arr) != n_events:
+            raise RuntimeError(
+                f"Manuscript table array has {len(arr)} values, expected {n_events}."
+            )
+        return arr
+
+    rho_eff_arr = _as_float(rho_eff)
+    h1_arr = _as_float(erosion_height_start)
+    h2_arr = _as_float(erosion_height_change)
+    p1_arr = _as_float(P_e1)
+    p2_arr = _as_float(P_e2)
+    ES_arr = _as_float(E_S)
+    EV_arr = _as_float(E_V)
+    m1_arr = _as_float(mass_left_e1)
+    m2_arr = _as_float(mass_left_e2)
+    s_arr = _as_float(grain_mass_index)
+    eta1_arr = _as_float(eta_1)
+    eta2_arr = _as_float(eta_2)
+
+    # Erosion heights are usually already in km in this script, but older
+    # cached products may contain metres.  Detect that case conservatively.
+    for arr in (h1_arr, h2_arr):
+        finite_h = arr[np.isfinite(arr)]
+        if finite_h.size and np.nanmedian(np.abs(finite_h)) > 1000.0:
+            arr /= 1000.0
+
+    # The fitted erosion coefficient is stored in kg/J; manuscript values are kg/MJ.
+    eta1_MJ = eta1_arr
+    eta2_MJ = eta2_arr
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        p_ratio = p2_arr / p1_arr
+
+    def _group_median(values, mask):
+        values = np.asarray(values, dtype=float)
+        valid = mask & np.isfinite(values)
+        if not np.any(valid):
+            return np.nan
+        return float(np.nanmedian(values[valid]))
+
+    A_n = int(np.sum(group_A_mask))
+    C_n = int(np.sum(group_C_mask))
+    outside_n = int(n_events - np.sum(group_A_mask | group_C_mask))
+
+    ac_note = ""
+    if outside_n == 1:
+        ac_note = " One meteor lies outside the adopted A/C boundary."
+    elif outside_n > 1:
+        ac_note = f" {outside_n} meteors lie outside the adopted A/C boundary."
+
+    def _fmt(v, kind):
+        if not np.isfinite(v):
+            return "---"
+        if kind == "int":
+            return f"{v:.0f}"
+        if kind == "1f":
+            return f"{v:.1f}"
+        if kind == "2f":
+            return f"{v:.2f}"
+        if kind == "3f":
+            return f"{v:.3f}"
+        return f"{v:g}"
+
+    structural_specs = [
+        (r"$\rho_{\rm eff}$ [kg\,m$^{-3}$]", rho_eff_arr, "int"),
+        (r"$h_{e1}$ [km]", h1_arr, "1f"),
+        (r"$h_{e2}$ [km]", h2_arr, "1f"),
+        (r"$P_{e1}$ [kPa]", p1_arr, "3f"),
+        (r"$P_{e2}$ [kPa]", p2_arr, "2f"),
+        (r"$P_{e2}/P_{e1}$", p_ratio, "2f"),
+        (r"$E_S$ [MJ\,m$^{-2}$]", ES_arr, "2f"),
+        (r"$E_V$ [MJ\,kg$^{-1}$]", EV_arr, "2f"),
+        (r"Mass left at $h_{e1}$ [\%]", m1_arr, "1f"),
+        (r"Mass left at $h_{e2}$ [\%]", m2_arr, "1f"),
+        (r"$s$", s_arr, "2f"),
+        (r"$\eta_1$ [kg\,MJ$^{-1}$]", eta1_MJ, "3f"),
+        (r"$\eta_2$ [kg\,MJ$^{-1}$]", eta2_MJ, "3f"),
+    ]
+
+    lines = [
+        r"\begin{table}[t]",
+        r"\centering",
+        (
+            r"\caption{Median properties of the historical Group~A and Group~C "
+            r"populations for the complete stony sample." + ac_note + "}"
+        ),
+        r"\label{tab:AC_structure}",
+        r"\renewcommand{\arraystretch}{1.12}",
+        r"\setlength{\tabcolsep}{4pt}",
+        r"\scriptsize",
+        r"\begin{tabular}{lcc}",
+        r"\hline",
+        r"Property & Group~A & Group~C \\",
+        r"\hline",
+        f"$N$ & {A_n} & {C_n}" + r" \\",
+    ]
+    for label, arr, kind in structural_specs:
+        A_val = _group_median(arr, group_A_mask)
+        C_val = _group_median(arr, group_C_mask)
+        lines.append(f"{label} & {_fmt(A_val, kind)} & {_fmt(C_val, kind)}" + r" \\")
+    lines += [r"\hline", r"\end{tabular}", r"\end{table}"]
+
+    path = os.path.join(table_dir, f"{safe_shower}_AC_structure.tex")
+    created.append(_write_tex_table(path, lines))
+    combined_blocks.append("\n".join(lines))
+
+    # ------------------------------------------------------------------
+    # ABC cross-classification table
+    # ------------------------------------------------------------------
+    eta_disp = np.array([_abc_display_class(x) for x in eta_structure_class], dtype=object)
+    sig_disp = np.array([_abc_display_class(x) for x in sigma_structure_class], dtype=object)
+    rho_disp = np.array([_rho_abc_display_class(x) for x in rho_structure_class], dtype=object)
+
+    for name, arr in [("eta", eta_disp), ("sigma", sig_disp), ("rho", rho_disp)]:
+        if len(arr) != n_events:
+            raise RuntimeError(f"{name} structure classes are not event-aligned.")
+
+    fruit_order = ["Avocado", "Banana", "Coconut"]
+    cross_rows = []
+    for eta_name in fruit_order:
+        row = []
+        eta_mask = eta_disp == eta_name
+        for sig_name in fruit_order:
+            row.append(int(np.sum(eta_mask & (sig_disp == sig_name))))
+        for rho_name in fruit_order:
+            row.append(int(np.sum(eta_mask & (rho_disp == rho_name))))
+        cross_rows.append((eta_name, row))
+
+    lines = [
+        r"\begin{table*}[t]",
+        r"\centering",
+        r"\caption{Cross-classification of the stony meteors. Rows give the ABC class defined from the erosion coefficient $\eta$; the first three numerical columns give the corresponding ablation-coefficient class and the final three columns give the density class. The absence of a density-Coconut population is imposed by the current prior $\rho_2\geq\rho_1$ and should not be interpreted as an observational result.}",
+        r"\label{tab:ABC_crossclass}",
+        r"\renewcommand{\arraystretch}{1.12}",
+        r"\setlength{\tabcolsep}{5pt}",
+        r"\scriptsize",
+        r"\begin{tabular}{lrrrrrr}",
+        r"\hline",
+        r" & \multicolumn{3}{c}{$\sigma$ class} & \multicolumn{3}{c}{$\rho$ class} \\",
+        r"$\eta$ class & Avocado & Banana & Coconut & Avocado & Banana & Coconut* \\",
+        r"\hline",
+    ]
+    for eta_name, vals in cross_rows:
+        lines.append(eta_name + " & " + " & ".join(str(v) for v in vals) + r" \\")
+    lines += [r"\hline", r"\end{tabular}", r"\end{table*}"]
+
+    path = os.path.join(table_dir, f"{safe_shower}_ABC_crossclass.tex")
+    created.append(_write_tex_table(path, lines))
+    combined_blocks.append("\n".join(lines))
+
+    n_single_eta = int(np.sum(eta_disp == "Single-stage"))
+    n_single_sig = int(np.sum(sig_disp == "Single-stage"))
+    n_single_rho = int(np.sum(rho_disp == "Single-stage"))
+    if max(n_single_eta, n_single_sig, n_single_rho) > 0:
+        print(
+            "WARNING: manuscript ABC table contains only Avocado/Banana/Coconut; "
+            f"single-stage counts are eta={n_single_eta}, sigma={n_single_sig}, rho={n_single_rho}."
+        )
+
+    # ------------------------------------------------------------------
+    # CAMO-based tables
+    # ------------------------------------------------------------------
+    resolved_camo_path = _resolve_camo_review_path(
+        output_dir_show,
+        explicit_path=camo_review_path,
+    )
+    if resolved_camo_path is None:
+        print(
+            "CAMO workbook not found; A/C structural and ABC tables were written, "
+            "but CAMO tables were skipped. Set CAMO_REVIEW_XLSX, set the "
+            "CAMO_REVIEW_XLSX variable near the top of this script, or place "
+            "Stony_CAMO_blind_manual_review_withPics*.xlsx beside output_dir_show."
+        )
+    else:
+        print("Using CAMO narrow-field review workbook:", resolved_camo_path)
+        camo_df = pd.read_excel(resolved_camo_path, sheet_name="CAMO Review")
+        required = {"Event", "class", "confidence"}
+        missing = required.difference(camo_df.columns)
+        if missing:
+            raise RuntimeError(
+                "CAMO review workbook is missing required columns: " + ", ".join(sorted(missing))
+            )
+
+        matched_rows, matched_ids, camo_dt_s = _match_camo_review_to_model_events(
+            event_names,
+            camo_df,
+            tolerance_s=2,
+        )
+
+        camo_class = []
+        camo_conf = []
+        for row in matched_rows:
+            if row is None:
+                camo_class.append("Unclassified")
+                camo_conf.append("")
+                continue
+            cls = row.get("class", np.nan)
+            conf = row.get("confidence", np.nan)
+            if pd.isna(cls) or str(cls).strip() == "":
+                camo_class.append("Unclassified")
+            else:
+                camo_class.append(str(cls).strip())
+            camo_conf.append("" if pd.isna(conf) else str(conf).strip())
+
+        camo_class = np.asarray(camo_class, dtype=object)
+        camo_conf = np.asarray(camo_conf, dtype=object)
+        flare_mask = np.array(["flare" in str(x).lower() for x in camo_conf], dtype=bool)
+
+        match_df = pd.DataFrame({
+            "meteor": event_names,
+            "matched_CAMO_event": matched_ids,
+            "CAMO_offset_s": camo_dt_s,
+            "CAMO_class": camo_class,
+            "confidence": camo_conf,
+            "flare": flare_mask,
+            "AC_group": np.where(group_A_mask, "A", np.where(group_C_mask, "C", "Outside")),
+            "eta_class": eta_disp,
+            "sigma_class": sig_disp,
+            "rho_class_manuscript": rho_disp,
+        })
+        match_csv = os.path.join(table_dir, f"{safe_shower}_CAMO_table_crossmatch.csv")
+        match_df.to_csv(match_csv, index=False)
+        print("Saved CAMO manuscript-table cross-match:", match_csv)
+
+        morphology_order = [
+            "Continuous fragmentation",
+            "Leading fragment",
+            "Negligible fragmentation",
+            "String of pearls",
+            "Transverse fragmentation",
+        ]
+
+        # CAMO morphology vs A/C, including CAMO-unclassified rows.
+        lines = [
+            r"\begin{table}[t]",
+            r"\centering",
+            r"\caption{Final-part CAMO morphology in the historical Group~A and Group~C populations. Percentages are calculated within each A/C population.}",
+            r"\label{tab:camo_AC}",
+            r"\renewcommand{\arraystretch}{1.12}",
+            r"\setlength{\tabcolsep}{4pt}",
+            r"\scriptsize",
+            r"\begin{tabular}{lrr}",
+            r"\hline",
+            r"CAMO final morphology & Group~A & Group~C \\",
+            r"\hline",
+        ]
+        for morph in morphology_order + ["Unclassified"]:
+            nA = int(np.sum(group_A_mask & (camo_class == morph)))
+            nC = int(np.sum(group_C_mask & (camo_class == morph)))
+            pA = 100.0 * nA / A_n if A_n else np.nan
+            pC = 100.0 * nC / C_n if C_n else np.nan
+            lines.append(
+                f"{morph} & {nA} ({pA:.1f}\\%) & {nC} ({pC:.1f}\\%) \\\\"
+            )
+        lines += [r"\hline", r"\end{tabular}", r"\end{table}"]
+
+        path = os.path.join(table_dir, f"{safe_shower}_CAMO_group_A_C.tex")
+        created.append(_write_tex_table(path, lines))
+        combined_blocks.append("\n".join(lines))
+
+        # CAMO flare vs eta ABC.
+        flare_rows = []
+        for label, mask in [("Flare", flare_mask), ("No flare", ~flare_mask)]:
+            vals = [int(np.sum(mask & (eta_disp == fruit))) for fruit in fruit_order]
+            flare_rows.append((label, vals, sum(vals)))
+
+        lines = [
+            r"\begin{table}[t]",
+            r"\centering",
+            r"\caption{CAMO flare flag compared with the $\eta$ ABC class for the complete stony sample. The flare flag was assigned from the final narrow-field sequence independently of the erosion-model classification.}",
+            r"\label{tab:camo_flare_eta}",
+            r"\renewcommand{\arraystretch}{1.12}",
+            r"\setlength{\tabcolsep}{5pt}",
+            r"\scriptsize",
+            r"\begin{tabular}{lrrrr}",
+            r"\hline",
+            r" & Avocado & Banana & Coconut & Total \\",
+            r"\hline",
+        ]
+        for label, vals, total in flare_rows:
+            lines.append(f"{label} & {vals[0]} & {vals[1]} & {vals[2]} & {total}" + r" \\")
+        lines += [r"\hline", r"\end{tabular}", r"\end{table}"]
+
+        path = os.path.join(table_dir, f"{safe_shower}_CAMO_flare_eta.tex")
+        created.append(_write_tex_table(path, lines))
+        combined_blocks.append("\n".join(lines))
+
+        # Final CAMO morphology vs eta ABC; omit unclassified CAMO morphology.
+        morph_counts = []
+        for morph in morphology_order:
+            vals = [int(np.sum((camo_class == morph) & (eta_disp == fruit))) for fruit in fruit_order]
+            morph_counts.append((morph, vals, sum(vals)))
+        classified_total = sum(row[2] for row in morph_counts)
+        fruit_totals = [sum(row[1][j] for row in morph_counts) for j in range(3)]
+        n_camo_unclassified = int(np.sum(camo_class == "Unclassified"))
+
+        lines = [
+            r"\begin{table*}[t]",
+            r"\centering",
+            (
+                r"\caption{Final-part CAMO narrow-field morphology compared with the model-derived "
+                r"$\eta$ ABC class. "
+                + f"{n_camo_unclassified} of the {n_events} stony meteors do not have an assigned final-part CAMO class and are omitted from the morphology rows.}}"
+            ),
+            r"\label{tab:camo_eta_morphology}",
+            r"\renewcommand{\arraystretch}{1.12}",
+            r"\setlength{\tabcolsep}{5pt}",
+            r"\scriptsize",
+            r"\begin{tabular}{lrrrr}",
+            r"\hline",
+            r"CAMO final morphology & Avocado & Banana & Coconut & Total \\",
+            r"\hline",
+        ]
+        for morph, vals, total in morph_counts:
+            lines.append(f"{morph} & {vals[0]} & {vals[1]} & {vals[2]} & {total}" + r" \\")
+        lines += [
+            r"\hline",
+            f"Total classified & {fruit_totals[0]} & {fruit_totals[1]} & {fruit_totals[2]} & {classified_total}" + r" \\",
+            r"\hline",
+            r"\end{tabular}",
+            r"\end{table*}",
+        ]
+
+        path = os.path.join(table_dir, f"{safe_shower}_CAMO_eta_morphology.tex")
+        created.append(_write_tex_table(path, lines))
+        combined_blocks.append("\n".join(lines))
+
+    combined_path = os.path.join(table_dir, f"{safe_shower}_all_manuscript_tables.tex")
+    _write_tex_table(combined_path, ["\n\n".join(combined_blocks)])
+    created.append(combined_path)
+
+    print("Manuscript table generation complete. Output directory:", table_dir)
+    return created
+
+
 def classify_ci_change(
     begin_median, begin_lo, begin_hi,
     change_median, change_lo, change_hi
@@ -1082,6 +1625,128 @@ def run_structure_class_plots(
     print("Saved:", out_grid)
 
     return sample_classes, sample_masks, event_counts
+
+
+def plot_tropical_fruit_vs_initial_velocity(
+    event_classes,
+    v_init_kms,
+    output_dir,
+    shower_name,
+    parameter_name,
+):
+    """Plot Homogenus/Avocado/Coconut structural class versus initial velocity.
+
+    The structural fruit classes are meaningful only for events whose selected
+    model contains two fitted erosion stages. Events classified as ``single``
+    (1-frag) are intentionally excluded rather than being folded into the
+    Homogenus class.
+
+    Parameters
+    ----------
+    event_classes : array-like
+        Event-level labels from ``classify_ci_change`` with 1-frag events
+        explicitly marked as ``single``.
+    v_init_kms : array-like
+        Event-level initial velocity in km/s.
+    output_dir : str
+        Directory in which PNG/PDF/CSV products are written.
+    shower_name : str
+        Prefix for output filenames.
+    parameter_name : {'eta', 'sigma', 'rho'}
+        Structural parameter used to define the fruit class.
+    """
+    event_classes = np.asarray(event_classes, dtype=object)
+    v_init_kms = np.asarray(v_init_kms, dtype=float)
+
+    if event_classes.shape[0] != v_init_kms.shape[0]:
+        raise RuntimeError(
+            f"{parameter_name}: {event_classes.shape[0]} structural classes but "
+            f"{v_init_kms.shape[0]} initial velocities."
+        )
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    class_order = ["homogenus", "avocado", "coconut"]
+    display_names = {
+        "homogenus": "Homogeneous",
+        "avocado": "Avocado",
+        "coconut": "Coconut",
+    }
+
+    finite_v = np.isfinite(v_init_kms)
+    single_mask = finite_v & (event_classes == "single")
+    print(
+        f"{parameter_name.upper()} v_init fruit plot: excluding "
+        f"{int(np.sum(single_mask))} selected 1-frag events from the fruit classes."
+    )
+
+    groups = []
+    labels = []
+    summary_rows = []
+
+    for cls in class_order:
+        mask = finite_v & (event_classes == cls)
+        vals = v_init_kms[mask]
+        if vals.size == 0:
+            continue
+
+        groups.append(vals)
+        labels.append(display_names[cls])
+        summary_rows.append({
+            "class": display_names[cls],
+            "N": int(vals.size),
+            "median_v_init_kms": float(np.nanmedian(vals)),
+            "mean_v_init_kms": float(np.nanmean(vals)),
+            "std_v_init_kms": float(np.nanstd(vals, ddof=1)) if vals.size > 1 else np.nan,
+            "min_v_init_kms": float(np.nanmin(vals)),
+            "max_v_init_kms": float(np.nanmax(vals)),
+        })
+
+    if not groups:
+        print(f"Skipping {parameter_name} v_init fruit plot: no 2-frag fruit classes.")
+        return None
+
+    fig, ax = plt.subplots(figsize=(8.2, 6.2))
+    # ax.boxplot(groups, tick_labels=labels, widths=0.5)
+    ax.boxplot(groups, labels=labels, widths=0.5)
+
+    # Overlay every meteor. Fixed RNG seed only controls display jitter.
+    rng = np.random.default_rng(42)
+    for i, vals in enumerate(groups, start=1):
+        x = i + rng.uniform(-0.12, 0.12, size=vals.size)
+        ax.scatter(x, vals, s=28, alpha=0.75, zorder=3)
+        med = float(np.nanmedian(vals))
+        ax.text(i + 0.22, med, f"{med:.1f}", va="center", fontsize=9)
+
+    latex_parameter = {
+        "eta": r"$\eta$",
+        "sigma": r"$\sigma$",
+        "rho": r"$\rho$",
+    }.get(parameter_name, parameter_name)
+
+    ax.set_xlabel("Meteoroid tropical-fruit type")
+    ax.set_ylabel(r"Initial velocity $v_0$ [km/s]")
+    ax.set_title(
+        f"{shower_name}: {latex_parameter} tropical-fruit type vs initial velocity"
+    )
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.6, alpha=0.7)
+
+    out_stem = os.path.join(
+        output_dir,
+        f"{shower_name}_{parameter_name}_tropical_fruit_type_vs_initial_velocity",
+    )
+    fig.tight_layout()
+    fig.savefig(out_stem + ".png", dpi=300, bbox_inches="tight")
+    fig.savefig(out_stem + ".pdf", bbox_inches="tight")
+    plt.close(fig)
+
+    summary_df = pd.DataFrame(summary_rows)
+    summary_df.to_csv(out_stem + "_summary.csv", index=False)
+
+    print("Saved:", out_stem + ".png")
+    print("Saved:", out_stem + ".pdf")
+    print("Saved:", out_stem + "_summary.csv")
+    return out_stem
 
 
 def _weighted_quantile(x, q, w):
@@ -1842,10 +2507,12 @@ def run_single_eeu(sim_num_and_data):
 
 def align_dynesty_samples(dsampler, all_variables, current_flags):
     """
-    Aligns dsampler samples to the full list of all variables by padding missing variables with 0
+    Aligns dsampler samples to the full list of all variables by padding missing variables with NaN.
     Weights remain unchanged for non-missing dimensions.
     """
-    samples = dsampler.results['samples']
+    # Work on a copy: converting log-parameters here must not mutate dsampler.results,
+    # because the raw per-event samples are converted again later in the main loop.
+    samples = np.array(dsampler.results['samples'], dtype=float, copy=True)
     weights = dsampler.results.importance_weights()
     n_samples = samples.shape[0]
 
@@ -2287,6 +2954,83 @@ def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
     )
 
 
+def weighted_central_ci_mask(arrays, weights, qlo=0.025, qhi=0.975, verbose=False):
+    """
+    Return a single sample mask that keeps only samples lying inside the
+    weighted central credible interval [qlo, qhi] for every supplied array.
+
+    This is intended for posterior-backup arrays that are aligned sample-by-sample
+    with the Dynesty posterior. The original Dynesty importance weights are used;
+    samples outside the retained region can then be given zero weight without
+    changing array lengths/alignment.
+
+    Parameters
+    ----------
+    arrays : iterable of array-like
+        Posterior-derived quantities aligned with ``weights`` (e.g. mass-weighted
+        rho, eta and sigma). Arrays with a different length are skipped.
+    weights : array-like
+        Dynesty posterior importance weights.
+    qlo, qhi : float
+        Lower/upper weighted quantiles. Defaults to the central 95% interval.
+    verbose : bool
+        Print the interval used for each supplied quantity.
+    """
+    w = np.asarray(weights, dtype=float).copy()
+    n = w.size
+    valid_w = np.isfinite(w) & (w >= 0)
+    w[~valid_w] = 0.0
+
+    if n == 0 or np.sum(w) <= 0:
+        return np.zeros(n, dtype=bool)
+
+    w /= np.sum(w)
+    keep = valid_w.copy()
+
+    for k, arr in enumerate(arrays):
+        x = np.asarray(arr, dtype=float)
+        if x.ndim != 1 or x.size != n:
+            if verbose:
+                print(f"Skipping 95% CI trim array {k}: length {x.size} != weights {n}")
+            continue
+
+        finite = np.isfinite(x)
+        if np.count_nonzero(finite) < 2:
+            keep &= finite
+            continue
+
+        wf = w[finite]
+        if np.sum(wf) <= 0:
+            keep &= finite
+            continue
+        wf = wf / np.sum(wf)
+
+        lo, hi = _quantile(x[finite], [qlo, qhi], weights=wf)
+        keep &= finite & (x >= lo) & (x <= hi)
+
+        if verbose:
+            print(f"  backup array {k}: weighted {100*(qhi-qlo):.1f}% CI = [{lo:.6e}, {hi:.6e}]")
+
+    return keep
+
+
+def trim_weights_to_weighted_ci(arrays, weights, qlo=0.025, qhi=0.975, verbose=False):
+    """Zero posterior weights outside the joint central-CI mask and renormalize."""
+    w = np.asarray(weights, dtype=float).copy()
+    keep = weighted_central_ci_mask(arrays, w, qlo=qlo, qhi=qhi, verbose=verbose)
+    w[~keep] = 0.0
+    total = np.sum(w)
+    if total <= 0:
+        raise RuntimeError("95% posterior trimming removed all posterior weight.")
+    w /= total
+    if verbose:
+        print(
+            f"Backup posterior trim: kept {np.count_nonzero(keep)}/{keep.size} samples; "
+            f"discarded {np.count_nonzero(~keep)} samples outside the weighted central intervals."
+        )
+    return w, keep
+
+
 def weighted_var_eros_height_change(var_start, var_heightchange, mass_before, m_init, w):
     # # mass weighted mean (arithmetical mean of the variable weighted by mass fraction before erosion)
     x = var_start*(abs(m_init-mass_before) / m_init) + var_heightchange * (mass_before / m_init)
@@ -2473,6 +3217,25 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             flag_total_sigma = False
             # load the variable names
             variables_sing = list(flags_dict.keys())
+
+            # --------------------------------------------------------------
+            # MODEL ARCHITECTURE: distinguish true 1-frag from 2-frag fits.
+            # A second erosion stage exists only when a change height and at
+            # least one second-stage physical parameter are fitted.  Do NOT
+            # interpret a missing second stage as eta2=eta1, rho2=rho1, etc.
+            # --------------------------------------------------------------
+            second_stage_change_vars = {
+                'erosion_coeff_change',
+                'erosion_rho_change',
+                'erosion_sigma_change',
+            }
+            has_second_erosion = (
+                'erosion_height_change' in variables_sing
+                and any(v in variables_sing for v in second_stage_change_vars)
+            )
+            frag_model = '2frag' if has_second_erosion else '1frag'
+            print(f"Fragmentation model detected from fitted variables: {frag_model}")
+
             for i, variable in enumerate(variables_sing):
                 if 'log' in flags_dict[variable]:
                     guess[i] = 10**guess[i]
@@ -2494,9 +3257,9 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 if var_name not in variables_sing:
                     row.append(r"\textemdash")
                     continue
-                med = summary_df_meteor['Median'].values[variables_sing.index(var_name)]
-                lo  = summary_df_meteor['Low95'].values[variables_sing.index(var_name)]
-                hi  = summary_df_meteor['High95'].values[variables_sing.index(var_name)]
+                med = summary_df_meteor['Median'].values[variables.index(var_name)]
+                lo  = summary_df_meteor['Low95'].values[variables.index(var_name)]
+                hi  = summary_df_meteor['High95'].values[variables.index(var_name)]
                 kind = fmt_kind.get(var_name, "float")
                 row.append(fmt_ci_asym(med, lo, hi, kind=kind))
             rows.append(row)
@@ -2508,20 +3271,20 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             lenght_par = obs_data.length[-1]/1000 # convert to km
             max_lum_height = obs_data.height_lum[np.argmax(obs_data.luminosity)]
             F_par = (beg_height - max_lum_height) / (beg_height - end_height)
-            kc_par = beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables_sing.index('v_init')]))/0.0612
-            kc_lo = abs(kc_par - (beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Low95'].values[variables_sing.index('v_init')]))/0.0612))
-            kc_hi = abs((beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['High95'].values[variables_sing.index('v_init')]))/0.0612) - kc_par)
+            kc_par = beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables.index('v_init')]))/0.0612
+            kc_lo = abs(kc_par - (beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['Low95'].values[variables.index('v_init')]))/0.0612))
+            kc_hi = abs((beg_height/1000 + (2.86 - 2*np.log10(summary_df_meteor['High95'].values[variables.index('v_init')]))/0.0612) - kc_par)
             print(f"kc_par: {kc_par:.3f} km (+{kc_hi:.3f}/-{kc_lo:.3f} km)")
             kc_all.append(beg_height/1000 + (2.86 - 2*np.log10(samples[:, variables_sing.index('v_init')].astype(float)/1000))/0.0612)
-            kc_par_eros_height = summary_df_meteor['Median'].values[variables_sing.index('erosion_height_start')] + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables_sing.index('v_init')]))/0.0612
-            # print(f"F_par: {F_par}, kc_par: {kc_par}, kc_par_eros_height: {kc_par_eros_height}, erosion_height_start: {summary_df_meteor['Median'].values[variables_sing.index('erosion_height_start')]} km")
+            kc_par_eros_height = summary_df_meteor['Median'].values[variables.index('erosion_height_start')] + (2.86 - 2*np.log10(summary_df_meteor['Median'].values[variables.index('v_init')]))/0.0612
+            # print(f"F_par: {F_par}, kc_par: {kc_par}, kc_par_eros_height: {kc_par_eros_height}, erosion_height_start: {summary_df_meteor['Median'].values[variables.index('erosion_height_start')]} km")
             time_tot = obs_data.time_lum[-1] - obs_data.time_lum[0]
             avg_vel = np.mean(obs_data.velocities)
             init_mag = obs_data.absolute_magnitudes[0]
             end_mag = obs_data.absolute_magnitudes[-1]
             max_mag = obs_data.absolute_magnitudes[np.argmax(obs_data.luminosity)]
             zenith_angle = np.rad2deg(obs_data.zenith_angle)
-            print(f"intial speed: {summary_df_meteor['Median'].values[variables_sing.index('v_init')]:.2f} km/s, zenith angle: {zenith_angle:.2f} deg")
+            print(f"intial speed: {summary_df_meteor['Median'].values[variables.index('v_init')]:.2f} km/s, zenith angle: {zenith_angle:.2f} deg")
 
 
 
@@ -2579,14 +3342,24 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             # print initial and final mass along with the diameter and heights
             # # print(f"Initial mass: {mass_best[0]} kg final mass: {mass_best[-1]} kg")
             erosion_beg_dyn_press = best_guess_obj_plot.const.erosion_beg_dyn_press
-            mass_at_erosion_change = best_guess_obj_plot.const.mass_at_erosion_change
-            erosion_height_change = best_guess_obj_plot.const.erosion_height_change
-            # if mass_before is None use the old method
-            if mass_at_erosion_change is None:
-                mass_at_erosion_change = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
-            # percentage of mass left at the erosion change
-            mass_left_second_erosion_perc = mass_at_erosion_change / mass_best[0] * 100
+
+            # The first erosion stage exists for both models.
             mass_left_first_erosion_perc = best_guess_obj_plot.const.erosion_beg_mass / mass_best[0] * 100
+
+            # A 1-frag fit has no physical h_e2 or mass-at-second-transition.
+            # Keep these as NaN instead of fabricating a second fragmentation.
+            if has_second_erosion:
+                mass_at_erosion_change = best_guess_obj_plot.const.mass_at_erosion_change
+                erosion_height_change = best_guess_obj_plot.const.erosion_height_change
+                if mass_at_erosion_change is None and erosion_height_change is not None and np.isfinite(erosion_height_change):
+                    mass_at_erosion_change = mass_best[np.argmin(np.abs(heights - erosion_height_change))]
+                if mass_at_erosion_change is None:
+                    mass_at_erosion_change = np.nan
+                mass_left_second_erosion_perc = mass_at_erosion_change / mass_best[0] * 100
+            else:
+                mass_at_erosion_change = np.nan
+                erosion_height_change = np.nan
+                mass_left_second_erosion_perc = np.nan
             final_mass_perc = mass_best[-1] / mass_best[0] * 100
             print(f"Simulated Initial mass: {mass_best[0]:.3e} kg | final mass: {mass_best[-1]:.3e} kg in percentage: {final_mass_perc:.2f}% final diameter {final_diam:.2f} μm at heights {heights[-1]/1000:.1f} km")
             print(f"Dynamic pressure at erosion onset: {erosion_beg_dyn_press} Pa")
@@ -2661,16 +3434,34 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                     # w_eq = np.ones(samples_eq.shape[0], dtype=float)
                     # w_eq /= w_eq.sum()
 
-                if flag_toreweight:
-                    # change the weight to the equivalet weights
-                    w_eq = np.ones(samples.shape[0], dtype=float)
-                    w_eq /= w_eq.sum()
+                # IMPORTANT: keep the original Dynesty importance weights.
+                # The old code switched to equal weights whenever all backup
+                # variables were available, which gave low-probability tail
+                # samples the same influence as high-posterior samples.
+                if len(w) == len(const_backups):
+                    w_backup = np.asarray(w, dtype=float).copy()
+                elif len(weights_aligned) == len(const_backups):
+                    w_backup = np.asarray(weights_aligned, dtype=float).copy()
                 else:
-                    w_eq = w.copy()
+                    raise RuntimeError(
+                        f"Backup/sample length mismatch: {len(const_backups)} const backups, "
+                        f"{len(w)} Dynesty weights, {len(weights_aligned)} aligned weights."
+                    )
 
-                x_valid_rho = np.array(x_valid_rho)
-                x_valid_eta = np.array(x_valid_eta)
-                x_valid_sigma = np.array(x_valid_sigma)
+                x_valid_rho = np.asarray(x_valid_rho, dtype=float)
+                x_valid_eta = np.asarray(x_valid_eta, dtype=float)
+                x_valid_sigma = np.asarray(x_valid_sigma, dtype=float)
+
+                # Trim the backup posterior to the weighted central 95% region.
+                # We do this by ZEROING weights rather than shortening arrays,
+                # which preserves sample-by-sample alignment with samples_aligned.
+                w_eq, backup_keep95 = trim_weights_to_weighted_ci(
+                    [x_valid_rho, x_valid_eta, x_valid_sigma],
+                    w_backup,
+                    qlo=0.025,
+                    qhi=0.975,
+                    verbose=True,
+                )
 
                 rho_corrected.append(x_valid_rho)
                 rho_lo, rho, rho_hi = _quantile(x_valid_rho, [0.025, 0.5, 0.975], weights=w_eq)
@@ -2686,8 +3477,10 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                 sigma_hi = (sigma_hi - sigma) #/1.96
 
                 if flag_toreweight:
+                    # Keep posterior weighting and the 95% trim for all downstream
+                    # plots/correlations while preserving the original array shape.
                     weights_aligned = w_eq.copy()
-                    print("Reweighting with equal weights")
+                    print("Using original Dynesty weights with weighted central-95% backup trimming")
                     # take every column that is not nan and fill the samples_aligned with those values
                     for i in range(samples_aligned.shape[1]):
                         if not np.isnan(samples_new_equal[:, i]).all():
@@ -2723,8 +3516,22 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                         mass_before = old_mass_before
 
                     if backup_file is not None:
-                        x_valid_rho = backup_small['dynesty']['rho_array']
-                        rho, rho_lo, rho_hi = backup_small['dynesty']['rho_mass_weighted_estimate']['median'], backup_small['dynesty']['rho_mass_weighted_estimate']['low95'], backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
+                        x_valid_rho = np.asarray(backup_small['dynesty']['rho_array'], dtype=float)
+                        if len(x_valid_rho) == len(w):
+                            w_rho_trim, _rho_keep95 = trim_weights_to_weighted_ci(
+                                [x_valid_rho], w, qlo=0.025, qhi=0.975, verbose=True
+                            )
+                            rho_qlo, rho, rho_qhi = _quantile(
+                                x_valid_rho, [0.025, 0.5, 0.975], weights=w_rho_trim
+                            )
+                            rho_lo = rho - rho_qlo
+                            rho_hi = rho_qhi - rho
+                        else:
+                            # Fall back to the statistics stored in the backup if
+                            # sample-wise weights cannot be aligned safely.
+                            rho = backup_small['dynesty']['rho_mass_weighted_estimate']['median']
+                            rho_lo = backup_small['dynesty']['rho_mass_weighted_estimate']['low95']
+                            rho_hi = backup_small['dynesty']['rho_mass_weighted_estimate']['high95']
 
                     else:
                         if flag_total_rho:
@@ -2825,14 +3632,19 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             rho_meteor_begin_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
             rho_meteor_begin_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
 
-            if flag_total_rho:
+            if has_second_erosion and flag_total_rho:
                 rho_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_rho_change')]
                 rho_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_rho_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_rho_change')]
                 rho_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_rho_change')] - summary_df_meteor['Median'].values[variables.index('erosion_rho_change')]
+            elif has_second_erosion:
+                # Second stage exists but rho is shared/fixed across stages.
+                rho_meteor_change_median = rho_meteor_begin_median
+                rho_meteor_change_lo = rho_meteor_begin_lo
+                rho_meteor_change_hi = rho_meteor_begin_hi
             else:
-                rho_meteor_change_median = summary_df_meteor['Median'].values[variables.index('rho')]
-                rho_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('rho')] - summary_df_meteor['Low95'].values[variables.index('rho')]
-                rho_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('rho')] - summary_df_meteor['Median'].values[variables.index('rho')]
+                rho_meteor_change_median = np.nan
+                rho_meteor_change_lo = np.nan
+                rho_meteor_change_hi = np.nan
 
             eta_meteor_begin_median = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
             eta_meteor_begin_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
@@ -2842,31 +3654,46 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             sigma_meteor_begin_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
             sigma_meteor_begin_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
 
-            if flag_total_eta:
+            if has_second_erosion and flag_total_eta:
                 eta_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')]
                 eta_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff_change')]
                 eta_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff_change')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff_change')]
+            elif has_second_erosion:
+                # Second stage exists but eta is shared/fixed across stages.
+                eta_meteor_change_median = eta_meteor_begin_median
+                eta_meteor_change_lo = eta_meteor_begin_lo
+                eta_meteor_change_hi = eta_meteor_begin_hi
             else:
-                eta_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
-                eta_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_coeff')] - summary_df_meteor['Low95'].values[variables.index('erosion_coeff')]
-                eta_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_coeff')] - summary_df_meteor['Median'].values[variables.index('erosion_coeff')]
+                eta_meteor_change_median = np.nan
+                eta_meteor_change_lo = np.nan
+                eta_meteor_change_hi = np.nan
 
-            if flag_total_sigma:
+            if has_second_erosion and flag_total_sigma:
                 sigma_meteor_change_median = summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')]
                 sigma_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_sigma_change')]
                 sigma_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_sigma_change')] - summary_df_meteor['Median'].values[variables.index('erosion_sigma_change')]
+            elif has_second_erosion:
+                # Second stage exists but sigma is shared/fixed across stages.
+                sigma_meteor_change_median = sigma_meteor_begin_median
+                sigma_meteor_change_lo = sigma_meteor_begin_lo
+                sigma_meteor_change_hi = sigma_meteor_begin_hi
             else:
-                sigma_meteor_change_median = summary_df_meteor['Median'].values[variables.index('sigma')]
-                sigma_meteor_change_lo = summary_df_meteor['Median'].values[variables.index('sigma')] - summary_df_meteor['Low95'].values[variables.index('sigma')]
-                sigma_meteor_change_hi = summary_df_meteor['High95'].values[variables.index('sigma')] - summary_df_meteor['Median'].values[variables.index('sigma')]
+                sigma_meteor_change_median = np.nan
+                sigma_meteor_change_lo = np.nan
+                sigma_meteor_change_hi = np.nan
 
             erosion_height_start_median = summary_df_meteor['Median'].values[variables.index('erosion_height_start')]
             erosion_height_start_lo = summary_df_meteor['Median'].values[variables.index('erosion_height_start')] - summary_df_meteor['Low95'].values[variables.index('erosion_height_start')]
             erosion_height_start_hi = summary_df_meteor['High95'].values[variables.index('erosion_height_start')] - summary_df_meteor['Median'].values[variables.index('erosion_height_start')]
 
-            erosion_height_change_median = summary_df_meteor['Median'].values[variables.index('erosion_height_change')]
-            erosion_height_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_height_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_height_change')]
-            erosion_height_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_height_change')] - summary_df_meteor['Median'].values[variables.index('erosion_height_change')]
+            if has_second_erosion:
+                erosion_height_change_median = summary_df_meteor['Median'].values[variables.index('erosion_height_change')]
+                erosion_height_change_lo = summary_df_meteor['Median'].values[variables.index('erosion_height_change')] - summary_df_meteor['Low95'].values[variables.index('erosion_height_change')]
+                erosion_height_change_hi = summary_df_meteor['High95'].values[variables.index('erosion_height_change')] - summary_df_meteor['Median'].values[variables.index('erosion_height_change')]
+            else:
+                erosion_height_change_median = np.nan
+                erosion_height_change_lo = np.nan
+                erosion_height_change_hi = np.nan
 
             erosion_mass_index_median = summary_df_meteor['Median'].values[variables.index('erosion_mass_index')]
             erosion_mass_index_lo = summary_df_meteor['Median'].values[variables.index('erosion_mass_index')] - summary_df_meteor['Low95'].values[variables.index('erosion_mass_index')]
@@ -3002,7 +3829,6 @@ def load_shower_distrb_plot_data(input_dirfile):
 
 def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
-
     # check if there are variables in the flags_dict that are not in the variable_map
     for variable in variables:
         if variable not in variable_map:
@@ -3081,15 +3907,344 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     kc_lo = np.array([v[29] for v in file_obs_data_dict.values()])
     kc_hi = np.array([v[30] for v in file_obs_data_dict.values()])
 
+    # ------------------------------------------------------------------
+    # Recover the fitted model architecture for every event from the
+    # aligned Dynesty samples. This also works when loading an older cache:
+    # variables that were absent from a 1-frag run were padded with NaN.
+    # ------------------------------------------------------------------
+    def _event_has_second_erosion(aligned_event_samples):
+        aligned_event_samples = np.asarray(aligned_event_samples, dtype=float)
+        if aligned_event_samples.ndim != 2:
+            return False
+        if 'erosion_height_change' not in variables:
+            return False
+        i_h2 = variables.index('erosion_height_change')
+        has_h2 = np.any(np.isfinite(aligned_event_samples[:, i_h2]))
+        if not has_h2:
+            return False
+        change_vars = [
+            v for v in ('erosion_coeff_change', 'erosion_rho_change', 'erosion_sigma_change')
+            if v in variables
+        ]
+        if len(change_vars) == 0:
+            return False
+        return any(
+            np.any(np.isfinite(aligned_event_samples[:, variables.index(v)]))
+            for v in change_vars
+        )
+
+    has_second_erosion_array = np.array(
+        [_event_has_second_erosion(samp) for samp in all_samples],
+        dtype=bool,
+    )
+    frag_model_array = np.where(has_second_erosion_array, '2frag', '1frag')
+    print(
+        f"Fragmentation architecture: {np.sum(~has_second_erosion_array)} 1-frag, "
+        f"{np.sum(has_second_erosion_array)} 2-frag"
+    )
+
+    # A one-fragmentation event has no second transition. If an old cached
+    # file contains a copied first-stage value in a stage-2 field, the mask
+    # below will overwrite it with NaN after the arrays are reconstructed.
+
+    # ------------------------------------------------------------------
+    # EVENT-LEVEL POSTERIOR SUMMARIES OF THE BACKUP/SIMULATION QUANTITIES
+    #
+    # The *_backup arrays are stored sample-by-sample for ALL meteors,
+    # while all_weights is a list containing one posterior-weight array
+    # per meteor.  Reconstruct each meteor's slice using the length of its
+    # own weight array, then calculate its weighted 2.5%, 50%, and 97.5%
+    # quantiles BEFORE the global arrays are modified/filled later.
+    #
+    # IMPORTANT:
+    #   * None values are treated as NaN and ignored -- never randomized
+    #     for these event summaries.
+    #   * 1-frag meteors have no physical second erosion transition, so
+    #     mass_at_erosion_change and P_e2 are explicitly NaN.
+    #   * all_weights already contains the posterior weights used for each
+    #     meteor (including any 95%-posterior trimming done upstream).
+    # ------------------------------------------------------------------
+
     # create a csv that has the name as the first column and the rest of the values as the other columns
     csv_file_path = os.path.join(output_dir_show, "shower_distrb_plot_data.csv")
+    # check it the csv_file_path exists, if it does do not do this part
+    # if not os.path.exists(csv_file_path):
+
+    def _flatten_backup_values(values):
+        """Flatten a backup list/array and convert None/non-numeric entries to NaN."""
+        flat = []
+
+        # values may be:
+        #   1) a normal flat list of scalars, or
+        #   2) contain np.full(..., None) arrays from the backup fallback.
+        for value in values:
+            if isinstance(value, (list, tuple, np.ndarray)):
+                flat.extend(np.asarray(value, dtype=object).ravel().tolist())
+            else:
+                flat.append(value)
+
+        out = np.full(len(flat), np.nan, dtype=float)
+        for ii, value in enumerate(flat):
+            if value is None:
+                continue
+            try:
+                out[ii] = float(value)
+            except (TypeError, ValueError):
+                pass
+
+        return out
+
+
+    def _posterior_summary_by_event(
+        flat_values,
+        scale=1.0,
+        second_stage_only=False,
+        variable_name="backup variable", ):
+        """
+        Split a global sample-level backup array into individual meteors
+        using all_weights, and return weighted [2.5%, 50%, 97.5%] values.
+
+        Returns
+        -------
+        low95, median, high95 : np.ndarray
+            One value per meteor, in the same order as all_names.
+        """
+        flat_values = _flatten_backup_values(flat_values) * scale
+
+        event_counts = np.array(
+            [len(np.asarray(w_event).ravel()) for w_event in all_weights],
+            dtype=int,
+        )
+
+        expected_n = int(np.sum(event_counts))
+
+        if len(flat_values) != expected_n:
+            raise RuntimeError(
+                f"{variable_name}: flattened backup length {len(flat_values)} "
+                f"does not match total event posterior length {expected_n}. "
+                "The backup values and all_weights are not sample-aligned."
+            )
+
+        if len(all_names) != len(all_weights):
+            raise RuntimeError(
+                f"{variable_name}: len(all_names)={len(all_names)} but "
+                f"len(all_weights)={len(all_weights)}."
+            )
+
+        low95 = np.full(len(all_names), np.nan, dtype=float)
+        median = np.full(len(all_names), np.nan, dtype=float)
+        high95 = np.full(len(all_names), np.nan, dtype=float)
+
+        start = 0
+
+        for i_event, (meteor_name, w_event, n_event) in enumerate(
+            zip(all_names, all_weights, event_counts)
+        ):
+            stop = start + n_event
+
+            values_event = flat_values[start:stop]
+            weights_event = np.asarray(w_event, dtype=float).ravel()
+
+            # 1-frag events do not have a second erosion stage.
+            if second_stage_only and not has_second_erosion_array[i_event]:
+                start = stop
+                continue
+
+            valid = (
+                np.isfinite(values_event)
+                & np.isfinite(weights_event)
+                & (weights_event > 0)
+            )
+
+            if np.any(valid):
+                values_valid = values_event[valid]
+                weights_valid = weights_event[valid]
+
+                weight_sum = np.sum(weights_valid)
+
+                if np.isfinite(weight_sum) and weight_sum > 0:
+                    weights_valid = weights_valid / weight_sum
+
+                    qlo, qmed, qhi = _quantile(
+                        values_valid,
+                        [0.025, 0.5, 0.975],
+                        weights=weights_valid,
+                    )
+
+                    low95[i_event] = qlo
+                    median[i_event] = qmed
+                    high95[i_event] = qhi
+            else:
+                print(
+                    f"Warning: no finite weighted samples for "
+                    f"{variable_name} in {meteor_name}"
+                )
+
+            start = stop
+
+        return low95, median, high95
+
+
+    # Unit conversions are applied before calculating the event summaries.
+    # Each result below has one row per meteor.
+    (
+        energy_per_cs_before_erosion_low95,
+        energy_per_cs_before_erosion_median,
+        energy_per_cs_before_erosion_high95,
+    ) = _posterior_summary_by_event(
+        energy_per_cs_before_erosion_backup,
+        scale=1e-6,  # -> MJ/m^2
+        variable_name="energy_per_cs_before_erosion",
+    )
+
+    (
+        energy_per_mass_before_erosion_low95,
+        energy_per_mass_before_erosion_median,
+        energy_per_mass_before_erosion_high95,
+    ) = _posterior_summary_by_event(
+        energy_per_mass_before_erosion_backup,
+        scale=1e-6,  # -> MJ/kg
+        variable_name="energy_per_mass_before_erosion",
+    )
+
+    (
+        erosion_beg_vel_low95,
+        erosion_beg_vel_median,
+        erosion_beg_vel_high95,
+    ) = _posterior_summary_by_event(
+        erosion_beg_vel_backup,
+        scale=1e-3,  # m/s -> km/s
+        variable_name="erosion_beg_vel",
+    )
+
+    (
+        erosion_beg_mass_low95,
+        erosion_beg_mass_median,
+        erosion_beg_mass_high95,
+    ) = _posterior_summary_by_event(
+        erosion_beg_mass_backup,
+        variable_name="erosion_beg_mass",
+    )
+
+    (
+        erosion_beg_dyn_press_low95,
+        erosion_beg_dyn_press_median,
+        erosion_beg_dyn_press_high95,
+    ) = _posterior_summary_by_event(
+        erosion_beg_dyn_press_backup,
+        scale=1e-3,  # Pa -> kPa
+        variable_name="erosion_beg_dyn_press",
+    )
+
+    (
+        mass_at_erosion_change_low95,
+        mass_at_erosion_change_median,
+        mass_at_erosion_change_high95,
+    ) = _posterior_summary_by_event(
+        mass_at_erosion_change_backup,
+        second_stage_only=True,
+        variable_name="mass_at_erosion_change",
+    )
+
+    (
+        dyn_press_at_erosion_change_low95,
+        dyn_press_at_erosion_change_median,
+        dyn_press_at_erosion_change_high95,
+    ) = _posterior_summary_by_event(
+        dyn_press_at_erosion_change_backup,
+        scale=1e-3,  # Pa -> kPa
+        second_stage_only=True,
+        variable_name="dyn_press_at_erosion_change",
+    )
+
+    (
+        main_mass_exhaustion_ht_low95,
+        main_mass_exhaustion_ht_median,
+        main_mass_exhaustion_ht_high95,
+    ) = _posterior_summary_by_event(
+        main_mass_exhaustion_ht_backup,
+        scale=1e-3,  # m -> km
+        variable_name="main_mass_exhaustion_ht",
+    )
+
+    (
+        main_bottom_ht_low95,
+        main_bottom_ht_median,
+        main_bottom_ht_high95,
+    ) = _posterior_summary_by_event(
+        main_bottom_ht_backup,
+        scale=1e-3,  # m -> km
+        variable_name="main_bottom_ht",
+    )
+
+    # Put all event-level backup summaries in a dataframe indexed by meteor
+    # name.  This makes the join safe even if dictionary ordering changes.
+    panda_df_backup_event = pd.DataFrame(
+        {
+            "energy_per_cs_before_erosion_low95_MJ_m2": energy_per_cs_before_erosion_low95,
+            "energy_per_cs_before_erosion_median_MJ_m2": energy_per_cs_before_erosion_median,
+            "energy_per_cs_before_erosion_high95_MJ_m2": energy_per_cs_before_erosion_high95,
+
+            "energy_per_mass_before_erosion_low95_MJ_kg": energy_per_mass_before_erosion_low95,
+            "energy_per_mass_before_erosion_median_MJ_kg": energy_per_mass_before_erosion_median,
+            "energy_per_mass_before_erosion_high95_MJ_kg": energy_per_mass_before_erosion_high95,
+
+            "erosion_beg_vel_low95_km_s": erosion_beg_vel_low95,
+            "erosion_beg_vel_median_km_s": erosion_beg_vel_median,
+            "erosion_beg_vel_high95_km_s": erosion_beg_vel_high95,
+
+            "erosion_beg_mass_low95_kg": erosion_beg_mass_low95,
+            "erosion_beg_mass_median_kg": erosion_beg_mass_median,
+            "erosion_beg_mass_high95_kg": erosion_beg_mass_high95,
+
+            "erosion_beg_dyn_press_low95_kPa": erosion_beg_dyn_press_low95,
+            "erosion_beg_dyn_press_median_kPa": erosion_beg_dyn_press_median,
+            "erosion_beg_dyn_press_high95_kPa": erosion_beg_dyn_press_high95,
+
+            "mass_at_erosion_change_low95_kg": mass_at_erosion_change_low95,
+            "mass_at_erosion_change_median_kg": mass_at_erosion_change_median,
+            "mass_at_erosion_change_high95_kg": mass_at_erosion_change_high95,
+
+            "dyn_press_at_erosion_change_low95_kPa": dyn_press_at_erosion_change_low95,
+            "dyn_press_at_erosion_change_median_kPa": dyn_press_at_erosion_change_median,
+            "dyn_press_at_erosion_change_high95_kPa": dyn_press_at_erosion_change_high95,
+
+            "main_mass_exhaustion_ht_low95_km": main_mass_exhaustion_ht_low95,
+            "main_mass_exhaustion_ht_median_km": main_mass_exhaustion_ht_median,
+            "main_mass_exhaustion_ht_high95_km": main_mass_exhaustion_ht_high95,
+
+            "main_bottom_ht_low95_km": main_bottom_ht_low95,
+            "main_bottom_ht_median_km": main_bottom_ht_median,
+            "main_bottom_ht_high95_km": main_bottom_ht_high95,
+        },
+        index=np.asarray(all_names, dtype=str),
+    )
+
     with open(csv_file_path, "w", newline="") as csvfile:
         # pandas dataframe to csv
         panda_df = pd.DataFrame.from_dict(file_obs_data_dict, orient='index', columns=['kc_par', 'F_par', 'lenght_par', 'beg_height', 'end_height', 'max_lum_height', 'avg_vel', 'init_mag', 'end_mag', 'max_mag', 'time_tot', 'zenith_angle', 'm_init_med', 'meteoroid_diameter_mm', 'erosion_beg_dyn_press', 'v_init_meteor_median', 'kinetic_energy_median', 'kinetic_energy_lo', 'kinetic_energy_hi', 'tau_median', 'tau_low95', 'tau_high95', 'kc_par_eros_height', 'eeucs_event', 'eeum_event', 'tot_energy', 'mass_left_first_erosion_perc', 'mass_left_second_erosion_perc', 'final_mass_perc','kc_lo','kc_hi'])
         # add file_rho_jd_dict and file_radiance_rho_dict_helio to the panda_df
         panda_df_rho_jd = pd.DataFrame.from_dict(file_rho_jd_dict, orient='index', columns=['rho', 'rho_lo', 'rho_hi', 'tj', 'tj_lo', 'tj_hi', 'inclin_val', 'Vg_val', 'Q_val', 'q_val', 'a_val', 'e_val'])
         panda_df_radiance_rho_helio = pd.DataFrame.from_dict(file_radiance_rho_dict_helio, orient='index', columns=['lg_min_la_sun_helio', 'lg_helio_lo', 'lg_helio_hi', 'bg_helio', 'bg_helio_lo', 'bg_helio_hi'])
-        panda_df = pd.concat([panda_df, panda_df_rho_jd, panda_df_radiance_rho_helio], axis=1)
+        panda_df = pd.concat(
+            [
+                panda_df,
+                panda_df_rho_jd,
+                panda_df_radiance_rho_helio,
+                panda_df_backup_event,
+            ],
+            axis=1,
+        )
+        panda_df['frag_model'] = frag_model_array
+
+        # Never export a fabricated second-stage mass for selected 1-frag events.
+        # (This matters when reading an older cached file_obs_data_dict.)
+        single_event_names = np.asarray(all_names, dtype=str)[~has_second_erosion_array]
+        panda_df.loc[
+            panda_df.index.astype(str).isin(single_event_names),
+            'mass_left_second_erosion_perc'
+        ] = np.nan
+
         panda_df.to_csv(csvfile, index_label="Meteor")
         print(f"Saved shower distrb plot data to: {csv_file_path}")            
 
@@ -3143,6 +4298,22 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     erosion_mass_max_median = np.array([v[47] for v in file_phys_data_dict.values()])
     erosion_mass_max_lo = np.array([v[48] for v in file_phys_data_dict.values()])
     erosion_mass_max_hi = np.array([v[49] for v in file_phys_data_dict.values()])
+
+    # --------------------------------------------------------------
+    # IMPORTANT: do not turn 1-frag events into artificial Homogeneous
+    # two-stage events.  Stage-2 quantities are undefined for them.
+    # This mask also corrects older cached tuples where stage 1 had been
+    # copied into stage 2.
+    # --------------------------------------------------------------
+    single_frag_mask = ~has_second_erosion_array
+    for arr in (
+        rho_meteor_change_median, rho_meteor_change_lo, rho_meteor_change_hi,
+        eta_meteor_change_median, eta_meteor_change_lo, eta_meteor_change_hi,
+        sigma_meteor_change_median, sigma_meteor_change_lo, sigma_meteor_change_hi,
+        erosion_height_change_median, erosion_height_change_lo, erosion_height_change_hi,
+        mass_left_second_erosion_perc,
+    ):
+        arr[single_frag_mask] = np.nan
 
     leng_coszen = lenght_par * np.cos(zenith_angle * np.pi / 180)
 
@@ -3260,9 +4431,13 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # curve_v = np.array([0, 10, 20, 30, 40, 50, 60, 70], dtype=float)
     # curve_h = np.array([85,90, 93, 95, 102, 103, 105, 110], dtype=float)
 
+    # # v_inf old
+    # curve_v = np.array([0, 10, 20, 30, 40, 50, 60, 70], dtype=float)
+    # curve_h = np.array([80, 88, 93, 98, 100, 102, 104, 107], dtype=float)
+
     # v_inf
-    curve_v = np.array([0, 10, 20, 30, 40, 50, 60, 70], dtype=float)
-    curve_h = np.array([80, 88, 93, 98, 100, 102, 104, 107], dtype=float)
+    curve_v = np.array([5, 10, 20, 30, 40, 50, 60, 75], dtype=float)
+    curve_h = np.array([80, 85, 93.5, 96, 100, 102, 104, 107], dtype=float)
 
     # Generate a smooth-ish line for plotting (linear interpolation is fine here)
     v_dense = np.linspace(curve_v.min(), curve_v.max(), 200)
@@ -3718,12 +4893,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # Define your observable names and corresponding data arrays  # erosion_beg_dyn_press # 
     observable_names = [
-        r"$\rho$ [kg/m$^3$]", "$\eta$ [MJ/kg]", "$\sigma$ [MJ/kg]", "$h_e$ [km]", "$h_{beg}$ [km]",
+        r"$\rho$ [kg/m$^3$]", "$\eta$ [MJ/kg]", "$\sigma$ [MJ/kg]", "$s$ [-]", "$h_{beg}$ [km]",
         "$E_S$ [MJ/m$^2$]", "$E_V$ [MJ/kg]", "$P$ [kPa]", "$m_l$ [kg]", "$m_u$ [kg]"
     ]
 
     observable_arrays = [
-        rho, eta_corr*1e6, sigma_corr*1e6, erosion_height_start_median, beg_height,
+        rho, eta_corr*1e6, sigma_corr*1e6, erosion_mass_index_median, beg_height,
         eeucs_event/1e6, eeum_event/1e6,  erosion_beg_dyn_press/1000, erosion_mass_min_median, erosion_mass_max_median
     ]
 
@@ -3761,6 +4936,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_kc_grid.png"), dpi=300, bbox_inches='tight')
     plt.close()
+
 
 
     ### CORELATION OBSERVABLE PLOT ###
@@ -4163,7 +5339,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                 # mask the noisy points from the df_EMCCD_spor filter 65 and 85 height in H_beg at vel 0 km/s, then for 10 km/s filter 60 and 90, for 20 km/s filter 55 and 95, for 30 km/s filter 50 and 100, for 40 km/s filter 45 and 105, for 50 km/s filter 40 and 110, for 60 km/s filter 35 and 115, for 70 km/s filter 30 and 120, for 80 km/s filter 25 and 125
                 curve_v = np.array([ 0, 10, 20, 30, 40, 50, 60, 70, 75], dtype=float)
                 curve_h_low = np.array([70, 75, 80, 83, 88, 90, 92, 94, 96], dtype=float)
-                curve_h_high = np.array([80, 95, 110, 113, 115, 120, 125, 130, 132], dtype=float)
+                curve_h_high = np.array([80, 95, 110, 113, 115, 120, 125, 130, 132], dtype=float)                
 
                 # Generate a smooth-ish line for plotting (linear interpolation is fine here)
                 v_dense = np.linspace(curve_v.min(), curve_v.max(), 200)
@@ -4652,7 +5828,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     y_edges_GIADA = np.r_[bin_left, bin_right[-1]]
     Z_GIADA = weights_GIADA[:, None]
 
-    plt.pcolormesh(x_edges, y_edges_GIADA, Z_GIADA, shading="flat", cmap="Blues", zorder=0) # , alpha=0.5
+    plt.pcolormesh(x_edges, y_edges_GIADA, Z_GIADA, shading="flat", cmap="Blues", zorder=1) # , alpha=0.5
 
     proxy_blue = Patch(facecolor=plt.cm.Blues(0.7), edgecolor='none', label="GIADA - Fulle et al. (2017)") # alpha=0.5, 
 
@@ -4837,7 +6013,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # srho_meteor_radar  = radar_meteors["St. dev (3D density)"]
     m0_meteor_radar    = radar_meteors["Initial mass - 3D (kg)"]
 
-    ax.scatter(from_mass2size(m0_meteor_radar, rho_meteor_radar), rho_meteor_radar, color='peru', marker='1', s=50, label="Radar Meteors - Close et al. (2012)", zorder=5, alpha=0.5)
+    ax.scatter(from_mass2size(m0_meteor_radar, rho_meteor_radar), rho_meteor_radar, color='peru', marker='1', s=50, label="Radar Meteors - Close et al. (2012)", zorder=10, alpha=0.5)
 
     ### Micro meteoroites
 
@@ -6096,6 +7272,15 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             if mass_percent_2frag_small is None:
                 mass_percent_2frag_small = []
 
+            # w_threshold = np.percentile(w, 95)
+            # w[w < w_threshold] = 0
+            # # if any has 0 weigth in w than delete in initial_var, change_var, mass_percent_2frag, w
+            # mask = w > 0
+            # initial_var = initial_var[mask]
+            # change_var = change_var[mask]
+            # mass_percent_2frag = mass_percent_2frag[mask]
+            # w = w[mask]
+
             # ------------------------------------------------------------
             # Build the plotting arrays
             # ------------------------------------------------------------
@@ -6357,10 +7542,28 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     peak_x = bin_centers[peak_idx]
     peak_y = hist[peak_idx]
     # annotate the value
-    # ax_dist.annotate(f'Peak: {rho_corrected_peak:.4g}', xy=(peak_x, peak_y), xytext=(peak_x, peak_y),  fontsize=15) # arrowprops=dict(facecolor='black', shrink=0.05),
+    ax_dist.annotate(f'Peak: {rho_corrected_peak:.4g}', xy=(peak_x, peak_y), xytext=(peak_x, peak_y),  fontsize=15) # arrowprops=dict(facecolor='black', shrink=0.05),
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"), bbox_inches='tight')
     plt.close()
     print("Rho distribution plot saved:",os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"))
+
+
+    # complte density distributio for the IMEM
+
+    IMEM_rho_flux = np.array([12.127695083618164, 687.5158691, 55.734817504882812])
+    # normalize the IMEM_rho_flux to sum to 1
+    IMEM_rho_flux /= np.sum(IMEM_rho_flux)
+    IMEM_rho = np.array([1000,2000,4000])
+
+    # plot against the IMEM distribution similar to hist, edges = np.histogram(rho_corrected, bins=nbins, weights=w, range=(lo, hi))
+
+
+    # following the Tj below 2 an dtj above 3 against the Tj of the MEMv3 disitribuion
+
+    pathLowMEM = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\ISS-risk\MEMv3-ISS100points\ISS_MEMv3\lodensity.txt"
+    pathHighMEM = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\ISS-risk\MEMv3-ISS100points\ISS_MEMv3\hidensity.txt"
+    
+    # plot against the MEM distributions the in the sam plot but separate by tj
 
     # Create weights ############
 
@@ -6538,36 +7741,640 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # ax_dist.set_xlim(0, tau_corrected_hi+tau_corrected_median)
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_tau_distribution_both.png"), bbox_inches='tight')
 
-    # Create figure
-    fig = plt.figure(figsize=(8, 10))
-    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
 
-    # Set main axes (with shared x-axis)
+    # ================================================================
+    # STRUCTURAL CLASSIFICATION FROM THE PER-EVENT 95% CIs
+    # ================================================================
+    # The *_lo/*_hi arrays are asymmetric error widths, therefore the
+    # classifier reconstructs the actual interval as median-lo/median+hi.
+    sigma_structure_class, sigma_ci_bounds = classify_ci_change(
+        sigma_meteor_begin_median,
+        sigma_meteor_begin_lo,
+        sigma_meteor_begin_hi,
+        sigma_meteor_change_median,
+        sigma_meteor_change_lo,
+        sigma_meteor_change_hi,
+    )
+
+    eta_structure_class, eta_ci_bounds = classify_ci_change(
+        eta_meteor_begin_median,
+        eta_meteor_begin_lo,
+        eta_meteor_begin_hi,
+        eta_meteor_change_median,
+        eta_meteor_change_lo,
+        eta_meteor_change_hi,
+    )
+
+    rho_structure_class, rho_ci_bounds = classify_ci_change(
+        rho_meteor_begin_median,
+        rho_meteor_begin_lo,
+        rho_meteor_begin_hi,
+        rho_meteor_change_median,
+        rho_meteor_change_lo,
+        rho_meteor_change_hi,
+    )
+
+    # Model architecture is a separate level of classification.
+    # 1-frag means that the data/model comparison does not contain a
+    # second fitted erosion transition; it is NOT equivalent to a
+    # Homogeneous 2-frag solution.
+    sigma_structure_class = np.asarray(sigma_structure_class, dtype=object)
+    eta_structure_class = np.asarray(eta_structure_class, dtype=object)
+    rho_structure_class = np.asarray(rho_structure_class, dtype=object)
+    sigma_structure_class[single_frag_mask] = 'single'
+    eta_structure_class[single_frag_mask] = 'single'
+    rho_structure_class[single_frag_mask] = 'single'
+
+    for parameter_name, structure_classes in [
+        ("sigma", sigma_structure_class),
+        ("eta", eta_structure_class),
+        ("rho", rho_structure_class),
+    ]:
+        # if rho then invert coconut with avocado in structure_classes
+        if parameter_name == "rho":
+            # save the structure classes to a variable
+            var_avocado=(structure_classes == "avocado")
+            var_coconut=(structure_classes == "coconut")
+            structure_classes = np.where(var_avocado, "coconut", structure_classes)
+            structure_classes = np.where(var_coconut, "avocado", structure_classes)
+        print(f"\n{parameter_name.upper()} CI classification (event level):")
+        print("  Single (1-frag):", np.sum(structure_classes == "single"))
+        print("  Homogenus (2-frag):", np.sum(structure_classes == "homogenus"))
+        print("  Avocado (2-frag):", np.sum(structure_classes == "avocado"))
+        print("  Coconut (2-frag):", np.sum(structure_classes == "coconut"))
+
+
+
+    # ==============================================================
+    # KC CORRELATION GRID WITH TROPICAL-FRUIT ETA CLASSES
+    # ==============================================================
+    print('Creating kc correlation grid with tropical-fruit eta classes...')
+
+    kc_style_map = {
+        "homogenus": {"color": "green", "marker": "o", "label": "Homogeneous"},
+        "avocado":   {"color": "red",   "marker": "^", "label": "Avocado"},
+        "coconut":   {"color": "blue",  "marker": "s", "label": "Coconut"},
+        "single":    {"color": "green", "marker": "D", "label": "1-frag"},
+    }
+
+    kc_plot_specs = [
+
+        (r"$\rho_{\rm eff}$ [kg/m$^3$]", np.asarray(rho, dtype=float), True),
+        (r"$P_{e1}$ [kPa]", np.asarray(erosion_beg_dyn_press_median, dtype=float), True),
+        (r"$P_{e2}$ [kPa]", np.asarray(dyn_press_at_erosion_change_median, dtype=float), True),
+        (r"$E_V$ [MJ/kg]", np.asarray(energy_per_mass_before_erosion_median, dtype=float), True),
+        (r"$\eta_1$ [kg/MJ]", np.asarray(eta_meteor_begin_median, dtype=float), True),
+        (r"$\eta_2$ [kg/MJ]", np.asarray(eta_meteor_change_median, dtype=float), True),
+        (r"$s$ [-]", np.asarray(erosion_mass_index_median, dtype=float), False),
+        (r"$E_S$ [MJ/m$^2$]", np.asarray(energy_per_cs_before_erosion_median, dtype=float), True),
+        (r"$\sigma_1$ [kg/MJ]", np.asarray(sigma_meteor_begin_median, dtype=float), True),
+        (r"$\sigma_2$ [kg/MJ]", np.asarray(sigma_meteor_change_median, dtype=float), True),
+        (r"$m_{1\,left}$ [%]", np.asarray(mass_left_first_erosion_perc, dtype=float), False),
+        (r"$m_{2\,left}$ [%]", np.asarray(mass_left_second_erosion_perc, dtype=float), False)
+    ]
+
+    eta_class_arr = np.asarray(eta_structure_class, dtype=object)
+    kc_arr = np.asarray(kc_par, dtype=float)
+    class_order = ["homogenus", "avocado", "coconut", "single"]
+
+    fig, axes = plt.subplots(3, 4, figsize=(16, 8))
+    axes = axes.flatten()
+
+    for ax, (xlabel, obs_raw, use_logx) in zip(axes, kc_plot_specs):
+
+        obs_arr = np.asarray(obs_raw, dtype=float)
+
+        valid = np.isfinite(obs_arr) & np.isfinite(kc_arr)
+        if use_logx:
+            valid &= (obs_arr > 0)
+
+        if not np.any(valid):
+            ax.text(
+                0.5, 0.5, 'No finite data',
+                ha='center', va='center', transform=ax.transAxes,
+                fontsize=11
+            )
+            ax.set_xlabel(xlabel, fontsize=12)
+            ax.set_ylabel(r'$k_c$' if ax in (axes[0], axes[4], axes[8]) else '', fontsize=12)
+            ax.grid(True, alpha=0.25)
+            continue
+
+        for cls in class_order:
+            cls_valid = valid & (eta_class_arr == cls)
+            if not np.any(cls_valid):
+                continue
+
+            # add a dashed line at 95
+            ax.axhline(y=95, color='black', linestyle='--', alpha=0.5)
+
+            style = kc_style_map[cls]
+            ax.scatter(
+                obs_arr[cls_valid],
+                kc_arr[cls_valid],
+                s=52 if cls != 'single' else 60,
+                c=style['color'],
+                marker=style['marker'],
+                edgecolors='black',
+                linewidths=0.55,
+                alpha=0.88,
+                zorder=3,
+            )
+
+        xcorr = np.log10(obs_arr[valid]) if use_logx else obs_arr[valid]
+        if len(xcorr) > 1 and np.nanstd(xcorr) > 0 and np.nanstd(kc_arr[valid]) > 0:
+            corr = np.corrcoef(xcorr, kc_arr[valid])[0, 1]
+            ax.set_title(f'corr: {corr:.2f}', fontsize=13)
+        else:
+            ax.set_title('corr: ---', fontsize=13)
+
+        if use_logx:
+            ax.set_xscale('log')
+
+        ax.set_xlabel(xlabel, fontsize=12)
+        if ax in (axes[0], axes[4], axes[8]):
+            ax.set_ylabel(r'$k_c$', fontsize=12)
+        else:
+            ax.set_ylabel('')
+
+        ax.grid(True, alpha=0.25)
+
+    for ax in axes[len(kc_plot_specs):]:
+        ax.axis('off')
+
+    legend_handles = []
+    for cls in class_order:
+        if np.any(eta_class_arr == cls):
+            style = kc_style_map[cls]
+            legend_handles.append(
+                Line2D(
+                    [0], [0],
+                    marker=style['marker'],
+                    linestyle='None',
+                    markerfacecolor=style['color'],
+                    markeredgecolor='black',
+                    markersize=8,
+                    label=style['label'],
+                )
+            )
+
+    if legend_handles:
+        fig.legend(
+            handles=legend_handles,
+            loc='upper center',
+            ncol=len(legend_handles),
+            frameon=False,
+            bbox_to_anchor=(0.5, 1.02),
+            fontsize=11,
+        )
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    # plt.savefig(
+    #     os.path.join(output_dir_show, f"{shower_name}_kc_grid.png"),
+    #     dpi=300,
+    #     bbox_inches='tight'
+    # )
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_kc_eta_grid.png"),
+        dpi=300,
+        bbox_inches='tight'
+    )
+    plt.close()
+
+    # plot with the eta class for x erosion_beg_dyn_press_median and y dyn_press_at_erosion_change_median
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for cls in class_order:
+        cls_valid = np.isfinite(erosion_beg_dyn_press_median) & np.isfinite(dyn_press_at_erosion_change_median) & (eta_class_arr == cls)
+        if not np.any(cls_valid):
+            continue
+
+        style = kc_style_map[cls]
+        ax.scatter(
+            erosion_beg_dyn_press_median[cls_valid],
+            dyn_press_at_erosion_change_median[cls_valid],
+            s=52 if cls != 'single' else 60,
+            c=style['color'],
+            marker=style['marker'],
+            edgecolors='black',
+            linewidths=0.55,
+            alpha=0.88,
+            zorder=3,
+        )
+
+    # y axis and x axis in log
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+
+    # add labels and title
+    ax.set_xlabel(r"$P_{e1}$ [kPa]")
+    ax.set_ylabel(r"$P_{e2}$ [kPa]")
+    # ax.set_title(f'{shower_name} - KC Correlation by Eta Class')
+
+    # add the legend
+    if legend_handles:
+        ax.legend(handles=legend_handles, loc='upper left')
+
+    # add the axis grid
+    ax.grid(True, alpha=0.25)
+
+    # save the plot
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_pressures.png"),
+        dpi=300,
+        bbox_inches='tight'
+    )
+    plt.close()
+
+    # ==============================================================
+    # KC CORRELATION GRID BY GROUP A / GROUP C
+    # Color = A/C group, marker = eta tropical-fruit class
+    # ==============================================================
+    print('Creating kc correlation grid for Group A and Group C using eta-class symbols...')
+
+    # Reuse the same event-level begin-height threshold already computed
+    # earlier in the script:
+    #   Group A : h_beg <  h_thr
+    #   Group C : h_beg >= h_thr
+    ac_hthr_arr = np.asarray(h_thr, dtype=float)
+    ac_hbeg_arr = np.asarray(beg_height, dtype=float)
+    eta_class_arr = np.asarray(eta_structure_class, dtype=object)
+
+    n_ac_events = len(kc_arr)
+    if len(ac_hthr_arr) != n_ac_events or len(ac_hbeg_arr) != n_ac_events:
+        raise RuntimeError(
+            'Group A/C classification arrays are not aligned with kc grid: '
+            f'h_thr={len(ac_hthr_arr)}, hbeg={len(ac_hbeg_arr)}, kc={n_ac_events}.'
+        )
+    if len(eta_class_arr) != n_ac_events:
+        raise RuntimeError(
+            'Eta-class array is not aligned with Group A/C kc grid: '
+            f'eta={len(eta_class_arr)}, kc={n_ac_events}.'
+        )
+
+    for xlabel, obs_raw, _ in kc_plot_specs:
+        if len(np.asarray(obs_raw)) != n_ac_events:
+            raise RuntimeError(
+                f'Group A/C kc grid length mismatch for {xlabel}: '
+                f'{len(np.asarray(obs_raw))} values vs {n_ac_events} kc values.'
+            )
+
+    ac_valid = (
+        np.isfinite(ac_hbeg_arr)
+        & np.isfinite(ac_hthr_arr)
+    )
+
+    # Use the same convention as in the A/C classification section later in the script.
+    group_A_mask = ac_valid & (ac_hbeg_arr < ac_hthr_arr)
+    group_C_mask = ac_valid & (ac_hbeg_arr >= ac_hthr_arr)
+
+    ac_group_masks = {
+        'Group A': group_A_mask,
+        'Group C': group_C_mask,
+    }
+    ac_color_map = {
+        'Group A': 'tab:orange',
+        'Group C': 'tab:purple',
+    }
+
+    print('\nGROUP A / C COUNTS FROM h_thr')
+    print('-----------------------------')
+    print(f'  Group A: {int(np.sum(group_A_mask))}')
+    print(f'  Group C: {int(np.sum(group_C_mask))}')
+    print(f'  Unclassified/non-finite: {int(np.sum(~ac_valid))}')
+
+    fig, axes = plt.subplots(3, 4, figsize=(16, 8))
+    axes = axes.flatten()
+
+    def _ac_corr_text(obs_arr, group_mask, use_logx):
+        valid_corr = (
+            group_mask
+            & np.isfinite(obs_arr)
+            & np.isfinite(kc_arr)
+        )
+        if use_logx:
+            valid_corr &= obs_arr > 0
+
+        if np.count_nonzero(valid_corr) < 2:
+            return '---'
+
+        xx = obs_arr[valid_corr]
+        yy = kc_arr[valid_corr]
+        if use_logx:
+            xx = np.log10(xx)
+
+        if np.nanstd(xx) <= 0 or np.nanstd(yy) <= 0:
+            return '---'
+
+        return f'{np.corrcoef(xx, yy)[0, 1]:.2f}'
+
+    for ax, (xlabel, obs_raw, use_logx) in zip(axes, kc_plot_specs):
+        obs_arr = np.asarray(obs_raw, dtype=float)
+
+        valid_base = np.isfinite(obs_arr) & np.isfinite(kc_arr)
+        if use_logx:
+            valid_base &= obs_arr > 0
+
+        if not np.any(valid_base & ac_valid):
+            ax.text(
+                0.5, 0.5, 'No finite A/C data',
+                ha='center', va='center', transform=ax.transAxes,
+                fontsize=11,
+            )
+            ax.set_xlabel(xlabel, fontsize=12)
+            ax.set_ylabel(r'$k_c$' if ax in (axes[0], axes[4], axes[8]) else '', fontsize=12)
+            ax.grid(True, alpha=0.25)
+            continue
+
+        # Shape from eta tropical-fruit class, color from Group A/C.
+        for group_name, group_mask in ac_group_masks.items():
+            for cls in class_order:
+                combo_mask = valid_base & group_mask & (eta_class_arr == cls)
+                if not np.any(combo_mask):
+                    continue
+
+                style = kc_style_map[cls]
+                ax.scatter(
+                    obs_arr[combo_mask],
+                    kc_arr[combo_mask],
+                    s=52 if cls != 'single' else 60,
+                    c=ac_color_map[group_name],
+                    marker=style['marker'],
+                    edgecolors='black',
+                    linewidths=0.55,
+                    alpha=0.88,
+                    zorder=3,
+                )
+
+        r_A = _ac_corr_text(obs_arr, group_A_mask, use_logx)
+        r_C = _ac_corr_text(obs_arr, group_C_mask, use_logx)
+        ax.set_title(rf'$r_A$={r_A}   $r_C$={r_C}', fontsize=12)
+
+        if use_logx:
+            ax.set_xscale('log')
+
+        ax.set_xlabel(xlabel, fontsize=12)
+        if ax in (axes[0], axes[4], axes[8]):
+            ax.set_ylabel(r'$k_c$', fontsize=12)
+        else:
+            ax.set_ylabel('')
+
+        ax.grid(True, alpha=0.25)
+
+    for ax in axes[len(kc_plot_specs):]:
+        ax.axis('off')
+
+    # Separate legends: A/C colors and eta-class marker shapes.
+    group_handles = []
+    for group_name, group_mask in ac_group_masks.items():
+        group_handles.append(
+            Line2D(
+                [0], [0],
+                marker='o',
+                linestyle='None',
+                markerfacecolor=ac_color_map[group_name],
+                markeredgecolor='black',
+                markersize=8,
+                label=f'{group_name} (N={int(np.sum(group_mask))})',
+            )
+        )
+
+    eta_shape_handles = []
+    for cls in class_order:
+        if np.any(eta_class_arr == cls):
+            style = kc_style_map[cls]
+            eta_shape_handles.append(
+                Line2D(
+                    [0], [0],
+                    marker=style['marker'],
+                    linestyle='None',
+                    markerfacecolor='white',
+                    markeredgecolor='black',
+                    markersize=8,
+                    label=style['label'],
+                )
+            )
+
+    legend1 = fig.legend(
+        handles=group_handles,
+        loc='upper center',
+        ncol=max(1, len(group_handles)),
+        frameon=False,
+        bbox_to_anchor=(0.28, 1.03),
+        fontsize=11,
+        title='A/C group colour',
+    )
+    fig.add_artist(legend1)
+
+    if eta_shape_handles:
+        fig.legend(
+            handles=eta_shape_handles,
+            loc='upper center',
+            ncol=len(eta_shape_handles),
+            frameon=False,
+            bbox_to_anchor=(0.74, 1.03),
+            fontsize=11,
+            title=r'$\eta$ class marker',
+        )
+
+    plt.tight_layout(rect=[0, 0, 1, 0.94])
+    ac_grid_path = os.path.join(
+        output_dir_show,
+        f'{shower_name}_kc_group_A_C_grid.png',
+    )
+    plt.savefig(ac_grid_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print('Saved:', ac_grid_path)
+
+
+
+    # ==============================================================
+    # GROUP A / C SUMMARY TABLE FOR EVERY VARIABLE IN THE KC GRID
+    # ==============================================================
+    # CI5/CI95 here are the empirical 5th and 95th percentiles across
+    # event-level values in each group. They are not the per-event Dynesty
+    # posterior confidence bounds.
+    ac_stats_specs = [
+        ("rho_eff_kg_m3", r"$\rho_{\rm eff}$ [kg/m$^3$]", np.asarray(rho, dtype=float), True),
+        ("P_e1_kPa", r"$P_{e1}$ [kPa]", np.asarray(erosion_beg_dyn_press_median, dtype=float), True),
+        ("P_e2_kPa", r"$P_{e2}$ [kPa]", np.asarray(dyn_press_at_erosion_change_median, dtype=float), True),
+        ("E_V_MJ_kg", r"$E_V$ [MJ/kg]", np.asarray(energy_per_mass_before_erosion_median, dtype=float), True),
+        ("s", r"$s$ [-]", np.asarray(erosion_mass_index_median, dtype=float), False),
+        ("eta_1_kg_MJ", r"$\eta_1$ [kg/MJ]", np.asarray(eta_meteor_begin_median, dtype=float), True),
+        ("eta_2_kg_MJ", r"$\eta_2$ [kg/MJ]", np.asarray(eta_meteor_change_median, dtype=float), True),
+        ("E_S_MJ_m2", r"$E_S$ [MJ/m$^2$]", np.asarray(energy_per_cs_before_erosion_median, dtype=float), True),
+        ("sigma_1_kg_MJ", r"$\sigma_1$ [kg/MJ]", np.asarray(sigma_meteor_begin_median, dtype=float), True),
+        ("sigma_2_kg_MJ", r"$\sigma_2$ [kg/MJ]", np.asarray(sigma_meteor_change_median, dtype=float), True),
+        ("rho_1_kg_m3", r"$\rho_1$ [kg/m$^3$]", np.asarray(rho_meteor_begin_median, dtype=float), True),
+        ("rho_2_kg_m3", r"$\rho_2$ [kg/m$^3$]", np.asarray(rho_meteor_change_median, dtype=float), True),
+        ("k_c", r"$k_c$", np.asarray(kc_arr, dtype=float), False),
+    ]
+
+    def _ac_group_stats(values, group_mask, positive_only=False):
+        values = np.asarray(values, dtype=float)
+        valid_stats = group_mask & np.isfinite(values)
+        if positive_only:
+            valid_stats &= values > 0
+
+        vals = values[valid_stats]
+        if vals.size == 0:
+            return {
+                "N": 0,
+                "CI5": np.nan,
+                "median": np.nan,
+                "CI95": np.nan,
+            }
+
+        q05, q50, q95 = np.nanpercentile(vals, [5, 50, 95])
+        return {
+            "N": int(vals.size),
+            "CI5": float(q05),
+            "median": float(q50),
+            "CI95": float(q95),
+        }
+
+    ac_summary_rows = []
+    for var_name, var_label, values, positive_only in ac_stats_specs:
+        row = {
+            "variable": var_name,
+            "label": var_label,
+            "Group_A_N_total": int(np.sum(group_A_mask)),
+            "Group_C_N_total": int(np.sum(group_C_mask)),
+        }
+
+        for prefix, group_mask in [
+            ("Group_A", group_A_mask),
+            ("Group_C", group_C_mask),
+        ]:
+            stats = _ac_group_stats(values, group_mask, positive_only=positive_only)
+            row[f"{prefix}_N"] = stats["N"]
+            row[f"{prefix}_CI5"] = stats["CI5"]
+            row[f"{prefix}_median"] = stats["median"]
+            row[f"{prefix}_CI95"] = stats["CI95"]
+
+        ac_summary_rows.append(row)
+
+    ac_summary_df = pd.DataFrame(ac_summary_rows)
+    ac_summary_path = os.path.join(
+        output_dir_show,
+        f"{shower_name}_group_A_C_kc_variables_summary.csv",
+    )
+    ac_summary_df.to_csv(ac_summary_path, index=False)
+    print("Saved Group A/C summary CSV:", ac_summary_path)
+
+    # ==============================================================
+    # MANUSCRIPT LATEX TABLES: A/C + CAMO NARROW-FIELD + ABC
+    # ==============================================================
+    # These tables are generated from the current event arrays so that the
+    # manuscript numbers update automatically when the classifications change.
+    generate_manuscript_latex_tables(
+        output_dir_show=output_dir_show,
+        shower_name=shower_name,
+        model_event_names=all_names,
+        group_A_mask=group_A_mask,
+        group_C_mask=group_C_mask,
+        rho_eff=rho,
+        erosion_height_start=erosion_height_start_median,
+        erosion_height_change=erosion_height_change_median,
+        P_e1=erosion_beg_dyn_press_median,
+        P_e2=dyn_press_at_erosion_change_median,
+        E_S=energy_per_cs_before_erosion_median,
+        E_V=energy_per_mass_before_erosion_median,
+        mass_left_e1=mass_left_first_erosion_perc,
+        mass_left_e2=mass_left_second_erosion_perc,
+        grain_mass_index=erosion_mass_index_median,
+        eta_1=eta_meteor_begin_median,
+        eta_2=eta_meteor_change_median,
+        eta_structure_class=eta_structure_class,
+        sigma_structure_class=sigma_structure_class,
+        rho_structure_class=rho_structure_class,
+        camo_review_path=CAMO_REVIEW_XLSX,
+    )
+
+
+    # Make sure these are arrays
+    rho = np.asarray(rho, dtype=float)
+    rho_lo = np.asarray(rho_lo, dtype=float)
+    rho_hi = np.asarray(rho_hi, dtype=float)
+    tj = np.asarray(tj, dtype=float)
+
+    # This must already exist in your code
+    # e.g. eta_structure_class from classify_ci_change(...)
+    eta_plot_class = np.asarray(eta_structure_class, dtype=object)
+
+    if len(eta_plot_class) != len(rho):
+        raise RuntimeError(
+            f"eta_structure_class has length {len(eta_plot_class)} but rho has length {len(rho)}"
+        )
+
+    # -----------------------------
+    # Choose x-axis range
+    # -----------------------------
+    rho_upper_extent = rho + np.abs(rho_hi)
+    finite_rho_extent = rho_upper_extent[np.isfinite(rho_upper_extent)]
+
+    if len(finite_rho_extent) == 0:
+        x_max = 4000
+    else:
+        max_rho_extent = np.nanmax(finite_rho_extent)
+        if max_rho_extent > 4000:
+            x_max = 4000
+        else:
+            # round nicely upward
+            x_max = max(1000, int(np.ceil(max_rho_extent / 500.0) * 500))
+
+    x_min = -100
+
+    # -----------------------------
+    # Figure layout
+    # -----------------------------
+    fig = plt.figure(figsize=(8, 10))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3], hspace=0)
+
     ax_dist = fig.add_subplot(gs[0])
     ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
 
-    # --- TOP PANEL: Rho Distribution ---
-    smooth = 0.02
-    lo, hi = np.min(rho_corrected), np.max(rho_corrected)
-    nbins = int(round(10. / smooth))
-    hist, edges = np.histogram(rho_corrected, bins=nbins, weights=w, range=(lo, hi))
-    hist = norm_kde(hist, 10.0)
-    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+    # -----------------------------
+    # TOP PANEL: rho distribution
+    # -----------------------------
+    rho_corr = np.asarray(rho_corrected, dtype=float)
+    w_corr = np.asarray(w, dtype=float)
 
-    ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
+    finite_mask = np.isfinite(rho_corr) & np.isfinite(w_corr)
+    rho_corr = rho_corr[finite_mask]
+    w_corr = w_corr[finite_mask]
+
+    # For display, clip the histogram to the shown x-range
+    display_mask = (rho_corr >= 0) & (rho_corr <= x_max)
+    rho_hist_vals = rho_corr[display_mask]
+    w_hist_vals = w_corr[display_mask]
+
+    if len(rho_hist_vals) > 1:
+        smooth = 0.02
+        lo = 0
+        hi = x_max
+        nbins = int(round(10.0 / smooth))
+        hist, edges = np.histogram(
+            rho_hist_vals,
+            bins=nbins,
+            weights=w_hist_vals,
+            range=(lo, hi)
+        )
+        hist = norm_kde(hist, 10.0)
+        bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+        ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
 
     # Percentile lines
     ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
     ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
     ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
 
-    # Title and formatting
     plus = rho_corrected_hi - rho_corrected_median
     minus = rho_corrected_median - rho_corrected_lo
     fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
     title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+
     ax_dist.set_title(title, fontsize=20)
-    ax_dist.set_xlim(-100, 8300)
+    ax_dist.set_xlim(x_min, x_max)
     ax_dist.tick_params(axis='x', labelbottom=False)
     ax_dist.tick_params(axis='y', left=False, labelleft=False)
     ax_dist.set_ylabel("")
@@ -6576,176 +8383,217 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax_dist.spines['right'].set_visible(False)
     ax_dist.spines['top'].set_visible(False)
 
-    # --- BOTTOM PANEL: Rho vs Tj ---
+    # -----------------------------
+    # BOTTOM PANEL: rho vs Tj
+    # -----------------------------
+    style_map = {
+        "homogenus": {"color": "green", "marker": "o", "label": "Homogeneous"},
+        "avocado":   {"color": "red",   "marker": "^", "label": "Avocado"},
+        "coconut":   {"color": "blue",  "marker": "s", "label": "Coconut"},
+        "single":    {"color": "green", "marker": "D", "label": "1-frag"},
+    }
+
+    # Plot error bars first
     for i in range(len(tj)):
+        if not (np.isfinite(rho[i]) and np.isfinite(tj[i])):
+            continue
+
         ax_scatter.errorbar(
-            rho[i], tj[i],
+            rho[i],
+            tj[i],
             xerr=[[abs(rho_lo[i])], [abs(rho_hi[i])]],
-            yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
-            elinewidth=0.75,
-            capthick=0.75,
             fmt='none',
             ecolor='black',
+            elinewidth=0.75,
+            capthick=0.75,
             capsize=3,
             zorder=1
         )
 
-    scatter = ax_scatter.scatter(
-        rho, tj,
-        # c=np.log10(meteoroid_diameter_mm),
-        c=log10_m_init,
-        # c=kc_par,
-        # cmap='viridis',
-        # cmap='coolwarm',
-        cmap='Spectral_r',
-        # norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)),
-        norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
-        # norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
-        s=40,
-        zorder=2,
-        edgecolors='black', 
-        linewidth=0.5
-    )
+    # Then plot each eta class separately
+    plot_order = ["homogenus", "avocado", "coconut", "single"]
+    legend_handles = []
 
-    # Add manually aligned colorbar
-    # Get position of ax_scatter to align colorbar
-    pos = ax_scatter.get_position()
-    cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
-    cbar = plt.colorbar(scatter, cax=cbar_ax)
-    # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
-    cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
-    # cbar.set_label('$k_c$ parameter', fontsize=20)
-    # the ticks size of the colorbar
-    cbar.ax.tick_params(labelsize=20)
+    for cls in plot_order:
+        cls_mask = (eta_plot_class == cls) & np.isfinite(rho) & np.isfinite(tj)
+        if not np.any(cls_mask):
+            continue
 
-    # Tj markers
-    if shower_iau_no == -1:
-        ax_scatter.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1)
-        ax_scatter.text(7500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
-        ax_scatter.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1)
-        ax_scatter.text(7500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
-        if ax_scatter.get_ylim()[0] < 1.5:
-            ax_scatter.text(7500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+        st = style_map[cls]
 
-    # Axis labels
-    ax_scatter.set_xlim(-100, 8300)
-    ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    ax_scatter.set_ylabel(r'Tisserand parameter (T$_j$)', fontsize=20)
-    ax_scatter.tick_params(labelsize=20)
-    # display the values on the x and y axes at 0 2000 4000 6000 8000
-    ax_scatter.set_xticks(np.arange(0, 9000, 2000))
-    ax_scatter.grid(True)
-
-    # Save
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_logmass_combined_plot.png"), bbox_inches='tight', dpi=300)
-    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
-    plt.close()
-
-
-    # Create figure
-    fig = plt.figure(figsize=(8, 10))
-    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
-
-    # Set main axes (with shared x-axis)
-    ax_dist = fig.add_subplot(gs[0])
-    ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
-
-    # --- TOP PANEL: Rho Distribution ---
-    smooth = 0.02
-    lo, hi = np.min(rho_corrected), np.max(rho_corrected)
-    nbins = int(round(10. / smooth))
-    hist, edges = np.histogram(rho_corrected, bins=nbins, weights=w, range=(lo, hi))
-    hist = norm_kde(hist, 10.0)
-    bin_centers = 0.5 * (edges[:-1] + edges[1:])
-
-    ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
-
-    # Percentile lines
-    ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
-    ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
-
-    # Title and formatting
-    plus = rho_corrected_hi - rho_corrected_median
-    minus = rho_corrected_median - rho_corrected_lo
-    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
-    ax_dist.set_title(title, fontsize=20)
-    ax_dist.set_xlim(-100, 8300)
-    ax_dist.tick_params(axis='x', labelbottom=False)
-    ax_dist.tick_params(axis='y', left=False, labelleft=False)
-    ax_dist.set_ylabel("")
-    ax_dist.spines['bottom'].set_visible(False)
-    ax_dist.spines['left'].set_visible(False)
-    ax_dist.spines['right'].set_visible(False)
-    ax_dist.spines['top'].set_visible(False)
-
-    # --- BOTTOM PANEL: Rho vs Tj ---
-    for i in range(len(tj)):
-        ax_scatter.errorbar(
-            rho[i], tj[i],
-            xerr=[[abs(rho_lo[i])], [abs(rho_hi[i])]],
-            yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
-            elinewidth=0.75,
-            capthick=0.75,
-            fmt='none',
-            ecolor='black',
-            capsize=3,
-            zorder=1
+        ax_scatter.scatter(
+            rho[cls_mask],
+            tj[cls_mask],
+            s=60,
+            c=st["color"],
+            marker=st["marker"],
+            edgecolors='black',
+            linewidth=0.6,
+            alpha=0.9,
+            zorder=3,
+            label=st["label"]
         )
 
-    scatter = ax_scatter.scatter(
-        rho, tj,
-        # c=np.log10(meteoroid_diameter_mm),
-        # c=log10_m_init,
-        c='red',
-        # c=kc_par,
-        # cmap='viridis',
-        # cmap='coolwarm',
-        # cmap='Spectral_r',
-        # # norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)),
-        # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
-        # norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
-        marker='x',
-        s=40,
-        zorder=2,
-        edgecolors='black', 
-        # linewidth=0.5
-    )
+        legend_handles.append(
+            Line2D(
+                [0], [0],
+                marker=st["marker"],
+                color='w',
+                label=st["label"],
+                markerfacecolor=st["color"],
+                markeredgecolor='black',
+                markersize=8,
+                linewidth=0
+            )
+        )
 
-    # Add manually aligned colorbar
-    # Get position of ax_scatter to align colorbar
-    # pos = ax_scatter.get_position()
-    # cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
-    # cbar = plt.colorbar(scatter, cax=cbar_ax)
-    # # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
-    # cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
-    # cbar.set_label('$k_c$ parameter', fontsize=20)
-    # the ticks size of the colorbar
-    cbar.ax.tick_params(labelsize=20)
-
-    # Tj markers
+    # Tj boundary lines
     if shower_iau_no == -1:
-        ax_scatter.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1)
-        ax_scatter.text(5500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
-        ax_scatter.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1)
-        ax_scatter.text(5500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
-        if ax_scatter.get_ylim()[0] < 1.5:
-            ax_scatter.text(5500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+        ax_scatter.axhline(y=3.0, color='lime', linestyle='--', linewidth=1.2, zorder=0)
+        ax_scatter.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.2, zorder=0)
 
-    # Axis labels
-    ax_scatter.set_xlim(0, 6000)
+        # Put labels inside the panel
+        x_text = x_min + 0.92 * (x_max - x_min)
+        ax_scatter.text(x_text, 3.1, 'AST', fontsize=14, ha='left', va='bottom')
+        ax_scatter.text(x_text, 2.3, 'JFC', fontsize=14, ha='left', va='bottom')
+
+        y_min_now, y_max_now = ax_scatter.get_ylim()
+        if y_min_now < 2.0:
+            ax_scatter.text(x_text, 1.3, 'HTC', fontsize=14, ha='left', va='bottom')
+
+    # Axis labels and formatting
+    ax_scatter.set_xlim(x_min, x_max)
     ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    ax_scatter.set_ylabel(r'Tisserand parameter (T$_j$)', fontsize=20)
+    ax_scatter.set_ylabel(r'Tisserand parameter (T$_J$)', fontsize=20)
     ax_scatter.tick_params(labelsize=20)
-    # display the values on the x and y axes at 0 2000 4000 6000 8000
-    ax_scatter.set_xticks(np.arange(0, 6001, 1000))
-    ax_scatter.grid(True)
 
-    # Save
-    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_JB_plot.png"), bbox_inches='tight', dpi=300)
-    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
+    if x_max <= 4000:
+        ax_scatter.set_xticks(np.arange(0, x_max + 1, 1000))
+    else:
+        ax_scatter.set_xticks(np.arange(0, x_max + 1, 2000))
+
+    ax_scatter.grid(True, alpha=0.3)
+
+    if legend_handles:
+        ax_scatter.legend(
+            handles=legend_handles,
+            loc='best',
+            fontsize=12,
+            frameon=True
+        )
+
+    plt.savefig(
+        os.path.join(output_dir_show, f"{shower_name}_rho_Tj_logmass_combined_plot.png"),
+        bbox_inches='tight',
+        dpi=300
+    )
     plt.close()
+
+
+    # # Create figure
+    # fig = plt.figure(figsize=(8, 10))
+    # gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
+
+    # # Set main axes (with shared x-axis)
+    # ax_dist = fig.add_subplot(gs[0])
+    # ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
+
+    # # --- TOP PANEL: Rho Distribution ---
+    # smooth = 0.02
+    # lo, hi = np.min(rho_corrected), np.max(rho_corrected)
+    # nbins = int(round(10. / smooth))
+    # hist, edges = np.histogram(rho_corrected, bins=nbins, weights=w, range=(lo, hi))
+    # hist = norm_kde(hist, 10.0)
+    # bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+    # ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
+
+    # # Percentile lines
+    # ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
+    # ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
+    # ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
+
+    # # Title and formatting
+    # plus = rho_corrected_hi - rho_corrected_median
+    # minus = rho_corrected_median - rho_corrected_lo
+    # fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    # title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    # ax_dist.set_title(title, fontsize=20)
+    # ax_dist.set_xlim(-100, 8300)
+    # ax_dist.tick_params(axis='x', labelbottom=False)
+    # ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    # ax_dist.set_ylabel("")
+    # ax_dist.spines['bottom'].set_visible(False)
+    # ax_dist.spines['left'].set_visible(False)
+    # ax_dist.spines['right'].set_visible(False)
+    # ax_dist.spines['top'].set_visible(False)
+
+    # # --- BOTTOM PANEL: Rho vs Tj ---
+    # for i in range(len(tj)):
+    #     ax_scatter.errorbar(
+    #         rho[i], tj[i],
+    #         xerr=[[abs(rho_lo[i])], [abs(rho_hi[i])]],
+    #         yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
+    #         elinewidth=0.75,
+    #         capthick=0.75,
+    #         fmt='none',
+    #         ecolor='black',
+    #         capsize=3,
+    #         zorder=1
+    #     )
+
+    # scatter = ax_scatter.scatter(
+    #     rho, tj,
+    #     # c=np.log10(meteoroid_diameter_mm),
+    #     # c=log10_m_init,
+    #     c='red',
+    #     # c=kc_par,
+    #     # cmap='viridis',
+    #     # cmap='coolwarm',
+    #     # cmap='Spectral_r',
+    #     # # norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)),
+    #     # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
+    #     # norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
+    #     marker='x',
+    #     s=40,
+    #     zorder=2,
+    #     edgecolors='black', 
+    #     # linewidth=0.5
+    # )
+
+    # # Add manually aligned colorbar
+    # # Get position of ax_scatter to align colorbar
+    # # pos = ax_scatter.get_position()
+    # # cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
+    # # cbar = plt.colorbar(scatter, cax=cbar_ax)
+    # # # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+    # # cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
+    # # cbar.set_label('$k_c$ parameter', fontsize=20)
+    # # the ticks size of the colorbar
+    # cbar.ax.tick_params(labelsize=20)
+
+    # # Tj markers
+    # if shower_iau_no == -1:
+    #     ax_scatter.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1)
+    #     ax_scatter.text(5500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
+    #     ax_scatter.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1)
+    #     ax_scatter.text(5500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
+    #     if ax_scatter.get_ylim()[0] < 1.5:
+    #         ax_scatter.text(5500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+
+    # # Axis labels
+    # ax_scatter.set_xlim(0, 6000)
+    # ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    # ax_scatter.set_ylabel(r'Tisserand parameter (T$_j$)', fontsize=20)
+    # ax_scatter.tick_params(labelsize=20)
+    # # display the values on the x and y axes at 0 2000 4000 6000 8000
+    # ax_scatter.set_xticks(np.arange(0, 6001, 1000))
+    # ax_scatter.grid(True)
+
+    # # Save
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_JB_plot.png"), bbox_inches='tight', dpi=300)
+    # # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
+    # plt.close()
 
     # save as a csv the first column is all base_name then the Tj and then density
     summary_df_rho_tj = pd.DataFrame({
@@ -7113,53 +8961,37 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         os.makedirs(output_dir_rho, exist_ok=True)
 
         # ================================================================
-        # STRUCTURAL CLASSIFICATION FROM THE PER-EVENT 95% CIs
+        # TROPICAL-FRUIT STRUCTURAL CLASS vs INITIAL VELOCITY
         # ================================================================
-        # The *_lo/*_hi arrays are asymmetric error widths, therefore the
-        # classifier reconstructs the actual interval as median-lo/median+hi.
-        sigma_structure_class, sigma_ci_bounds = classify_ci_change(
-            sigma_meteor_begin_median,
-            sigma_meteor_begin_lo,
-            sigma_meteor_begin_hi,
-            sigma_meteor_change_median,
-            sigma_meteor_change_lo,
-            sigma_meteor_change_hi,
+        # These plots use v_init from the fitted meteor solution, not Vg.
+        # The ``single`` (selected 1-frag) architecture is excluded because it
+        # has no fitted stage-2 parameter and therefore is not a fruit class.
+        velocity_class_plot_dir = os.path.join(
+            output_dir_rho, "initial_velocity_by_structure_class"
         )
+        os.makedirs(velocity_class_plot_dir, exist_ok=True)
 
-        eta_structure_class, eta_ci_bounds = classify_ci_change(
-            eta_meteor_begin_median,
-            eta_meteor_begin_lo,
-            eta_meteor_begin_hi,
-            eta_meteor_change_median,
-            eta_meteor_change_lo,
-            eta_meteor_change_hi,
+        plot_tropical_fruit_vs_initial_velocity(
+            sigma_structure_class,
+            v_init_meteor_median,
+            velocity_class_plot_dir,
+            shower_name,
+            "sigma",
         )
-
-        rho_structure_class, rho_ci_bounds = classify_ci_change(
-            rho_meteor_begin_median,
-            rho_meteor_begin_lo,
-            rho_meteor_begin_hi,
-            rho_meteor_change_median,
-            rho_meteor_change_lo,
-            rho_meteor_change_hi,
+        plot_tropical_fruit_vs_initial_velocity(
+            eta_structure_class,
+            v_init_meteor_median,
+            velocity_class_plot_dir,
+            shower_name,
+            "eta",
         )
-
-        for parameter_name, structure_classes in [
-            ("sigma", sigma_structure_class),
-            ("eta", eta_structure_class),
-            ("rho", rho_structure_class),
-        ]:
-            # if rho then invert coconut with avocado in structure_classes
-            if parameter_name == "rho":
-                # save the structure classes to a variable
-                var_avocado=(structure_classes == "avocado")
-                var_coconut=(structure_classes == "coconut")
-                structure_classes = np.where(var_avocado, "coconut", structure_classes)
-                structure_classes = np.where(var_coconut, "avocado", structure_classes)
-            print(f"\n{parameter_name.upper()} CI classification (event level):")
-            print("  Homogenus :", np.sum(structure_classes == "homogenus"))
-            print("  Avocado :", np.sum(structure_classes == "avocado"))
-            print("  Coconut :", np.sum(structure_classes == "coconut"))
+        plot_tropical_fruit_vs_initial_velocity(
+            rho_structure_class,
+            v_init_meteor_median,
+            velocity_class_plot_dir,
+            shower_name,
+            "rho",
+        )
 
         # ### CORNER PLOT ###
         # # takes forever, so run it last
@@ -8175,7 +10007,12 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         lo_all = float(np.nanmin(rho_samp))
         hi_all = float(np.nanmax(rho_samp))
         nbins = int(round(10.0 / smooth))
-        xlim = (-100, 8300)
+        if hi_all > 4300:
+            xlim = (-100, 8300)
+            print("IRON FOUND")
+        else:
+            xlim = (-100, 4300)
+            print("STONY FOUND")
 
         # ---------- Helper: a panel identical to your top one ----------
         def _panel_like_top(ax, rho_vals, weights, title_prefix, lo, hi, nbins, xlim, var_name="$\\rho$ [kg/m$^3$]", color_plot='black'):
@@ -8237,19 +10074,20 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         # Event-level correlation products for the standard Tisserand classes.
         tj_finite_event = np.isfinite(tj)
-        save_event_class_correlations(
-            classification_name="Tj_class",
-            class_event_masks={
-                "AST": tj_finite_event & (tj >= 3.0),
-                "JFC": tj_finite_event & (tj >= 2.0) & (tj < 3.0),
-                "HTC": tj_finite_event & (tj < 2.0),
-            },
-            event_names=event_names_like,
-            triangle_parameters=triangle_parameters,
-            output_dir=out_path,
-            shower_name=shower_name,
-            event_extra_columns={"Tj": tj},
-        )
+        if plot_correl_flag:
+            save_event_class_correlations(
+                classification_name="Tj_class",
+                class_event_masks={
+                    "AST": tj_finite_event & (tj >= 3.0),
+                    "JFC": tj_finite_event & (tj >= 2.0) & (tj < 3.0),
+                    "HTC": tj_finite_event & (tj < 2.0),
+                },
+                event_names=event_names_like,
+                triangle_parameters=triangle_parameters,
+                output_dir=out_path,
+                shower_name=shower_name,
+                event_extra_columns={"Tj": tj},
+            )
 
         # ---------- Class masks at SAMPLE level ----------
         finite = np.isfinite(rho_samp) & np.isfinite(tj_samples) & np.isfinite(w_all)
@@ -8285,6 +10123,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         axes[2].tick_params(axis='x', labelbottom=True)
         axes[2].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
         axes[2].set_xticks(np.arange(0, 9000, 2000))
+        axes[2].set_xlim(*xlim)
         for ax in axes:
             ax.tick_params(labelsize=20)
         out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_Tj_threepanels_weighted.png")
@@ -8407,6 +10246,234 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.xlim(-100, 8300)
         plt.savefig(os.path.join(out_path, f"{shower_name}_rho_distribution_by_2_Tj.png"), bbox_inches='tight', dpi=300)
         plt.close()
+
+
+        # ======================================================================
+        # FULL POSTERIOR DENSITY DISTRIBUTIONS vs IMEM2 and MEMv3
+        #
+        # IMPORTANT: use rho_samp + w_all directly (all corrected posterior
+        # samples), NOT one median rho per meteor.  tj_samples maps every
+        # posterior sample to the Tj of its parent event above.
+        #
+        # MEM population split used here:
+        #   Lo density : Tj < 2       (HTC-like)
+        #   Hi density : Tj >= 2      (JFC + AST-like)
+        # ======================================================================
+
+        # Same 50 kg/m^3 density bins used by the MEMv3 density files.
+        rho_compare_edges = np.arange(100.0, 8000.0 + 50.0, 50.0)
+        rho_compare_centers = 0.5 * (rho_compare_edges[:-1] + rho_compare_edges[1:])
+
+        def _full_weighted_rho_distribution(rho_values, weights, mask, edges, smooth_sigma_bins=1.5):
+            """Return a smooth, unit-sum density distribution from ALL posterior samples."""
+            rho_values = np.asarray(rho_values, dtype=float)
+            weights = np.asarray(weights, dtype=float)
+            mask = np.asarray(mask, dtype=bool)
+
+            valid = (
+                mask
+                & np.isfinite(rho_values)
+                & np.isfinite(weights)
+                & (rho_values >= edges[0])
+                & (rho_values <= edges[-1])
+                & (weights >= 0)
+            )
+            if not np.any(valid):
+                return np.zeros(len(edges) - 1, dtype=float)
+
+            ww = weights[valid].astype(float)
+            if np.sum(ww) > 0:
+                ww /= np.sum(ww)
+            else:
+                ww = None
+
+            hist, _ = np.histogram(rho_values[valid], bins=edges, weights=ww)
+            hist = hist.astype(float)
+
+            # Only a light smoothing is used: the posterior samples already
+            # contain the fitted density uncertainty.  This removes bin noise
+            # without replacing the posterior with an event-median KDE.
+            if smooth_sigma_bins is not None and smooth_sigma_bins > 0:
+                hist = norm_kde(hist, smooth_sigma_bins)
+
+            hist = np.clip(hist, 0.0, None)
+            if np.sum(hist) > 0:
+                hist /= np.sum(hist)
+            return hist
+
+        rho_total_mask = np.isfinite(rho_samp) & np.isfinite(w_all)
+        rho_lo_tj_mask = rho_total_mask & np.isfinite(tj_samples) & (tj_samples < 2.0)
+        rho_hi_tj_mask = rho_total_mask & np.isfinite(tj_samples) & (tj_samples >= 2.0)
+
+        rho_total_dist = _full_weighted_rho_distribution(
+            rho_samp, w_all, rho_total_mask, rho_compare_edges
+        )
+        rho_lo_tj_dist = _full_weighted_rho_distribution(
+            rho_samp, w_all, rho_lo_tj_mask, rho_compare_edges
+        )
+        rho_hi_tj_dist = _full_weighted_rho_distribution(
+            rho_samp, w_all, rho_hi_tj_mask, rho_compare_edges
+        )
+
+        # --------------------------------------------------------------
+        # IMEM2: native density distribution supplied by IMEM2.
+        # It contains only the discrete 1, 2, and 4 g/cm^3 density classes.
+        # For the SHAPE comparison below, peak-normalize both IMEM2 and our
+        # curves to 1.  This avoids the arbitrary difference caused by IMEM2
+        # having only three density bins while our curve uses 50 kg/m^3 bins.
+        # --------------------------------------------------------------
+        IMEM_rho_flux = np.array([
+            12.127695083618164,
+            687.5158691,
+            55.734817504882812,
+        ], dtype=float)
+        IMEM_rho_flux /= np.sum(IMEM_rho_flux)
+        IMEM_rho = np.array([1000.0, 2000.0, 4000.0], dtype=float)  # kg/m^3
+
+        def _peak_normalize(values):
+            values = np.asarray(values, dtype=float)
+            vmax = np.nanmax(values) if np.any(np.isfinite(values)) else np.nan
+            if np.isfinite(vmax) and vmax > 0:
+                return values / vmax
+            return values
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(
+            rho_compare_centers,
+            _peak_normalize(rho_total_dist),
+            color='blue', linewidth=2.2,
+            label='This work: total',
+        )
+        # ax.plot(
+        #     rho_compare_centers,
+        #     _peak_normalize(rho_hi_tj_dist),
+        #     color='darkblue', linestyle='--', linewidth=2.2,
+        #     label=r'This work: $T_J \geq 2$',
+        # )
+        # ax.plot(
+        #     rho_compare_centers,
+        #     _peak_normalize(rho_lo_tj_dist),
+        #     color='dodgerblue', linestyle=':', linewidth=2.6,
+        #     label=r'This work: $T_J < 2$',
+        # )
+        ax.plot(
+            IMEM_rho,
+            _peak_normalize(IMEM_rho_flux),
+            color='forestgreen', linestyle=':', marker='o',
+            markersize=6, linewidth=2,
+            label='IMEM2',
+        )
+        ax.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=16)
+        ax.set_ylabel('Relative density distribution', fontsize=14)
+        ax.set_xlim(100, 8000)
+        ax.set_ylim(0, 1.05)
+        ax.tick_params(labelsize=13)
+        ax.grid(True, alpha=0.25)
+        ax.legend(fontsize=11)
+        fig.tight_layout()
+        os.makedirs(out_path, exist_ok=True)
+        out_imem_rho = os.path.join(out_path, f"{shower_name}_posterior_vs_IMEM2.png")
+        fig.savefig(out_imem_rho, bbox_inches='tight', dpi=300)
+        plt.close(fig)
+        print("Saved:", out_imem_rho)
+
+        # --------------------------------------------------------------
+        # MEMv3 native Lo/Hi distributions.
+        # These files already give a fraction per 50 kg/m^3 density bin, so
+        # compare them directly with the unit-sum posterior distributions above.
+        # --------------------------------------------------------------
+        pathLowMEM = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\ISS-risk\MEMv3-ISS100points\ISS_MEMv3\lodensity.txt"
+        pathHighMEM = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\ISS-risk\MEMv3-ISS100points\ISS_MEMv3\hidensity.txt"
+
+        def _read_mem_density_file(path):
+            rows = []
+            with open(path, 'r') as f:
+                for line in f:
+                    s = line.strip()
+                    if (not s) or s.startswith('#'):
+                        continue
+                    parts = s.split()
+                    if len(parts) < 3:
+                        continue
+                    rows.append((float(parts[0]), float(parts[1]), float(parts[2])))
+
+            arr = np.asarray(rows, dtype=float)
+            if arr.ndim != 2 or arr.shape[1] < 3:
+                raise RuntimeError(f"Could not read MEM density distribution: {path}")
+
+            centers = 0.5 * (arr[:, 0] + arr[:, 1])
+            frac = np.clip(arr[:, 2].astype(float), 0.0, None)
+            if np.sum(frac) > 0:
+                frac /= np.sum(frac)
+            return centers, frac
+
+        if os.path.isfile(pathLowMEM) and os.path.isfile(pathHighMEM):
+            mem_lo_rho, mem_lo_dist = _read_mem_density_file(pathLowMEM)
+            mem_hi_rho, mem_hi_dist = _read_mem_density_file(pathHighMEM)
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+            # ax.plot(
+            #     rho_compare_centers, rho_total_dist,
+            #     color='royalblue', linewidth=3.5,
+            #     label='This work: total',
+            # )
+            ax.plot(
+                rho_compare_centers, rho_hi_tj_dist,
+                color='royalblue', linestyle='--', linewidth=2.2,
+                label=r'This work: $T_J \geq 2$',
+            )
+            ax.plot(
+                rho_compare_centers, rho_lo_tj_dist,
+                color='dodgerblue', linestyle='-.', linewidth=2.2,
+                label=r'This work: $T_J < 2$',
+            )
+
+            # Requested model colours/styles:
+            #   MEM Lo = green dotted
+            #   MEM Hi = red dashed
+            ax.plot(
+                mem_lo_rho, mem_lo_dist,
+                color='darkorange', linestyle='-.', linewidth=2,
+                label='MEMv3 Lo density',
+            )
+            ax.plot(
+                mem_hi_rho, mem_hi_dist,
+                color='peru', linestyle='--', linewidth=2,
+                label='MEMv3 Hi density',
+            )
+
+            ax.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=16)
+            ax.set_ylabel(r'Fraction per 50 kg/m$^3$ bin', fontsize=14)
+            ax.set_xlim(100, 8000)
+            # log y axis
+            ax.set_yscale('log')
+            # ranges from 10^-3 to 10^-1
+            ax.set_ylim(1e-3, 1e-1)
+            ax.tick_params(labelsize=13)
+            ax.grid(True, alpha=0.25)
+            ax.legend(fontsize=11)
+
+            fig.tight_layout()
+            os.makedirs(out_path, exist_ok=True)
+            out_mem3_rho = os.path.join(out_path, f"{shower_name}_posterior_vs_MEMv3.png")
+            fig.savefig(out_mem3_rho, bbox_inches='tight', dpi=300)
+            plt.close(fig)
+            print("Saved:", out_mem3_rho)
+        else:
+            print("WARNING: MEMv3 density files not found; skipping MEM density comparison.")
+            print("  Lo:", pathLowMEM)
+            print("  Hi:", pathHighMEM)
+
+        # Save the posterior density curves used in both comparison figures.
+        pd.DataFrame({
+            'rho_center_kg_m3': rho_compare_centers,
+            'this_work_total_fraction': rho_total_dist,
+            'this_work_Tj_lt_2_fraction': rho_lo_tj_dist,
+            'this_work_Tj_ge_2_fraction': rho_hi_tj_dist,
+        }).to_csv(
+            os.path.join(out_path, f"{shower_name}_rho_full_posterior_distributions.csv"),
+            index=False,
+        )
 
         # --------------------------
         # Pattern 1 (recommended)
@@ -8757,24 +10824,25 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         # Event-level correlation products for the detailed Tisserand cuts.
         tj_finite_event = np.isfinite(tj)
-        save_event_class_correlations(
-            classification_name="Tj_all_class",
-            class_event_masks={
-                "AST_Tj_ge_5": tj_finite_event & (tj >= 5.0),
-                "AST_4_to_5": tj_finite_event & (tj >= 4.0) & (tj < 5.0),
-                "AST_3.05_to_4": tj_finite_event & (tj >= 3.05) & (tj < 4.0),
-                "mix_2.8_to_3.05": tj_finite_event & (tj >= 2.8) & (tj < 3.05),
-                "JFC_2_to_2.8": tj_finite_event & (tj >= 2.0) & (tj < 2.8),
-                "HTC_1_to_2": tj_finite_event & (tj >= 1.0) & (tj < 2.0),
-                "HTC_0_to_1": tj_finite_event & (tj >= 0.0) & (tj < 1.0),
-                "HTC_Tj_lt_0": tj_finite_event & (tj < 0.0),
-            },
-            event_names=event_names_like,
-            triangle_parameters=triangle_parameters,
-            output_dir=out_path,
-            shower_name=shower_name,
-            event_extra_columns={"Tj": tj},
-        )
+        if plot_correl_flag:
+            save_event_class_correlations(
+                classification_name="Tj_all_class",
+                class_event_masks={
+                    "AST_Tj_ge_5": tj_finite_event & (tj >= 5.0),
+                    "AST_4_to_5": tj_finite_event & (tj >= 4.0) & (tj < 5.0),
+                    "AST_3.05_to_4": tj_finite_event & (tj >= 3.05) & (tj < 4.0),
+                    "mix_2.8_to_3.05": tj_finite_event & (tj >= 2.8) & (tj < 3.05),
+                    "JFC_2_to_2.8": tj_finite_event & (tj >= 2.0) & (tj < 2.8),
+                    "HTC_1_to_2": tj_finite_event & (tj >= 1.0) & (tj < 2.0),
+                    "HTC_0_to_1": tj_finite_event & (tj >= 0.0) & (tj < 1.0),
+                    "HTC_Tj_lt_0": tj_finite_event & (tj < 0.0),
+                },
+                event_names=event_names_like,
+                triangle_parameters=triangle_parameters,
+                output_dir=out_path,
+                shower_name=shower_name,
+                event_extra_columns={"Tj": tj},
+            )
 
         # find the number of tj above 5
         num_tj_above_5 = tj[tj >= 5].shape[0]
@@ -8802,6 +10870,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         axes[7].tick_params(axis='x', labelbottom=True)
         axes[7].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
         axes[7].set_xticks(np.arange(0, 9000, 2000))
+        axes[7].set_xlim(*xlim)
         for ax in axes:
             ax.tick_params(labelsize=20)
         out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_Tj_cuts.png")
@@ -8968,21 +11037,22 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         # Event-level correlation products for the mass classes.
         mass_finite_event = np.isfinite(m_init_med)
-        save_event_class_correlations(
-            classification_name="mass_class",
-            class_event_masks={
-                "above_1e-4_kg": mass_finite_event & (m_init_med >= 10**(-4)),
-                "1e-4.5_to_1e-4_kg": mass_finite_event & (m_init_med >= 10**(-4.5)) & (m_init_med < 10**(-4)),
-                "1e-5_to_1e-4.5_kg": mass_finite_event & (m_init_med >= 10**(-5)) & (m_init_med < 10**(-4.5)),
-                "1e-5.5_to_1e-5_kg": mass_finite_event & (m_init_med >= 10**(-5.5)) & (m_init_med < 10**(-5)),
-                "below_1e-5.5_kg": mass_finite_event & (m_init_med < 10**(-5.5)),
-            },
-            event_names=event_names_like,
-            triangle_parameters=triangle_parameters,
-            output_dir=out_path,
-            shower_name=shower_name,
-            event_extra_columns={"mass_class_value_kg": m_init_med},
-        )
+        if plot_correl_flag:
+            save_event_class_correlations(
+                classification_name="mass_class",
+                class_event_masks={
+                    "above_1e-4_kg": mass_finite_event & (m_init_med >= 10**(-4)),
+                    "1e-4.5_to_1e-4_kg": mass_finite_event & (m_init_med >= 10**(-4.5)) & (m_init_med < 10**(-4)),
+                    "1e-5_to_1e-4.5_kg": mass_finite_event & (m_init_med >= 10**(-5)) & (m_init_med < 10**(-4.5)),
+                    "1e-5.5_to_1e-5_kg": mass_finite_event & (m_init_med >= 10**(-5.5)) & (m_init_med < 10**(-5)),
+                    "below_1e-5.5_kg": mass_finite_event & (m_init_med < 10**(-5.5)),
+                },
+                event_names=event_names_like,
+                triangle_parameters=triangle_parameters,
+                output_dir=out_path,
+                shower_name=shower_name,
+                event_extra_columns={"mass_class_value_kg": m_init_med},
+            )
 
         # find the number of mass
         num_big_kg = m_init_med[m_init_med >= 10**(-4)].shape[0]
@@ -9004,6 +11074,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         axes[4].tick_params(axis='x', labelbottom=True)
         axes[4].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
         axes[4].set_xticks(np.arange(0, 9000, 2000))
+        axes[4].set_xlim(*xlim)
         for ax in axes:
             ax.tick_params(labelsize=20)
 
@@ -9120,20 +11191,21 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         # Event-level correlation products for the diameter classes.
         diameter_finite_event = np.isfinite(meteoroid_diameter_mm)
-        save_event_class_correlations(
-            classification_name="diameter_class",
-            class_event_masks={
-                "above_7.5_mm": diameter_finite_event & (meteoroid_diameter_mm >= 7.5),
-                "5_to_7.5_mm": diameter_finite_event & (meteoroid_diameter_mm >= 5.0) & (meteoroid_diameter_mm < 7.5),
-                "2.5_to_5_mm": diameter_finite_event & (meteoroid_diameter_mm >= 2.5) & (meteoroid_diameter_mm < 5.0),
-                "below_2.5_mm": diameter_finite_event & (meteoroid_diameter_mm < 2.5),
-            },
-            event_names=event_names_like,
-            triangle_parameters=triangle_parameters,
-            output_dir=out_path,
-            shower_name=shower_name,
-            event_extra_columns={"diameter_mm": meteoroid_diameter_mm},
-        )
+        if plot_correl_flag:
+            save_event_class_correlations(
+                classification_name="diameter_class",
+                class_event_masks={
+                    "above_7.5_mm": diameter_finite_event & (meteoroid_diameter_mm >= 7.5),
+                    "5_to_7.5_mm": diameter_finite_event & (meteoroid_diameter_mm >= 5.0) & (meteoroid_diameter_mm < 7.5),
+                    "2.5_to_5_mm": diameter_finite_event & (meteoroid_diameter_mm >= 2.5) & (meteoroid_diameter_mm < 5.0),
+                    "below_2.5_mm": diameter_finite_event & (meteoroid_diameter_mm < 2.5),
+                },
+                event_names=event_names_like,
+                triangle_parameters=triangle_parameters,
+                output_dir=out_path,
+                shower_name=shower_name,
+                event_extra_columns={"diameter_mm": meteoroid_diameter_mm},
+            )
 
         # find the number of mass
         num_big = meteoroid_diameter_mm[meteoroid_diameter_mm >= 7.5].shape[0]
@@ -9153,6 +11225,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         axes[3].tick_params(axis='x', labelbottom=True)
         axes[3].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
         axes[3].set_xticks(np.arange(0, 9000, 2000))
+        axes[3].set_xlim(*xlim)
         for ax in axes:
             ax.tick_params(labelsize=20)
 
@@ -9274,20 +11347,21 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         e_low = finite & (e_val_samples < 0.4)
         # Event-level correlation products for the eccentricity classes.
         eccentricity_finite_event = np.isfinite(e_val)
-        save_event_class_correlations(
-            classification_name="eccentricity_class",
-            class_event_masks={
-                "e_ge_0.8": eccentricity_finite_event & (e_val >= 0.8),
-                "e_0.6_to_0.8": eccentricity_finite_event & (e_val >= 0.6) & (e_val < 0.8),
-                "e_0.4_to_0.6": eccentricity_finite_event & (e_val >= 0.4) & (e_val < 0.6),
-                "e_lt_0.4": eccentricity_finite_event & (e_val < 0.4),
-            },
-            event_names=event_names_like,
-            triangle_parameters=triangle_parameters,
-            output_dir=out_path,
-            shower_name=shower_name,
-            event_extra_columns={"eccentricity": e_val},
-        )
+        if plot_correl_flag:
+            save_event_class_correlations(
+                classification_name="eccentricity_class",
+                class_event_masks={
+                    "e_ge_0.8": eccentricity_finite_event & (e_val >= 0.8),
+                    "e_0.6_to_0.8": eccentricity_finite_event & (e_val >= 0.6) & (e_val < 0.8),
+                    "e_0.4_to_0.6": eccentricity_finite_event & (e_val >= 0.4) & (e_val < 0.6),
+                    "e_lt_0.4": eccentricity_finite_event & (e_val < 0.4),
+                },
+                event_names=event_names_like,
+                triangle_parameters=triangle_parameters,
+                output_dir=out_path,
+                shower_name=shower_name,
+                event_extra_columns={"eccentricity": e_val},
+            )
 
         # find the number of eccentricity
         num_e_high = e_val[e_val >= 0.8].shape[0]
@@ -9304,6 +11378,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         axes[3].tick_params(axis='x', labelbottom=True)
         axes[3].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
         axes[3].set_xticks(np.arange(0, 9000, 2000))
+        axes[3].set_xlim(*xlim)
         for ax in axes:
             ax.tick_params(labelsize=20)
         # Save
@@ -9375,20 +11450,21 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # kc_low = finite & (kc_par_samples < 85)
         # Event-level correlation products for the k_c classes.
         kc_finite_event = np.isfinite(kc_par)
-        save_event_class_correlations(
-            classification_name="k_c_class",
-            class_event_masks={
-                "kc_ge_100": kc_finite_event & (kc_par >= 100.0),
-                "kc_95_to_100": kc_finite_event & (kc_par >= 95.0) & (kc_par < 100.0),
-                "kc_91_to_95": kc_finite_event & (kc_par >= 91.0) & (kc_par < 95.0),
-                "kc_85_to_91": kc_finite_event & (kc_par >= 85.0) & (kc_par < 91.0),
-            },
-            event_names=event_names_like,
-            triangle_parameters=triangle_parameters,
-            output_dir=out_path,
-            shower_name=shower_name,
-            event_extra_columns={"k_c": kc_par},
-        )
+        if plot_correl_flag:
+            save_event_class_correlations(
+                classification_name="k_c_class",
+                class_event_masks={
+                    "kc_ge_100": kc_finite_event & (kc_par >= 100.0),
+                    "kc_95_to_100": kc_finite_event & (kc_par >= 95.0) & (kc_par < 100.0),
+                    "kc_91_to_95": kc_finite_event & (kc_par >= 91.0) & (kc_par < 95.0),
+                    "kc_85_to_91": kc_finite_event & (kc_par >= 85.0) & (kc_par < 91.0),
+                },
+                event_names=event_names_like,
+                triangle_parameters=triangle_parameters,
+                output_dir=out_path,
+                shower_name=shower_name,
+                event_extra_columns={"k_c": kc_par},
+            )
 
         # find the number of kc_par
         num_kc_high = kc_par[kc_par >= 100].shape[0]
@@ -9405,6 +11481,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         axes[3].tick_params(axis='x', labelbottom=True)
         axes[3].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
         axes[3].set_xticks(np.arange(0, 9000, 2000))
+        axes[3].set_xlim(*xlim)
         for ax in axes:
             ax.tick_params(labelsize=20)
         # Save
@@ -9468,19 +11545,20 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
             apex_num = np.count_nonzero(apex_mask)
             anti_num = np.count_nonzero(anti_mask)
-            
-            # Event-level correlation products for Apex / Antihelion.
-            save_event_class_correlations(
-                classification_name="apex_anti_class",
-                class_event_masks={
-                    "Apex": apex_mask,
-                    "Antihelion": anti_mask,
-                },
-                event_names=event_names_like,
-                triangle_parameters=triangle_parameters,
-                output_dir=out_path,
-                shower_name=shower_name,
-            )
+
+            if plot_correl_flag:
+                # Event-level correlation products for Apex / Antihelion.
+                save_event_class_correlations(
+                    classification_name="apex_anti_class",
+                    class_event_masks={
+                        "Apex": apex_mask,
+                        "Antihelion": anti_mask,
+                    },
+                    event_names=event_names_like,
+                    triangle_parameters=triangle_parameters,
+                    output_dir=out_path,
+                    shower_name=shower_name,
+                )
 
             # Dict: event_name -> bool (below / above)
             apex_by_name = {str(n): bool(b) for n, b in zip(event_names_like, apex_mask)}
@@ -9507,6 +11585,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             axes[1].tick_params(axis='x', labelbottom=True)
             axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
             axes[1].set_xticks(np.arange(0, 9000, 2000))
+            axes[1].set_xlim(*xlim)
             for ax in axes:
                 ax.tick_params(labelsize=20)
 
@@ -9514,6 +11593,128 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             out_path_rho = os.path.join(out_path, f"{shower_name}_rho_by_apex_anti_threepanels_weighted.png")
             plt.savefig(out_path_rho, bbox_inches='tight', dpi=300)
             plt.close()
+
+            # --------------------------------------------------------------
+            # MEMv3 native Lo/Hi distributions.
+            # These files already give a fraction per 50 kg/m^3 density bin, so
+            # compare them directly with the unit-sum posterior distributions above.
+            # --------------------------------------------------------------
+
+            # Same 50 kg/m^3 density bins used by the MEMv3 density files.
+            rho_compare_edges = np.arange(100.0, 8000.0 + 50.0, 50.0)
+            rho_compare_centers = 0.5 * (rho_compare_edges[:-1] + rho_compare_edges[1:])
+
+            # Use the source populations directly for the MEMv3 comparison:
+            #   Apex       -> MEMv3 low-density analogue
+            #   Antihelion -> MEMv3 high-density analogue
+            #
+            # apex_class and anti_class are already SAMPLE-level masks.
+            rho_total_mask = np.isfinite(rho_samp) & np.isfinite(w_all)
+            rho_apex_mask = rho_total_mask & apex_class
+            rho_anti_mask = rho_total_mask & anti_class
+
+            rho_total_dist = _full_weighted_rho_distribution(
+                rho_samp, w_all, rho_total_mask, rho_compare_edges
+            )
+            rho_apex_dist = _full_weighted_rho_distribution(
+                rho_samp, w_all, rho_apex_mask, rho_compare_edges
+            )
+            rho_anti_dist = _full_weighted_rho_distribution(
+                rho_samp, w_all, rho_anti_mask, rho_compare_edges
+            )
+
+            pathLowMEM = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\ISS-risk\MEMv3-ISS100points\ISS_MEMv3\lodensity.txt"
+            pathHighMEM = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\ISS-risk\MEMv3-ISS100points\ISS_MEMv3\hidensity.txt"
+
+            def _read_mem_density_file(path):
+                rows = []
+                with open(path, 'r') as f:
+                    for line in f:
+                        s = line.strip()
+                        if (not s) or s.startswith('#'):
+                            continue
+                        parts = s.split()
+                        if len(parts) < 3:
+                            continue
+                        rows.append((float(parts[0]), float(parts[1]), float(parts[2])))
+
+                arr = np.asarray(rows, dtype=float)
+                if arr.ndim != 2 or arr.shape[1] < 3:
+                    raise RuntimeError(f"Could not read MEM density distribution: {path}")
+
+                centers = 0.5 * (arr[:, 0] + arr[:, 1])
+                frac = np.clip(arr[:, 2].astype(float), 0.0, None)
+                if np.sum(frac) > 0:
+                    frac /= np.sum(frac)
+                return centers, frac
+
+            if os.path.isfile(pathLowMEM) and os.path.isfile(pathHighMEM):
+                mem_lo_rho, mem_lo_dist = _read_mem_density_file(pathLowMEM)
+                mem_hi_rho, mem_hi_dist = _read_mem_density_file(pathHighMEM)
+
+                fig, ax = plt.subplots(figsize=(10, 5))
+                # ax.plot(
+                #     rho_compare_centers, rho_total_dist,
+                #     color='royalblue', linewidth=3.5,
+                #     label='This work: total',
+                # )
+                ax.plot(
+                    rho_compare_centers, rho_anti_dist,
+                    color='royalblue', linestyle='--', linewidth=2.2,
+                    label='This work: Antihelion',
+                )
+                ax.plot(
+                    rho_compare_centers, rho_apex_dist,
+                    color='dodgerblue', linestyle='-.', linewidth=2.2,
+                    label='This work: Apex',
+                )
+
+                # Requested model colours/styles:
+                #   MEM Lo = green dotted
+                #   MEM Hi = red dashed
+                ax.plot(
+                    mem_lo_rho, mem_lo_dist,
+                    color='darkorange', linestyle='-.', linewidth=2,
+                    label='MEMv3 Lo density',
+                )
+                ax.plot(
+                    mem_hi_rho, mem_hi_dist,
+                    color='peru', linestyle='--', linewidth=2,
+                    label='MEMv3 Hi density',
+                )
+
+                ax.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=16)
+                ax.set_ylabel(r'Fraction per 50 kg/m$^3$ bin', fontsize=14)
+                ax.set_xlim(100, 8000)
+                # log y axis
+                ax.set_yscale('log')
+                # ranges from 10^-3 to 10^-1
+                ax.set_ylim(1e-3, 1e-1)
+                ax.tick_params(labelsize=13)
+                ax.grid(True, alpha=0.25)
+                ax.legend(fontsize=11)
+
+                fig.tight_layout()
+                os.makedirs(out_path, exist_ok=True)
+                out_mem3_rho = os.path.join(out_path, f"{shower_name}_Apex_Antihelion_posterior_vs_MEMv3.png")
+                fig.savefig(out_mem3_rho, bbox_inches='tight', dpi=300)
+                plt.close(fig)
+                print("Saved:", out_mem3_rho)
+            else:
+                print("WARNING: MEMv3 density files not found; skipping MEM density comparison.")
+                print("  Lo:", pathLowMEM)
+                print("  Hi:", pathHighMEM)
+
+            # Save the posterior density curves used in both comparison figures.
+            pd.DataFrame({
+                'rho_center_kg_m3': rho_compare_centers,
+                'this_work_total_fraction': rho_total_dist,
+                'this_work_apex_fraction': rho_apex_dist,
+                'this_work_antihelion_fraction': rho_anti_dist,
+            }).to_csv(
+                os.path.join(out_path, f"{shower_name}_rho_Apex_Antihelion_posterior_distributions.csv"),
+                index=False,
+            )
 
             # ### rho distribution plot ###
             groups = {
@@ -9568,23 +11769,23 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         # (Optional) sanity check
         if event_names_like.shape[0] != Vg_val.shape[0]:
             raise RuntimeError("Length mismatch: event_names_like vs Vg_val/beg_height")
-
-        # Event-level correlation products for the begin-height A/C classes.
-        save_event_class_correlations(
-            classification_name="AC_class",
-            class_event_masks={
-                "group_C": above_curve_event,
-                "group_A": below_curve_event,
-            },
-            event_names=event_names_like,
-            triangle_parameters=triangle_parameters,
-            output_dir=out_path,
-            shower_name=shower_name,
-            event_extra_columns={
-                "begin_height": beg_height,
-                "classification_height_threshold": h_thr,
-            },
-        )
+        if plot_correl_flag:
+            # Event-level correlation products for the begin-height A/C classes.
+            save_event_class_correlations(
+                classification_name="AC_class",
+                class_event_masks={
+                    "group_C": above_curve_event,
+                    "group_A": below_curve_event,
+                },
+                event_names=event_names_like,
+                triangle_parameters=triangle_parameters,
+                output_dir=out_path,
+                shower_name=shower_name,
+                event_extra_columns={
+                    "begin_height": beg_height,
+                    "classification_height_threshold": h_thr,
+                },
+            )
 
         # Count events in each class
         num_below = np.count_nonzero(below_curve_event)
@@ -9631,6 +11832,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         axes[1].tick_params(axis='x', labelbottom=True)
         axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
         axes[1].set_xticks(np.arange(0, 9000, 2000))
+        axes[1].set_xlim(*xlim)
         for ax in axes:
             ax.tick_params(labelsize=20)
 
@@ -10733,6 +12935,403 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         )
 
 
+
+    if radiance_plot_flag:
+        # ============================================================
+        # BEGIN HEIGHT vs VELOCITY COLORED/SHAPED BY ETA CLASS
+        # ============================================================
+
+        print(
+            "Creating velocity vs begin-height plot "
+            "with tropical-fruit eta classes..."
+        )
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # ------------------------------------------------------------
+        # Background EMCCD sporadic meteor population
+        # ------------------------------------------------------------
+
+        df_EMCCD_spor = df_EMCCD[
+            df_EMCCD["shw"]
+            .astype(str)
+            .str.strip()
+            == "..."
+        ].copy()
+
+        # Limits used only to remove clearly spurious/background points
+        curve_v_bg = np.array(
+            [0, 10, 20, 30, 40, 50, 60, 70, 75],
+            dtype=float,
+        )
+
+        curve_h_low = np.array(
+            [70, 75, 80, 83, 88, 90, 92, 94, 96],
+            dtype=float,
+        )
+
+        curve_h_high = np.array(
+            [80, 95, 110, 113, 115, 120, 125, 130, 132],
+            dtype=float,
+        )
+
+        background_h_low = np.interp(
+            df_EMCCD_spor["vel"].to_numpy(dtype=float),
+            curve_v_bg,
+            curve_h_low,
+            left=np.nan,
+            right=np.nan,
+        )
+
+        background_h_high = np.interp(
+            df_EMCCD_spor["vel"].to_numpy(dtype=float),
+            curve_v_bg,
+            curve_h_high,
+            left=np.nan,
+            right=np.nan,
+        )
+
+        background_mask = (
+            df_EMCCD_spor["H_beg"].to_numpy(dtype=float)
+            > background_h_low
+        ) & (
+            df_EMCCD_spor["H_beg"].to_numpy(dtype=float)
+            < background_h_high
+        )
+
+        df_EMCCD_spor = df_EMCCD_spor.loc[
+            background_mask
+        ]
+
+        # Full EMCCD sporadic population
+        ax.scatter(
+            df_EMCCD_spor["vel"],
+            df_EMCCD_spor["H_beg"],
+            c="black",
+            s=2,
+            alpha=0.28,
+            linewidths=0,
+            zorder=1,
+        )
+
+        # ------------------------------------------------------------
+        # Historical Group A / Group C boundary
+        #
+        # Above curve = Group C
+        # Below curve = Group A
+        # ------------------------------------------------------------
+
+        ac_curve_v = np.array(
+            [5, 10, 20, 30, 40, 50, 60, 75],
+            dtype=float,
+        )
+
+        ac_curve_h = np.array(
+            [80, 85, 93.5, 96, 100, 102, 104, 107],
+            dtype=float,
+        )
+
+        ac_v_dense = np.linspace(
+            ac_curve_v.min(),
+            ac_curve_v.max(),
+            300,
+        )
+
+        ac_h_dense = np.interp(
+            ac_v_dense,
+            ac_curve_v,
+            ac_curve_h,
+        )
+
+        ax.plot(
+            ac_v_dense,
+            ac_h_dense,
+            color="0.35",
+            linestyle="--",
+            linewidth=1.5,
+            zorder=2,
+            label="Group A/C boundary",
+        )
+
+        # ------------------------------------------------------------
+        # Modeled meteors: tropical-fruit ETA classification
+        # ------------------------------------------------------------
+
+        plot_v0_arr = np.asarray(
+            plot_v0,
+            dtype=float,
+        )
+
+        plot_hbeg_arr = np.asarray(
+            plot_hbeg,
+            dtype=float,
+        )
+
+        eta_class_arr = np.asarray(
+            eta_structure_class,
+            dtype=object,
+        )
+
+        # Make sure event arrays correspond exactly.
+        if not (
+            len(plot_v0_arr)
+            == len(plot_hbeg_arr)
+            == len(eta_class_arr)
+        ):
+            raise RuntimeError(
+                "Velocity, begin-height, and eta-class arrays "
+                "do not have the same length: "
+                f"v={len(plot_v0_arr)}, "
+                f"h={len(plot_hbeg_arr)}, "
+                f"eta={len(eta_class_arr)}"
+            )
+
+        finite = (
+            np.isfinite(plot_v0_arr)
+            & np.isfinite(plot_hbeg_arr)
+        )
+
+        # ------------------------------------------------------------
+        # Keep same class colors/shapes as the other paper figures
+        # ------------------------------------------------------------
+
+        eta_styles = {
+            "homogenus": {
+                "label": "Homogeneous",
+                "color": "green",
+                "marker": "o",
+            },
+            "avocado": {
+                "label": "Avocado",
+                "color": "red",
+                "marker": "^",
+            },
+            "coconut": {
+                "label": "Coconut",
+                "color": "blue",
+                "marker": "s",
+            },
+            "single": {
+                "label": "Single-stage",
+                "color": "green",
+                "marker": "X",
+            },
+        }
+
+        eta_order = [
+            "homogenus",
+            "avocado",
+            "coconut",
+            "single",
+        ]
+
+        # ------------------------------------------------------------
+        # Plot each ETA class
+        # ------------------------------------------------------------
+
+        for eta_class in eta_order:
+
+            class_mask = (
+                finite
+                & (eta_class_arr == eta_class)
+            )
+
+            n_class = int(np.sum(class_mask))
+
+            if n_class == 0:
+                continue
+
+            style = eta_styles[eta_class]
+
+            ax.scatter(
+                plot_v0_arr[class_mask],
+                plot_hbeg_arr[class_mask],
+                s=75 if eta_class != "single" else 85,
+                marker=style["marker"],
+                facecolors=style["color"],
+                edgecolors="black",
+                linewidths=0.7,
+                alpha=0.90,
+                label=(
+                    f'{style["label"]} '
+                    f'(N={n_class})'
+                ),
+                zorder=4,
+            )
+
+        # ------------------------------------------------------------
+        # Calculate Group A/C membership of modeled meteors
+        # and print eta-class counts as a useful cross-check
+        # ------------------------------------------------------------
+
+        modeled_boundary_h = np.interp(
+            plot_v0_arr,
+            ac_curve_v,
+            ac_curve_h,
+            left=np.nan,
+            right=np.nan,
+        )
+
+        valid_ac = (
+            finite
+            & np.isfinite(modeled_boundary_h)
+        )
+
+        # Same convention as elsewhere in your script:
+        # above curve = Group C
+        # below curve = Group A
+        group_C_mask = (
+            valid_ac
+            & (plot_hbeg_arr > modeled_boundary_h)
+        )
+
+        group_A_mask = (
+            valid_ac
+            & (plot_hbeg_arr <= modeled_boundary_h)
+        )
+
+        print("\nETA CLASS DISTRIBUTION IN BEGIN-HEIGHT GROUPS")
+        print("------------------------------------------------")
+
+        for group_name, group_mask in [
+            ("Group A", group_A_mask),
+            ("Group C", group_C_mask),
+        ]:
+
+            print(
+                f"{group_name}: "
+                f"N={np.sum(group_mask)}"
+            )
+
+            for eta_class in eta_order:
+
+                n_here = np.sum(
+                    group_mask
+                    & (eta_class_arr == eta_class)
+                )
+
+                if n_here > 0:
+                    print(
+                        "   "
+                        f'{eta_styles[eta_class]["label"]}: '
+                        f"{n_here}"
+                    )
+
+        # ------------------------------------------------------------
+        # Label Group A and C regions
+        # ------------------------------------------------------------
+
+        # Put the text relative to the actual boundary so it remains
+        # correctly positioned if the limits are later changed.
+        label_v = 63.0
+
+        label_boundary_h = np.interp(
+            label_v,
+            ac_curve_v,
+            ac_curve_h,
+        )
+
+        ax.text(
+            label_v,
+            label_boundary_h + 17.0,
+            "Group C",
+            fontsize=13,
+            ha="center",
+            va="bottom",
+            color="0.25",
+            fontweight="bold",
+            zorder=5,
+        )
+
+        ax.text(
+            label_v,
+            label_boundary_h - 7.0,
+            "Group A",
+            fontsize=13,
+            ha="center",
+            va="top",
+            color="0.25",
+            fontweight="bold",
+            zorder=5,
+        )
+
+        # ------------------------------------------------------------
+        # Axis formatting
+        # ------------------------------------------------------------
+
+        ax.set_xlim(0, 80)
+        ax.set_ylim(70, 135)
+
+        ax.set_xlabel(
+            r"$v_{0}$ [km/s]",
+            fontsize=15,
+        )
+
+        ax.set_ylabel(
+            r"$h_{\rm beg}$ [km]",
+            fontsize=15,
+        )
+
+        ax.tick_params(
+            labelsize=13,
+        )
+
+        ax.grid(
+            True,
+            alpha=0.25,
+        )
+
+        ax.legend(
+            title=r"$\eta$ structural class",
+            loc="best",
+            fontsize=10,
+            title_fontsize=11,
+            frameon=True,
+        )
+
+        fig.tight_layout()
+
+        # ------------------------------------------------------------
+        # Save
+        # ------------------------------------------------------------
+
+        eta_height_plot_path = os.path.join(
+            output_dir_show,
+            (
+                f"{shower_name}_velocity_vs_"
+                "beg_height_eta_class.png"
+            ),
+        )
+
+        fig.savefig(
+            eta_height_plot_path,
+            bbox_inches="tight",
+            dpi=300,
+        )
+
+        # I would save a PDF too for the paper
+        eta_height_plot_pdf = os.path.join(
+            output_dir_show,
+            (
+                f"{shower_name}_velocity_vs_"
+                "beg_height_eta_class.pdf"
+            ),
+        )
+
+        fig.savefig(
+            eta_height_plot_pdf,
+            bbox_inches="tight",
+        )
+
+        plt.close(fig)
+
+        print(
+            "Saved eta-class begin-height plot to: "
+            f"{eta_height_plot_path}"
+        )
+
+
+
     ##################### DISTRIBUTION PLOTS #####################
 
     print("Creating complete distribution plots...")
@@ -10922,7 +13521,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final-verybest2frag\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -10970,4 +13569,4 @@ if __name__ == "__main__":
                        tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, 
                        energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, 
                        mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all,
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=True) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False, plot_class=True) # cml_args.radiance_plot cml_args.correl_plot

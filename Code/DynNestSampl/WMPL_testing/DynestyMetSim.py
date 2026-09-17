@@ -2326,6 +2326,57 @@ def plotObsVsHeight(obs_data, sim_data=None, output_folder='', file_name='', col
 
         best_line, = ax_lag.plot(sim_lag, sim_data.leading_frag_height_arr/1000, color=color_sim, label=label_sim)
 
+        ###################################################################################
+        # The photometric observations can start below the erosion heights.
+        ###################################################################################
+
+        # # The photometric observations can start below the erosion heights. Since
+        # # the axes were frozen above, axhline would then be drawn outside the
+        # # visible range (while still appearing in the velocity and lag panels).
+        # # Expand only the photometric height ranges enough to show both markers,
+        # # and keep their residual panels aligned with the corresponding main axes.
+        # erosion_heights_km = np.asarray([
+        #     sim_data.const.erosion_height_start,
+        #     sim_data.const.erosion_height_change,
+        # ], dtype=float)/1000
+        # erosion_heights_km = erosion_heights_km[np.isfinite(erosion_heights_km)]
+
+        # if erosion_heights_km.size:
+        #     for ax_main, ax_res in ((ax_lum, ax_lum_res), (ax_mag, ax_mag_res)):
+        #         y0, y1 = ax_main.get_ylim()
+        #         y_min, y_max = min(y0, y1), max(y0, y1)
+        #         marker_min = np.min(erosion_heights_km)
+        #         marker_max = np.max(erosion_heights_km)
+        #         margin = max(1.0, 0.02*(y_max - y_min))
+
+        #         y_min = min(y_min, marker_min - margin)
+        #         y_max = max(y_max, marker_max + margin)
+        #         new_ylim = (y_min, y_max) if y0 < y1 else (y_max, y_min)
+        #         ax_main.set_ylim(new_ylim)
+        #         ax_res.set_ylim(new_ylim)
+
+        # # add the sim_data.const.erosion_height_start a : line with below written "start of erosion outer shell"
+        # ax_lum.axhline(y=sim_data.const.erosion_height_start/1000, color='gray', linestyle=':', linewidth=1.8)
+        # # add a text "start of erosion outer shell" benith the line
+        # ax_lum.text(ax_lum.get_xlim()[0]+1, sim_data.const.erosion_height_start/1000 - 1, "start of erosion outer shell", color='black', fontsize=8, verticalalignment='bottom', horizontalalignment='left')
+        # # add the end of the erosion of the outer shell above the sim_data.const.erosion_height_change line
+        # ax_lum.text(ax_lum.get_xlim()[0]+1, sim_data.const.erosion_height_change/1000 + 0.5, "end of erosion outer shell", color='black', fontsize=8, verticalalignment='bottom', horizontalalignment='left')
+        # # add the sim_data.const.erosion_height_change a -. line with below written "start of erosion inner shell"
+        # ax_lum.axhline(y=sim_data.const.erosion_height_change/1000, color='gray', linestyle='-.', linewidth=1.8) # , linewidth=1
+        # ax_lum.text(ax_lum.get_xlim()[0]+1, sim_data.const.erosion_height_change/1000 - 1, "start of erosion inner shell", color='black', fontsize=8, verticalalignment='bottom', horizontalalignment='left')
+
+        # ax_mag.axhline(y=sim_data.const.erosion_height_start/1000, color='gray', linestyle=':', linewidth=1.8)
+        # ax_mag.axhline(y=sim_data.const.erosion_height_change/1000, color='gray', linestyle='-.', linewidth=1.8)
+
+        # ax_vel.axhline(y=sim_data.const.erosion_height_start/1000, color='gray', linestyle=':', linewidth=1.8)
+        # ax_vel.axhline(y=sim_data.const.erosion_height_change/1000, color='gray', linestyle='-.', linewidth=1.8)
+
+        # ax_lag.axhline(y=sim_data.const.erosion_height_start/1000, color='gray', linestyle=':', linewidth=1.8)
+        # ax_lag.axhline(y=sim_data.const.erosion_height_change/1000, color='gray', linestyle='-.', linewidth=1.8)
+
+
+
+
         # RESIDUALS (interpolated at obs heights)
         lum_res = obs_data.luminosity - np.interp(obs_data.height_lum, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_luminosity_plot))
         mag_res = np.interp(obs_data.height_lum, np.flip(sim_data.leading_frag_height_arr), np.flip(sim_abs_magnitude_plot)) - obs_data.absolute_magnitudes

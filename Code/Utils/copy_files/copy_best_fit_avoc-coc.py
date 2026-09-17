@@ -9,17 +9,17 @@ import shutil
 
 # CSV whose FIRST COLUMN contains the meteor IDs
 csv_file = Path(
-    r"C:\Users\maxiv\Documents\UWO\Papers\0.6)Tah_erc\ReductionEMCCD\TAHmeteor_event_links_notes.xlsx"
+    r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony\classes\AC_class\event_correlations\Stony_AC_class_group_A_event_parameter_CI_values.csv"
 )
 
 # Main results directory containing all meteor folders
 search_root = Path(
-    r"C:\Users\maxiv\Documents\UWO\Papers\0.6)Tah_erc\Results-dynesty\EMCCD\EMCCD-spor"
+    r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony"
 )
 
 # Put ALL copied plots into this single folder
 output_dir = Path(
-    r"C:\Users\maxiv\Documents\UWO\Papers\0.6)Tah_erc\Results-dynesty\EMCCD\EMCCD-spor_plot"
+    r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\A_groupplots"
 )
 
 

@@ -575,12 +575,31 @@ def generate_manuscript_latex_tables(
     with np.errstate(divide="ignore", invalid="ignore"):
         p_ratio = p2_arr / p1_arr
 
-    def _group_median(values, mask):
+    def _group_population_stats(values, mask):
+        """Return N, 5th percentile, median, and 95th percentile for a group.
+
+        These intervals describe the spread of the event-level values within the
+        A/C population. They are NOT posterior credible intervals on the group
+        median.
+        """
         values = np.asarray(values, dtype=float)
-        valid = mask & np.isfinite(values)
-        if not np.any(valid):
-            return np.nan
-        return float(np.nanmedian(values[valid]))
+        valid = np.asarray(mask, dtype=bool) & np.isfinite(values)
+        vals = values[valid]
+        if vals.size == 0:
+            return {
+                "N": 0,
+                "p05": np.nan,
+                "median": np.nan,
+                "p95": np.nan,
+            }
+
+        p05, median, p95 = np.nanpercentile(vals, [5, 50, 95])
+        return {
+            "N": int(vals.size),
+            "p05": float(p05),
+            "median": float(median),
+            "p95": float(p95),
+        }
 
     A_n = int(np.sum(group_A_mask))
     C_n = int(np.sum(group_C_mask))
@@ -605,6 +624,22 @@ def generate_manuscript_latex_tables(
             return f"{v:.3f}"
         return f"{v:g}"
 
+    def _fmt_population_interval(stats, kind):
+        """Format median with asymmetric 5th--95th percentile spread."""
+        median = stats["median"]
+        p05 = stats["p05"]
+        p95 = stats["p95"]
+        if not (np.isfinite(median) and np.isfinite(p05) and np.isfinite(p95)):
+            return "---"
+
+        err_lo = max(0.0, median - p05)
+        err_hi = max(0.0, p95 - median)
+
+        median_s = _fmt(median, kind)
+        lo_s = _fmt(err_lo, kind)
+        hi_s = _fmt(err_hi, kind)
+        return rf"${median_s}_{{-{lo_s}}}^{{+{hi_s}}}$"
+
     structural_specs = [
         (r"$\rho_{\rm eff}$ [kg\,m$^{-3}$]", rho_eff_arr, "int"),
         (r"$h_{e1}$ [km]", h1_arr, "1f"),
@@ -626,7 +661,9 @@ def generate_manuscript_latex_tables(
         r"\centering",
         (
             r"\caption{Median properties of the historical Group~A and Group~C "
-            r"populations for the complete stony sample." + ac_note + "}"
+            r"populations for the complete stony sample. Values are reported as "
+            r"the median with the 5th--95th percentile population range, "
+            r"$x_{-(x-P_5)}^{+(P_{95}-x)}$." + ac_note + "}"
         ),
         r"\label{tab:AC_structure}",
         r"\renewcommand{\arraystretch}{1.12}",
@@ -639,9 +676,11 @@ def generate_manuscript_latex_tables(
         f"$N$ & {A_n} & {C_n}" + r" \\",
     ]
     for label, arr, kind in structural_specs:
-        A_val = _group_median(arr, group_A_mask)
-        C_val = _group_median(arr, group_C_mask)
-        lines.append(f"{label} & {_fmt(A_val, kind)} & {_fmt(C_val, kind)}" + r" \\")
+        A_stats = _group_population_stats(arr, group_A_mask)
+        C_stats = _group_population_stats(arr, group_C_mask)
+        lines.append(
+            f"{label} & {_fmt_population_interval(A_stats, kind)} & "
+            f"{_fmt_population_interval(C_stats, kind)}" + r" \\")
     lines += [r"\hline", r"\end{tabular}", r"\end{table}"]
 
     path = os.path.join(table_dir, f"{safe_shower}_AC_structure.tex")
@@ -13521,7 +13560,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

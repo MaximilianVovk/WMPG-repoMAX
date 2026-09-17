@@ -1,0 +1,43 @@
+# Target planet configuration for Mars
+# Copy this file beside the fitted event JSON and edit it for another body.
+
+planet_name = Mars
+
+# Physical body
+radius_km = 3389.5
+mu_m3_s2 = 4.282837e13
+surface_gravity_m_s2 = 3.75
+orbit_radius_au = 1.524
+orbit_crossing_tolerance_au = 1e-6
+
+# Atmosphere
+atmosphere_csv = Mars_density_0_180_km__1_km.csv
+atmosphere_polynomial_degree = 6
+h_kill_km = 0
+
+# MetSim target-body photometry / integration
+meteor_zero_magnitude_power_W = 1500
+simulation_dt_s = 0.04
+v_kill_kms = auto
+
+# Orbit-to-entry conversion
+# auto = derive from the required trajectory pickle.
+entry_speed_kms = auto
+zenith_angle_deg = auto
+
+# When two heliocentric radial intersections exist:
+# mean | min | max | outbound | inbound
+entry_speed_selection = mean
+
+# Default physical trigger:
+# dynamic_pressure | energy | density
+default_trigger = dynamic_pressure
+
+# Ground-camera atmospheric/seeing factors.
+# Both equal 1.0 => NO penalty.
+# transmission_zenith is raised to a simple airmass; seeing factor is a
+# multiplicative sensitivity factor. Values below 1 make the source fainter.
+ground_atmospheric_transmission_zenith = 1.0
+ground_seeing_sensitivity_factor = 1.0
+ground_max_airmass = 20
+ground_observer_max_altitude_km = 20

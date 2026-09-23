@@ -1755,7 +1755,7 @@ def plot_tropical_fruit_vs_initial_velocity(
         x = i + rng.uniform(-0.12, 0.12, size=vals.size)
         ax.scatter(x, vals, s=28, alpha=0.75, zorder=3)
         med = float(np.nanmedian(vals))
-        ax.text(i + 0.22, med, f"{med:.1f}", va="center", fontsize=9)
+        ax.text(i + 0.26, med, f"{med:.1f}", va="center", fontsize=9)
 
     latex_parameter = {
         "eta": r"$\eta$",
@@ -1765,9 +1765,9 @@ def plot_tropical_fruit_vs_initial_velocity(
 
     ax.set_xlabel("Meteoroid tropical-fruit type")
     ax.set_ylabel(r"Initial velocity $v_0$ [km/s]")
-    ax.set_title(
-        f"{shower_name}: {latex_parameter} tropical-fruit type vs initial velocity"
-    )
+    # ax.set_title(
+    #     f"{shower_name}: {latex_parameter} tropical-fruit type vs initial velocity"
+    # )
     ax.grid(True, axis="y", linestyle=":", linewidth=0.6, alpha=0.7)
 
     out_stem = os.path.join(
@@ -7572,7 +7572,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # ax_dist.tick_params(axis='x', labelbottom=False)
     ax_dist.tick_params(axis='y', left=False, labelleft=False)
     ax_dist.set_ylabel("")
-    ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    ax_dist.set_xlabel(r'$\rho_{eff}$ [kg/m$^3$]', fontsize=20)
     ax_dist.spines['left'].set_visible(False)
     ax_dist.spines['right'].set_visible(False)
     ax_dist.spines['top'].set_visible(False)
@@ -7581,11 +7581,104 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     peak_x = bin_centers[peak_idx]
     peak_y = hist[peak_idx]
     # annotate the value
-    ax_dist.annotate(f'Peak: {rho_corrected_peak:.4g}', xy=(peak_x, peak_y), xytext=(peak_x, peak_y),  fontsize=15) # arrowprops=dict(facecolor='black', shrink=0.05),
+    ax_dist.annotate(f'Peak: {rho_corrected_peak:.3g}', xy=(peak_x, peak_y), xytext=(peak_x, peak_y),  fontsize=15, zorder=5) # arrowprops=dict(facecolor='black', shrink=0.05),
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"), bbox_inches='tight')
     plt.close()
     print("Rho distribution plot saved:",os.path.join(output_dir_show, f"{shower_name}_rho_distribution_both.png"))
 
+    # Create figure for sigma_corr*1e6 ############
+    sigma_corrected_lo, sigma_corrected_median, sigma_corrected_hi = _quantile(sigma_corrected*1e6, [0.025, 0.5, 0.975], weights=w)
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
+    smooth = 0.02
+    lo, hi = np.min(sigma_corrected*1e6), np.max(sigma_corrected*1e6)
+    nbins = int(round(10. / smooth))
+    hist, edges = np.histogram(sigma_corrected*1e6, bins=nbins, weights=w, range=(lo, hi))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+    peak_idx = np.argmax(hist)
+    sigma_corrected_peak = bin_centers[peak_idx]
+
+    ax_dist.fill_between(bin_centers, hist, color='green', alpha=0.6)
+
+    # Percentile lines
+    ax_dist.axvline(sigma_corrected_median, color='green', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(sigma_corrected_lo, color='green', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(sigma_corrected_hi, color='green', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = sigma_corrected_hi - sigma_corrected_median
+    minus = sigma_corrected_median - sigma_corrected_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    valtoput=r"\sigma_{eff}"
+    title = rf"Tot N.{len(tj)} — ${valtoput}$ [kg/MJ] = {fmt(sigma_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    # ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.set_xlabel(r'$\sigma_{eff}$ [kg/MJ]', fontsize=20)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    # find the highest point of the distirburion and put an arrow pointing to it with the text "Peak"
+    peak_idx = np.argmax(hist)
+    peak_x = bin_centers[peak_idx]
+    peak_y = hist[peak_idx]
+    # annotate the value
+    ax_dist.annotate(f'Peak: {sigma_corrected_peak:.3g}', xy=(peak_x, peak_y), xytext=(peak_x, peak_y),  fontsize=15, zorder=5) # arrowprops=dict(facecolor='black', shrink=0.05),
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_sigma_distribution_both.png"), bbox_inches='tight')
+    plt.close()
+    print("Sigma distribution plot saved:",os.path.join(output_dir_show, f"{shower_name}_sigma_distribution_both.png"))
+
+    # Create figure for eta_corrected ############
+    eta_corrected_lo, eta_corrected_median, eta_corrected_hi = _quantile(eta_corrected*1e6, [0.025, 0.5, 0.975], weights=w)
+    eta_corrected_lo_log10 = np.log10(eta_corrected_lo)
+    eta_corrected_median_log10 = np.log10(eta_corrected_median)
+    eta_corrected_hi_log10 = np.log10(eta_corrected_hi)
+    eta_corrected_log10 = np.log10(eta_corrected*1e6)
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
+    smooth = 0.02
+    lo, hi = np.min(eta_corrected_log10), np.max(eta_corrected_log10)
+    nbins = int(round(10. / smooth))
+    hist, edges = np.histogram(eta_corrected_log10, bins=nbins, weights=w, range=(lo, hi))
+    hist = norm_kde(hist, 10.0)
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+    peak_idx = np.argmax(hist)
+    eta_corrected_peak = bin_centers[peak_idx]
+
+    ax_dist.fill_between(bin_centers, hist, color='red', alpha=0.6)
+
+    # Percentile lines
+    ax_dist.axvline(eta_corrected_median_log10, color='red', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(eta_corrected_lo_log10, color='red', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(eta_corrected_hi_log10, color='red', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = eta_corrected_hi - eta_corrected_median
+    minus = eta_corrected_median - eta_corrected_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    valtoput=r"\eta_{eff}"
+    title = rf"Tot N.{len(tj)} — ${valtoput}$ [kg/MJ] = {fmt(eta_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    # ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.set_xlabel(r'$log_{10}$ $\eta_{eff}$ [kg/MJ]', fontsize=20)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    # find the highest point of the distirburion and put an arrow pointing to it with the text "Peak"
+    peak_idx = np.argmax(hist)
+    peak_x = bin_centers[peak_idx]
+    peak_y = hist[peak_idx]
+    # annotate the value
+    ax_dist.annotate(f'Peak: {10**eta_corrected_peak:.3g}', xy=(peak_x, peak_y), xytext=(peak_x, peak_y),  fontsize=15, zorder=5) # arrowprops=dict(facecolor='black', shrink=0.05),
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_eta_distribution_both.png"), bbox_inches='tight')
+    plt.close()
+    print("Eta distribution plot saved:",os.path.join(output_dir_show, f"{shower_name}_eta_distribution_both.png"))
 
     # complte density distributio for the IMEM
 
@@ -8347,19 +8440,21 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # -----------------------------
     # Choose x-axis range
     # -----------------------------
-    rho_upper_extent = rho + np.abs(rho_hi)
-    finite_rho_extent = rho_upper_extent[np.isfinite(rho_upper_extent)]
 
-    if len(finite_rho_extent) == 0:
+    # rho_upper_extent = rho + np.abs(rho_hi)
+    # finite_rho_extent = rho_upper_extent[np.isfinite(rho_upper_extent)]
+
+    finite_rho_extent = rho
+
+    # if len(finite_rho_extent) == 0:
+    #     x_max = 4000
+    # else:
+    max_rho_extent = np.nanmax(finite_rho_extent)
+    if max_rho_extent < 4000:
         x_max = 4000
     else:
-        max_rho_extent = np.nanmax(finite_rho_extent)
-        if max_rho_extent > 4000:
-            x_max = 4000
-        else:
-            # round nicely upward
-            x_max = max(1000, int(np.ceil(max_rho_extent / 500.0) * 500))
-
+        x_max = 8200
+    print("the x_max for the rho distribution plot is:", x_max,"given max_rho_extent", max_rho_extent)
     x_min = -100
 
     # -----------------------------
@@ -8522,20 +8617,20 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         )
 
     plt.savefig(
-        os.path.join(output_dir_show, f"{shower_name}_rho_Tj_logmass_combined_plot.png"),
+        os.path.join(output_dir_show, f"{shower_name}_rho_Tj_3eta_combined_plot.png"),
         bbox_inches='tight',
         dpi=300
     )
     plt.close()
 
 
-    # # Create figure
-    # fig = plt.figure(figsize=(8, 10))
-    # gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
+    # Create figure
+    fig = plt.figure(figsize=(8, 10))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
 
-    # # Set main axes (with shared x-axis)
-    # ax_dist = fig.add_subplot(gs[0])
-    # ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
+    # Set main axes (with shared x-axis)
+    ax_dist = fig.add_subplot(gs[0])
+    ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
 
     # # --- TOP PANEL: Rho Distribution ---
     # smooth = 0.02
@@ -8545,94 +8640,103 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # hist = norm_kde(hist, 10.0)
     # bin_centers = 0.5 * (edges[:-1] + edges[1:])
 
-    # ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
+    ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
 
-    # # Percentile lines
-    # ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
-    # ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
-    # ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
+    # Percentile lines
+    ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
 
-    # # Title and formatting
-    # plus = rho_corrected_hi - rho_corrected_median
-    # minus = rho_corrected_median - rho_corrected_lo
-    # fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
-    # title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
-    # ax_dist.set_title(title, fontsize=20)
-    # ax_dist.set_xlim(-100, 8300)
-    # ax_dist.tick_params(axis='x', labelbottom=False)
-    # ax_dist.tick_params(axis='y', left=False, labelleft=False)
-    # ax_dist.set_ylabel("")
-    # ax_dist.spines['bottom'].set_visible(False)
-    # ax_dist.spines['left'].set_visible(False)
-    # ax_dist.spines['right'].set_visible(False)
-    # ax_dist.spines['top'].set_visible(False)
+    # Title and formatting
+    plus = rho_corrected_hi - rho_corrected_median
+    minus = rho_corrected_median - rho_corrected_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+    ax_dist.set_xlim(-100, 8300)
+    ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.spines['bottom'].set_visible(False)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
 
-    # # --- BOTTOM PANEL: Rho vs Tj ---
-    # for i in range(len(tj)):
-    #     ax_scatter.errorbar(
-    #         rho[i], tj[i],
-    #         xerr=[[abs(rho_lo[i])], [abs(rho_hi[i])]],
-    #         yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
-    #         elinewidth=0.75,
-    #         capthick=0.75,
-    #         fmt='none',
-    #         ecolor='black',
-    #         capsize=3,
-    #         zorder=1
-    #     )
+    # --- BOTTOM PANEL: Rho vs Tj ---
+    for i in range(len(tj)):
+        ax_scatter.errorbar(
+            rho[i], tj[i],
+            xerr=[[abs(rho_lo[i])], [abs(rho_hi[i])]],
+            yerr=[[abs(tj_lo[i])], [abs(tj_hi[i])]],
+            elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
 
-    # scatter = ax_scatter.scatter(
-    #     rho, tj,
-    #     # c=np.log10(meteoroid_diameter_mm),
-    #     # c=log10_m_init,
-    #     c='red',
-    #     # c=kc_par,
-    #     # cmap='viridis',
-    #     # cmap='coolwarm',
-    #     # cmap='Spectral_r',
-    #     # # norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)),
-    #     # norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
-    #     # norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
-    #     marker='x',
-    #     s=40,
-    #     zorder=2,
-    #     edgecolors='black', 
-    #     # linewidth=0.5
-    # )
+    scatter = ax_scatter.scatter(
+        rho, tj,
+        # c=np.log10(meteoroid_diameter_mm),
+        c=log10_m_init,
+        # c='red',
+        # c=kc_par,
+        # cmap='viridis',
+        # cmap='coolwarm',
+        cmap='plasma',
+        # # norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)),
+        norm=Normalize(vmin=log10_m_init.min(), vmax=log10_m_init.max()),
+        # norm=Normalize(vmin=kc_par.min(), vmax=kc_par.max()),
+        # marker='x',
+        s=60,
+        zorder=2,
+        edgecolors='black', 
+        # linewidth=0.5
+    )
 
-    # # Add manually aligned colorbar
-    # # Get position of ax_scatter to align colorbar
-    # # pos = ax_scatter.get_position()
-    # # cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
-    # # cbar = plt.colorbar(scatter, cax=cbar_ax)
-    # # # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
-    # # cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
-    # # cbar.set_label('$k_c$ parameter', fontsize=20)
-    # # the ticks size of the colorbar
-    # cbar.ax.tick_params(labelsize=20)
+    # Add manually aligned colorbar
+    # Get position of ax_scatter to align colorbar
+    pos = ax_scatter.get_position()
+    cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
+    cbar = plt.colorbar(scatter, cax=cbar_ax)
+    # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+    cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
+    # cbar.set_label('$k_c$ parameter', fontsize=20)
+    # the ticks size of the colorbar
+    cbar.ax.tick_params(labelsize=20)
 
-    # # Tj markers
-    # if shower_iau_no == -1:
-    #     ax_scatter.axhline(y=3.0, color='lime', linestyle=':', linewidth=1.5, zorder=1)
-    #     ax_scatter.text(5500, 3.1, 'AST', color='black', fontsize=15, va='bottom')
-    #     ax_scatter.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.5, zorder=1)
-    #     ax_scatter.text(5500, 2.3, 'JFC', color='black', fontsize=15, va='bottom')
-    #     if ax_scatter.get_ylim()[0] < 1.5:
-    #         ax_scatter.text(5500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+    # Tj boundary lines
+    if shower_iau_no == -1:
+        ax_scatter.axhline(y=3.0, color='lime', linestyle='--', linewidth=1.2, zorder=0)
+        ax_scatter.axhline(y=2.0, color='lime', linestyle='--', linewidth=1.2, zorder=0)
 
-    # # Axis labels
-    # ax_scatter.set_xlim(0, 6000)
-    # ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
-    # ax_scatter.set_ylabel(r'Tisserand parameter (T$_j$)', fontsize=20)
-    # ax_scatter.tick_params(labelsize=20)
-    # # display the values on the x and y axes at 0 2000 4000 6000 8000
-    # ax_scatter.set_xticks(np.arange(0, 6001, 1000))
-    # ax_scatter.grid(True)
+        # Put labels inside the panel
+        x_text = x_min + 0.92 * (x_max - x_min)
+        ax_scatter.text(x_text, 3.1, 'AST', fontsize=14, ha='left', va='bottom')
+        ax_scatter.text(x_text, 2.3, 'JFC', fontsize=14, ha='left', va='bottom')
 
-    # # Save
+        y_min_now, y_max_now = ax_scatter.get_ylim()
+        if y_min_now < 2.0:
+            ax_scatter.text(x_text, 1.3, 'HTC', fontsize=14, ha='left', va='bottom')
+
+    # Axis labels and formatting
+    ax_scatter.set_xlim(x_min, x_max)
+    ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    ax_scatter.set_ylabel(r'Tisserand parameter (T$_J$)', fontsize=20)
+    ax_scatter.tick_params(labelsize=20)
+
+    if x_max <= 4000:
+        ax_scatter.set_xticks(np.arange(0, x_max + 1, 1000))
+    else:
+        ax_scatter.set_xticks(np.arange(0, x_max + 1, 2000))
+
+    ax_scatter.grid(True, alpha=0.3)
+
+    # Save
     # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_JB_plot.png"), bbox_inches='tight', dpi=300)
-    # # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
-    # plt.close()
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Tj_logmass_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.close()
 
     # save as a csv the first column is all base_name then the Tj and then density
     summary_df_rho_tj = pd.DataFrame({
@@ -8645,6 +8749,119 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     summary_df_rho_tj.to_csv(os.path.join(output_dir_show, shower_name+"_rho_tj_summary.csv"), index=False)
 
+    # Create figure
+    fig = plt.figure(figsize=(8, 10))
+    gs = gridspec.GridSpec(2, 1, height_ratios=[1, 3] , hspace=0) # , hspace=0.05
+
+    # Set main axes (with shared x-axis)
+    ax_dist = fig.add_subplot(gs[0])
+    ax_scatter = fig.add_subplot(gs[1], sharex=ax_dist)
+
+    # -----------------------------
+    # TOP PANEL: rho distribution
+    # -----------------------------
+    rho_corr = np.asarray(rho_corrected, dtype=float)
+    w_corr = np.asarray(w, dtype=float)
+
+    finite_mask = np.isfinite(rho_corr) & np.isfinite(w_corr)
+    rho_corr = rho_corr[finite_mask]
+    w_corr = w_corr[finite_mask]
+
+    # For display, clip the histogram to the shown x-range
+    display_mask = (rho_corr >= 0) & (rho_corr <= x_max)
+    rho_hist_vals = rho_corr[display_mask]
+    w_hist_vals = w_corr[display_mask]
+
+    if len(rho_hist_vals) > 1:
+        smooth = 0.02
+        lo = 0
+        hi = x_max
+        nbins = int(round(10.0 / smooth))
+        hist, edges = np.histogram(
+            rho_hist_vals,
+            bins=nbins,
+            weights=w_hist_vals,
+            range=(lo, hi)
+        )
+        hist = norm_kde(hist, 10.0)
+        bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+        ax_dist.fill_between(bin_centers, hist, color='black', alpha=0.6)
+
+    # Percentile lines
+    ax_dist.axvline(rho_corrected_median, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo, color='black', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi, color='black', linestyle='--', linewidth=1.5)
+
+    plus = rho_corrected_hi - rho_corrected_median
+    minus = rho_corrected_median - rho_corrected_lo
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+
+    ax_dist.set_title(title, fontsize=20)
+    ax_dist.set_xlim(x_min, x_max)
+    ax_dist.tick_params(axis='x', labelbottom=False)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.spines['bottom'].set_visible(False)
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+
+    # --- BOTTOM PANEL: Rho vs Tj ---
+
+    # scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=np.log10(meteoroid_diameter_mm), cmap='coolwarm', s=30, norm=Normalize(vmin=_quantile(np.log10(meteoroid_diameter_mm), 0.025), vmax=_quantile(np.log10(meteoroid_diameter_mm), 0.975)), zorder=2)
+    scatter_d = plt.scatter(rho, (kinetic_energy_median)/1000, c=log10_m_init, cmap='Spectral_r', s=40, norm=Normalize(vmin=_quantile(log10_m_init, 0.025), vmax=_quantile(log10_m_init, 0.975)), zorder=2, edgecolors='black', linewidth=0.5)
+
+    plt.errorbar(rho, (kinetic_energy_median)/1000,
+                xerr=[abs(rho_lo), abs(rho_hi)],
+                yerr=[abs(kinetic_energy_lo)/1000, abs(kinetic_energy_hi)/1000],
+                elinewidth=0.75,
+            capthick=0.75,
+            fmt='none',
+            ecolor='black',
+            capsize=3,
+            zorder=1
+        )
+
+    # Add manually aligned colorbar
+    # Get position of ax_scatter to align colorbar
+    pos = ax_scatter.get_position()
+    cbar_ax = fig.add_axes([pos.x1 + 0.01, pos.y0, 0.02, pos.height])  # [left, bottom, width, height]
+    cbar = plt.colorbar(scatter_d, cax=cbar_ax)
+    # cbar.set_label('$log_{10}$ Diameter [mm]', fontsize=20)
+    cbar.set_label('$log_{10}$ $m_0$ [kg]', fontsize=20)
+
+    # the ticks size of the colorbar
+    cbar.ax.tick_params(labelsize=20)
+
+    # Tj markers
+    if shower_iau_no == -1:
+        # ax_scatter.axhline(y=0.054, color='lime', linestyle=':', linewidth=1.5, zorder=1)
+        # ax_scatter.text(7500, 0.06, 'Air gun', color='black', fontsize=15, va='bottom')
+        ax_scatter.axhline(y=0.840, color='lime', linestyle='--', linewidth=1.5, zorder=1)
+        ax_scatter.text(7500, 0.9, 'Pistol', color='black', fontsize=15, va='bottom')
+        ax_scatter.axhline(y=23, color='lime', linestyle='-.', linewidth=1.5, zorder=1)
+        ax_scatter.text(7500, 24, 'Rifle', color='black', fontsize=15, va='bottom')
+
+        # if ax_scatter.get_ylim()[0] < 1.5:
+        #     ax_scatter.text(7500, 1.3, 'HTC', color='black', fontsize=15, va='bottom')
+
+
+    # Axis labels
+    ax_scatter.set_xlim(-100, 8300)
+    ax_scatter.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    ax_scatter.set_ylabel(r'Kinetic Energy [kJ]', fontsize=20)
+    ax_scatter.tick_params(labelsize=20)
+    # display the values on the x and y axes at 0 2000 4000 6000 8000
+    ax_scatter.set_xticks(np.arange(0, 9000, 2000))
+    ax_scatter.grid(True)
+    ax_scatter.set_yscale("log")
+
+    # Save
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_Number_KintEner_logmass_combined_plot.png"), bbox_inches='tight', dpi=300)
+    # plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_KintEner_log10diam_combined_plot.png"), bbox_inches='tight', dpi=300)
+    plt.close()
 
     # Create figure
     fig = plt.figure(figsize=(8, 10))
@@ -13560,7 +13777,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final\Stony", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -13608,4 +13825,4 @@ if __name__ == "__main__":
                        tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, 
                        energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, 
                        mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all,
-                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False, plot_class=True) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot

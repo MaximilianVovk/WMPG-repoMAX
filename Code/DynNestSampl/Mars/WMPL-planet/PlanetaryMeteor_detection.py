@@ -51,7 +51,7 @@ Notes
 * The atmosphere CSV is expected to contain height and density as its two main
   numeric columns. Named columns containing "alt"/"height" and "rho"/"dens"
   are preferred. Extra columns are ignored.
-* Mars_Vel.py is used when available for Mars orbit-intercept speeds; an internal fallback is retained.
+* Planet_Vel.py is used when available for Mars orbit-intercept speeds; an internal fallback is retained.
 
 Examples
 --------
@@ -1369,7 +1369,7 @@ def circular_planet_velocity_vector(
     Circular prograde planet velocity at the supplied heliocentric position.
 
     The planet-parameter file intentionally uses a mean orbit_radius_au, matching
-    the approximation in Mars_Vel.py.
+    the approximation in Planet_Vel.py.
     """
     r_vec = np.asarray(r_vec, dtype=float)
     r_mag = float(np.linalg.norm(r_vec))
@@ -1409,7 +1409,7 @@ def generic_planet_intercept(
     start_height_m: float,
 ) -> dict[str, Any]:
     """
-    Generic version of the supplied Mars_Vel method.
+    Generic version of the supplied Planet_Vel method.
 
     The target planet is assumed to follow a circular, prograde ecliptic orbit at
     orbit_radius_au. Both radial crossings (outbound/inbound) are retained.
@@ -1521,7 +1521,7 @@ def target_planet_kinematics(
     """
     Calculate target-planet entry speed and MetSim zenith angle from the pickle.
 
-    For Mars, Mars_Vel.calculate_3d_intercept_speeds is preferred when importable.
+    For Mars, Planet_Vel.calculate_3d_intercept_speeds is preferred when importable.
     A generic implementation of the same circular-planet approximation is the
     fallback and is also used for other planetary bodies.
     """
@@ -1550,7 +1550,7 @@ def target_planet_kinematics(
         intercept = None
         if planet_name.strip().lower() == "mars":
             try:
-                from Mars_Vel import calculate_3d_intercept_speeds
+                from Planet_Vel import calculate_3d_intercept_speeds
             except Exception:
                 calculate_3d_intercept_speeds = None
 
@@ -1577,7 +1577,7 @@ def target_planet_kinematics(
                         elements["node_deg"],
                     )
                     if result is None or len(result) < 3:
-                        raise ValueError("Mars_Vel returned no Mars intercept.")
+                        raise ValueError("Planet_Vel returned no Mars intercept.")
 
                     v_inf_arr = np.asarray(result[1], dtype=float)
                     radius_m = planet_float(planet_params, "radius_km") * 1000.0
@@ -1597,12 +1597,12 @@ def target_planet_kinematics(
                             "entry_speed_at_simulation_start_kms": float(speed),
                         })
                     intercept = {
-                        "method": "Mars_Vel.calculate_3d_intercept_speeds",
+                        "method": "Planet_Vel.calculate_3d_intercept_speeds",
                         "scenarios": scenarios,
                     }
                 except Exception as exc:
                     warnings.warn(
-                        f"Mars_Vel intercept calculation failed ({exc}); "
+                        f"Planet_Vel intercept calculation failed ({exc}); "
                         "using the internal generic calculation."
                     )
                     intercept = None
@@ -3938,9 +3938,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--json",
-        # required=True,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\5)Mars meteors\Fireball-test\20190628_063255\20190628_063255_sim_fit_dynesty_BestGuess.json",
-        # default=r"C:\Users\maxiv\Documents\UWO\Papers\5)Mars meteors\Fireball-test\EN040326_201155\EN040326_201155_sim_fit.json",
+        required=True,
         help=(
             "Fitted MetSim JSON, or a *_planet_run.json previously written by "
             "this program for fast observer/limiting-magnitude reprocessing."
@@ -3987,7 +3985,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("auto", "integfps", "nointegfps"),
         default="auto",
         help=(
-            "Auto compares raw vs finite-FPS light curves against the real "
+            "Considers if Auto compares raw vs finite-FPS light curves against the real "
             "photometry extracted from the required trajectory pickle."
         ),
     )
@@ -4004,7 +4002,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--limiting-mag",
         type=float,
-        default=4,
+        default=None,
         help="Optional apparent limiting magnitude at the observer.",
     )
     parser.add_argument(
@@ -4029,7 +4027,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--minimum-frames",
         type=int,
-        default=10,
+        default=4,
         help="Above-LM frames required for the saved detection flag.",
     )
     parser.add_argument(

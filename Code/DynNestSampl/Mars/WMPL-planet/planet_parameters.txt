@@ -37,7 +37,16 @@ default_trigger = dynamic_pressure
 # Both equal 1.0 => NO penalty.
 # transmission_zenith is raised to a simple airmass; seeing factor is a
 # multiplicative sensitivity factor. Values below 1 make the source fainter.
+
+# Ground-camera atmospheric extinction
+# vertical optical depth i.e. tau_vertical = 0.3 -> T_zenith = exp(-0.3) = 0.741
 ground_atmospheric_transmission_zenith = 1.0
+
+# Additional instrumental/seeing penalty; 1 = none
 ground_seeing_sensitivity_factor = 1.0
+
+# Prevent secant-airmass divergence close to the horizon
 ground_max_airmass = 20
+
+# Observers below this altitude are treated as ground/atmospheric observers
 ground_observer_max_altitude_km = 20

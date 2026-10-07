@@ -88,7 +88,11 @@ def read_sei(path, diameter_center="arithmetic"):
                     low, high = map(number, fields[2:4])
                     if index < 1 or index in bins[card] or low > high:
                         raise ValueError(f"invalid or duplicate {card} bin {index}")
-                    if card in ("DISTVEL", "DISTDIA", "DISTDEN") and low < 0:
+                    if card == "DISTVEL" and low < 0:
+                        print(f"warning: {path.name}:{line_no}: negative DISTVEL lower "
+                              f"boundary {low:g} clipped to 0")
+                        low = 0.0
+                    elif card in ("DISTDIA", "DISTDEN") and low < 0:
                         raise ValueError(f"negative lower boundary in {card}")
                     bins[card][index] = (low, high)
             except (ValueError, IndexError) as exc:

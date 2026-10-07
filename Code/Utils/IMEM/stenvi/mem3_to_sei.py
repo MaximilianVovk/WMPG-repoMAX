@@ -102,7 +102,8 @@ def read_mem_flux(path):
     mids = np.array(labels, float)
     half = np.diff(mids).mean() / 2
     d = np.loadtxt(path, comments="#")
-    return d[:, 0], d[:, 1], mids - half, mids + half, d[:, 2:]
+    # speeds are non-negative: a bin centred on 0 km/s starts at 0, not -half
+    return d[:, 0], d[:, 1], np.maximum(mids - half, 0), mids + half, d[:, 2:]
 
 
 def jd_to_datetime(jd):

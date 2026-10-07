@@ -64,6 +64,14 @@ Important interpretation notes
 * With SolarFixedFrame, RAAN is interpreted relative to the +x subsolar axis.
   With InertialFrame, it is relative to the supplied inertial grid axes.
 
+When --size-power both is selected
+----------------------------------
+In addition to the separate q=-3.4 and q=-3.7 case folders, the script creates
+a combined comparison folder. For each plotted physical series, q=-3.4 is shown
+as a solid line, q=-3.7 as a dashed line, and the area between them is shaded in
+the same colour. The shading is a model-assumption envelope between the two
+source-size slopes, not a statistical confidence interval.
+
 Dependencies: numpy, pandas, matplotlib, scipy
 """
 
@@ -1205,6 +1213,471 @@ def save_directional_combined(data: pd.DataFrame, column: str, ylabel: str, titl
     plt.close(fig)
 
 
+
+# -----------------------------------------------------------------------------
+# Combined q=-3.4 / q=-3.7 model-envelope plots
+# -----------------------------------------------------------------------------
+
+
+def _power_linestyle(power: float) -> str:
+    """Use a solid line for q=-3.4 and a dashed line for q=-3.7."""
+    return "-" if abs(power - 3.4) < 1e-8 else "--"
+
+
+def _common_positive_band(
+    data_a: pd.DataFrame,
+    data_b: pd.DataFrame,
+    x_column: str,
+    y_column: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return common x values and lower/upper positive envelopes for fill_between.
+
+    No interpolation is introduced: shading is drawn only where the two q cases
+    have exactly the same x coordinate (normally the same IMEM mass bin or the
+    same Schmidt threshold/bin).
+    """
+    if data_a.empty or data_b.empty:
+        return np.array([]), np.array([]), np.array([])
+
+    a = data_a[[x_column, y_column]].dropna().copy()
+    b = data_b[[x_column, y_column]].dropna().copy()
+    merged = a.merge(b, on=x_column, how="inner", suffixes=("_a", "_b"))
+    if merged.empty:
+        return np.array([]), np.array([]), np.array([])
+
+    merged = merged.sort_values(x_column)
+    x = merged[x_column].to_numpy(float)
+    ya = merged[f"{y_column}_a"].to_numpy(float)
+    yb = merged[f"{y_column}_b"].to_numpy(float)
+    good = np.isfinite(x) & np.isfinite(ya) & np.isfinite(yb) & (x > 0.0) & (ya > 0.0) & (yb > 0.0)
+    return x[good], np.minimum(ya[good], yb[good]), np.maximum(ya[good], yb[good])
+
+
+def _series_same_for_both(
+    data_by_power: dict[float, pd.DataFrame],
+    x_column: str,
+    y_column: str,
+) -> bool:
+    """True when the q=-3.4 and q=-3.7 curves are numerically identical."""
+    if 3.4 not in data_by_power or 3.7 not in data_by_power:
+        return False
+    x, lo, hi = _common_positive_band(
+        data_by_power[3.4], data_by_power[3.7], x_column, y_column
+    )
+    if len(x) == 0:
+        return False
+    # Same if the envelope thickness is negligible compared with the values.
+    return bool(np.allclose(lo, hi, rtol=1e-10, atol=0.0, equal_nan=True))
+
+
+def save_both_power_overlay(
+    data_by_power: dict[float, pd.DataFrame],
+    series: list[tuple[str, str]],
+    ylabel: str,
+    title: str,
+    output: Path,
+    x_column: str = "mass_mid_g",
+) -> None:
+    """Overlay q=-3.4 and q=-3.7 for each series and shade their envelope."""
+    fig, ax = plt.subplots(figsize=(9.0, 5.8))
+
+    for column, label in series:
+        available = {
+            power: data
+            for power, data in data_by_power.items()
+            if column in data.columns and x_column in data.columns
+        }
+        if not available:
+            continue
+
+        # IMEM-only quantities are independent of Schmidt q. More generally, if
+        # the two curves are identical, draw a single line instead of obscuring
+        # it with two coincident curves.
+        if _series_same_for_both(available, x_column, column):
+            power = sorted(available)[0]
+            g = available[power].sort_values(x_column)
+            ax.plot(
+                g[x_column],
+                positive_for_log(g[column]),
+                marker="o",
+                label=f"{label} (q-independent)",
+            )
+            continue
+
+        color = None
+        plotted: dict[float, pd.DataFrame] = {}
+        for power in sorted(available):
+            g = available[power].sort_values(x_column)
+            plotted[power] = g
+            line, = ax.plot(
+                g[x_column],
+                positive_for_log(g[column]),
+                marker="o",
+                linestyle=_power_linestyle(power),
+                color=color,
+                label=f"{label}, q=-{power:.1f}",
+            )
+            if color is None:
+                color = line.get_color()
+
+        if 3.4 in plotted and 3.7 in plotted:
+            x, lower, upper = _common_positive_band(
+                plotted[3.4], plotted[3.7], x_column, column
+            )
+            if len(x):
+                ax.fill_between(x, lower, upper, color=color, alpha=0.16)
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Geometric-mean particle mass (g)" if x_column == "mass_mid_g" else "Particle-mass threshold corresponding to s0 (g)")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title + "\nShading: q=-3.4 to q=-3.7 model envelope")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(fontsize=8.5)
+    fig.tight_layout()
+    fig.savefig(output, dpi=220)
+    plt.close(fig)
+
+
+def save_both_grouped_overlay(
+    data_by_power: dict[float, pd.DataFrame],
+    group_column: str,
+    x_column: str,
+    y_column: str,
+    ylabel: str,
+    title: str,
+    output: Path,
+) -> None:
+    """Same q-envelope plot for data split into source/direction groups."""
+    fig, ax = plt.subplots(figsize=(9.0, 5.8))
+
+    groups: list[str] = []
+    for data in data_by_power.values():
+        if group_column in data.columns:
+            for value in data[group_column].dropna().astype(str):
+                if value not in groups:
+                    groups.append(value)
+
+    for group_value in groups:
+        color = None
+        plotted: dict[float, pd.DataFrame] = {}
+        for power in sorted(data_by_power):
+            data = data_by_power[power]
+            if not {group_column, x_column, y_column}.issubset(data.columns):
+                continue
+            g = data[data[group_column].astype(str) == group_value].sort_values(x_column)
+            if g.empty:
+                continue
+            plotted[power] = g
+            line, = ax.plot(
+                g[x_column],
+                positive_for_log(g[y_column]),
+                marker="o",
+                linestyle=_power_linestyle(power),
+                color=color,
+                label=f"{group_value.title()}, q=-{power:.1f}",
+            )
+            if color is None:
+                color = line.get_color()
+
+        if 3.4 in plotted and 3.7 in plotted:
+            x, lower, upper = _common_positive_band(
+                plotted[3.4], plotted[3.7], x_column, y_column
+            )
+            if len(x):
+                ax.fill_between(x, lower, upper, color=color, alpha=0.16)
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel(
+        "Particle-mass threshold corresponding to s0 (g)"
+        if x_column == "threshold_mass_g"
+        else "Geometric-mean particle mass (g)"
+    )
+    ax.set_ylabel(ylabel)
+    ax.set_title(title + "\nShading: q=-3.4 to q=-3.7 model envelope")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(fontsize=8.5, ncol=2 if len(groups) > 2 else 1)
+    fig.tight_layout()
+    fig.savefig(output, dpi=220)
+    plt.close(fig)
+
+
+def save_both_face_flux(
+    directional_by_power: dict[float, pd.DataFrame],
+    output: Path,
+) -> None:
+    """Directional face flux with the q=-3.4/-3.7 envelope for each source."""
+    fig, ax = plt.subplots(figsize=(9.4, 5.6))
+    x = np.arange(len(FACE_ORDER), dtype=float)
+
+    for source in ["PHOBOS", "DEIMOS"]:
+        color = None
+        values_by_power: dict[float, np.ndarray] = {}
+        for power in sorted(directional_by_power):
+            data = directional_by_power[power]
+            summary = (
+                data.groupby(["source", "direction"], as_index=False)["flux_per_mass_bin_per_m2_yr"]
+                .sum()
+            )
+            g = summary[summary["source"] == source].set_index("direction")
+            values = np.array(
+                [float(g.loc[f, "flux_per_mass_bin_per_m2_yr"]) if f in g.index else np.nan for f in FACE_ORDER],
+                dtype=float,
+            )
+            values_by_power[power] = values
+            line, = ax.plot(
+                x,
+                np.where(values > 0.0, values, np.nan),
+                marker="o",
+                linestyle=_power_linestyle(power),
+                color=color,
+                label=f"{source.title()}, q=-{power:.1f}",
+            )
+            if color is None:
+                color = line.get_color()
+
+        if 3.4 in values_by_power and 3.7 in values_by_power:
+            a = values_by_power[3.4]
+            b = values_by_power[3.7]
+            good = np.isfinite(a) & np.isfinite(b) & (a > 0.0) & (b > 0.0)
+            if np.any(good):
+                ax.fill_between(
+                    x,
+                    np.where(good, np.minimum(a, b), np.nan),
+                    np.where(good, np.maximum(a, b), np.nan),
+                    color=color,
+                    alpha=0.16,
+                )
+
+    ax.set_xticks(x, FACE_ORDER, rotation=20, ha="right")
+    ax.set_yscale("log")
+    ax.set_ylabel(r"Resolved finite-bin impact flux (m$^{-2}$ yr$^{-1}$)")
+    ax.set_title("Schmidt circum-Martian dust: directional flux by spacecraft face\nShading: q=-3.4 to q=-3.7 model envelope")
+    ax.grid(True, axis="y", which="both", alpha=0.3)
+    ax.legend(fontsize=8.5)
+    fig.tight_layout()
+    fig.savefig(output, dpi=220)
+    plt.close(fig)
+
+
+def save_both_power_comparison(
+    case_dirs: dict[float, Path],
+    output_dir: Path,
+    sensor_area_m2: float,
+    mission_years: float,
+) -> None:
+    """Create q=-3.4/q=-3.7 overlays when --size-power both is selected.
+
+    The separate per-q outputs are kept. This function adds a comparison folder
+    in which the two source-size assumptions are plotted together. The shaded
+    region is an assumption envelope, not a statistical confidence interval.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def load_if_present(filename: str) -> dict[float, pd.DataFrame]:
+        out: dict[float, pd.DataFrame] = {}
+        for power, case_dir in case_dirs.items():
+            path = case_dir / filename
+            if path.exists():
+                out[power] = pd.read_csv(path)
+        return out
+
+    cumulative = load_if_present("schmidt_cumulative_orbit_sampling.csv")
+    if len(cumulative) == 2:
+        save_both_grouped_overlay(
+            cumulative,
+            "source",
+            "threshold_mass_g",
+            "cross_sectional_flux_gt_s0_per_m2_yr",
+            r"Direct cumulative flux $F(>s_0)$ (m$^{-2}$ yr$^{-1}$)",
+            "Schmidt cumulative circum-Martian dust flux",
+            output_dir / "00_schmidt_direct_cumulative_flux.png",
+        )
+
+    native = load_if_present("schmidt_native_size_bins.csv")
+    if len(native) == 2:
+        save_both_grouped_overlay(
+            native,
+            "source",
+            "mass_mid_g",
+            "flux_per_mass_bin_per_m2_yr",
+            r"Impact flux in native Schmidt size bin (m$^{-2}$ yr$^{-1}$)",
+            "Schmidt circum-Martian dust number flux",
+            output_dir / "01_schmidt_native_number_flux.png",
+        )
+        save_both_grouped_overlay(
+            native,
+            "source",
+            "mass_mid_g",
+            "momentum_per_mass_bin_g_km_s_per_m2_yr",
+            r"Momentum delivery (g km s$^{-1}$ m$^{-2}$ yr$^{-1}$)",
+            "Schmidt circum-Martian dust momentum",
+            output_dir / "02_schmidt_native_momentum.png",
+        )
+        save_both_grouped_overlay(
+            native,
+            "source",
+            "mass_mid_g",
+            "kinetic_energy_per_mass_bin_J_per_m2_yr",
+            r"Kinetic-energy delivery (J m$^{-2}$ yr$^{-1}$)",
+            "Schmidt circum-Martian dust kinetic energy",
+            output_dir / "03_schmidt_native_energy.png",
+        )
+
+    directional_native = load_if_present("schmidt_directional_native_bins.csv")
+    if len(directional_native) == 2:
+        save_both_face_flux(
+            directional_native,
+            output_dir / "04_schmidt_directional_face_flux.png",
+        )
+
+    combined = load_if_present("sensor_oriented_imem2_with_schmidt_rings.csv")
+    if len(combined) == 2:
+        plots = [
+            (
+                "01_flux_per_mass_bin.png",
+                [
+                    ("imem_flux_per_mass_bin_per_m2_yr", "IMEM2 only"),
+                    ("phobos_flux_per_mass_bin_per_m2_yr", "Phobos only"),
+                    ("deimos_flux_per_mass_bin_per_m2_yr", "Deimos only"),
+                    ("total_flux_with_rings_per_mass_bin_per_m2_yr", "Total"),
+                ],
+                r"Impact flux (m$^{-2}$ yr$^{-1}$)",
+                "Impact flux",
+            ),
+            (
+                "02_mean_momentum_per_impact.png",
+                [
+                    ("imem_mean_incident_momentum_per_impact_g_km_s", "IMEM2 only"),
+                    ("phobos_mean_incident_momentum_per_impact_g_km_s", "Phobos only"),
+                    ("deimos_mean_incident_momentum_per_impact_g_km_s", "Deimos only"),
+                    ("total_mean_incident_momentum_per_impact_g_km_s", "Total"),
+                ],
+                r"Mean incident momentum per impact (g km s$^{-1}$)",
+                "Per-particle incident momentum",
+            ),
+            (
+                "03_mean_kinetic_energy_per_impact.png",
+                [
+                    ("imem_mean_kinetic_energy_per_impact_J", "IMEM2 only"),
+                    ("phobos_mean_kinetic_energy_per_impact_J", "Phobos only"),
+                    ("deimos_mean_kinetic_energy_per_impact_J", "Deimos only"),
+                    ("total_mean_kinetic_energy_per_impact_J", "Total"),
+                ],
+                "Mean kinetic energy per impact (J)",
+                "Per-particle kinetic energy",
+            ),
+            (
+                "04_expected_impacts_for_sensor.png",
+                [
+                    ("expected_imem_impacts", "IMEM2 only"),
+                    ("expected_phobos_impacts", "Phobos only"),
+                    ("expected_deimos_impacts", "Deimos only"),
+                    ("expected_total_impacts_with_rings", "Total"),
+                ],
+                "Expected impacts",
+                f"Expected impacts for {sensor_area_m2:g} m$^2$ over {mission_years:g} yr",
+            ),
+            (
+                "05_annual_momentum_delivery.png",
+                [
+                    ("imem_annual_momentum_delivery_g_km_s_per_m2_yr", "IMEM2 only"),
+                    ("phobos_annual_momentum_delivery_g_km_s_per_m2_yr", "Phobos only"),
+                    ("deimos_annual_momentum_delivery_g_km_s_per_m2_yr", "Deimos only"),
+                    ("total_annual_momentum_delivery_g_km_s_per_m2_yr", "Total"),
+                ],
+                r"Annual incident momentum delivery (g km s$^{-1}$ m$^{-2}$ yr$^{-1}$)",
+                "Annual momentum delivery",
+            ),
+            (
+                "06_annual_kinetic_energy_delivery.png",
+                [
+                    ("imem_annual_kinetic_energy_delivery_J_per_m2_yr", "IMEM2 only"),
+                    ("phobos_annual_kinetic_energy_delivery_J_per_m2_yr", "Phobos only"),
+                    ("deimos_annual_kinetic_energy_delivery_J_per_m2_yr", "Deimos only"),
+                    ("total_annual_kinetic_energy_delivery_J_per_m2_yr", "Total"),
+                ],
+                r"Annual kinetic-energy delivery (J m$^{-2}$ yr$^{-1}$)",
+                "Annual kinetic-energy delivery",
+            ),
+            (
+                "10_flux_imem2_plus_schmidt.png",
+                [
+                    ("flux_per_mass_bin_no_rings", "IMEM2"),
+                    ("phobos_flux_per_mass_bin_per_m2_yr", "Phobos"),
+                    ("deimos_flux_per_mass_bin_per_m2_yr", "Deimos"),
+                    ("flux_per_mass_bin_with_rings", "IMEM2 + circum-Martian dust"),
+                ],
+                r"Impact flux in mass bin (m$^{-2}$ yr$^{-1}$)",
+                "IMEM2 + Schmidt circum-Martian dust",
+            ),
+            (
+                "11_momentum_imem2_plus_schmidt.png",
+                [
+                    ("momentum_per_mass_bin_no_rings", "IMEM2"),
+                    ("phobos_momentum_per_mass_bin_g_km_s_per_m2_yr", "Phobos"),
+                    ("deimos_momentum_per_mass_bin_g_km_s_per_m2_yr", "Deimos"),
+                    ("momentum_per_mass_bin_with_rings", "IMEM2 + circum-Martian dust"),
+                ],
+                r"Momentum delivery (g km s$^{-1}$ m$^{-2}$ yr$^{-1}$)",
+                "Momentum: IMEM2 + Schmidt circum-Martian dust",
+            ),
+            (
+                "12_energy_imem2_plus_schmidt.png",
+                [
+                    ("kinetic_energy_per_mass_bin_no_rings", "IMEM2"),
+                    ("phobos_kinetic_energy_per_mass_bin_J_per_m2_yr", "Phobos"),
+                    ("deimos_kinetic_energy_per_mass_bin_J_per_m2_yr", "Deimos"),
+                    ("kinetic_energy_per_mass_bin_with_rings", "IMEM2 + circum-Martian dust"),
+                ],
+                r"Kinetic-energy delivery (J m$^{-2}$ yr$^{-1}$)",
+                "Energy: IMEM2 + Schmidt circum-Martian dust",
+            ),
+        ]
+        for filename, series, ylabel, title in plots:
+            save_both_power_overlay(
+                combined, series, ylabel, title, output_dir / filename
+            )
+
+    directional_combined = load_if_present("imem2_directional_with_schmidt_rings.csv")
+    if len(directional_combined) == 2:
+        save_both_grouped_overlay(
+            directional_combined,
+            "direction",
+            "mass_mid_g",
+            "flux_per_mass_bin_with_rings",
+            r"Directional impact flux (m$^{-2}$ yr$^{-1}$)",
+            "Directional IMEM2 + Schmidt dust",
+            output_dir / "15_directional_flux_imem2_plus_schmidt.png",
+        )
+        save_both_grouped_overlay(
+            directional_combined,
+            "direction",
+            "mass_mid_g",
+            "momentum_per_mass_bin_with_rings",
+            r"Directional momentum delivery (g km s$^{-1}$ m$^{-2}$ yr$^{-1}$)",
+            "Directional momentum: IMEM2 + Schmidt dust",
+            output_dir / "16_directional_momentum_imem2_plus_schmidt.png",
+        )
+
+    readme = [
+        "Combined Schmidt q=-3.4 / q=-3.7 comparison plots",
+        "=================================================",
+        "",
+        "Plot convention:",
+        "- q=-3.4: solid line",
+        "- q=-3.7: dashed line",
+        "- shaded region: min/max envelope between the two q assumptions",
+        "- the shading is NOT a statistical confidence interval; it visualises sensitivity",
+        "  to the two source-size-distribution slopes supplied in Schmidt's dataset.",
+        "- IMEM2-only curves are q-independent and are therefore drawn only once.",
+        "- shading is only drawn at common x values; no interpolation is introduced.",
+    ]
+    (output_dir / "README_both_power_comparison.txt").write_text(
+        "\n".join(readme), encoding="utf-8"
+    )
+
 # -----------------------------------------------------------------------------
 # One power-law case
 # -----------------------------------------------------------------------------
@@ -1575,8 +2048,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--size-power",
         choices=["3.4", "3.7", "both"],
-        default="3.7",
-        help="Initial differential size slope magnitude. '3.7' means dN/ds proportional to s^-3.7.",
+        default="both",
+        help=("Initial differential size slope magnitude. '3.7' means dN/ds proportional to s^-3.7. "
+              "With 'both', separate q folders are retained and an additional combined folder "
+              "shows q=-3.4 solid, q=-3.7 dashed, with the area between shaded."),
     )
     parser.add_argument("--rho-g-cm3", type=float, default=2.37)
     parser.add_argument(
@@ -1689,6 +2164,7 @@ def main() -> None:
     )
 
     headline_rows = []
+    case_dirs: dict[float, Path] = {}
     with SchmidtDataSource(args.schmidt_data) as data_source:
         print(f"Reading Schmidt data from: {data_source.path}")
         grid = load_grid(data_source.grid_path())
@@ -1699,6 +2175,7 @@ def main() -> None:
         for power in powers:
             print(f"\nProcessing q=-{power:.1f} in {args.frame}...")
             case_dir = root_output / f"{args.frame}_power_{power:.1f}".replace(".", "p")
+            case_dirs[power] = case_dir
             headline = run_power_case(
                 data_source=data_source,
                 grid=grid,
@@ -1721,6 +2198,16 @@ def main() -> None:
                     **headline,
                 }
             )
+
+    if args.size_power == "both" and len(case_dirs) == 2:
+        comparison_dir = root_output / f"{args.frame}_power_both_comparison"
+        print("\nCreating combined q=-3.4 / q=-3.7 shaded comparison plots...")
+        save_both_power_comparison(
+            case_dirs=case_dirs,
+            output_dir=comparison_dir,
+            sensor_area_m2=args.sensor_area_m2,
+            mission_years=args.mission_years,
+        )
 
     if headline_rows:
         pd.DataFrame(headline_rows).to_csv(root_output / "schmidt_case_summary.csv", index=False)

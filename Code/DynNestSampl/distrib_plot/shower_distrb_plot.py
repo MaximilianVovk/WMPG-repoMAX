@@ -1707,7 +1707,7 @@ def plot_tropical_fruit_vs_initial_velocity(
 
     class_order = ["homogenus", "avocado", "coconut"]
     display_names = {
-        "homogenus": "Homogeneous",
+        "homogenus": "Banana",
         "avocado": "Avocado",
         "coconut": "Coconut",
     }
@@ -1846,6 +1846,258 @@ def _plot_2d_distribution(ax, x, y, w, span_frac=0.98, levels=[0.1, 0.4, 0.65, 0
     # ax.yaxis.set_major_locator(MaxNLocator(5, prune="lower"))
     # ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=False))
     # ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
+
+# ---- Posterior-based size-density extrapolation (2026-10-05) ----
+def build_size_density_probability(
+    diameter_samples_mm, density_samples_kgm3, posterior_weights, *,
+    divine_density_function, diameter_edges_mm=None, density_step_kgm3=25.0,
+    density_split_kgm3=4000.0, dense_to_low_cap=0.035,
+    small_size_strength=0.15, reference_diameter_mm=None,
+    density_smoothing_kgm3=50.0, size_bin_probabilities=None,
+    total_number_flux_m2_s=None, number_flux_per_size_bin_m2_s=None,
+):
+    """Construct a phenomenological p(rho | D), then p(rho, D).
+
+    Uses ALL positive-weight density samples supplied by the existing plot;
+    their spread includes population variation and posterior uncertainty. It
+    does not estimate uncertainty bands on the population distribution itself.
+    The original D-rho covariance is deliberately replaced by the specified
+    size law, with the pooled marginal anchored at a reference diameter.
+
+    For rho < C, rho_new = rho + t(D)*(C-rho), with
+        t(D) = strength * clip((f(500*D)-f(500*Dref)) /
+                              (f(0)-f(500*Dref)), 0, 1).
+    f is the user's supplied radius-based density law. Thus D >= Dref leaves
+    the reference marginal unchanged, and smaller D raises low densities
+    without crossing C or accumulating clipped samples at C.
+
+    Dense posterior shape is unchanged with D. Its integrated count divided
+    by the low-density count is capped (not forced) at dense_to_low_cap.
+    rho == C is assigned to the dense component consistently.
+
+    Default size prior is uniform in log10(D) over the chosen finite range:
+    this is an explicit assumption, not a measured or debiased flux law.
+    Supply integrated probabilities OR fluxes for the same diameter bins to
+    substitute a physical size distribution. Absolute flux remains unknown
+    unless total_number_flux_m2_s or number_flux_per_size_bin_m2_s is supplied.
+    """
+    import numpy as np
+    from scipy.ndimage import gaussian_filter1d
+
+    d, rho, w = [np.asarray(v, dtype=float).reshape(-1) for v in
+                 (diameter_samples_mm, density_samples_kgm3, posterior_weights)]
+    if not (d.size == rho.size == w.size):
+        raise ValueError("Diameter, density and posterior weights must align sample by sample.")
+    if np.any(np.isfinite(w) & (w < 0)):
+        raise ValueError("Posterior weights cannot be negative.")
+    valid = np.isfinite(d) & np.isfinite(rho) & np.isfinite(w) & (d > 0) & (rho > 0) & (w > 0)
+    n_rejected = int(np.count_nonzero(~valid))
+    d, rho, w = d[valid], rho[valid], w[valid]
+    if not w.size:
+        raise ValueError("No valid positive-weight posterior samples.")
+    w = w / w.max()
+    w /= w.sum()
+    if not np.isfinite(density_split_kgm3) or density_split_kgm3 <= 0:
+        raise ValueError("density_split_kgm3 must be positive and finite.")
+    if not np.isfinite(dense_to_low_cap) or not 0 <= dense_to_low_cap < 0.036:
+        raise ValueError("dense_to_low_cap must be >= 0 and strictly below 0.036.")
+    if not np.isfinite(small_size_strength) or not 0 <= small_size_strength < 1:
+        raise ValueError("small_size_strength must lie in [0, 1).")
+    if not np.isfinite(density_step_kgm3) or density_step_kgm3 <= 0:
+        raise ValueError("density_step_kgm3 must be positive and finite.")
+    if not np.isfinite(density_smoothing_kgm3) or density_smoothing_kgm3 < 0:
+        raise ValueError("density_smoothing_kgm3 must be finite and non-negative.")
+    split = float(density_split_kgm3)
+    low = rho < split
+    if not low.any():
+        raise ValueError("Need positive posterior weight below the density split.")
+    if reference_diameter_mm is None:
+        order = np.argsort(d[low])
+        low_d, low_w = d[low][order], w[low][order]
+        reference_diameter_mm = float(low_d[np.searchsorted(np.cumsum(low_w), 0.5 * low_w.sum())])
+    if not np.isfinite(reference_diameter_mm) or reference_diameter_mm <= 0:
+        raise ValueError("reference_diameter_mm must be positive and finite.")
+
+    if diameter_edges_mm is None:
+        diameter_edges_mm = np.geomspace(1e-3, 10.0, 241)
+    de = np.asarray(diameter_edges_mm, dtype=float)
+    if (de.ndim != 1 or de.size < 2 or not np.all(np.isfinite(de))
+            or np.any(de <= 0) or np.any(np.diff(de) <= 0)):
+        raise ValueError("Diameter edges must be positive, finite and strictly increasing.")
+    dc = np.sqrt(de[:-1] * de[1:])
+    # Include all valid density samples, even those outside the displayed axes.
+    # Make the split an exact bin edge and use a uniform density-bin width.
+    nlow = max(1, int(np.ceil(split / density_step_kgm3)))
+    drho = split / nlow
+    nhigh = max(1, int(np.ceil((max(8000.0, float(rho.max())) - split) / drho)))
+    re = np.arange(nlow + nhigh + 1, dtype=float) * drho
+    re[nlow] = split
+    rc = 0.5 * (re[:-1] + re[1:])
+
+    def component_mass(values, weights, edges):
+        h = np.histogram(values, bins=edges, weights=weights)[0].astype(float)
+        if not h.sum():
+            return h
+        if density_smoothing_kgm3 > 0:
+            # Separate smoothing prevents probability leaking across 4000.
+            h = gaussian_filter1d(h, density_smoothing_kgm3 / drho, mode="reflect")
+        return h / h.sum()
+
+    low_mass = component_mass(rho[low], w[low], re[:nlow + 1])
+    high_mass = component_mass(rho[~low], w[~low], re[nlow:])
+    raw_ratio = float(w[~low].sum() / w[low].sum())
+    ratio = min(raw_ratio, float(dense_to_low_cap))
+    high_fraction = ratio / (1.0 + ratio)
+    low_fraction = 1.0 - high_fraction
+    f_ref = float(divine_density_function(500.0 * reference_diameter_mm, out="kg/m^3"))
+    f_zero = float(divine_density_function(0.0, out="kg/m^3"))
+    f_size = np.asarray(divine_density_function(500.0 * dc, out="kg/m^3"), dtype=float)
+    if f_size.shape != dc.shape or not np.all(np.isfinite(f_size)) or not np.isfinite(f_ref + f_zero) or f_zero <= f_ref:
+        raise ValueError("The supplied radius law must return finite densities and rise at small radius.")
+    transition = np.clip((f_size - f_ref) / (f_zero - f_ref), 0.0, 1.0)
+    t = float(small_size_strength) * transition
+    # Integrate the transformed histogram using inverse-transformed bin edges.
+    # This transports probability mass and includes the density Jacobian.
+    cdf = np.r_[0.0, np.cumsum(low_mass)]
+    cdf[-1] = 1.0
+    conditional = np.zeros((rc.size, dc.size), dtype=float)
+    for j, tj in enumerate(t):
+        original_edges = (re[:nlow + 1] - tj * split) / (1.0 - tj)
+        shifted_cdf = np.interp(original_edges, re[:nlow + 1], cdf, left=0.0, right=1.0)
+        masses = np.maximum(np.diff(shifted_cdf), 0.0)
+        conditional[:nlow, j] = low_fraction * masses / masses.sum()
+    conditional[nlow:, :] = high_fraction * high_mass[:, None]
+
+    def nonnegative_vector(value, name):
+        v = np.asarray(value, dtype=float)
+        if v.shape != dc.shape or not np.all(np.isfinite(v)) or np.any(v < 0) or not v.sum() > 0:
+            raise ValueError(name + " must have one non-negative finite value per size bin and positive sum.")
+        return v
+
+    flux_by_size = None
+    if number_flux_per_size_bin_m2_s is not None:
+        if size_bin_probabilities is not None or total_number_flux_m2_s is not None:
+            raise ValueError("Supply per-size-bin flux alone, or size probabilities plus total flux.")
+        flux_by_size = nonnegative_vector(number_flux_per_size_bin_m2_s, "number_flux_per_size_bin_m2_s")
+        psize = flux_by_size / flux_by_size.sum()
+        size_law = "user-supplied integrated number flux per diameter bin"
+    else:
+        if size_bin_probabilities is None:
+            psize = np.diff(np.log10(de))
+            size_law = "assumed uniform probability per log10(diameter); not a measured size or flux law"
+        else:
+            psize = nonnegative_vector(size_bin_probabilities, "size_bin_probabilities")
+            size_law = "user-supplied integrated probability per diameter bin"
+        psize = psize / psize.sum()
+        if total_number_flux_m2_s is not None:
+            if not np.isfinite(total_number_flux_m2_s) or total_number_flux_m2_s < 0:
+                raise ValueError("Total flux must be non-negative and finite.")
+            flux_by_size = float(total_number_flux_m2_s) * psize
+    joint = conditional * psize[None, :]
+    flux = None if flux_by_size is None else conditional * flux_by_size[None, :]
+    if not np.allclose(conditional.sum(axis=0), 1.0) or not np.isclose(joint.sum(), 1.0):
+        raise RuntimeError("Size-density normalization failed.")
+    return {
+        "diameter_edges_mm": de, "density_edges_kgm3": re,
+        "diameter_centres_mm": dc, "density_centres_kgm3": rc,
+        "conditional_probability": conditional, "joint_probability": joint,
+        "size_bin_probability": psize, "number_flux_m2_s": flux,
+        "metadata": {
+            "model": "posterior marginal transported with the user-supplied Divine-shaped radius law",
+            "reference_diameter_mm": float(reference_diameter_mm),
+            "density_split_kgm3": split, "boundary_convention": "rho < split low; rho >= split dense",
+            "small_size_strength": float(small_size_strength),
+            "density_smoothing_kgm3": float(density_smoothing_kgm3),
+            "actual_density_bin_width_kgm3": float(drho),
+            "dense_to_low_ratio_input": raw_ratio, "dense_to_low_ratio_cap": float(dense_to_low_cap),
+            "dense_to_low_ratio_output": ratio, "dense_fraction_of_total": high_fraction,
+            "size_law": size_law,
+            "absolute_total_number_flux_m2_s": None if flux_by_size is None else float(flux_by_size.sum()),
+            "input_samples_used": int(w.size), "input_samples_excluded": n_rejected,
+            "input_diameter_range_mm": [float(d.min()), float(d.max())],
+            "input_density_range_kgm3": [float(rho.min()), float(rho.max())],
+            "posterior_weight_inheritance": "uses weights supplied to the original size-density plot",
+            "interpretation": "population spread plus supplied posterior uncertainty; no selection correction or model-parameter uncertainty",
+            "joint_covariance": "pooled density marginal plus imposed size dependence, not the measured joint posterior",
+            "diameter_grid_evaluation": "conditional density evaluated at geometric centre of each diameter bin",
+            "density_support": "all valid input densities included; axes may display a narrower interval",
+            "probability_sum": float(joint.sum()),
+        },
+    }
+
+
+def save_size_density_probability_overlay(fig, ax, model, output_stem, *, alpha=0.28):
+    """Write a bin-integrated probability/flux CSV, settings JSON and overlay PNG.
+
+    Call AFTER saving the original comparison figure and BEFORE plt.close().
+    Absolute flux CSV fields are blank when no physical normalization is given.
+    Colour shows p(rho | diameter) per kg/m^3, not joint probability per cell.
+    """
+    import csv
+    import json
+    from pathlib import Path
+    import numpy as np
+    from matplotlib.colors import LogNorm
+    from matplotlib.cm import ScalarMappable
+
+    stem = Path(output_stem)
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    de, re = model["diameter_edges_mm"], model["density_edges_kgm3"]
+    dc, rc = model["diameter_centres_mm"], model["density_centres_kgm3"]
+    conditional, joint = model["conditional_probability"], model["joint_probability"]
+    flux = model["number_flux_m2_s"]
+    dr, dd, dl = np.diff(re), np.diff(de), np.diff(np.log10(de))
+    csv_path = str(stem) + ".csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "diameter_min_mm", "diameter_max_mm", "diameter_mm",
+            "density_min_kgm3", "density_max_kgm3", "density_kgm3",
+            "size_bin_probability", "conditional_density_bin_probability",
+            "conditional_pdf_per_kgm3", "joint_bin_probability",
+            "joint_pdf_per_mm_per_kgm3", "joint_pdf_per_dex_per_kgm3",
+            "relative_number_flux_fraction", "number_flux_bin_m2_s",
+            "differential_number_flux_m2_s_per_mm_per_kgm3",
+        ])
+        for j, diameter in enumerate(dc):
+            for i, density in enumerate(rc):
+                writer.writerow([
+                    de[j], de[j+1], diameter, re[i], re[i+1], density,
+                    model["size_bin_probability"][j], conditional[i, j],
+                    conditional[i, j] / dr[i], joint[i, j],
+                    joint[i, j] / (dd[j] * dr[i]), joint[i, j] / (dl[j] * dr[i]),
+                    joint[i, j], "" if flux is None else flux[i, j],
+                    "" if flux is None else flux[i, j] / (dd[j] * dr[i]),
+                ])
+    with open(str(stem) + "_settings.json", "w", encoding="utf-8") as f:
+        json.dump(model["metadata"], f, indent=2, allow_nan=False)
+
+    pdf = conditional / dr[:, None]
+    vmax = float(pdf.max())
+    vmin = vmax * 1e-3
+    # Mask faint tails ONLY for display; CSV retains every probability cell.
+    shown = np.ma.masked_less(pdf, vmin)
+    norm = LogNorm(vmin=vmin, vmax=vmax)
+    limits = ax.get_xlim(), ax.get_ylim()
+    ax.pcolormesh(de, re, shown, cmap="Greys", norm=norm, shading="flat",
+                  alpha=alpha, zorder=0, rasterized=True)
+    ax.set_xlim(limits[0])
+    ax.set_ylim(limits[1])
+    # Horizontal bar avoids colliding with the existing right-hand legend.
+    cb = fig.colorbar(ScalarMappable(norm=norm, cmap="Greys"), ax=ax,
+                      orientation="horizontal", pad=0.16, fraction=0.045, aspect=45)
+    cb.set_label(r"Posterior-based model: $p(\rho\mid D)$ [(kg m$^{-3}$)$^{-1}$]")
+    png_path = str(stem) + ".png"
+    fig.savefig(png_path, bbox_inches="tight", dpi=300)
+    print("Saved size-density overlay:", png_path)
+    print("Saved size-density probabilities/flux:", csv_path)
+    md = model["metadata"]
+    print("Dense/low ratio: {:.4%}; dense fraction of total: {:.4%}; reference D: {:.4g} mm".format(
+        md["dense_to_low_ratio_output"], md["dense_fraction_of_total"], md["reference_diameter_mm"]))
+    if flux is None:
+        print("Absolute flux not supplied: CSV contains normalized relative fractions; absolute flux fields are blank.")
+    return png_path, csv_path
+
 
 def reweight_iron_by_velocity(results, variables, rho_threshold=4000.0):
     """
@@ -3866,6 +4118,48 @@ def load_shower_distrb_plot_data(input_dirfile):
 
 
 
+def _mem_fractions_from_panel(curve, edges, population):
+    """Integrate the plotted piecewise-linear curve over MEM bins.
+
+    These are bin probabilities, not PDF heights or event medians.
+    Preserve the panel's full posterior weights and smoothing.
+    Normalize each population within the MEM range; report any
+    plotted area outside it. No tails are folded into edge bins.
+    """
+    if curve is None:
+        raise ValueError(f"Cannot export MEM density: no {population} posterior.")
+    x, y = (np.asarray(a, dtype=float) for a in curve)
+    edges = np.asarray(edges, dtype=float)
+    if (x.ndim != 1 or y.shape != x.shape or x.size < 2
+            or not np.all(np.isfinite(x)) or not np.all(np.isfinite(y))
+            or np.any(np.diff(x) <= 0) or np.any(y < 0)
+            or edges.ndim != 1 or edges.size < 2
+            or not np.all(np.isfinite(edges)) or np.any(np.diff(edges) <= 0)):
+        raise ValueError(f"Invalid density curve/bins for {population}.")
+
+    dx = np.diff(x)
+    slopes = np.diff(y) / dx
+    cumulative = np.r_[0.0, np.cumsum(0.5 * (y[:-1] + y[1:]) * dx)]
+    # Exact antiderivative of the same straight segments drawn
+    # by fill_between; the curve has no area beyond its endpoints.
+    q = np.clip(edges, x[0], x[-1])
+    idx = np.clip(np.searchsorted(x, q, side='right') - 1, 0, x.size - 2)
+    delta = q - x[idx]
+    cdf = cumulative[idx] + y[idx] * delta + 0.5 * slopes[idx] * delta**2
+    fractions = np.maximum(np.diff(cdf), 0.0)
+    retained_area = fractions.sum()
+    if not np.isfinite(retained_area) or retained_area <= 0:
+        raise ValueError(f"No {population} probability in the MEM density range.")
+    retained_fraction = retained_area / cumulative[-1]
+    print(f"{population}: MEM range retains {retained_fraction:.8%} "
+          "of the plotted posterior area.")
+    if retained_fraction < 1.0 - 1e-8:
+        print(f"WARNING: {population} curve extends outside "
+              f"{edges[0]:g}-{edges[-1]:g} kg/m^3; "
+              "MEM fractions are renormalized within this range.")
+    return fractions / retained_area
+
+
 def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, file_radiance_rho_dict, file_radiance_rho_dict_helio, file_rho_jd_dict, file_obs_data_dict, file_phys_data_dict, all_names, all_samples, all_weights, rho_corrected, eta_corrected, sigma_corrected, tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all, radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False): # , erosion_energy_per_unit_cross_section_corrected, erosion_energy_per_unit_mass_corrected, erosion_energy_per_unit_cross_section_end_corrected, erosion_energy_per_unit_mass_end_corrected
 
     # check if there are variables in the flags_dict that are not in the variable_map
@@ -4260,13 +4554,16 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     )
 
     with open(csv_file_path, "w", newline="") as csvfile:
+        # add the vel ro mass etc... 
+        panda_df_OG = pd.DataFrame.from_dict(file_phys_data_dict, orient='index', columns=['eta_meteor_begin', 'eta_eff', 'eta_eff_hi', 'eta_eff_lo', 'sigma_meteor_begin', 'sigma_eff', 'sigma_eff_hi', 'sigma_eff_lo', 'meteoroid_diameter_mm', 'meteoroid_diameter_mm_lo', 'meteoroid_diameter_mm_hi', 'm_init_meteor_median', 'm_init_meteor_lo', 'm_init_meteor_hi', 'v_init_meteor_median', 'v_init_meteor_lo', 'v_init_meteor_hi', 'rho_meteor_begin_median', 'rho_meteor_begin_lo', 'rho_meteor_begin_hi', 'rho_meteor_change_median', 'rho_meteor_change_lo', 'rho_meteor_change_hi', 'eta_meteor_begin_median', 'eta_meteor_begin_lo', 'eta_meteor_begin_hi', 'sigma_meteor_begin_median', 'sigma_meteor_begin_lo', 'sigma_meteor_begin_hi', 'eta_meteor_change_median', 'eta_meteor_change_lo', 'eta_meteor_change_hi', 'sigma_meteor_change_median', 'sigma_meteor_change_lo', 'sigma_meteor_change_hi','erosion_height_start_median','erosion_height_start_lo','erosion_height_start_hi','erosion_height_change_median','erosion_height_change_lo','erosion_height_change_hi','erosion_mass_index_median','erosion_mass_index_lo','erosion_mass_index_hi','erosion_mass_min_median','erosion_mass_min_lo','erosion_mass_min_hi','erosion_mass_max_median','erosion_mass_max_lo','erosion_mass_max_hi'])
         # pandas dataframe to csv
         panda_df = pd.DataFrame.from_dict(file_obs_data_dict, orient='index', columns=['kc_par', 'F_par', 'lenght_par', 'beg_height', 'end_height', 'max_lum_height', 'avg_vel', 'init_mag', 'end_mag', 'max_mag', 'time_tot', 'zenith_angle', 'm_init_med', 'meteoroid_diameter_mm', 'erosion_beg_dyn_press', 'v_init_meteor_median', 'kinetic_energy_median', 'kinetic_energy_lo', 'kinetic_energy_hi', 'tau_median', 'tau_low95', 'tau_high95', 'kc_par_eros_height', 'eeucs_event', 'eeum_event', 'tot_energy', 'mass_left_first_erosion_perc', 'mass_left_second_erosion_perc', 'final_mass_perc','kc_lo','kc_hi'])
         # add file_rho_jd_dict and file_radiance_rho_dict_helio to the panda_df
-        panda_df_rho_jd = pd.DataFrame.from_dict(file_rho_jd_dict, orient='index', columns=['rho', 'rho_lo', 'rho_hi', 'tj', 'tj_lo', 'tj_hi', 'inclin_val', 'Vg_val', 'Q_val', 'q_val', 'a_val', 'e_val'])
+        panda_df_rho_jd = pd.DataFrame.from_dict(file_rho_jd_dict, orient='index', columns=['rho_eff', 'rho_eff_lo', 'rho_eff_hi', 'tj', 'tj_lo', 'tj_hi', 'inclin_val', 'Vg_val', 'Q_val', 'q_val', 'a_val', 'e_val'])
         panda_df_radiance_rho_helio = pd.DataFrame.from_dict(file_radiance_rho_dict_helio, orient='index', columns=['lg_min_la_sun_helio', 'lg_helio_lo', 'lg_helio_hi', 'bg_helio', 'bg_helio_lo', 'bg_helio_hi'])
         panda_df = pd.concat(
             [
+                panda_df_OG,
                 panda_df,
                 panda_df_rho_jd,
                 panda_df_radiance_rho_helio,
@@ -5084,6 +5381,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     stream_bg = []
     shower_iau_no = -1
     apex_mask = None
+    antihel_mask = None
     if radiance_plot_flag == True:
         print("saving radiance plot...")
         # check if "C:\Users\maxiv\WMPG-repoMAX\Code\Utils\streamfulldata2022.csv" exists
@@ -5744,7 +6042,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     w = weights.copy()
     w /= np.sum(w)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(11, 6))
     print("Creating 2D density plot against size...")
     _plot_2d_distribution(ax, mm_size_corrected, rho_corrected, w)
     ax.set_xlabel("Size [mm]", fontsize=15)
@@ -5957,7 +6255,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax.scatter(impactor_diam_um, rho_gcm3, color='steelblue', marker='^', s=50, label="Stardust - Kearsley et al. (2008)**")
 
     ### bad
-    ax.fill_between([0.0001, 0.1], 3000, 8000, color='lime', alpha=0.1, zorder=0, label="Lunar Microcraters - Nagel et al. (1980)") # Fetching Dust solar system <30 % prbably etween 3 and 1 g/cm3
+    ax.fill_between([0.0001, 0.1], 3000, 8000, color='lime', alpha=0.1, zorder=0.1, label="Lunar Microcraters - Nagel and Fechtig (1980)") # Fetching Dust solar system <30 % prbably etween 3 and 1 g/cm3
 
     ### bad
     # create a band distribution from Deduced density (gem -a) 8 3 1-2 and Deduced range of particle  diameters (~m) 0.7-3.1 1.3-2.9 1.5-7.2
@@ -5965,15 +6263,15 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     deduced_diameter_min = np.array([0.7, 0.7, 1.3, 1.5])/1000
     deduced_diameter_max = np.array([3.1, 3.1, 2.9, 7.2])/1000
     # make the bands 
-    ax.fill_betweenx(deduced_density, deduced_diameter_min, deduced_diameter_max, color='limegreen', alpha=0.2, zorder=0, label="Lunar Microcraters - Smith et al. (1974)") # , edgecolor='none'
+    ax.fill_betweenx(deduced_density, deduced_diameter_min, deduced_diameter_max, color='limegreen', alpha=0.2, zorder=0.1, label="Lunar Microcraters - Smith et al. (1974)") # , edgecolor='none'
 
     ### bad
     # LDEF ranges from 2.0 to 5 g cm3 for masses of 10^-15 - 10^-9 kg
-    ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 5000, color='yellow', alpha=0.1, zorder=0, label="LDEF - Love et al. (1995)***") # , edgecolor='none'
+    ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 5000, color='yellow', alpha=0.1, zorder=0.1, label="LDEF - Love et al. (1995)***") # , edgecolor='none'
 
     ### bad
     # LDEF ranges from 2.0 to 2.4 g cm3 for masses of 10^-15 - 10^-9 kg
-    ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 2400, color='gold', alpha=0.5, zorder=0, label="LDEF - McDonnell and Gardner (1998)") # , edgecolor='none'
+    ax.fill_between([from_mass2size(10**(-15), 2000), from_mass2size(10**(-9), 2400)], 2000, 2400, color='gold', alpha=0.5, zorder=0.1, label="LDEF - McDonnell and Gardner (1998)") # , edgecolor='none'
 
     ### bad
     # put a line between min 50, max is 296 / 1000 mm
@@ -6188,11 +6486,11 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             return rho * 1000.0
         return rho
 
-    a_um = np.logspace(-3, 4, 400)  # ~0.05 to 100 µm
+    a_um = np.logspace(-3, 4, 400)  # radius: 0.001 to 10000 µm
     rho_kgm3 = rho_particle_divine1986(a_um, out="kg/m^3")
     
     # ### bad
-    # ax.plot(a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)", zorder=10)    
+    # ax.plot(2*a_um/1000, rho_kgm3, color='darkgreen', linestyle='-.', linewidth=2, label="Function - Divine et al. (1986)", zorder=10)    
 
 
     # add a line that is colored based on the sample distribution
@@ -6292,12 +6590,34 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax.legend(by_label.values(), by_label.keys(), loc='upper right', bbox_to_anchor=(1.45, 1), fontsize=10)
     ax.set_xscale("log")
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_2D_density_size_rho_PAPERS.png"), bbox_inches='tight', dpi=300)
-    plt.close()
 
+    # ADDITION: extrapolate the posterior density marginal across diameter.
+    # The original comparison PNG above is saved before adding the overlay.
+    # CONFIGURATION: these assumptions can be adjusted for comparisons.
+    size_density_model = build_size_density_probability(
+        mm_size_corrected, rho_corrected, w,
+        divine_density_function=rho_particle_divine1986,
+        diameter_edges_mm=np.geomspace(1e-3, 10.0, 241),  # DIAMETER, mm
+        density_step_kgm3=25.0,
+        density_split_kgm3=4000.0,
+        dense_to_low_cap=0.035,       # N(rho>=4000)/N(rho<4000) <=3.5%
+        small_size_strength=0.15,    # maximum 15% of remaining gap to 4000
+        reference_diameter_mm=None,  # weighted median D of low-density samples
+        density_smoothing_kgm3=50.0,  # 0 disables extra histogram smoothing
+        size_bin_probabilities=None, # default: uniform per log10 diameter
+        total_number_flux_m2_s=None, # set measured/model total flux if known
+        number_flux_per_size_bin_m2_s=None,  # alternative: 240 bin fluxes
+    )
+    save_size_density_probability_overlay(
+        fig, ax, size_density_model,
+        os.path.join(output_dir_show, f"{shower_name}_2D_density_size_rho_PAPERS_probability"),
+        alpha=1,
+    )
+    plt.close()
 
     ########## Mass vs density plot only ##########
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(11, 6))
     print("Creating 2D density plot against mass...")
 
     _plot_2d_distribution(ax, np.log10(mass_distr), rho_corrected, w)
@@ -6512,7 +6832,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     ax.fill_betweenx(
         rho_fill, x_left, x_right,
         color='lime', alpha=0.1, zorder=0,
-        label="Lunar Microcraters - Nagel et al. (1980)"
+        label="Lunar Microcraters - Nagel and Fechtig (1980)" 
     )
 
     # Lunar Microcraters - Smith et al. (1974)
@@ -7721,6 +8041,137 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # normalize the velocity_weights
     velocity_weights /= np.sum(velocity_weights)
     # print("Velocity weights normalized:", (velocity_weights))
+
+    ###########################################################################################################
+    # SPEED normalization
+    ###########################################################################################################
+    
+    # Build this plot's bins from density. The preceding eta plot overwrites
+    # lo, hi and bin_centers with log10(eta), which can give an empty rho histogram.
+    rho_kinetic_nbins = int(round(10.0 / 0.02))
+    rho_kinetic_range = (np.min(rho_corrected), np.max(rho_corrected))
+    rho_corrected_weighted_kinetic, rho_kinetic_edges = np.histogram(
+        rho_corrected, bins=rho_kinetic_nbins, weights=velocity_weights,
+        range=rho_kinetic_range,
+    )
+    rho_kinetic_centers = 0.5 * (rho_kinetic_edges[:-1] + rho_kinetic_edges[1:])
+    rho_corrected_weighted = norm_kde(rho_corrected_weighted_kinetic, 10.0)
+
+
+    fig = plt.figure(figsize=(8, 6))
+    ax_dist = fig.add_subplot(111)
+
+    ax_dist.fill_between(rho_kinetic_centers, rho_corrected_weighted, color='slategrey', alpha=0.6)
+
+    rho_corrected_lo_kinetic, rho_corrected_median_kinetic, rho_corrected_hi_kinetic = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=velocity_weights)
+    # Percentile lines
+    ax_dist.axvline(rho_corrected_median_kinetic, color='slategrey', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_lo_kinetic, color='slategrey', linestyle='--', linewidth=1.5)
+    ax_dist.axvline(rho_corrected_hi_kinetic, color='slategrey', linestyle='--', linewidth=1.5)
+
+    # Title and formatting
+    plus = rho_corrected_hi_kinetic - rho_corrected_median_kinetic
+    minus = rho_corrected_median_kinetic - rho_corrected_lo_kinetic
+    fmt = lambda v: f"{v:.4g}" if np.isfinite(v) else "---"
+    title = rf"Tot N.{len(tj)} — $\rho$ [kg/m$^3$] = {fmt(rho_corrected_median_kinetic)}$^{{+{fmt(plus)}}}_{{-{fmt(minus)}}}$"
+    ax_dist.set_title(title, fontsize=20)
+
+    ax_dist.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+    # ax_dist.set_ylabel("Weighted by Kinetic Energy", fontsize=20)
+    ax_dist.tick_params(axis='y', left=False, labelleft=False)
+    ax_dist.set_ylabel("")
+    ax_dist.spines['left'].set_visible(False)
+    ax_dist.spines['right'].set_visible(False)
+    ax_dist.spines['top'].set_visible(False)
+    plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_vel.png"), bbox_inches='tight')
+    plt.close()
+    print("Rho distribution weighted by velocity plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_vel.png"))
+
+
+    # Speed-only Apex / Antihelion distributions and MEM-format exports.
+    # Independent of plot_class; use the same weights as the total speed plot.
+    if radiance_plot_flag and apex_mask is not None and antihel_mask is not None:
+        speed_rho = np.asarray(rho_corrected, dtype=float)
+        speed_weights = np.asarray(velocity_weights, dtype=float)
+        speed_names = np.asarray(all_names, dtype=str)
+        speed_counts = np.array([arr.shape[0] for arr in all_samples], dtype=int)
+        # The masks were computed from heliocentric radiant arrays, whose
+        # order is the insertion order of file_radiance_rho_dict_helio.
+        radiant_names = np.asarray(list(file_radiance_rho_dict_helio), dtype=str)
+        if (speed_rho.ndim != 1 or speed_weights.shape != speed_rho.shape
+                or len(speed_names) != len(speed_counts)
+                or speed_counts.sum() != speed_rho.size):
+            raise ValueError("Speed-weighted density: event/sample arrays are not aligned.")
+        if np.any(~np.isfinite(speed_weights)) or np.any(speed_weights < 0):
+            raise ValueError("Speed-weighted density: velocity weights must be finite and nonnegative.")
+        if not set(speed_names).issubset(set(radiant_names)):
+            raise ValueError("Speed-weighted density: missing heliocentric radiant event names.")
+
+        speed_mem_edges = np.arange(100.0, 8050.0, 50.0)
+        speed_products = []
+        for population, event_mask, filename in (
+                ("Apex", apex_mask, "lodensity.txt"),
+                ("Antihelion", antihel_mask, "hidensity.txt")):
+            event_mask = np.asarray(event_mask, dtype=bool)
+            if event_mask.shape != radiant_names.shape:
+                raise ValueError(f"{population}: radiant names and mask lengths differ.")
+            membership = dict(zip(radiant_names, event_mask))
+            ordered_mask = np.array([membership[name] for name in speed_names], dtype=bool)
+            sample_mask = np.repeat(ordered_mask, speed_counts)
+            valid = sample_mask & np.isfinite(speed_rho) & (speed_weights > 0)
+            if not np.any(valid):
+                raise ValueError(f"{population}: no finite density samples with positive speed weight.")
+            class_rho = speed_rho[valid]
+            class_weights = speed_weights[valid].copy()
+            class_weights /= class_weights.sum()
+            # Match the density bins and Gaussian smoothing of the total speed plot.
+            class_hist, class_edges = np.histogram(
+                class_rho, bins=rho_kinetic_edges, weights=class_weights,
+            )
+            class_hist = norm_kde(class_hist, 10.0)
+            class_centers = 0.5 * (class_edges[:-1] + class_edges[1:])
+            class_quantiles = _quantile(class_rho, [0.025, 0.5, 0.975], weights=class_weights)
+            class_fractions = _mem_fractions_from_panel(
+                (class_centers, class_hist), speed_mem_edges, population + " (speed weighted)",
+            )
+            speed_products.append((population, filename, np.count_nonzero(ordered_mask),
+                                   class_centers, class_hist, class_quantiles, class_fractions))
+
+        speed_out_dir = os.path.join(output_dir_show, "apex_anti_class_weighted_vel")
+        os.makedirs(speed_out_dir, exist_ok=True)
+        speed_fig, speed_axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
+        for ax, (population, filename, count, centers, hist, quantiles, fractions) in zip(speed_axes, speed_products):
+            ax.fill_between(centers, hist, color='slategrey', alpha=0.6)
+            qlo, qmed, qhi = quantiles
+            for q in quantiles:
+                ax.axvline(q, color='slategrey', linestyle='--', linewidth=1.5)
+            ax.set_title(
+                rf"Tot N.{count} {population} (speed weighted) — $\rho$ [kg/m$^3$] = "
+                rf"{qmed:.4g}$^{{+{qhi-qmed:.4g}}}_{{-{qmed-qlo:.4g}}}$", fontsize=18,
+            )
+            ax.tick_params(axis='y', left=False, labelleft=False)
+            ax.tick_params(axis='x', labelsize=16)
+            for spine in ('left', 'right', 'top'):
+                ax.spines[spine].set_visible(False)
+            density_path = os.path.join(speed_out_dir, filename)
+            np.savetxt(
+                density_path,
+                np.column_stack((speed_mem_edges[:-1], speed_mem_edges[1:], fractions)),
+                fmt=("%9.2f", "%8.2f", "%.12e"),
+                header="rho_min  rho_max   fraction\n kg/m^3   kg/m^3", comments="# ",
+            )
+            print(f"Saved: {density_path} (fraction sum = {fractions.sum():.12f})")
+        speed_axes[-1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
+        speed_fig.tight_layout()
+        speed_plot_path = os.path.join(speed_out_dir, f"{shower_name}_rho_by_apex_anti_weighted_vel.png")
+        speed_fig.savefig(speed_plot_path, bbox_inches='tight', dpi=300)
+        plt.close(speed_fig)
+        print("Saved:", speed_plot_path)
+    elif radiance_plot_flag:
+        print("WARNING: Apex/Antihelion masks unavailable; skipping speed-weighted population exports.")
+
+    ### ENERGY and speed normalization #############################################
+
     weights_kinetic = weights_kinetic_raw * velocity_weights
     weights_kinetic /= np.sum(weights_kinetic)
     # print("Kinetic energy weights after applying velocity weights normalized:", (weights_kinetic))
@@ -7731,13 +8182,22 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
     # kinetic and velocity weighted distribution
 
+
     fig = plt.figure(figsize=(8, 6))
     ax_dist = fig.add_subplot(111)
 
-    rho_corrected_weighted_kinetic = np.histogram(rho_corrected, bins=nbins, weights=weights_kinetic, range=(lo, hi))[0]
+    # Build this plot's bins from density. The preceding eta plot overwrites
+    # lo, hi and bin_centers with log10(eta), which can give an empty rho histogram.
+    rho_kinetic_nbins = int(round(10.0 / 0.02))
+    rho_kinetic_range = (np.min(rho_corrected), np.max(rho_corrected))
+    rho_corrected_weighted_kinetic, rho_kinetic_edges = np.histogram(
+        rho_corrected, bins=rho_kinetic_nbins, weights=weights_kinetic,
+        range=rho_kinetic_range,
+    )
+    rho_kinetic_centers = 0.5 * (rho_kinetic_edges[:-1] + rho_kinetic_edges[1:])
     rho_corrected_weighted = norm_kde(rho_corrected_weighted_kinetic, 10.0)
 
-    ax_dist.fill_between(bin_centers, rho_corrected_weighted, color='dimgray', alpha=0.6)
+    ax_dist.fill_between(rho_kinetic_centers, rho_corrected_weighted, color='dimgray', alpha=0.6)
 
     rho_corrected_lo_kinetic, rho_corrected_median_kinetic, rho_corrected_hi_kinetic = _quantile(rho_corrected, [0.025, 0.5, 0.975], weights=weights_kinetic)
     # Percentile lines
@@ -7762,6 +8222,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.savefig(os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy_vel.png"), bbox_inches='tight')
     plt.close()
     print("Rho distribution weighted by kinetic energy plot saved:", os.path.join(output_dir_show, f"{shower_name}_rho_distribution_weighted_kineticEnergy_vel.png"))
+
 
     #### neede to see whic one contributes the most
 
@@ -7943,7 +8404,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     print('Creating kc correlation grid with tropical-fruit eta classes...')
 
     kc_style_map = {
-        "homogenus": {"color": "green", "marker": "o", "label": "Homogeneous"},
+        "homogenus": {"color": "green", "marker": "o", "label": "Banana"},
         "avocado":   {"color": "red",   "marker": "^", "label": "Avocado"},
         "coconut":   {"color": "blue",  "marker": "s", "label": "Coconut"},
         "single":    {"color": "green", "marker": "D", "label": "1-frag"},
@@ -8521,7 +8982,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     # BOTTOM PANEL: rho vs Tj
     # -----------------------------
     style_map = {
-        "homogenus": {"color": "green", "marker": "o", "label": "Homogeneous"},
+        "homogenus": {"color": "green", "marker": "o", "label": "Banana"},
         "avocado":   {"color": "red",   "marker": "^", "label": "Avocado"},
         "coconut":   {"color": "blue",  "marker": "s", "label": "Coconut"},
         "single":    {"color": "green", "marker": "D", "label": "1-frag"},
@@ -10315,6 +10776,10 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
             _style(ax, xlim)
 
+            # Also expose the exact smoothed curve drawn by fill_between.
+            # The Apex/Antihelion MEM export integrates this curve below.
+            return bin_centers, hist
+
         def _style(ax, xlim):
             ax.set_xlim(*xlim)
             ax.tick_params(axis='x', labelbottom=False)
@@ -11835,8 +12300,8 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
             # ---------- Figure with two stacked panels ----------
             fig, axes = plt.subplots(2, 1, figsize=(10, 13), sharex=True)
-            _panel_like_top(axes[0], rho_samp[apex_class], w_all[apex_class], "Tot N." + str(apex_num) + " Apex", lo_all, hi_all, nbins, xlim)
-            _panel_like_top(axes[1], rho_samp[anti_class], w_all[anti_class], "Tot N." + str(anti_num) + " Antihelion", lo_all, hi_all, nbins, xlim)
+            apex_rho_curve = _panel_like_top(axes[0], rho_samp[apex_class], w_all[apex_class], "Tot N." + str(apex_num) + " Apex", lo_all, hi_all, nbins, xlim)
+            anti_rho_curve = _panel_like_top(axes[1], rho_samp[anti_class], w_all[anti_class], "Tot N." + str(anti_num) + " Antihelion", lo_all, hi_all, nbins, xlim)
             # Bottom labels/ticks to match your style
             axes[1].tick_params(axis='x', labelbottom=True)
             axes[1].set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=20)
@@ -11872,12 +12337,29 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
             rho_total_dist = _full_weighted_rho_distribution(
                 rho_samp, w_all, rho_total_mask, rho_compare_edges
             )
-            rho_apex_dist = _full_weighted_rho_distribution(
-                rho_samp, w_all, rho_apex_mask, rho_compare_edges
-            )
-            rho_anti_dist = _full_weighted_rho_distribution(
-                rho_samp, w_all, rho_anti_mask, rho_compare_edges
-            )
+            # Use precisely the curves in rho_by_apex_anti_threepanels_weighted.png,
+            # rather than applying the comparison helper's different smoothing.
+            # Reject zero/negative weights instead of exporting its unweighted fallback.
+            for population, sample_mask in (("Apex", apex_class), ("Antihelion", anti_class)):
+                if np.any(w_all[sample_mask] < 0) or np.sum(w_all[sample_mask]) <= 0:
+                    raise ValueError(f"Cannot export {population}: invalid posterior weights.")
+            rho_apex_dist = _mem_fractions_from_panel(apex_rho_curve, rho_compare_edges, "Apex")
+            rho_anti_dist = _mem_fractions_from_panel(anti_rho_curve, rho_compare_edges, "Antihelion")
+
+            # MEM-compatible files: same header, columns, units and 158 bins
+            # as the supplied templates. Keep extra precision for unit-sum fractions.
+            # Save beside the plot, independently of the native MEM comparison files.
+            for filename, fractions in (("lodensity.txt", rho_apex_dist),
+                                        ("hidensity.txt", rho_anti_dist)):
+                mem_export_path = os.path.join(out_path, filename)
+                np.savetxt(
+                    mem_export_path,
+                    np.column_stack((rho_compare_edges[:-1], rho_compare_edges[1:], fractions)),
+                    fmt=("%9.2f", "%8.2f", "%.12e"),
+                    header="rho_min  rho_max   fraction\n kg/m^3   kg/m^3",
+                    comments="# ",
+                )
+                print(f"Saved: {mem_export_path} (fraction sum = {fractions.sum():.12f})")
 
             pathLowMEM = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\ISS-risk\MEMv3-ISS100points\ISS_MEMv3\lodensity.txt"
             pathHighMEM = r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\ISS-risk\MEMv3-ISS100points\ISS_MEMv3\hidensity.txt"
@@ -13353,7 +13835,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
 
         eta_styles = {
             "homogenus": {
-                "label": "Homogeneous",
+                "label": "Banana",
                 "color": "green",
                 "marker": "o",
             },
@@ -13825,4 +14307,4 @@ if __name__ == "__main__":
                        tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, 
                        energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, 
                        mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all,
-                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot

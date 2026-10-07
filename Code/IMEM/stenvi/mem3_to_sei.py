@@ -146,7 +146,7 @@ def limiting_mass(run_dir):
 
 
 def population_to_bins(run_dir, pop, bins, m0, fold_density, flip_azimuth, az_offset=0.0,
-                       size_density=None):
+                       size_density=None, mass_cut=False):
     """Directional/speed flux on the SEI grid [az, el, vel] and diameter/density weights [den, dia]."""
     phi, theta, v_lo, v_hi, flux = read_mem_flux(Path(run_dir) / f"{pop}Density" / "flux_avg.txt")
 
@@ -188,6 +188,8 @@ def population_to_bins(run_dir, pop, bins, m0, fold_density, flip_azimuth, az_of
         lo, hi = [np.where(e < split, e + tk * (split - e), e) for e in (dens[:, 0] / 1000.0, dens[:, 1] / 1000.0)]
         rho, D = density_overlap(lo, hi)
         mass = rho[:, None] * np.pi / 6 * (dia[k] * 100.0) ** 3  # [rho, lo/hi] in g
+        if mass_cut:  # only count the part of the bin with m >= M0 (bins fully below M0 get 0)
+            mass = np.maximum(mass, m0)
         g = grun_cumulative_flux(mass)
         size_frac = (g[:, 0] - g[:, 1]) / grun_cumulative_flux(m0)  # [rho]
         weights[:, k] = (frac * size_frac) @ D
@@ -207,7 +209,8 @@ def build_header(template_header, model, begin, end, a, e, inc, raan, argp, bins
     for dist, card, label in DIMS:
         if dist in replaced:
             b = bins[dist]
-            repl[card] = f"{card} {len(b)} {b[0, 0]:.1f} {b[-1, 1]:.1f} {label}"
+            fmt = ".1E" if dist == "DISTDIA" else ".1f"
+            repl[card] = f"{card} {len(b)} {b[0, 0]:{fmt}} {b[-1, 1]:{fmt}} {label}"
     out, prev = [], ""
     for l in template_header:
         key = l.split()[0] if l.split() else ""
@@ -255,6 +258,9 @@ def main():
     ap.add_argument("--ref-diameter", type=float, default=1e-3, metavar="M",
                     help="with --size-density: MEM's density distribution holds at and above this diameter "
                          "(default 1e-3 m, MEM densities are for mm-size particles)")
+    ap.add_argument("--mass-cut", action="store_true",
+                    help="only compute flux for particles with m >= MEM limiting mass M0 (info.txt): MEM 3 "
+                         "ignores radiation effects below it. Diameter bins fully below M0 are removed")
     ap.add_argument("--plot-diameter", action="store_true",
                     help="also plot the mean diameter panel (plot_stenvi --show-diameter)")
     ap.add_argument("--plot-log-density", action="store_true",
@@ -286,10 +292,19 @@ def main():
     for pop in ("Hi", "Lo"):
         dirvel, w, mem_total, lost = population_to_bins(
             args.run, pop, bins, m0, not args.no_fold_density, not args.mem_azimuth, args.az_offset,
-            (args.size_density, args.density_split / 1000.0, args.ref_diameter) if args.size_density else None)
+            (args.size_density, args.density_split / 1000.0, args.ref_diameter) if args.size_density else None,
+            args.mass_cut)
         pops.append((dirvel, w))
         print(f"{pop}Density: MEM flux (m > {m0:g} g) = {mem_total:.4e} /m^2/yr; "
               f"gridded at 1e-6 g = {dirvel.sum():.4e}; density fraction dropped (outside SEI bins) = {lost:.3e}")
+
+    if args.mass_cut:  # drop diameter bins with no particle above M0 in any density bin
+        keep_dia = (pops[0][1] + pops[1][1]).sum(axis=0) > 0
+        bins["DISTDIA"] = bins["DISTDIA"][keep_dia]
+        pops = [(dv, w[:, keep_dia]) for dv, w in pops]
+        replaced.add("DISTDIA")
+        print(f"Mass cut at M0 = {m0:g} g: kept {keep_dia.sum()} of {keep_dia.size} diameter bins "
+              f"(D >= {bins['DISTDIA'][0, 0]:.4e} m)")
 
     begin, end, a, e, inc, raan, argp = orbit_from_state_vectors(
         Path(args.run) / "input.txt", central_body_mu(args.run))

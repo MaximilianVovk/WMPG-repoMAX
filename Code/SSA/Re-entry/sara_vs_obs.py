@@ -18,9 +18,9 @@ Steps
  4. Place every ablating component on the observed track: inside the observed
     altitudes interpolate the observations; outside, move along the observed
     great circle by the SARA downrange difference     -> <RunID>.recorded_GroundMap.png
- 5. Light-curve check: altitude vs downrange of every SARA component with each observed
-    segment tied to SARA where both overlap in altitude, then following the report's
-    along-track Length; AbsMag compared with the SARA mass-loss rate
+ 5. Light-curve check: altitude vs downrange of every SARA component with the observations
+    placed by their along-track distance from the anchor (see below); AbsMag compared with
+    the SARA mass-loss rate
                                                       -> <RunID>.lightcurve_check.png
     Speed check: observed point-to-point speed (scatter) vs the SARA speed of the components
     losing mass in each segment, against altitude      -> <RunID>.velocity_check.png
@@ -208,6 +208,11 @@ class Anchor:
     def extend(self, downrange):
         """lat, lon of SARA downranges moved along the observed great circle through the anchor."""
         return destination(self.lat, self.lon, self.azim, np.asarray(downrange, float) - self.downrange)
+
+    def downrange_of(self, lat, lon):
+        """SARA downrange of observed points: anchor downrange + along-track distance from the anchor."""
+        rel = np.radians(bearing(self.lat, self.lon, lat, lon) - self.azim)
+        return self.downrange + gc_distance(self.lat, self.lon, lat, lon) * np.cos(rel)
 
     def direction(self, lat, lon, downrange):
         """Direction of travel [deg] at points of that great circle."""
@@ -444,9 +449,7 @@ def plot_altitude_downrange(components, segments, recorded, chain, track, out):
         for a in (ax, axm):
             a.axhspan(obs.h.min(), obs.h.max(), color=col, alpha=0.15, zorder=0)
         ax.text(0.005, obs.h.max(), seg, color=col, va="bottom", fontsize=9, transform=ax.get_yaxis_transform())
-        rel = np.radians(bearing(an.lat, an.lon, obs.lat.values, obs.lon.values) - an.azim)
-        dist = an.downrange + gc_distance(an.lat, an.lon, obs.lat.values, obs.lon.values) * np.cos(rel)
-        ax.scatter(dist, obs.h, s=4, color=col, zorder=4)
+        ax.scatter(an.downrange_of(obs.lat.values, obs.lon.values), obs.h, s=4, color=col, zorder=4)
         axm.scatter(obs.absmag, obs.h, s=6, color=col, label=seg)
     ax.plot(an.downrange, an.h, "*", color="tab:blue", mec="k", ms=14, zorder=6,
             label=f"anchor ({an.segment}, {an.h:.2f} km)")
@@ -481,6 +484,25 @@ def plot_altitude_downrange(components, segments, recorded, chain, track, out):
     fig.savefig(out, dpi=200)
     plt.close(fig)
 
+
+def scale_bar(ax, frac=0.2, n_seg=4):
+    """Black-and-white map scale bar in the lower-right corner, about `frac` of the map width."""
+    from matplotlib.patches import Rectangle
+    x0, x1, y0, y1 = ax.get_extent() if ccrs else (*ax.get_xlim(), *ax.get_ylim())
+    lat = y0 + 0.05 * (y1 - y0)
+    width_km = np.radians(x1 - x0) * R_EARTH * np.cos(np.radians(lat))
+    mag = 10 ** np.floor(np.log10(frac * width_km))
+    length = max(m * mag for m in (1, 2, 5) if m * mag <= frac * width_km)
+    w = length / width_km  # bar width in axes fraction
+    left, bottom, h = 0.95 - w, 0.04, 0.012
+    ax.add_patch(Rectangle((left - 0.015, bottom - 0.015), w + 0.03, h + 0.06, transform=ax.transAxes,
+                           fc="white", ec="0.5", lw=0.5, alpha=0.85, zorder=20))
+    for i in range(n_seg):
+        ax.add_patch(Rectangle((left + i * w / n_seg, bottom), w / n_seg, h, transform=ax.transAxes,
+                               fc="k" if i % 2 == 0 else "white", ec="k", lw=0.8, zorder=21))
+    label = f"{length * 1e3:g} m" if length < 1 else f"{length:g} km"
+    ax.text(left + w / 2, bottom + h + 0.006, label, transform=ax.transAxes,
+            ha="center", va="bottom", fontsize=8, zorder=22)
 
 def plot_ground_map(components, segments, recorded, stations, chain, track, impacts, survivors, out):
     rec_groups = set(recorded.group) if len(recorded) else set()
@@ -542,6 +564,7 @@ def plot_ground_map(components, segments, recorded, stations, chain, track, impa
     else:
         ax.set_xlim(ext[:2]); ax.set_ylim(ext[2:])
         ax.set_xlabel("Longitude [deg]"); ax.set_ylabel("Latitude [deg]")
+    scale_bar(ax)
     ax.set_title("Observed vs. predicted mass loss (SARA ablation placed on the observed track)")
     ax.legend(fontsize=7, loc="upper left")
     fig.tight_layout()
@@ -817,6 +840,7 @@ def plot_strewnfield(survivors, impacts, nominal, segments, stations, track, str
             ax.set_extent(e, crs=ccrs.PlateCarree())
         else:
             ax.set_xlim(e[:2]); ax.set_ylim(e[2:])
+        scale_bar(ax)
 
     # --- overview: observations, extension of the observed track, start points, strewn field
     ax = axes[0]
@@ -862,13 +886,12 @@ def plot_strewnfield(survivors, impacts, nominal, segments, stations, track, str
     plt.close(fig)
 
 
-def plot_lightcurve_check(components, segments, recorded, chain, out):
+def plot_lightcurve_check(components, segments, recorded, chain, anchor, out):
     """Altitude vs. downrange of every SARA component with the observations laid on top.
 
-    Each observed segment is tied to SARA at the highest altitude where both the observation and a
-    SARA component losing mass inside it exist: there the observation takes the (median) SARA
-    downrange of those components, and from there it follows its own along-track 'Length' from the
-    report. Brightness (AbsMag) is compared below with SARA's mass-loss rate of the same components.
+    All observations are tied to SARA by the one anchor: each point takes the anchor's SARA
+    downrange plus its along-track distance from the anchor. Brightness (AbsMag) is compared below
+    with SARA's mass-loss rate of the components losing mass in that segment.
     """
     segs = list(segments)
     rec_groups = set(recorded.group) if len(recorded) else set()
@@ -899,13 +922,8 @@ def plot_lightcurve_check(components, segments, recorded, chain, out):
         obs = segments[seg].sort_values("length")
         rec = recorded[recorded.segment == seg] if len(recorded) else recorded
         uuids = list(rec.uuid.unique()) if len(rec) else []
-        # tie point: top of the observed segment, lowered to where the SARA mass loss starts
-        h_tie = min(obs.h.max(), rec.h_start_km.max()) if len(rec) else obs.h.max()
-        refs = [components[u]["data"] for u in uuids] or [chain]
-        d_tie = float(np.median([np.interp(h_tie, *_by_height(d, "downrange")) for d in refs]))
-        l_tie = np.interp(h_tie, *_by_height(obs, "length"))
-        dr = d_tie + obs.length.values - l_tie
-        placed[seg] = (dr, obs, uuids, h_tie, d_tie)
+        dr = anchor.downrange_of(obs.lat.values, obs.lon.values)
+        placed[seg] = dr
         sc = ax0.scatter(dr, obs.h, c=obs.absmag, cmap="inferno_r", norm=norm, s=6, zorder=4)
         ax0.annotate(seg, (dr.min(), obs.h.max()), xytext=(0, 8), textcoords="offset points", fontsize=9)
 
@@ -913,14 +931,16 @@ def plot_lightcurve_check(components, segments, recorded, chain, out):
         ax = fig.add_subplot(gs[1, k])
         draw_sara(ax, 1.5)
         ax.scatter(dr, obs.h, c=obs.absmag, cmap="inferno_r", norm=norm, s=10, zorder=4)
-        ax.plot(d_tie, h_tie, "*", color="tab:blue", ms=14, mec="k", zorder=5, label="tie point")
         pad_x, pad_h = max(2.0, 0.15 * np.ptp(dr)), max(0.5, 0.3 * np.ptp(obs.h))
         ax.set_xlim(dr.min() - pad_x, dr.max() + pad_x)
         ax.set_ylim(obs.h.min() - pad_h, obs.h.max() + pad_h)
+        if seg == anchor.segment:
+            ax.plot(anchor.downrange, anchor.h, "*", color="tab:blue", ms=14, mec="k", zorder=5,
+                    label=f"anchor ({anchor.h:.2f} km)")
+            ax.legend(fontsize=8, loc="upper right")
         ax.set_title(f"{seg}: {len(uuids)} SARA components losing mass here", fontsize=10)
         ax.set_xlabel("Downrange [km]")
         ax.grid(alpha=0.3)
-        ax.legend(fontsize=8, loc="upper right")
         if k == 0:
             ax.set_ylabel("Altitude [km]")
 
@@ -944,21 +964,22 @@ def plot_lightcurve_check(components, segments, recorded, chain, out):
             axr.plot(grid, rate, color="tab:green", lw=1.5)
             axr.set_ylabel("SARA mass-loss rate [kg/s]", color="tab:green")
 
+    ax0.plot(anchor.downrange, anchor.h, "*", color="tab:blue", ms=14, mec="k", zorder=5,
+             label=f"anchor ({anchor.segment}, {anchor.h:.2f} km)")
     fig.colorbar(sc, ax=ax0, pad=0.01, label="Observed absolute magnitude")
     ax0.set_xlabel("SARA downrange [km]")
     ax0.set_ylabel("Altitude [km]")
-    ax0.set_title("SARA altitude vs downrange, with the observations tied at the matching altitude "
-                  "and following the report's along-track length")
+    ax0.set_title("SARA altitude vs downrange\nobservations placed by their along-track distance "
+                  "from the anchor", fontsize=10)
     lo = min(o.h.min() for o in segments.values())
     ax0.set_ylim(max(0, lo - 25), max(o.h.max() for o in segments.values()) + 10)
-    x = np.concatenate([p[0] for p in placed.values()])
+    x = np.concatenate(list(placed.values()))
     ax0.set_xlim(x.min() - 400, x.max() + 400)
     ax0.grid(alpha=0.3)
     ax0.legend(fontsize=7, loc="lower left", ncol=2)
     fig.tight_layout()
     fig.savefig(out, dpi=200)
     plt.close(fig)
-    return {s: (p[3], p[4]) for s, p in placed.items()}
 
 
 def plot_velocity_check(components, segments, recorded, chain, out):
@@ -1020,7 +1041,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sara_dir", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\DRAMA-SARA_V1")
     ap.add_argument("--reports", default=[r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\skyfit_traj"], nargs="+", help="*_report.txt files or folders containing them")
-    ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\NoWind", help="output folder (default: SARA folder)")
+    ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\Wind", help="output folder (default: SARA folder)")
     ap.add_argument("--curved", action="store_true", help="use *_curved_report.txt")
     ap.add_argument("--anchor_segment", default=None,
                     help="observed segment to anchor SARA to (default: lowest well-constrained one)")
@@ -1029,7 +1050,7 @@ def main():
     g = ap.add_argument_group("dark flight / strewn field (OpenDarkflight)")
     g.add_argument("--v_start", type=float, default=4.5,
                    help="pieces that never lose mass start dark flight at this speed [km/s] (default 4.5)")
-    g.add_argument("--winds_file", default=None,
+    g.add_argument("--winds_file", default='auto',
                    help="wind profile for the dark flight; 'auto' downloads one with the OpenDarkflight "
                         "wizard; omitted = calm US Standard Atmosphere")
     g.add_argument("--winds_type", default=None,
@@ -1082,7 +1103,7 @@ def main():
                             out / f"{run_id}.recorded_AltitudeVsDownrange.png")
     plot_ground_map(components, segments, recorded, stations, chain, track, impacts, survivors,
                     out / f"{run_id}.recorded_GroundMap.png")
-    ties = plot_lightcurve_check(components, segments, recorded, chain, out / f"{run_id}.lightcurve_check.png")
+    plot_lightcurve_check(components, segments, recorded, chain, anchor, out / f"{run_id}.lightcurve_check.png")
     speeds = plot_velocity_check(components, segments, recorded, chain, out / f"{run_id}.velocity_check.png")
 
     # --- dark flight of the survivors -> strewn field
@@ -1127,9 +1148,6 @@ def main():
         summ = recorded.groupby(["segment", "group"]).agg(n=("uuid", "nunique"), mass_lost_kg=("mass_lost_kg", "sum"),
                                                            h_start=("h_start_km", "max"), h_end=("h_end_km", "min"))
         print(summ.round(2).to_string())
-    print("\nLight-curve tie points (observation placed at SARA downrange):")
-    for seg, (h, d) in ties.items():
-        print(f"  {seg}: {h:.2f} km -> {d:.1f} km")
     print("\nSpeed check (observed - SARA at the observed heights):")
     for seg, dv, scat, n in speeds:
         print(f"  {seg}: median {dv * 1000:+.0f} m/s, robust scatter {scat * 1000:.0f} m/s ({n} points)")

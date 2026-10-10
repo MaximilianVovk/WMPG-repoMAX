@@ -1,5 +1,24 @@
 """Match DRAMA/SARA ablating components to optical re-entry detections.
 
+Optional global reconstruction:
+    python sara_vs_obs.py --sara_dir SARA_DIR --reports REPORT_DIR --more_detection_fidelity
+
+The toggle is OFF by default. Enabled outputs go in OUT/detection_fidelity.
+Fits all observed segments with a robust common great circle and smooth altitude/time
+and along-track/time curves. A global time registration gives monotone transformations
+of SARA height and downrange for every component. Speed and flight-path angle follow
+those transformations. Mass, time, and other thermal/aerodynamic histories are retained;
+this redistributes mass loss in altitude but DOES NOT rerun ablation or fit brightness.
+Below observations the height mapping joins the surface; downrange extends with the
+last fitted scale. These are explicit extrapolation assumptions. The existing MC
+uncertainties remain user-specified; the fit does not infer a trajectory covariance.
+Exports: fidelity_fit.json, fidelity_residuals.csv, fidelity_components.csv (with
+sara_original_* columns), fidelity_parent.csv, fidelity_diagnostics.png, and original/
+remapped mass_loss_by_height CSVs. Original input simulation files are never modified.
+Use --fidelity_degree 1 for a simpler trend or --fidelity_reference UUID to choose a
+reference component ('parent' selects the compound chain). The reference must span
+the observations in time and be descending throughout the fitted interval.
+
 Usage:
     python sara_vs_obs.py <SARA_DIR> <REPORT or DIR> [<REPORT or DIR> ...] [--out DIR] [--curved]
 
@@ -384,6 +403,345 @@ class ObservedTrack:
         return lat, lon, lo | hi
 
 
+# ----------------------------------------------------------------------------- optional global reconstruction
+FIDELITY_NOTE = (
+    "Observation-constrained geometric remapping, NOT a new SARA ablation simulation. "
+    "Mass, time, area and thermal histories are retained at their original simulation phases; "
+    "height, downrange, heading, speed and flight-path angle are transformed. "
+    "Mass loss is redistributed in altitude, not fitted to brightness. "
+    "All observations contribute to the fit: residuals are not independent validation. "
+    "Monte Carlo uses the configured start-state errors, not a fitted trajectory covariance."
+)
+
+
+def _unit_position(lat, lon):
+    p, l = np.radians(lat), np.radians(lon)
+    return np.stack((np.cos(p) * np.cos(l), np.cos(p) * np.sin(l), np.sin(p)), axis=-1)
+
+
+def _robust_poly(x, y, weights, degree):
+    """Segment-balanced polynomial with Huber reweighting; x should be scaled to [0, 1]."""
+    w = weights.copy()
+    for _ in range(8):
+        p = np.polynomial.Polynomial.fit(x, y, degree, w=np.sqrt(w)).convert()
+        residual = y - p(x)
+        scale = max(1e-6, 1.4826 * np.median(np.abs(residual - np.median(residual))))
+        w = weights * np.minimum(1.0, 1.5 * scale / np.maximum(np.abs(residual), 1e-12))
+    return p
+
+
+class _MonotoneMap:
+    """PCHIP inside the fitted interval; tangent-line continuation outside it."""
+    def __init__(self, x, y):
+        from scipy.interpolate import PchipInterpolator
+        x, y = np.asarray(x), np.asarray(y)
+        if len(x) < 2 or np.any(np.diff(x) <= 0) or np.any(np.diff(y) <= 0):
+            raise ValueError("Fidelity mapping must be strictly increasing; check the reference trajectory.")
+        self.x, self.y = x, y
+        self.p = PchipInterpolator(x, y, extrapolate=False)
+        self.dp = self.p.derivative()
+        self.left, self.right = float(self.dp(x[0])), float(self.dp(x[-1]))
+        if min(self.left, self.right) <= 0:
+            raise ValueError("Fidelity mapping has a non-positive boundary slope; try --fidelity_degree 1.")
+
+    def __call__(self, x, derivative=False):
+        x = np.asarray(x, float)
+        clipped = np.clip(x, self.x[0], self.x[-1])
+        if derivative:
+            return self.dp(clipped)
+        y = self.p(clipped)
+        return y + np.minimum(x - self.x[0], 0) * self.left + np.maximum(x - self.x[-1], 0) * self.right
+
+
+class _GlobalAnchor:
+    """Compatibility view: scalar display height, with global-fit geometry methods."""
+    def __init__(self, track):
+        self.track = track
+        self.h = float(track.hp(1))
+
+    def __getattr__(self, name):
+        return getattr(self.track, name)
+
+
+class GlobalObservedTrack:
+    """Great circle fitted to all segments; exact spherical along/cross-track coordinates.
+
+    The `anchor` interface is retained for existing plot/dark-flight functions. Its final
+    observed point is only a display reference: it does not determine the fit or registration.
+    Weights give every segment equal total weight and every station equal weight within it.
+    They are sampling weights, not formal inverse positional variances.
+    """
+    def __init__(self, segments, degree=2):
+        parts = []
+        for name, data in segments.items():
+            d = data.copy()
+            d["segment"] = name
+            station = d.station.astype(str).str.split("_").str[0]
+            d["fit_weight"] = 1.0 / (station.map(station.value_counts()) * station.nunique())
+            parts.append(d)
+        o = pd.concat(parts, ignore_index=True).sort_values("jd").reset_index(drop=True)
+        cols = ["lat", "lon", "h", "jd", "fit_weight"]
+        if len(o) < 6 or not np.isfinite(o[cols].to_numpy(float)).all():
+            raise ValueError("Global fidelity fit needs at least six finite observed positions/times.")
+        self.jd0 = float(o.jd.min())
+        time = (o.jd.to_numpy() - self.jd0) * 86400
+        self.duration = float(time.max())
+        if self.duration <= 0 or np.unique(time).size < degree + 2:
+            raise ValueError("Insufficient distinct observation times for the global fit.")
+        u = _unit_position(o.lat.to_numpy(), o.lon.to_numpy())
+        base = o.fit_weight.to_numpy(float)
+        w = base.copy()
+        for _ in range(8):
+            _, vectors = np.linalg.eigh((u.T * w) @ u)
+            normal = vectors[:, 0]
+            cross = R_EARTH * np.arcsin(np.clip(u @ normal, -1, 1))
+            scale = max(0.01, 1.4826 * np.median(np.abs(cross - np.median(cross))))
+            w = base * np.minimum(1, 1.5 * scale / np.maximum(np.abs(cross), 1e-12))
+        origin = u[0] - (u[0] @ normal) * normal
+        origin /= np.linalg.norm(origin)
+        tangent = np.cross(normal, origin)
+        angles = np.unwrap(np.arctan2(u @ tangent, u @ origin))
+        if np.sum(base * (time - np.average(time, weights=base)) * angles) < 0:
+            normal, tangent, angles = -normal, -tangent, -angles
+        s = R_EARTH * angles
+        if np.ptp(s) < 1 or np.ptp(s) >= np.pi * R_EARTH:
+            raise ValueError("Observed track must span 1 km to less than half Earth's circumference.")
+        self.normal, self.origin, self.tangent = normal, origin, tangent
+        self.hp = _robust_poly(time / self.duration, o.h.to_numpy(), base, degree)
+        self.sp = _robust_poly(time / self.duration, s, base, degree)
+        grid = np.linspace(0, 1, 401)
+        if np.any(self.hp.deriv()(grid) >= -1e-6) or np.any(self.sp.deriv()(grid) <= 1e-6):
+            raise ValueError("Global fit is not a descending, forward trajectory. Check segment timing "
+                             "and geometry, or try --fidelity_degree 1.")
+        if self.hp(1) <= 0:
+            raise ValueError("Global observed fit reaches or crosses the ground.")
+        self.s_min, self.s_max = float(self.sp(0)), float(self.sp(1))
+        self.h = self.hp(grid)[::-1]
+        self.first = tuple(float(a) for a in self.extend(self.s_min))
+        self.lat, self.lon = (float(a) for a in self.extend(self.s_max))
+        self.lon_ref = self.first[1]
+        self.downrange, self.d_top = self.s_max, self.s_min
+        self.azim = float(self.direction(self.lat, self.lon, self.s_max))
+        self.fpa = float(np.degrees(np.arctan(
+            R_EARTH / (R_EARTH + self.hp(1)) * self.hp.deriv()(1) / self.sp.deriv()(1))))
+        self.segment, self.anchor = "global fit", _GlobalAnchor(self)
+        self.observations = o.assign(
+            obs_time_s=time, observed_downrange_km=s,
+            fit_downrange_km=self.sp(time / self.duration), fit_height_km=self.hp(time / self.duration),
+            cross_residual_km=R_EARTH * np.arcsin(np.clip(u @ normal, -1, 1)),
+            height_residual_km=o.h.to_numpy() - self.hp(time / self.duration),
+            along_residual_km=s - self.sp(time / self.duration))
+
+    def extend(self, downrange):
+        a = np.asarray(downrange, float) / R_EARTH
+        u = np.cos(a)[..., None] * self.origin + np.sin(a)[..., None] * self.tangent
+        return np.degrees(np.arcsin(np.clip(u[..., 2], -1, 1))), np.degrees(np.arctan2(u[..., 1], u[..., 0]))
+
+    def downrange_of(self, lat, lon):
+        u = _unit_position(lat, lon)
+        a = np.arctan2(u @ self.tangent, u @ self.origin)
+        centre = (self.s_min + self.s_max) / (2 * R_EARTH)
+        return R_EARTH * (a + 2 * np.pi * np.round((centre - a) / (2 * np.pi)))
+
+    def direction(self, lat, lon, downrange):
+        # Tangent to the fitted circle, evaluated at its projected position.
+        p, l = self.extend(downrange)
+        u = _unit_position(p, l)
+        t = np.cross(self.normal, u)
+        p, l = np.radians(p), np.radians(l)
+        east = np.stack((-np.sin(l), np.cos(l), np.zeros_like(l)), axis=-1)
+        north = np.stack((-np.sin(p)*np.cos(l), -np.sin(p)*np.sin(l), np.cos(p)), axis=-1)
+        return np.degrees(np.arctan2(np.sum(t*east, axis=-1), np.sum(t*north, axis=-1))) % 360
+
+    def place(self, h, downrange):
+        d = np.atleast_1d(downrange).astype(float)
+        lat, lon = self.extend(d)
+        return lat, lon, (d < self.s_min) | (d > self.s_max)
+
+    def describe(self):
+        return (f"global fit to {len(self.observations)} points in "
+                f"{self.observations.segment.nunique()} segments; "
+                f"last fitted position {self.lat:.5f}, {self.lon:.5f}; "
+                f"azimuth {self.azim:.2f} deg, fpa {self.fpa:.2f} deg")
+
+
+def _register_reference(track, components, chain, requested=None):
+    """Fit a time offset globally by altitude. No single fixed-altitude anchor is used."""
+    from scipy.optimize import minimize_scalar
+    obs = track.observations
+    time, h, weights = obs.obs_time_s.to_numpy(), obs.h.to_numpy(), obs.fit_weight.to_numpy()
+    candidates = [("parent", "parent body", chain)] + [
+        (uid, c["name"], c["data"]) for uid, c in components.items()]
+    if requested:
+        candidates = [c for c in candidates if c[0] == requested]
+        if not candidates:
+            raise ValueError("--fidelity_reference must be 'parent' or an existing component UUID.")
+    best = None
+    for uid, name, d in candidates:
+        d = d.sort_values("t").drop_duplicates("t")
+        if len(d) < 3 or not np.isfinite(d[["t", "h", "downrange"]].to_numpy()).all():
+            continue
+        lo, hi = float(d.t.iloc[0]), float(d.t.iloc[-1] - track.duration)
+        if hi < lo:
+            continue
+        def loss(offset):
+            residual = np.interp(time + offset, d.t, d.h) - h
+            # Huber-like loss with a 1 km transition; balances segments through weights.
+            return float(np.average(2 * (np.sqrt(1 + residual**2) - 1), weights=weights))
+        offsets = np.linspace(lo, hi, 161)
+        k = int(np.argmin([loss(a) for a in offsets]))
+        a, b = offsets[max(0, k-1)], offsets[min(len(offsets)-1, k+1)]
+        offset = float(minimize_scalar(loss, bounds=(a, b), method="bounded").x) if b > a else a
+        samples = np.linspace(offset, offset + track.duration, 401)
+        rh, rd = np.interp(samples, d.t, d.h), np.interp(samples, d.t, d.downrange)
+        if np.any(np.diff(rh) >= -1e-9) or np.any(np.diff(rd) <= 1e-9):
+            continue
+        score = loss(offset)
+        if best is None or score < best[0]:
+            best = (score, uid, name, d, offset, samples, rh, rd)
+    if best is None:
+        raise ValueError("No descending SARA reference spans the full observation duration. "
+                         "Check report clocks and simulation coverage; fidelity mode cannot extrapolate the fit.")
+    return best
+
+
+def mass_loss_by_height(components, bin_km=1.0):
+    """Conservative mass-loss bins, splitting each simulated loss interval linearly in height."""
+    if not np.isfinite(bin_km) or bin_km <= 0:
+        raise ValueError("Mass-loss bin width must be positive.")
+    top = max(float(c["data"].h.max()) for c in components.values())
+    edges = np.arange(0, top + bin_km * 1.001, bin_km)
+    loss = np.zeros(len(edges)-1)
+    for c in components.values():
+        d = c["data"]
+        for h1, h2, dm in zip(d.h.to_numpy()[:-1], d.h.to_numpy()[1:], -np.diff(d.mass)):
+            if dm <= 0:
+                continue
+            low, high = sorted((max(0, h1), max(0, h2)))
+            if high - low < 1e-10:
+                loss[np.clip(np.searchsorted(edges, low, side="right")-1, 0, len(loss)-1)] += dm
+            else:
+                overlap = np.maximum(0, np.minimum(edges[1:], high) - np.maximum(edges[:-1], low))
+                loss += dm * overlap / (high-low)
+    return pd.DataFrame({"height_low_km": edges[:-1], "height_high_km": edges[1:],
+                         "mass_lost_kg": loss, "mass_lost_kg_per_km": loss / np.diff(edges)})
+
+
+def apply_detection_fidelity(components, chain, segments, out, run_id, degree=2, reference=None, bin_km=1.0):
+    """Transform all components consistently and export original/corrected states and residuals.
+
+    Fit smooth h(t), s(t); register one SARA reference by a fitted time offset over all
+    observations; construct monotone H(h_SARA), S(D_SARA). Apply those SAME maps to every
+    component. Below the fitted heights H joins (0,0), while S continues with its boundary
+    slope. Above the fitted range both continue with their boundary slopes. These extensions
+    are assumptions, not constraints from observations. Speeds/FPA follow the map Jacobian:
+       v_up' = H'(h) v sin(gamma)
+       v_horizontal' = S'(D) (R+H(h))/(R+h) v cos(gamma).
+    Time and mass are unchanged, hence dm/dt is retained and dm/dh is redistributed.
+    Other thermal/aerodynamic columns remain original SARA values, not recalculated physics.
+    """
+    import json
+    track = GlobalObservedTrack(segments, degree)
+    _, uid, name, ref, offset, times, rh, rd = _register_reference(track, components, chain, reference)
+    z = (times-offset) / track.duration
+    # A surface endpoint prevents a constant altitude shift from moving the ground.
+    hm = _MonotoneMap(np.r_[0.0, rh[::-1]], np.r_[0.0, track.hp(z)[::-1]])
+    sm = _MonotoneMap(rd, track.sp(z))
+    if rh.min() <= 0:
+        raise ValueError("The registered reference reaches the ground within the observed interval.")
+
+    def transform(d):
+        d = d.copy()
+        cols = ["h", "downrange", "v", "fpa", "lat", "lon", "heading"]
+        for col in cols:
+            d["sara_original_" + col] = d[col]
+        h, dr, v, gamma = d.h.to_numpy(), d.downrange.to_numpy(), d.v.to_numpy(), np.radians(d.fpa)
+        if np.any(h < -1e-6) or np.any(v < 0):
+            raise ValueError("Invalid negative SARA height/speed in fidelity input.")
+        h = np.maximum(h, 0)
+        new_h, new_dr = hm(h), sm(dr)
+        up = hm(h, derivative=True) * v * np.sin(gamma)
+        horizontal = sm(dr, derivative=True) * (R_EARTH + new_h) / (R_EARTH + h) * v * np.cos(gamma)
+        if np.any(horizontal < -1e-8):
+            raise ValueError("SARA flight-path angles imply backward motion; check angle conventions.")
+        d["h"], d["downrange"] = new_h, new_dr
+        d["v"], d["fpa"] = np.hypot(up, horizontal), np.degrees(np.arctan2(up, horizontal))
+        d["lat"], d["lon"] = track.extend(new_dr)
+        d["heading"] = track.direction(d.lat.to_numpy(), d.lon.to_numpy(), new_dr)
+        d["fidelity_extrapolated"] = (h < rh.min()) | (h > rh.max()) | (dr < rd.min()) | (dr > rd.max())
+        if not np.isfinite(d[cols].to_numpy()).all() or np.any(new_h < -1e-8):
+            raise ValueError("Invalid remapped states; inspect observation geometry and reference selection.")
+        return d
+
+    corrected = {key: {**c, "data": transform(c["data"])} for key, c in components.items()}
+    new_chain = transform(chain)
+    track.ref = new_chain if uid == "parent" else corrected[uid]["data"]
+    track.ref_name, track.ref_uuid, track.t = name, uid, offset + track.duration
+    residual = track.observations.copy()
+    residual["reference_sara_time_s"] = residual.obs_time_s + offset
+    residual["reference_original_height_km"] = np.interp(residual.reference_sara_time_s, ref.t, ref.h)
+    residual["reference_original_downrange_km"] = np.interp(residual.reference_sara_time_s, ref.t, ref.downrange)
+    phase = residual.obs_time_s.to_numpy() / track.duration
+    fit_up = track.hp.deriv()(phase) / track.duration
+    fit_horizontal = track.sp.deriv()(phase) / track.duration * (R_EARTH + track.hp(phase)) / R_EARTH
+    residual["fit_speed_kms"] = np.hypot(fit_up, fit_horizontal)
+    residual["fit_fpa_deg"] = np.degrees(np.arctan2(fit_up, fit_horizontal))
+    for col in ("h", "downrange", "v", "fpa"):
+        residual["remapped_reference_" + col] = np.interp(residual.reference_sara_time_s, track.ref.t, track.ref[col])
+    residual.to_csv(out / f"{run_id}.fidelity_residuals.csv", index=False)
+    exports = []
+    for key, c in corrected.items():
+        d = c["data"].copy()
+        d["uuid"], d["component"] = key, c["name"]
+        d["mass_loss_rate_kg_s"] = np.maximum(0, -np.gradient(d.mass, d.t)) if len(d) > 1 else 0.0
+        exports.append(d)
+    pd.concat(exports, ignore_index=True).to_csv(out / f"{run_id}.fidelity_components.csv", index=False)
+    new_chain.to_csv(out / f"{run_id}.fidelity_parent.csv", index=False)
+    before, after = mass_loss_by_height(components, bin_km), mass_loss_by_height(corrected, bin_km)
+    if not np.isclose(before.mass_lost_kg.sum(), after.mass_lost_kg.sum(), rtol=1e-10, atol=1e-12):
+        raise ValueError("Mass-loss remapping failed its mass-conservation check.")
+    before.to_csv(out / f"{run_id}.mass_loss_by_height_original.csv", index=False)
+    after.to_csv(out / f"{run_id}.mass_loss_by_height_remapped.csv", index=False)
+    w = residual.fit_weight
+    info = {"mode": "more_detection_fidelity", "interpretation": FIDELITY_NOTE,
+            "reference_uuid": uid, "reference_name": name, "sara_time_at_first_observation_s": offset,
+            "fit_degree": degree, "weighting": "equal segment totals; equal station totals within segments; robust fit",
+            "observed_duration_s": track.duration,
+            "original_reference_height_range_km": [float(rh.min()), float(rh.max())],
+            "original_reference_downrange_range_km": [float(rd.min()), float(rd.max())],
+            "mass_lost_original_kg": float(before.mass_lost_kg.sum()),
+            "mass_lost_remapped_kg": float(after.mass_lost_kg.sum()),
+            "component_states_extrapolated_fraction": float(pd.concat(exports).fidelity_extrapolated.mean()),
+            "extrapolation": "H(h) smoothly joins (0,0) below observations; S(D) extends with boundary slope; upper extensions linear",
+            "rms_cross_km": float(np.sqrt(np.average(residual.cross_residual_km**2, weights=w))),
+            "rms_height_km": float(np.sqrt(np.average(residual.height_residual_km**2, weights=w))),
+            "rms_along_km": float(np.sqrt(np.average(residual.along_residual_km**2, weights=w)))}
+    (out / f"{run_id}.fidelity_fit.json").write_text(json.dumps(info, indent=2))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 4))
+    axes[0].scatter(residual.observed_downrange_km, residual.h, s=5, label="observed")
+    axes[0].plot(track.sp(z), track.hp(z), color="k", label="global fit")
+    axes[0].plot(track.sp(z), rh, "--", label="original SARA heights at matched times")
+    axes[0].set(xlabel="Fitted along-track distance [km]", ylabel="Height [km]")
+    axes[1].scatter(residual.obs_time_s, residual.cross_residual_km, s=5, label="cross-track")
+    axes[1].scatter(residual.obs_time_s, residual.height_residual_km, s=5, label="height")
+    axes[1].set(xlabel="Observation time [s]", ylabel="Fit residual [km]")
+    for table, label in [(before, "original"), (after, "remapped")]:
+        axes[2].plot(table.mass_lost_kg_per_km, (table.height_low_km+table.height_high_km)/2, label=label)
+    axes[2].set(xlabel="Mass lost per km [kg/km]", ylabel="Height [km]")
+    for ax in axes:
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=8)
+    fig.suptitle("Observation-constrained remapping — mass history retained; ablation not recalculated")
+    fig.tight_layout()
+    fig.savefig(out / f"{run_id}.fidelity_diagnostics.png", dpi=180)
+    plt.close(fig)
+    print("\n" + FIDELITY_NOTE)
+    print(f"Global fit RMS [km]: cross={info['rms_cross_km']:.3f}, "
+          f"height={info['rms_height_km']:.3f}, along={info['rms_along_km']:.3f}")
+    print(f"Registration reference: {name} ({uid}); SARA time offset {offset:.3f} s")
+    return corrected, new_chain, track, info
+
+
 # ----------------------------------------------------------------------------- analysis
 def group_name(name):
     """'RF_numerical_group_3_-_Al_case' -> 'RF numerical group N - Al case'."""
@@ -455,12 +813,17 @@ def plot_altitude_downrange(components, segments, recorded, chain, track, out):
             label=f"anchor ({an.segment}, {an.h:.2f} km)")
 
     # SARA total mass-loss per km of altitude, for comparison with brightness
-    bins = np.arange(0, chain.h.max() + 1, 1.0)
-    loss = np.zeros(len(bins) - 1)
-    for c in components.values():
-        d = c["data"]
-        dm = -np.diff(d.mass.values)
-        np.add.at(loss, np.clip(np.digitize(d.h.values[:-1], bins) - 1, 0, len(loss) - 1), np.clip(dm, 0, None))
+    if isinstance(track, GlobalObservedTrack):
+        mass_bins = mass_loss_by_height(components)
+        bins = np.r_[mass_bins.height_low_km.to_numpy(), mass_bins.height_high_km.iloc[-1]]
+        loss = mass_bins.mass_lost_kg.to_numpy()
+    else:
+        bins = np.arange(0, chain.h.max() + 1, 1.0)
+        loss = np.zeros(len(bins) - 1)
+        for c in components.values():
+            d = c["data"]
+            dm = -np.diff(d.mass.values)
+            np.add.at(loss, np.clip(np.digitize(d.h.values[:-1], bins) - 1, 0, len(loss) - 1), np.clip(dm, 0, None))
     axl = axm.twiny()
     axl.barh(bins[:-1] + 0.5, loss, height=1.0, color="0.5", alpha=0.35)
     axl.set_xlabel("SARA mass lost per km altitude [kg]", color="0.4")
@@ -481,6 +844,10 @@ def plot_altitude_downrange(components, segments, recorded, chain, track, out):
                         + [chain.downrange[chain.h.between(*ylim)]])
     ax.set_xlim(dr.min() - 50, dr.max() + 50)
     fig.tight_layout()
+    if "detection_fidelity" in Path(out).parts:
+        fig.text(0.5, 0.002, "Observation-constrained remapping; original SARA mass history retained; ablation not recalculated",
+                 ha="center", va="bottom", fontsize=7,
+                 bbox={"facecolor": "white", "alpha": 0.9, "edgecolor": "none"})
     fig.savefig(out, dpi=200)
     plt.close(fig)
 
@@ -568,6 +935,10 @@ def plot_ground_map(components, segments, recorded, stations, chain, track, impa
     ax.set_title("Observed vs. predicted mass loss (SARA ablation placed on the observed track)")
     ax.legend(fontsize=7, loc="upper left")
     fig.tight_layout()
+    if "detection_fidelity" in Path(out).parts:
+        fig.text(0.5, 0.002, "Observation-constrained remapping; original SARA mass history retained; ablation not recalculated",
+                 ha="center", va="bottom", fontsize=7,
+                 bbox={"facecolor": "white", "alpha": 0.9, "edgecolor": "none"})
     fig.savefig(out, dpi=200)
     plt.close(fig)
 
@@ -882,6 +1253,10 @@ def plot_strewnfield(survivors, impacts, nominal, segments, stations, track, str
     ax.set_title("Strewn field (lines: nominal dark flight from the start star; dots: Monte Carlo)")
     ax.legend(fontsize=7, loc="best")
     fig.tight_layout()
+    if "detection_fidelity" in Path(out).parts:
+        fig.text(0.5, 0.002, "Observation-constrained remapping; original SARA mass history retained; ablation not recalculated",
+                 ha="center", va="bottom", fontsize=7,
+                 bbox={"facecolor": "white", "alpha": 0.9, "edgecolor": "none"})
     fig.savefig(out, dpi=200)
     plt.close(fig)
 
@@ -978,6 +1353,10 @@ def plot_lightcurve_check(components, segments, recorded, chain, anchor, out):
     ax0.grid(alpha=0.3)
     ax0.legend(fontsize=7, loc="lower left", ncol=2)
     fig.tight_layout()
+    if "detection_fidelity" in Path(out).parts:
+        fig.text(0.5, 0.002, "Observation-constrained remapping; original SARA mass history retained; ablation not recalculated",
+                 ha="center", va="bottom", fontsize=7,
+                 bbox={"facecolor": "white", "alpha": 0.9, "edgecolor": "none"})
     fig.savefig(out, dpi=200)
     plt.close(fig)
 
@@ -1032,6 +1411,10 @@ def plot_velocity_check(components, segments, recorded, chain, out):
     axes[0][0].set_ylabel("Altitude [km]")
     fig.suptitle("Observed point-to-point speed vs. SARA speed at the same altitudes")
     fig.tight_layout()
+    if "detection_fidelity" in Path(out).parts:
+        fig.text(0.5, 0.002, "Observation-constrained remapping; original SARA mass history retained; ablation not recalculated",
+                 ha="center", va="bottom", fontsize=7,
+                 bbox={"facecolor": "white", "alpha": 0.9, "edgecolor": "none"})
     fig.savefig(out, dpi=200)
     plt.close(fig)
     return rows
@@ -1043,6 +1426,14 @@ def main():
     ap.add_argument("--reports", default=[r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\skyfit_traj"], nargs="+", help="*_report.txt files or folders containing them")
     ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\Wind", help="output folder (default: SARA folder)")
     ap.add_argument("--curved", action="store_true", help="use *_curved_report.txt")
+    ap.add_argument("--more_detection_fidelity", "--more-detection-fidelity", action="store_true",
+                    help="fit all observations and remap SARA geometry/mass-vs-height; NOT a new ablation run")
+    ap.add_argument("--fidelity_degree", type=int, choices=[1, 2, 3], default=2,
+                    help="degree of robust altitude/time and downrange/time fits (default 2)")
+    ap.add_argument("--fidelity_reference", default=None,
+                    help="optional SARA component UUID or 'parent' for global registration (default automatic)")
+    ap.add_argument("--fidelity_height_bin_km", type=float, default=1.0,
+                    help="altitude bin width for original/remapped mass-loss exports (default 1 km)")
     ap.add_argument("--anchor_segment", default=None,
                     help="observed segment to anchor SARA to (default: lowest well-constrained one)")
     ap.add_argument("--anchor_min_qconv", type=float, default=10.0,
@@ -1071,6 +1462,10 @@ def main():
     g.add_argument("--sig_wind_dir_deg", type=float, default=10.0, help="1-sigma wind direction [deg]")
     args = ap.parse_args()
     out = Path(args.out or args.sara_dir)
+    if args.more_detection_fidelity:
+        out = out / "detection_fidelity"
+        if args.anchor_segment:
+            ap.error("--anchor_segment is incompatible with the global fidelity fit; use --fidelity_reference.")
     out.mkdir(parents=True, exist_ok=True)
 
     run_id, components, chain = load_sara(args.sara_dir)
@@ -1084,19 +1479,35 @@ def main():
         stations.update(st)
     obs = pd.concat(segments.values())
 
-    recorded = match(components, segments)
+    fidelity_info = None
+    if args.more_detection_fidelity:
+        try:
+            components, chain, track, fidelity_info = apply_detection_fidelity(
+                components, chain, segments, out, run_id, args.fidelity_degree,
+                args.fidelity_reference, args.fidelity_height_bin_km)
+        except ValueError as exc:
+            raise SystemExit(f"Detection-fidelity fit failed: {exc}") from exc
+        anchor, candidates, check = track.anchor, pd.DataFrame(), pd.DataFrame()
+        recorded = match(components, segments)
+    else:
+        recorded = match(components, segments)
+        anchor, candidates = choose_anchor(components, recorded, segments, chain,
+                                           min_qconv=args.anchor_min_qconv, segment=args.anchor_segment)
+        candidates.to_csv(out / f"{run_id}.anchor_candidates.csv", index=False)
+        track = ObservedTrack(obs, chain, anchor)
+        check = anchor_check(anchor, segments)
     recorded.to_csv(out / f"{run_id}.recorded_components.csv", index=False)
-
-    # one anchor ties SARA to the sky; everything below it is placed from there
-    anchor, candidates = choose_anchor(components, recorded, segments, chain,
-                                       min_qconv=args.anchor_min_qconv, segment=args.anchor_segment)
-    candidates.to_csv(out / f"{run_id}.anchor_candidates.csv", index=False)
-    track = ObservedTrack(obs, chain, anchor)
-    check = anchor_check(anchor, segments)
-    print(f"Anchor: {anchor.describe()}")
+    print(f"Alignment: {anchor.describe()}")
 
     impacts = load_impacts(args.sara_dir)
     survivors = darkflight_inputs(components, track, impacts, v_start=args.v_start)
+    if survivors.empty:
+        raise SystemExit("No SARA survivors have usable dark-flight inputs; check ImpactingFragments.xml UUIDs.")
+    if args.more_detection_fidelity:
+        if (survivors.h_km <= 0).any() or (survivors.v_kms <= 0).any() or (survivors.fpa_deg >= 0).any():
+            raise SystemExit("Remapped dark-flight inputs must be above ground with positive speed and descending FPA.")
+        survivors["alignment_mode"] = "more_detection_fidelity"
+        survivors["mass_history"] = "SARA retained; geometrically remapped in height"
     survivors.to_csv(out / f"{run_id}.darkflight_inputs.csv", index=False)
 
     plot_altitude_downrange(components, segments, recorded, chain, track,
@@ -1125,6 +1536,10 @@ def main():
                 "Monte Carlo": f"{args.mc} clones per survivor, seed {args.seed}",
                 "1-sigma": ", ".join(f"{k}={v}" for k, v in sig.items()
                                      if args.winds_file is not None or not k.startswith("wind"))}
+    if fidelity_info is not None:
+        settings["trajectory reconstruction"] = FIDELITY_NOTE
+        settings["fit RMS (km)"] = str({k: fidelity_info[k] for k in
+                                         ("rms_cross_km", "rms_height_km", "rms_along_km")})
     strewn = write_strewnfield(summary, df_impacts, run_id, settings, out)
     plot_strewnfield(survivors, df_impacts, nominal, segments, stations, track, strewn,
                      out / f"{run_id}.strewnfield_map.png")
@@ -1137,12 +1552,15 @@ def main():
     obs_len = gc_distance(*track.first, anchor.lat, anchor.lon)
     print(f"  ground distance {track.h.max():.1f}->{anchor.h:.2f} km (top -> anchor): observed {obs_len:.0f} km, "
           f"SARA parent body {anchor.downrange - track.d_top:.0f} km")
-    print("\nAnchor candidates:")
-    print(candidates.round(3).to_string(index=False) if len(candidates) else "  none (parent body)")
-    print(f"Anchor: {anchor.describe()}")
-    print("\nIndependent check, observations past the anchor vs. the anchored SARA reference at the same "
-          "position (dh > 0: observed higher than SARA):")
-    print(check.round(2).to_string(index=False) if len(check) else "  no observations past the anchor")
+    if fidelity_info is None:
+        print("\nAnchor candidates:")
+        print(candidates.round(3).to_string(index=False) if len(candidates) else "  none (parent body)")
+        print(f"Anchor: {anchor.describe()}")
+        print("\nIndependent check below anchor (dh > 0: observed higher than SARA):")
+        print(check.round(2).to_string(index=False) if len(check) else "  no observations past the anchor")
+    else:
+        print("\nGlobal-fit residuals and original/remapped component states saved with fidelity_* names.")
+        print("Fit residuals use the same observations as the fit; they are not independent validation.")
     if len(recorded):
         print("\nRecorded (losing mass inside an observed altitude range):")
         summ = recorded.groupby(["segment", "group"]).agg(n=("uuid", "nunique"), mass_lost_kg=("mass_lost_kg", "sum"),

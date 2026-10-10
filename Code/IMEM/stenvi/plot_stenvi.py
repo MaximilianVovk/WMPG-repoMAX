@@ -510,7 +510,7 @@ def find_files(path, recursive=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("path", nargs="?", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\Comparison\MEM3_sunoriented_newrho.sei", help=".sei file or folder (default: current folder)")
+    parser.add_argument("path", nargs="?", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\Comparison\Comparison_10E-6above_HD\IMEM_newrho-3.0cut\sunoriented_IMEM2_newrho_3.0cut_mgt1e-06.sei", help=".sei file or folder (default: current folder)")
     parser.add_argument("-r", "--recursive", action="store_true", help="Also search subfolders")
     parser.add_argument("-o", "--output-dir", type=Path, help="Output folder (default: beside each input)")
     parser.add_argument("--dpi", type=int, default=180)
@@ -520,16 +520,16 @@ def main(argv=None):
     parser.add_argument("--density-scale", choices=("linear", "log"), default="linear",
                         help="Density colorbar scale (log helps see differences with --full-range)")
     parser.add_argument("--diameter-center", choices=("arithmetic", "geometric"), default="arithmetic")
-    parser.add_argument("--center-azimuth", type=float, default=0,
+    parser.add_argument("--center-azimuth", type=float, default=90,
                         help="Azimuth at the center of the Aitoff map, in degrees (default: 180)")
     parser.add_argument("--invert-azimuth", action="store_true", help="Show decreasing azimuth left to right")
     parser.add_argument("--full-range", action="store_true",
                         help="Colorbar limits from the header min/max (e.g. VELOCITY 40 0.0 80.0) instead of the "
                              "data min/max, so files with the same definitions share scales")
-    parser.add_argument("--density-cuts", nargs="*", type=float, metavar="EDGE",
+    parser.add_argument("--density-cuts", nargs="*", type=float, metavar="EDGE", default=DENSITY_CUTS,
                         help="Also plot flux/velocity(/diameter with --show-diameter) per density class; "
                              "optional class edges in g/cm^3 (default: %s)" % " ".join(map(str, DENSITY_CUTS)))
-    parser.add_argument("--confront", type=Path, metavar="SEI",
+    parser.add_argument("--confront", type=Path, metavar="SEI", # default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\Comparison\Comparison_10E-6above_coarse - Copy\IMEM\IMEM_HD_sunoriented_mgt1e-06.sei",
                         help="Other .sei file: plot run vs confront flux per density class, with the confront "
                              "flux projected onto the run's azimuth/elevation bins (uses --density-cuts edges)")
     args = parser.parse_args(argv)

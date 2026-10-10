@@ -227,14 +227,14 @@ def build_header(template_header, model, begin, end, a, e, inc, raan, argp, bins
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\L2sei_newrho", help="MEM 3 results folder")
+    ap.add_argument("--run", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\L2_bodyfix\L2sei", help="MEM 3 results folder")
     ap.add_argument("--template", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\sun_stenvi_2025-1T_2025-2T\sun_stenvi_2025-1T_2025-2T.sei", help="template .sei file (bins + header)")
-    ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\MEM3_newrho.sei", help="output .sei file")
+    ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\L2_suncenter.sei", help="output .sei file")
     ap.add_argument("--no-fold-density", action="store_true",
                     help="drop flux of densities outside the SEI density range instead of adding it to the edge bins")
     ap.add_argument("--mem-azimuth", action="store_true",
                     help="keep MEM's azimuth sign (positive towards port) instead of mirroring it for SEI")
-    ap.add_argument("--az-offset", type=float, default=0.0, metavar="DEG",
+    ap.add_argument("--az-offset", type=float, default=90.0, metavar="DEG",
                     help="shift the azimuth reference by DEG about the zenith axis (e.g. 180 puts ram at az 180, "
                          "wake at az 0; must be a multiple of 5)")
     ap.add_argument("--mem-angles", action="store_false",

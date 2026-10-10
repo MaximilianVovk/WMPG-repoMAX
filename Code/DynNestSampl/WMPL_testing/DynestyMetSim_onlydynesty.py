@@ -62,44 +62,6 @@ except ImportError:
     print("Dynesty package not found. Install dynesty to use the Dynesty functions.")
     DYNESTY_FOUND = False
 
-try:
-    import nautilus
-    from scipy.special import logsumexp
-    NAUTILUS_FOUND = True
-except ImportError:
-    NAUTILUS_FOUND = False
-
-if not DYNESTY_FOUND:
-    # Minimal stand-ins for the dynesty.utils helpers used in post-processing,
-    # so a nautilus-only install can still produce the results and plots.
-    def _quantile(x, q, weights=None):
-        x = np.atleast_1d(x)
-        q = np.atleast_1d(q)
-        if weights is None:
-            return np.percentile(x, list(100.0 * q))
-        weights = np.atleast_1d(weights)
-        idx = np.argsort(x)
-        sw = weights[idx]
-        cdf = np.cumsum(sw)[:-1]
-        cdf /= cdf[-1]
-        cdf = np.append(0, cdf)
-        return np.interp(q, cdf, x[idx]).tolist()
-
-    def _resampleEqual(samples, weights, rstate=None):
-        rstate = np.random.default_rng() if rstate is None else rstate
-        nsamples = len(weights)
-        positions = (rstate.random() + np.arange(nsamples)) / nsamples
-        cumulative_sum = np.cumsum(weights)
-        cumulative_sum /= cumulative_sum[-1]
-        idx = np.searchsorted(cumulative_sum, positions)
-        return samples[rstate.permutation(np.minimum(idx, nsamples - 1))]
-else:
-    _resampleEqual = dynesty.utils.resample_equal
-
-# Nested sampling backends selectable with --sampler, and the checkpoint file
-# suffix each one writes (nautilus requires an HDF5 '.h5' extension).
-SAMPLER_FILE_EXT = {"dynesty": ".dynesty", "nautilus": "_nautilus.h5"}
-
 from wmpl.MetSim.GUI import FragmentationEntry, SimulationResults, loadConstants, saveConstants, loadWakeFile, plotWakeOverview, WakeContainter
 from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
 from wmpl.MetSim.MetSimErosion import Constants, runSimulation, zenithAngleAtSimulationBegin
@@ -1603,7 +1565,7 @@ def _finiteValuesAndWeights(values, weights=None, context="distribution"):
 
 
 def _plotDistribWeighted(rho_mass_weighted_list, weights, output_folder="", file_name="name",var_name="var", label="var", colors='black', ax_dist=None):
-    if not (DYNESTY_FOUND or NAUTILUS_FOUND):
+    if not DYNESTY_FOUND:
         return np.nan, np.nan, np.nan
 
     print("Creating distribution plot...")
@@ -1708,8 +1670,8 @@ def posteriorBandsVsHeightParallel(
 
     """
 
-    if not (DYNESTY_FOUND or NAUTILUS_FOUND):
-        print("No nested sampling package found. Install dynesty or nautilus to use these functions.")
+    if not DYNESTY_FOUND:
+        print("Dynesty package not found. Install dynesty to use the Dynesty functions.")
         return None
 
     rng = np.random.default_rng(seed)
@@ -1740,7 +1702,7 @@ def posteriorBandsVsHeightParallel(
         f"{np.count_nonzero(np.isfinite(np.asarray(dynesty_results.logl, dtype=float)))}"
     )
 
-    samples_eq = _resampleEqual(samples_raw, w)
+    samples_eq = dynesty.utils.resample_equal(samples_raw, w)
     if nsamples is not None and nsamples < samples_eq.shape[0]:
         idx_keep = rng.choice(samples_eq.shape[0], size=nsamples, replace=False)
         samples_eq = samples_eq[idx_keep]
@@ -2678,8 +2640,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
 
     """
 
-    if not (DYNESTY_FOUND or NAUTILUS_FOUND):
-        print("No nested sampling package found. Install dynesty or nautilus to use these functions.")
+    if not DYNESTY_FOUND:
+        print("Dynesty package not found. Install dynesty to use the Dynesty functions.")
         return
 
     if log_file == '':
@@ -2706,11 +2668,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     summary_str = summary_str.replace('None', '')
     # print the summary to screen
     print(summary_str)
-    # nautilus results have no live-point history / particle IDs: skip the runplot and the connected traces
-    is_nautilus = isinstance(dynesty_run_results, RestoredDynestyResults) and dynesty_run_results.get("sampler") == "nautilus"
     try:
-        if is_nautilus:
-            raise ValueError("the runplot needs the dynesty live-point history, not available for nautilus runs")
         fig, axes = dyplot.runplot(dynesty_run_results,
                                     label_kwargs={"fontsize": 15},  # Reduce axis label size
                                     )
@@ -3923,7 +3881,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                                         title_kwargs={"fontsize": 15},  # Reduce title font size
                                         title_fmt='.2e',  # Scientific notation for titles
                                         truth_color='black', show_titles=True,
-                                        trace_cmap='viridis', connect=not is_nautilus,
+                                        trace_cmap='viridis', connect=True,
                                         connect_highlight=range(5))
             # # make a super title
             # fig.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
@@ -3935,7 +3893,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                                         title_kwargs={"fontsize": 15},  # Reduce title font size
                                         title_fmt='.2e',  # Scientific notation for titles
                                         show_titles=True,
-                                        trace_cmap='viridis', connect=not is_nautilus,
+                                        trace_cmap='viridis', connect=True,
                                         connect_highlight=range(5))
             # # make a super title
             # fig.suptitle(f"{file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
@@ -6310,7 +6268,7 @@ class ObservationData:
 def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True,
     only_plot=True, cores=None, pool_MPI=None, pick_position=0, extraprior_file='', save_backup=True,
     use_wake_data=True, noise_wake_limit=-100, region_method="threshold", priorFile_to_update_with_posteriors="",
-    print_progress=True, sampler="dynesty", n_live=None):
+    print_progress=True):
     """ Create the output folder if it doesn't exist and run the Dynesty simulation.
 
     Arguments:
@@ -6327,23 +6285,15 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
         pick_position: [int] Index to pick specific position/station data. 0 by default.
         extraprior_file: [str] Path to an extra prior file. Empty string by default.
         save_backup: [bool] Flag to save a backup of the results. True by default.
-        sampler: [str] Nested sampling backend, 'dynesty' (default) or 'nautilus'.
-        n_live: [int] Number of live points. None uses the sampler default (dynesty 500, nautilus 2000).
 
     Return:
         None
 
     """
 
-    if sampler not in SAMPLER_FILE_EXT:
-        raise ValueError(f"Unknown sampler '{sampler}', choose one of {list(SAMPLER_FILE_EXT)}.")
-    if sampler == "dynesty" and not DYNESTY_FOUND:
-        print("Dynesty package not found. Install dynesty or run with sampler='nautilus'.")
+    if not DYNESTY_FOUND:
+        print("Dynesty package not found. Install dynesty to use the Dynesty functions.")
         return
-    if sampler == "nautilus" and not NAUTILUS_FOUND:
-        print("Nautilus package not found. Install nautilus-sampler or run with sampler='dynesty'.")
-        return
-    print(f"Nested sampler: {sampler}")
 
     # initlize cml_args
     class cml_args:
@@ -6410,8 +6360,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             pick_position=pick_position,
             extraprior_file=cml_args.extraprior_file,
             noise_wake_limit=noise_wake_limit,
-            region_method=region_method,   # ADDED
-            sampler=sampler
+            region_method=region_method   # ADDED
         )
 
         # check if finder is empty
@@ -6496,16 +6445,11 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                 start_time = time.time()
                 # Run dynesty
                 try:
-                    if sampler == "nautilus":
-                        dsampler_results = nautilusMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder,
-                                                           pool_MPI=pool_MPI, wake_data=wake_data, print_progress=print_progress, n_live=n_live)
-                    else:
-                        dsampler = dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder,
-                                                  pool_MPI=pool_MPI, wake_data=wake_data, print_progress=print_progress, n_live=n_live)
-                        dsampler_results = dsampler.results
+                    dsampler = dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder, 
+                                              pool_MPI=pool_MPI, wake_data=wake_data, print_progress=print_progress)
                     try:
                         plotDynestyResults(
-                            dsampler_results, obs_data, flags_dict, fixed_values,
+                            dsampler.results, obs_data, flags_dict, fixed_values,
                             out_folder, base_name, log_file_path, cml_args.cores,
                             save_backup=save_backup, finish_run=True, wake_data=wake_data
                         )
@@ -6526,7 +6470,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                     print(f"\nError encountered in dynesty sampling: {e}\n")
                     # now try and plot the dynesty file results
                     try:
-                        dsampler_results = restoreSamplerResults(dynesty_file, bounds, flags_dict)
+                        dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+                        dsampler_results = dsampler.results
 
                     except Exception as e:
                         with open(log_file_path, "a") as log_file:
@@ -6596,7 +6541,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                 print("Only plotting requested. Skipping dynesty run.")
 
                 try:
-                    dsampler_results = restoreSamplerResults(dynesty_file, bounds, flags_dict)
+                    dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+                    dsampler_results = dsampler.results
 
                 except Exception as e:
                     with open(log_file_path, "a") as log_file:
@@ -6817,90 +6763,6 @@ def restoreBackupDynesty(backup_file: str):
     }
 
     return dynesty_res, (bands_lum, bands_mag, bands_vel, bands_lag), backup_small
-
-
-def samplerFromFile(file_path):
-    """ Return which nested sampler ('dynesty' or 'nautilus') wrote a checkpoint file, based on its suffix. """
-    return "nautilus" if str(file_path).endswith(SAMPLER_FILE_EXT["nautilus"]) else "dynesty"
-
-
-def nautilusToResults(sampler):
-    """ Convert a nautilus Sampler into the dynesty-like RestoredDynestyResults used by all post-processing.
-
-    Samples are sorted by increasing logL (like dynesty), and logwt/logz are set so that
-    importance_weights() returns the nautilus posterior weights. 'logvol' holds the prior volume
-    enclosed by each logL contour, so dynesty trace plots also work.
-
-    Arguments:
-        sampler: [nautilus.Sampler] Sampler after (or during) a run.
-
-    Return:
-        results: [RestoredDynestyResults] dynesty-like results object.
-
-    """
-    points, log_w, log_l = sampler.posterior()
-    keep = np.isfinite(log_l) & np.isfinite(log_w)
-    order = np.argsort(log_l[keep], kind="stable")
-    points, log_w, log_l = points[keep][order], log_w[keep][order], log_l[keep][order]
-
-    log_z = float(sampler.log_z)
-    logwt = log_w + log_z
-    logz = np.logaddexp.accumulate(logwt)
-    # Prior volume of each point (log_w = log_v + log_l - log_z) and volume enclosed above each logL
-    log_v = log_w - log_l + log_z
-    logvol = np.logaddexp.accumulate(log_v[::-1])[::-1]
-
-    n_eff = float(sampler.n_eff)
-    n_like = int(sampler.n_like)
-    # nautilus gives no evidence error; 1/sqrt(N_eff) is the usual rough estimate
-    logz_err = 1.0 / np.sqrt(n_eff) if n_eff > 0 else np.nan
-    eff = 100.0 * n_eff / n_like if n_like > 0 else np.nan
-
-    summary_text = (
-        "Summary (nautilus)\n"
-        "=======\n"
-        f"niter: {len(log_l)}\n"
-        f"ncall: {n_like}\n"
-        f"eff(%):  {eff:.3f}\n"
-        f"n_eff: {n_eff:.1f}\n"
-        f"logz: {log_z:.3f} +/-  {logz_err:.3f}\n"
-    )
-
-    return RestoredDynestyResults(
-        samples=np.asarray(points, dtype=np.float64),
-        logl=log_l,
-        logwt=logwt,
-        logz=logz,
-        logzerr=np.full_like(logz, logz_err),
-        niter=len(log_l),
-        ncall=n_like,
-        eff=eff,
-        _summary_text=summary_text,
-        _extra={"logvol": logvol, "sampler": "nautilus", "n_eff": n_eff},
-    )
-
-
-def restoreSamplerResults(sampler_file, bounds, flags_dict):
-    """ Load the results stored in a .dynesty or _nautilus.h5 checkpoint file.
-
-    Arguments:
-        sampler_file: [str] Path to the checkpoint file.
-        bounds: [list] Prior bounds used for the run (needed to map nautilus unit-cube points to parameters).
-        flags_dict: [dict] Prior flags used for the run.
-
-    Return:
-        results: dynesty Results object or dynesty-like RestoredDynestyResults (nautilus).
-
-    """
-    if samplerFromFile(sampler_file) == "nautilus":
-        if not NAUTILUS_FOUND:
-            raise ImportError("Nautilus package not found, cannot read " + sampler_file)
-        # The likelihood is never called, the stored points are only read back
-        sampler = nautilus.Sampler(priorDynesty, logLikelihoodDynesty, n_dim=len(flags_dict),
-                                   prior_kwargs={"bounds": bounds, "flags_dict": flags_dict},
-                                   filepath=sampler_file, resume=True)
-        return nautilusToResults(sampler)
-    return dynesty.DynamicNestedSampler.restore(sampler_file).results
 
 
 def saveWakeContainersJson(wake_containers, out_json_path, metadata=None):
@@ -7133,7 +6995,7 @@ def setupDynestyOutputDir(out_folder, obs_data, bounds, flags_dict, fixed_values
         if dynesty_file_in_output_path == dynesty_file:
             # try to change the name of dynesty_file to {base_name}_initial_priors.dynesty
             try:
-                new_dynesty_file = os.path.join(out_folder, f"{base_name}_initial_priors{SAMPLER_FILE_EXT[samplerFromFile(dynesty_file)]}")
+                new_dynesty_file = os.path.join(out_folder, f"{base_name}_initial_priors.dynesty")
                 os.rename(dynesty_file, new_dynesty_file)
                 print(f"Renamed dynesty file to {new_dynesty_file} for updating priors.")
                 # dynesty_file_in_output_path = new_dynesty_file
@@ -7211,7 +7073,8 @@ def updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, b
     print(f"Attempting to load dynesty results from: {dynesty_file}")
     # try:
     try:
-        dsampler_results = restoreSamplerResults(dynesty_file, bounds, flags_dict)
+        dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
+        dsampler_results = dsampler.results
     except Exception as e:
         # try to load the backup dynesty file if present {base_name}_posterior_backup.pkl.gz
         backup_dynesty_file = os.path.join(dynesty_folder, f"{base_name}_posterior_backup.pkl.gz")
@@ -7893,8 +7756,7 @@ class autoSetupDynestyFiles:
     """
 
     def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False,
-                 pick_position=0, extraprior_file="", noise_wake_limit=-100, region_method="threshold",
-                 sampler="dynesty"):
+                 pick_position=0, extraprior_file="", noise_wake_limit=-100, region_method="threshold"):
         """ Initialize the autoSetupDynestyFiles class.
 
         Arguments:
@@ -7908,7 +7770,6 @@ class autoSetupDynestyFiles:
             pick_position: [int] Index to pick specific position/station data. 0 by default.
             extraprior_file: [str] Path to an extra prior file. Empty string by default.
             noise_wake_limit: [int] Threshold for wake noise computation (default -100 m).
-            sampler: [str] Nested sampler backend, 'dynesty' or 'nautilus'. Sets the checkpoint file suffix.
         """
         self.input_dir_or_file = input_dir_or_file
         self.prior_file = prior_file
@@ -7919,7 +7780,6 @@ class autoSetupDynestyFiles:
         self.extraprior_file = extraprior_file  # to be filled if found
         self.noise_wake_limit = noise_wake_limit  # to be filled if found in prior file
         self.region_method = region_method  # ADDED: 'threshold' (default) or 'adaptive'
-        self.file_ext = SAMPLER_FILE_EXT[sampler]  # '.dynesty' or '_nautilus.h5'
 
         # Prepare placeholders
         self.base_names = []        # [base_name, ...] (no extension)
@@ -8314,10 +8174,10 @@ class autoSetupDynestyFiles:
             print("No report .txt file found in the directory")
             report_file = ''
 
-        possible_dynesty = os.path.join(root, file_name_no_ext + self.file_ext)
+        possible_dynesty = os.path.join(root, file_name_no_ext + ".dynesty")
 
         # Check for existing .dynesty in the same folder
-        existing_dynesty_list = [f for f in files if f.endswith(self.file_ext)]
+        existing_dynesty_list = [f for f in files if f.endswith(".dynesty")]
         if existing_dynesty_list:
             # There is at least one .dynesty in this folder
             if os.path.exists(possible_dynesty) or (os.path.basename(possible_dynesty) in existing_dynesty_list):
@@ -8429,8 +8289,8 @@ class autoSetupDynestyFiles:
 
         """
         folder = os.path.dirname(existing_dynesty_path)
-        ext = self.file_ext
-        base = os.path.basename(existing_dynesty_path)[:-len(ext)]
+        base = os.path.splitext(os.path.basename(existing_dynesty_path))[0]
+        ext = ".dynesty"
 
         counter = 1
         while True:
@@ -9347,18 +9207,8 @@ def priorDynesty(cube, bounds, flags_dict):
     return x
 
 
-def _applyFixedNoise(obs_data, fixed_values):
-    """ Copy fixed noise_lum / noise_lag values from the prior into the observation object. """
-    if 'noise_lum' in fixed_values:
-        obs_data.noise_lum = fixed_values['noise_lum']
-        print("Fixed noise in luminosity to:", fixed_values['noise_lum'])
-    if 'noise_lag' in fixed_values:
-        obs_data.noise_lag = fixed_values['noise_lag']
-        print("Fixed noise in lag to:", fixed_values['noise_lag'])
-
-
-def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="",
-                   pool_MPI=None, wake_data=None, print_progress=True, n_live=None):
+def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="", 
+                   pool_MPI=None, wake_data=None, print_progress=True):
     """ Main function to run the Dynesty nested sampling.
 
     Arguments:
@@ -9388,10 +9238,18 @@ def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_c
     ndim = len(var_names)
     print("Number of parameters:", ndim)
 
-    _applyFixedNoise(obs_data, fixed_values)
-
-    # Only override dynesty's default number of live points if requested
-    nlive_kwargs = {} if n_live is None else {"nlive": n_live}
+    # first chack if fix_var is not {}
+    if fixed_values:
+        var_names_fix = list(fixed_values.keys())
+        # check if among the noise_lum and noise_lag there is a "noise_lum" and if there is a "noise_lag"
+        if 'noise_lum' in var_names_fix:
+            # if so, set the noise_lum to the fixed value
+            obs_data.noise_lum = fixed_values['noise_lum']
+            print("Fixed noise in luminosity to:", fixed_values['noise_lum'])
+        if 'noise_lag' in var_names_fix:
+            # if so, set the noise_lag to the fixed value
+            obs_data.noise_lag = fixed_values['noise_lag']
+            print("Fixed noise in lag to:", fixed_values['noise_lag'])
 
     # Master-only: do any setup that requires file I/O
     if (pool_MPI is None) or (pool_MPI.is_master()):
@@ -9413,7 +9271,7 @@ def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_c
                                                     logl_args=(obs_data, flags_dict, fixed_values, 20, wake_data),
                                                     ptform_args=(bounds, flags_dict),
                                                     sample='rslice', # nlive=1000,
-                                                    pool = pool_MPI, **nlive_kwargs)
+                                                    pool = pool_MPI)
             dsampler.run_nested(print_progress=print_progress, checkpoint_file=dynesty_file)
             # dlogz_init=0.001,
         else:
@@ -9441,7 +9299,7 @@ def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_c
                 dsampler = dynesty.DynamicNestedSampler(pool.loglike,
                                                         pool.prior_transform, ndim,
                                                         sample='rslice', # nlive=1000,
-                                                        pool = pool, **nlive_kwargs)
+                                                        pool = pool)
                 dsampler.run_nested(print_progress=print_progress, checkpoint_file=dynesty_file) #  dlogz_init=0.001,
 
         else:
@@ -9467,76 +9325,6 @@ def dynestyMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, n_c
     # plotDynestyResults(dsampler.results, obs_data, flags_dict, fixed_values, output_folder, base_name, log_file_path, n_core, save_backup=save_backup, finish_run=True)
 
     return dsampler
-
-
-def nautilusMainRun(nautilus_file, obs_data, bounds, flags_dict, fixed_values, n_core=1, output_folder="",
-                    pool_MPI=None, wake_data=None, print_progress=True, n_live=None):
-    """ Main function to run the nautilus importance nested sampling, drop-in alternative to dynestyMainRun.
-
-    Uses the same prior transform (priorDynesty) and likelihood (logLikelihoodDynesty) as dynesty.
-    The run is checkpointed to nautilus_file (HDF5) and resumed from it if the file already exists.
-
-    Arguments:
-        nautilus_file: [str] Path to the nautilus checkpoint file (must end in .h5).
-        obs_data: [object] Observation object containing observed data.
-        bounds: [list] List of tuples defining bounds or parameters for each variable.
-        flags_dict: [dict] Dictionary of flags specifying the distribution type for each variable.
-        fixed_values: [dict] Dictionary of fixed variables.
-
-    Keyword arguments:
-        n_core: [int] Number of CPU cores to use. 1 by default.
-        output_folder: [str] Path to the output directory. Empty string by default.
-        pool_MPI: [object] MPI pool object for parallel execution. None by default.
-        wake_data: [object] Wake data object for wake modeling. None by default.
-        print_progress: [bool] Print nautilus progress. True by default.
-        n_live: [int] Number of live points. None uses the nautilus default (2000).
-
-    Return:
-        results: [RestoredDynestyResults] dynesty-like results object built from the nautilus posterior.
-
-    """
-
-    print("Starting nautilus run...")
-    ndim = len(flags_dict)
-    print("Number of parameters:", ndim)
-
-    _applyFixedNoise(obs_data, fixed_values)
-
-    if os.path.exists(nautilus_file):
-        print("Resuming previous run:")
-        print('Warning: make sure the number of parameters and the bounds are the same as the previous run!')
-    else:
-        print("Starting new run:")
-
-    if pool_MPI is not None:
-        print("Using MPI for parallelization of multiple nodes")
-        pool = pool_MPI
-    else:
-        # An integer makes nautilus build a multiprocessing pool that caches the likelihood (and its args) in each worker
-        pool = n_core
-
-    nlive_kwargs = {} if n_live is None else {"n_live": n_live}
-    # nautilus puts positional *_args before the point (dynesty puts them after), so pass keywords
-    sampler = nautilus.Sampler(priorDynesty, logLikelihoodDynesty, n_dim=ndim,
-                               prior_kwargs={"bounds": bounds, "flags_dict": flags_dict},
-                               likelihood_kwargs={"obs_metsim_obj": obs_data, "flags_dict": flags_dict,
-                                                  "fix_var": fixed_values, "timeout": 20, "wake_data": wake_data},
-                               pool=pool, filepath=nautilus_file, resume=True, **nlive_kwargs)
-    try:
-        sampler.run(verbose=print_progress)
-    finally:
-        if pool_MPI is None and sampler.pool_l is not None:
-            sampler.pool_l.pool.close()
-            sampler.pool_l.pool.join()
-
-    print('SUCCESS: nautilus results ready!\n')
-
-    if output_folder != os.path.dirname(nautilus_file):
-        print("Copying nautilus file to output folder...")
-        shutil.copy(nautilus_file, output_folder)
-        print("nautilus file copied to:", output_folder)
-
-    return nautilusToResults(sampler)
 
 
 
@@ -9614,13 +9402,6 @@ if __name__ == "__main__":
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")
 
-    arg_parser.add_argument('--sampler', metavar='SAMPLER', type=str, choices=tuple(SAMPLER_FILE_EXT), default="dynesty",
-        help="Nested sampling backend: 'dynesty' (default, checkpoint .dynesty) or 'nautilus' (checkpoint _nautilus.h5). "
-        "All other inputs and outputs are the same for both.")
-
-    arg_parser.add_argument('--nlive', metavar='NLIVE', type=int, default=None,
-        help="Number of live points. Default = sampler default (dynesty 500, nautilus 2000).")
-
     # Optional: suppress warnings
     # warnings.filterwarnings('ignore')
 
@@ -9635,7 +9416,6 @@ if __name__ == "__main__":
                           use_all_cameras=cml_args.all_cameras, only_plot=cml_args.only_plot, cores=cml_args.cores,
                           pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior, save_backup=cml_args.not_backup,
                           use_wake_data=cml_args.use_wake_data, noise_wake_limit=cml_args.noise_wake_limit, region_method=cml_args.region_method,
-                          priorFile_to_update_with_posteriors=cml_args.priorposteriorupdate, print_progress=cml_args.print_progress,
-                          sampler=cml_args.sampler, n_live=cml_args.nlive)
+                          priorFile_to_update_with_posteriors=cml_args.priorposteriorupdate, print_progress=cml_args.print_progress)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

@@ -27,6 +27,14 @@ Usage:
 Directories are searched recursively for *_report.txt (the *_curved_report.txt
 files are used instead with --curved).
 
+A directory without any report falls back to its single-camera SkyFit2 *.ecsv files. One camera
+gives directions only; the range comes from intersecting each sightline with the object's orbital
+plane (SpaceOps2025-0462, eqs. 1-3), taken from --tle FILE or --orbit_state X Y Z VX VY VZ (J2000):
+    python sara_vs_obs.py --sara_dir AXIOM-3/DRAMA-AXIOM-3 --reports AXIOM-3/observation \
+        --orbit_state -3528.417 -2193.150 4921.362 4.6915 -4.9656 1.0471
+Those heights are conditional on the assumed plane, and with one station the anchor is never
+"well constrained" (no convergence angle).
+
 Steps
  1. SARA: merge every component's AeroThermalHistory across compound phases (by
     UUID), attach lat/lon/downrange from the matching Trajectory file, and find
@@ -59,10 +67,21 @@ Steps
     [--winds_type auto:gfs|auto:era5|...]; without it the atmosphere is calm.
 """
 import argparse
+import os
 import re
+import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# Started without `conda activate` (e.g. the VS Code debugger), the env's DLL folders are not on PATH
+# and astropy/erfa die silently with Windows error 0xC06D007F: add them before numpy & co. load.
+if os.name == "nt":
+    for _d in ("", "Library/mingw-w64/bin", "Library/usr/bin", "Library/bin"):
+        os.environ["PATH"] = os.path.join(sys.prefix, _d) + os.pathsep + os.environ.get("PATH", "")
+    _proj = Path(sys.prefix, "Library/share/proj")
+    if _proj.is_dir():
+        os.environ.setdefault("PROJ_LIB", str(_proj))
 
 import numpy as np
 import pandas as pd
@@ -174,15 +193,102 @@ def load_report(path):
     return out, stations
 
 
+def orbit_normal_gcrs(time, tle=None, state=None):
+    """Unit orbital angular momentum h = r x v in GCRS (~J2000), from a TLE file or a J2000 state.
+
+    tle: file of two-line element sets; the last epoch <= time is used (the first one if all are later).
+    state: x y z [km] vx vy vz [km/s] in J2000; only the plane matters, so its epoch is irrelevant.
+    """
+    if state is not None:
+        h = np.cross(state[:3], state[3:])
+        return h / np.linalg.norm(h), "J2000 state vector " + " ".join(f"{x:g}" for x in state)
+    from sgp4.api import Satrec, SGP4_ERRORS
+    from astropy.coordinates import TEME, GCRS, CartesianRepresentation, CartesianDifferential
+    import astropy.units as u
+    lines = [l.strip() for l in Path(tle).read_text().splitlines()]
+    sats = [Satrec.twoline2rv(a, b) for a, b in zip(lines, lines[1:]) if a.startswith("1 ") and b.startswith("2 ")]
+    if not sats:
+        raise SystemExit(f"no two-line element set in {tle}")
+    sats.sort(key=lambda s: s.jdsatepoch + s.jdsatepochF)
+    before = [s for s in sats if s.jdsatepoch + s.jdsatepochF <= time.jd]
+    sat = (before or sats)[-1]
+    err, r, v = sat.sgp4(time.jd1, time.jd2)
+    if err:
+        raise SystemExit(f"SGP4 failed for {tle}: {SGP4_ERRORS[err]}")
+    teme = TEME(CartesianRepresentation(r * u.km, differentials=CartesianDifferential(v * u.km / u.s)),
+                obstime=time)
+    g = teme.transform_to(GCRS(obstime=time)).cartesian
+    h = np.cross(g.xyz.to_value(u.km), g.differentials["s"].d_xyz.to_value(u.km / u.s))
+    age = sat.jdsatepoch + sat.jdsatepochF - time.jd
+    return h / np.linalg.norm(h), f"TLE {Path(tle).name} (NORAD {sat.satnum}, epoch {age:+.2f} d from the observation)"
+
+
+def load_ecsv(path, tle=None, state=None):
+    """Single-camera SkyFit2 ECSV -> positions by intersecting each sightline with the orbital plane.
+
+    One camera gives only directions; the range is fixed by assuming the object lies in the plane of
+    its orbit (normal h through the Earth's centre), SpaceOps2025-0462 eqs. (1)-(3):
+        r_i = R_i + rho_i l_i,   h . r_i = 0   ->   rho_i = -(h . R_i) / (h . l_i)
+    R_i: camera position (GCRS), l_i: J2000 RA/Dec sightline. Heights are therefore conditional on
+    the assumed plane (TLE or state vector): an error in it moves the points along the sightlines.
+    The ECSV 'altitude' column is the elevation angle, not a height.
+    """
+    from astropy.time import Time
+    from astropy.coordinates import EarthLocation, GCRS, ITRS, CartesianRepresentation
+    import astropy.units as u
+    if tle is None and state is None:
+        raise SystemExit(f"{path} is a single-camera ECSV: its range needs an orbital plane, "
+                         "give --tle FILE or --orbit_state X Y Z VX VY VZ (J2000 km, km/s)")
+    # SkyFit2's ECSV datatype header does not match its columns (astropy rejects it): parse by hand
+    text = Path(path).read_text()
+    m = {k: v.strip("'\" ") for k, v in re.findall(r"^#\s*-\s*\{(\w+):\s*(.*?)\}\s*$", text, re.M)}
+    for k in ("obs_latitude", "obs_longitude", "obs_elevation"):
+        m[k] = float(m[k])
+    tab = pd.read_csv(path, comment="#", skipinitialspace=True)
+    t = Time(list(tab["datetime"]), scale="utc")
+    site = EarthLocation.from_geodetic(m["obs_longitude"] * u.deg, m["obs_latitude"] * u.deg,
+                                       m["obs_elevation"] * u.m)
+    R = site.get_gcrs(t).cartesian.xyz.to_value(u.km).T
+    ra, dec = np.radians(np.asarray(tab["ra"], float)), np.radians(np.asarray(tab["dec"], float))
+    los = np.stack((np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)), axis=-1)
+    h, plane = orbit_normal_gcrs(t[0], tle, state)
+    rho = -(R @ h) / (los @ h)
+    if np.any(rho <= 0):
+        raise SystemExit(f"{path}: sightlines meet the orbital plane behind the camera; wrong TLE/state?")
+    r = R + rho[:, None] * los
+    geo = GCRS(CartesianRepresentation(r.T * u.km), obstime=t).transform_to(ITRS(obstime=t)).earth_location.geodetic
+    step = np.linalg.norm(np.diff(r, axis=0), axis=1)
+    dt = np.diff(t.jd) * 86400
+    cam = str(m.get("camera_id", Path(path).stem))
+    out = pd.DataFrame({
+        "station": cam, "jd": t.jd,
+        "lat": geo.lat.deg, "lon": geo.lon.deg, "h": geo.height.to_value(u.km),
+        "absmag": np.asarray(tab["mag_data"], float) - 5 * np.log10(rho / 100),  # range-normalised to 100 km
+        "length": np.r_[0, np.cumsum(step)],
+        "v": np.r_[0, step / dt],  # point-to-point inertial speed (first point has none, as in the reports)
+        "range": rho,
+    }).sort_values("jd").reset_index(drop=True)
+    out.attrs.update(qconv=np.nan, n_stations=1, obs_ang_err_deg=np.nan, plane=plane)
+    print(f"{Path(path).name}: single camera {cam}, range from the orbital plane of the {plane}: "
+          f"{out.h.max():.2f} -> {out.h.min():.2f} km, {out.lat.iloc[0]:.3f} {out.lon.iloc[0]:.3f} -> "
+          f"{out.lat.iloc[-1]:.3f} {out.lon.iloc[-1]:.3f}, "
+          f"mean speed {out.length.iloc[-1] / ((t.jd[-1] - t.jd[0]) * 86400):.2f} km/s")
+    return out, {cam: (m["obs_latitude"], m["obs_longitude"])}
+
+
 def find_reports(inputs, curved):
+    """*_report.txt under every input; a folder without any falls back to its single-camera *.ecsv."""
     reports = []
     for p in map(Path, inputs):
         if p.is_file():
             reports.append(p)
             continue
-        for f in sorted(p.rglob("*_report.txt")):
-            if ("_curved_" in f.name) == curved:
-                reports.append(f)
+        found = [f for f in sorted(p.rglob("*_report.txt")) if ("_curved_" in f.name) == curved]
+        if not found:
+            found = sorted(p.rglob("*.ecsv"))
+            if found:
+                print(f"no *_report.txt in {p}; using single-camera ECSV: {', '.join(f.name for f in found)}")
+        reports += found
     return reports
 
 
@@ -871,7 +977,72 @@ def scale_bar(ax, frac=0.2, n_seg=4):
     ax.text(left + w / 2, bottom + h + 0.006, label, transform=ax.transAxes,
             ha="center", va="bottom", fontsize=8, zorder=22)
 
-def plot_ground_map(components, segments, recorded, stations, chain, track, impacts, survivors, out):
+def parse_coord(s):
+    """Decimal or D M S angle with an optional sign or N/S/E/W: '51.10° N', '-103.61', '103 36 36W'."""
+    if pd.isna(s):
+        return np.nan
+    s = str(s).strip().upper()
+    nums = [float(x) for x in re.findall(r"\d+(?:\.\d*)?|\.\d+", s)]
+    if not nums:
+        return np.nan
+    val = sum(x / 60 ** k for k, x in enumerate(nums[:3]))
+    return -val if s.startswith("-") or re.search(r"[SW]\s*$|^[SW]", s) else val
+
+
+def load_recovered(path):
+    """Recovered debris (name, lat, lon, mass, size, material) from a CSV of any delimiter/encoding.
+
+    Columns are found by name (latitude/lat, longitude/lon/long, mass, size/dimension, material,
+    name/id); mass, size and material are optional and kept as given."""
+    raw = Path(path).read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252")
+    import io
+    df = pd.read_csv(io.StringIO(text), sep=None, engine="python", dtype=str)
+    df.columns = [c.strip() for c in df.columns]
+    col = lambda *keys: next((c for c in df.columns if c.lower().startswith(keys)), None)
+    lat, lon = col("lat"), col("lon", "long")
+    if lat is None or lon is None:
+        raise SystemExit(f"{path}: needs latitude and longitude columns, found {list(df.columns)}")
+    name, mass, size, mat = col("name", "id", "piece"), col("mass"), col("size", "dim"), col("material")
+    get = lambda c: df[c].fillna("").str.strip() if c else pd.Series("", index=df.index)
+    out = pd.DataFrame({"name": get(name).where(get(name) != "", [f"piece {i + 1}" for i in df.index]),
+                        "lat": df[lat].map(parse_coord), "lon": df[lon].map(parse_coord),
+                        "mass": get(mass), "size": get(size), "material": get(mat)})
+    bad = out.lat.isna() | out.lon.isna()
+    if bad.any():
+        print(f"WARNING: {path}: skipped rows without a readable position: {', '.join(out.name[bad])}")
+    return out[~bad].reset_index(drop=True)
+
+
+def draw_recovered(ax, recovered, unwrap, tr, labels=True):
+    """Recovered pieces as numbered green diamonds; the numbers are listed in a corner box with
+    whatever of mass/size/material is known (pieces are often too close for labels on the map)."""
+    if recovered is None or recovered.empty:
+        return
+    ax.plot(unwrap(recovered.lon), recovered.lat, "D", color="limegreen", mec="k", ms=7, zorder=8,
+            label=f"recovered debris ({len(recovered)})", **tr)
+    if not labels:
+        return
+    # pieces found at the same place share one number label
+    for (la, lo), g in recovered.groupby([recovered.lat.round(4), recovered.lon.round(4)], sort=False):
+        ax.text(unwrap(lo), la, " " + ",".join(str(i + 1) for i in g.index), fontsize=7, fontweight="bold",
+                va="bottom", zorder=9, clip_on=True, **tr)
+    lines = []
+    for i, p in recovered.iterrows():
+        m = f"{p.mass} kg" if re.fullmatch(r"[\d.]+", p.mass) else p.mass
+        extra = ", ".join(x for x in (m, p["size"], p.material) if x)
+        lines.append(f"{i + 1}: {p['name']}" + (f" ({extra})" if extra else ""))
+    # below the map (clear of the tick labels) so the box can never hide the pieces themselves
+    ax.text(0.0, -0.13, "Recovered debris\n" + "\n".join(lines), transform=ax.transAxes, fontsize=6.5,
+            va="top", ha="left", zorder=10, clip_on=False,
+            bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "limegreen"})
+
+
+def plot_ground_map(components, segments, recorded, stations, chain, track, impacts, survivors, out,
+                    recovered=None):
     rec_groups = set(recorded.group) if len(recorded) else set()
     colors = group_colors(rec_groups)
     fig = plt.figure(figsize=(14, 9))
@@ -922,9 +1093,11 @@ def plot_ground_map(components, segments, recorded, stations, chain, track, impa
     if len(survivors):
         ax.plot(unwrap(survivors.lon), survivors.lat, "*", color="red", ms=10, zorder=6,
                 label="dark-flight start points of the survivors", **tr)
+    draw_recovered(ax, recovered, unwrap, tr)
+    rec_lat, rec_lon = (recovered.lat, recovered.lon) if recovered is not None else ([], [])
 
-    lat_all = np.r_[obs.lat, all_lat, impacts.lat]  # SARA impacts show the offset of the simulation
-    lon_all = unwrap(np.r_[obs.lon, all_lon, impacts.lon])
+    lat_all = np.r_[obs.lat, all_lat, impacts.lat, rec_lat]  # SARA impacts show the offset of the simulation
+    lon_all = unwrap(np.r_[obs.lon, all_lon, impacts.lon, rec_lon])
     ext = [lon_all.min() - 3, lon_all.max() + 3, lat_all.min() - 3, lat_all.max() + 3]
     if ccrs:
         ax.set_extent(ext, crs=ccrs.PlateCarree())
@@ -1179,7 +1352,7 @@ def write_strewnfield(summary, impacts, run_id, settings, out):
     return hlat, hlon, area
 
 
-def plot_strewnfield(survivors, impacts, nominal, segments, stations, track, strewn, out):
+def plot_strewnfield(survivors, impacts, nominal, segments, stations, track, strewn, out, recovered=None):
     """Observed track + dark-flight start points (left) and a zoom on the strewn field (right)."""
     obs = pd.concat(segments.values())
     lon_ref = impacts.lon.mean()
@@ -1229,7 +1402,9 @@ def plot_strewnfield(survivors, impacts, nominal, segments, stations, track, str
             label="dark-flight start points", **tr)
     ax.fill(unwrap(strewn[1]), strewn[0], color="red", alpha=0.3, label="strewn field", **tr)
     ax.plot([], [], "^", color="tab:blue", label="stations")
-    extent(ax, np.r_[obs.lat, impacts.lat], np.r_[obs.lon, impacts.lon], 2)
+    draw_recovered(ax, recovered, unwrap, tr, labels=False)
+    rec_lat, rec_lon = (recovered.lat, recovered.lon) if recovered is not None else ([], [])
+    extent(ax, np.r_[obs.lat, impacts.lat, rec_lat], np.r_[obs.lon, impacts.lon, rec_lon], 2)
     ax.set_title("Observed re-entry and dark-flight start points")
     ax.legend(fontsize=8, loc="upper left")
 
@@ -1247,8 +1422,9 @@ def plot_strewnfield(survivors, impacts, nominal, segments, stations, track, str
         ax.plot(unwrap(imp.lon), imp.lat, "o", mec="k", mew=0.6, ms=7, color=col[s.component],
                 label=f"{s.component.replace('_', ' ')} ({s.mass_kg:.3g} kg)", **tr)
     ax.plot(unwrap(survivors.lon), survivors.lat, "*", color="red", ms=9, zorder=6, **tr)
-    zlat = np.r_[impacts.lat, survivors.lat]
-    zlon = np.r_[impacts.lon, survivors.lon]
+    draw_recovered(ax, recovered, unwrap, tr)
+    zlat = np.r_[impacts.lat, survivors.lat, rec_lat]
+    zlon = np.r_[impacts.lon, survivors.lon, rec_lon]
     extent(ax, zlat, zlon, 0.1 * max(np.ptp(zlat), np.ptp(unwrap(zlon)), 0.5))
     ax.set_title("Strewn field (lines: nominal dark flight from the start star; dots: Monte Carlo)")
     ax.legend(fontsize=7, loc="best")
@@ -1426,6 +1602,14 @@ def main():
     ap.add_argument("--reports", default=[r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\skyfit_traj"], nargs="+", help="*_report.txt files or folders containing them")
     ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\Wind", help="output folder (default: SARA folder)")
     ap.add_argument("--curved", action="store_true", help="use *_curved_report.txt")
+    ap.add_argument("--tle", default=None,
+                    help="TLE file of the object: its orbital plane gives the range of single-camera *.ecsv "
+                         "observations (used when a --reports folder has no *_report.txt; needs sgp4)")
+    ap.add_argument("--orbit_state", type=float, nargs=6, default=None, metavar=("X", "Y", "Z", "VX", "VY", "VZ"),
+                    help="J2000 position [km] and velocity [km/s] defining the orbital plane instead of --tle")
+    ap.add_argument("--recovered", default=None,
+                    help="CSV of recovered debris (name, latitude, longitude[, mass, size, material]); "
+                         "coordinates as +-decimal, N/S/E/W or D M S; drawn on the maps")
     ap.add_argument("--more_detection_fidelity", "--more-detection-fidelity", action="store_true",
                     help="fit all observations and remap SARA geometry/mass-vs-height; NOT a new ablation run")
     ap.add_argument("--fidelity_degree", type=int, choices=[1, 2, 3], default=2,
@@ -1443,7 +1627,7 @@ def main():
                    help="pieces that never lose mass start dark flight at this speed [km/s] (default 4.5)")
     g.add_argument("--winds_file", default='auto',
                    help="wind profile for the dark flight; 'auto' downloads one with the OpenDarkflight "
-                        "wizard; omitted = calm US Standard Atmosphere")
+                        "wizard; none = calm US Standard Atmosphere")
     g.add_argument("--winds_type", default=None,
                    help="format of --winds_file (wrf, wyoming; default wrf) or, with --winds_file auto, "
                         "the wizard directive (default auto:best; e.g. auto:gfs, auto:era5, auto:radiosonde)")
@@ -1461,6 +1645,8 @@ def main():
     g.add_argument("--sig_wind_speed_rel", type=float, default=0.2, help="1-sigma wind speed, fraction")
     g.add_argument("--sig_wind_dir_deg", type=float, default=10.0, help="1-sigma wind direction [deg]")
     args = ap.parse_args()
+    if args.winds_file and args.winds_file.lower() in ("none", "calm"):
+        args.winds_file = None
     out = Path(args.out or args.sara_dir)
     if args.more_detection_fidelity:
         out = out / "detection_fidelity"
@@ -1471,14 +1657,15 @@ def main():
     run_id, components, chain = load_sara(args.sara_dir)
     reports = find_reports(args.reports, args.curved)
     if not reports:
-        raise SystemExit("no *_report.txt found")
+        raise SystemExit("no *_report.txt or *.ecsv found")
     segments, stations = {}, {}
     for r in reports:
-        seg, st = load_report(r)
+        seg, st = load_ecsv(r, args.tle, args.orbit_state) if r.suffix == ".ecsv" else load_report(r)
         segments[r.parent.parent.name if r.parent.parent.name.startswith("skyfit") else r.stem] = seg
         stations.update(st)
     obs = pd.concat(segments.values())
 
+    recovered = load_recovered(args.recovered) if args.recovered else None
     fidelity_info = None
     if args.more_detection_fidelity:
         try:
@@ -1513,7 +1700,7 @@ def main():
     plot_altitude_downrange(components, segments, recorded, chain, track,
                             out / f"{run_id}.recorded_AltitudeVsDownrange.png")
     plot_ground_map(components, segments, recorded, stations, chain, track, impacts, survivors,
-                    out / f"{run_id}.recorded_GroundMap.png")
+                    out / f"{run_id}.recorded_GroundMap.png", recovered)
     plot_lightcurve_check(components, segments, recorded, chain, anchor, out / f"{run_id}.lightcurve_check.png")
     speeds = plot_velocity_check(components, segments, recorded, chain, out / f"{run_id}.velocity_check.png")
 
@@ -1542,7 +1729,7 @@ def main():
                                          ("rms_cross_km", "rms_height_km", "rms_along_km")})
     strewn = write_strewnfield(summary, df_impacts, run_id, settings, out)
     plot_strewnfield(survivors, df_impacts, nominal, segments, stations, track, strewn,
-                     out / f"{run_id}.strewnfield_map.png")
+                     out / f"{run_id}.strewnfield_map.png", recovered)
 
     # --- summary
     print(f"{run_id}: {len(components)} components, "
@@ -1574,6 +1761,18 @@ def main():
     print(f"\nStrewn field ({wind_desc}): {strewn[2]:.1f} km^2")
     print(summary[["component", "mass_kg", "impact_lat", "impact_lon", "fall_time_s",
                    "sigma_along_km", "sigma_cross_km"]].round(3).to_string(index=False))
+    if recovered is not None:
+        # distance to the nearest nominal impact, and inside the strewn-field hull?
+        from matplotlib.path import Path as MplPath
+        nom = df_impacts[df_impacts.clone < 0]
+        inside = MplPath(np.c_[strewn[1], strewn[0]]).contains_points(np.c_[recovered.lon, recovered.lat])
+        print(f"\nRecovered debris ({args.recovered}):")
+        for (_, p), ins in zip(recovered.iterrows(), inside):
+            d = gc_distance(p.lat, p.lon, nom.lat.values, nom.lon.values)
+            info = ", ".join(x for x in (p.mass and f"{p.mass} kg", p["size"], p.material) if x)
+            print(f"  {p['name']}: {p.lat:.4f}, {p.lon:.4f}{f' ({info})' if info else ''} - "
+                  f"{d.min():.1f} km from the nominal impact of {nom.component.values[d.argmin()]}, "
+                  f"{'inside' if ins else 'outside'} the strewn field")
     print(f"\nWrote outputs to {out}")
 
 

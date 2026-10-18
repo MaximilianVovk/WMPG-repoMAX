@@ -18,7 +18,7 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from DynNestSapl_metsim import *
+from DynestyMetSim import * #autoSetupDynestyFiles
 
 import matplotlib.colors as mcolors
 from itertools import combinations
@@ -106,7 +106,8 @@ variable_map = {
     'main_mass_exhaustion_ht_backup': r"$h_{end}$ [km]",
     'main_bottom_ht_backup': r"$h_{bot}$ [km]",
     'noise_lag': r"$\sigma_{lag}$ [m]",
-    'noise_lum': r"$\sigma_{lum}$ [W]"
+    'noise_lum': r"$\sigma_{lum}$ [W]",
+    'noise_wake': r"$\sigma_{wake}$ [ADU]"
 }
 
 # Mapping of original variable names to LaTeX-style labels
@@ -152,7 +153,8 @@ variable_map_plot = {
     'main_mass_exhaustion_ht_backup': r"$h_{end}$ [km]",
     'main_bottom_ht_backup': r"$h_{bot}$ [km]",
     'noise_lag': r"$\sigma_{lag}$ [m]",
-    'noise_lum': r"$\sigma_{lum}$ [W]"
+    'noise_lum': r"$\sigma_{lum}$ [W]",
+    'noise_wake': r"$\sigma_{wake}$ [ADU]"
 }
 
 fmt_kind = {
@@ -197,7 +199,8 @@ fmt_kind = {
     'main_mass_exhaustion_ht_backup': "fixed2",
     'main_bottom_ht_backup': "fixed2",
     'noise_lag': "sci",
-    'noise_lum': "sci"
+    'noise_lum': "sci",
+    'noise_wake': "sci"
 }
 
 # create a txt file where you save averithing that has been printed
@@ -2796,6 +2799,94 @@ def run_single_eeu(sim_num_and_data):
         return (sim_num, eeucs, eeum, np.nan, np.nan)
 
 
+def resolve_plot_run_parameters(dsampler, current_flags, fixed_values, dynesty_file):
+    """Recover the sampled column order before combining runs with different priors.
+
+    Prefer metadata saved with the fit. A newer .prior file can contain an
+    additional noise_wake parameter that an older checkpoint never sampled.
+    Never truncate physical parameters to make a dimension mismatch disappear.
+    """
+    samples = np.asarray(dsampler.results.samples)
+    if samples.ndim != 2:
+        raise ValueError(f"{dynesty_file}: expected a 2-D posterior sample array")
+    n_dim = samples.shape[1]
+
+    def validated(flags, fixed, names=None):
+        if not isinstance(flags, dict) or not isinstance(fixed, dict):
+            return None
+        names = list(flags) if names is None else list(names)
+        if (len(names) != n_dim or len(set(names)) != n_dim
+                or any(name not in flags for name in names)):
+            return None
+        return {name: flags[name] for name in names}, fixed.copy()
+
+    # Dynesty's likelihood wrapper stores positional/keyword arguments for
+    # serial/MPI runs. Pool-backed checkpoints may not retain these arguments.
+    likelihood = getattr(dsampler, 'loglikelihood', None)
+    for wrapper in (likelihood, getattr(likelihood, 'loglikelihood', None)):
+        args = getattr(wrapper, 'args', ())
+        kwargs = getattr(wrapper, 'kwargs', {}) or {}
+        result = None
+        if isinstance(args, (list, tuple)) and len(args) >= 3:
+            result = validated(args[1], args[2])
+        if result is None:
+            result = validated(kwargs.get('flags_dict'),
+                               kwargs.get('fix_var', kwargs.get('fixed_values')))
+        if result is not None:
+            if list(result[0]) != list(current_flags):
+                print(f"{os.path.basename(dynesty_file)}: using saved sampler "
+                      f"parameter order ({n_dim} columns): {list(result[0])}")
+            return result
+
+    folder = os.path.dirname(dynesty_file) or '.'
+    backup_paths = [os.path.join(folder, name) for name in os.listdir(folder)
+                    if name.endswith('_posterior_backup.pkl.gz')]
+    # Do not choose arbitrarily between backups from different fits.
+    if len(backup_paths) == 1:
+        try:
+            with gzip.open(backup_paths[0], 'rb') as handle:
+                backup = pickle.load(handle)
+            data = backup.get('dynesty', {})
+            result = validated(data.get('flags_dict'), data.get('fixed_values'),
+                               data.get('variables'))
+            # Check sample identity using log-likelihoods: backup samples may
+            # already be transformed to physical units, unlike the checkpoint.
+            saved_logl = np.asarray(data.get('logl', []), dtype=float)
+            run_logl = np.asarray(dsampler.results.logl, dtype=float)
+            same_run = (saved_logl.shape == run_logl.shape
+                        and np.array_equal(saved_logl, run_logl, equal_nan=True))
+            if result is not None and same_run:
+                if list(result[0]) != list(current_flags):
+                    print(f"{os.path.basename(dynesty_file)}: using posterior-backup "
+                          f"parameter order ({n_dim} columns): {list(result[0])}")
+                return result
+        except (OSError, EOFError, pickle.UnpicklingError, AttributeError,
+                TypeError, ValueError) as exc:
+            print(f"Could not recover parameter metadata from backup: {exc}")
+
+    result = validated(current_flags, fixed_values)
+    if result is not None:
+        return result
+
+    names = list(current_flags)
+    # Wake profiles do not imply that a scalar noise_wake was sampled: the
+    # likelihood may use fixed or per-height noise. This narrow fallback assumes
+    # only the trailing noise_wake label is extra, and reports that assumption.
+    # It does not disable wake information or change the fitted posterior.
+    if len(names) == n_dim + 1 and names[-1] == 'noise_wake':
+        print(f"WARNING: {os.path.basename(dynesty_file)} has {n_dim} sample "
+              f"columns but {len(names)} prior labels. Assuming the extra trailing "
+              "noise_wake was not sampled; excluding only its posterior column. "
+              "Wake information already used in the fit is retained.")
+        return {name: current_flags[name] for name in names[:-1]}, fixed_values.copy()
+
+    raise ValueError(
+        f"{dynesty_file}: {n_dim} sample columns but {len(names)} prior labels "
+        f"({names}). Could not recover a matching saved parameter order. "
+        "Use the original .prior or a matching posterior backup for this fit."
+    )
+
+
 def align_dynesty_samples(dsampler, all_variables, current_flags):
     """
     Aligns dsampler samples to the full list of all variables by padding missing variables with NaN.
@@ -2805,6 +2896,8 @@ def align_dynesty_samples(dsampler, all_variables, current_flags):
     # because the raw per-event samples are converted again later in the main loop.
     samples = np.array(dsampler.results['samples'], dtype=float, copy=True)
     weights = dsampler.results.importance_weights()
+    if samples.ndim != 2 or samples.shape[1] != len(current_flags):
+        raise ValueError("Posterior columns must match the resolved per-fit labels")
     n_samples = samples.shape[0]
 
     for i, variable in enumerate(current_flags):
@@ -3190,7 +3283,7 @@ def summarize_from_cornerplot(results, variables, labels_plot, smooth=0.02):
         x_valid = x[mask]
         w_valid = w[mask]
         if x_valid.size == 0:
-            rows.append((var, lab, *([np.nan]*5)))
+            rows.append((var, lab, *([np.nan]*6)))
             continue
         # renormalize
         w_valid /= np.sum(w_valid)
@@ -3355,15 +3448,15 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
     else:
 
         # Use the class to find .dynesty, load prior, and decide output folders
-        finder = find_dynestyfile_and_priors(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=False,pick_position=0)
+        finder = autoSetupDynestyFiles(input_dir_or_file=input_dirfile,prior_file="",resume=True,output_dir=input_dirfile,use_all_cameras=False,pick_position=0)
 
         all_label_sets = []  # List to store sets of labels for each file
         variables = []  # List to store distributions for each file
-        flags_dict_total = {}  # Dictionary to store flags for each file
+        run_parameters = {}  # Resolved metadata keyed by checkpoint path
         num_meteors = len(finder.base_names)  # Number of meteors
         for i, (base_name, dynesty_info, prior_path, out_folder) in enumerate(zip(finder.base_names,finder.input_folder_file,finder.priors,finder.output_folders)):
             dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
-            obs_data = finder.observation_instance(base_name)
+            obs_data = finder.obsInstance(base_name)
             obs_data.file_name = pickle_file # update the file name in the observation data object
 
             # # Read the raw pickle bytes
@@ -3379,12 +3472,16 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             # with open(json_file, "w") as f:
             #     json.dump({"dynesty_b64": b64}, f, indent=2)
 
-            # save the lenght of the flags_dict to check if it is the same for all meteors
-            # check if len(flags_dict.keys()) > len(variables) to avoid index error
-            if len(flags_dict.keys()) > len(variables):
-                variables = list(flags_dict.keys())
-                flags_dict_total = flags_dict.copy()
-                bounds_total = bounds.copy()
+            # Resolve each fit before choosing shared axes: wake data may use
+            # sampled, fixed, or per-height noise, with different column counts.
+            sampler_for_metadata = dynesty.DynamicNestedSampler.restore(dynesty_file)
+            flags_dict, fixed_values = resolve_plot_run_parameters(
+                sampler_for_metadata, flags_dict, fixed_values, dynesty_file)
+            run_parameters[dynesty_file] = (flags_dict, fixed_values)
+            del sampler_for_metadata
+            for variable in flags_dict:
+                if variable not in variables:
+                    variables.append(variable)
 
 
         # keep them in the same order distribution_list
@@ -3458,12 +3555,15 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
             print('\n', base_name)
             print(f"Processed {i+1} out of {len(finder.base_names)}")
-            obs_data = finder.observation_instance(base_name)
+            obs_data = finder.obsInstance(base_name)
             obs_data.file_name = pickle_file  # update the file name in the observation data object
             dsampler = dynesty.DynamicNestedSampler.restore(dynesty_file)
             # dsampler = load_dynesty_file(dynesty_file)
 
-            # Align to the union of all variables (padding missing ones with NaN and 0 weights)
+            flags_dict, fixed_values = run_parameters[dynesty_file]
+
+            # Align resolved fitted columns; missing parameters are NaN.
+            # Keep the original posterior weights, including wake constraints.
             samples_aligned, weights_aligned = align_dynesty_samples(dsampler, variables, flags_dict)
 
             output_dir = os.path.dirname(dynesty_file)
@@ -3497,8 +3597,8 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             dynesty_run_results = dsampler.results
             weights = dynesty_run_results.importance_weights()
             w = weights / np.sum(weights)
-            samples = dynesty_run_results.samples
-            ndim_single = len(variables)
+            samples = np.array(dynesty_run_results.samples, dtype=float, copy=True)
+            ndim_single = samples.shape[1]
             sim_num = np.argmax(dynesty_run_results.logl)
 
             # copy the best guess values
@@ -3580,7 +3680,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
 
 
             # set up the observation data object
-            obs_data = finder.observation_instance(base_name)
+            obs_data = finder.obsInstance(base_name)
             obs_data.file_name = pickle_file # update teh file name in the observation data object
 
             # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
@@ -3612,9 +3712,16 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             obs_data.v_kill = 2500
             obs_data.h_kill = 1
 
+            _, _, _, h_beg_wake_default, h_end_wake_default = extractHeightsFromStations(obs_data)
+            diff_height= h_beg_wake_default-h_end_wake_default
+            obs_data.wake_heights = [diff_height*0.9+h_end_wake_default, diff_height*0.7+h_end_wake_default, diff_height*0.5+h_end_wake_default]
+
+
+            obs_data.wake_psf = 5 
+
             # best_guess_obj_plot = run_simulation(guess, obs_data, variables_sing, fixed_values)
 
-            const_nominal = build_const(guess, obs_data, variables_sing, fixed_values)
+            const_nominal = constructConstants(guess, obs_data, variables_sing, fixed_values)
 
             eeucs_curr, eeum_curr = energyReceivedBeforeErosion(const_nominal)
             tot_energy = eeum_curr*const_nominal.m_init
@@ -3660,6 +3767,7 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
             # check if a file that ends in _posterior_backup.pkl.gz is in the folder
             output_dir = os.path.dirname(dynesty_file)
             backup_file = None
+            # backup_small = None  # Do not reuse the previous meteor's backup.
             for name in os.listdir(output_dir):
                 if name.endswith("_posterior_backup.pkl.gz"):
                     backup_file = name
@@ -3773,9 +3881,10 @@ def open_all_shower_data(input_dirfile, output_dir_show, shower_name="", radianc
                     weights_aligned = w_eq.copy()
                     print("Using original Dynesty weights with weighted central-95% backup trimming")
                     # take every column that is not nan and fill the samples_aligned with those values
-                    for i in range(samples_aligned.shape[1]):
-                        if not np.isnan(samples_new_equal[:, i]).all():
-                            samples_aligned[:, i] = np.array(samples_new_equal[:, i])
+                    for local_i, variable in enumerate(variables_sing):
+                        shared_i = variables.index(variable)
+                        if not np.isnan(samples_new_equal[:, local_i]).all():
+                            samples_aligned[:, shared_i] = samples_new_equal[:, local_i]
 
             except Exception as e:
                 print(f"Error in backup file: {e}")
@@ -6139,7 +6248,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     plt.pcolormesh(np.array([size_min_mm_Flynn, size_max_mm_Flynn]), np.r_[3375, 3625], Z, shading="flat", cmap="Purples", norm=norm_Flynn, alpha=0.8)  # choose any cmap
 
     # Optional legend proxy
-    proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none', label="Stratospheric - Flynn and Sutton (1990)*", alpha=0.8)
+    proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none', label="Stratospheric - Flynn and Sutton (1991)*", alpha=0.8)
 
     ###### Fulle et al. (2017)
 
@@ -6707,7 +6816,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
                     label="Stratospheric - Love et al. (1994)")
 
 
-    # --- Flynn and Sutton (1990)* ---
+    # --- Flynn and Sutton (1991)* ---
     norm_Flynn = mcolors.Normalize(
         vmin=0.0,
         vmax=max(arr_w_Flynn.max(), arr_w_Flynn_1.max())
@@ -6736,7 +6845,7 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
     )
 
     proxy_purple = Patch(facecolor=plt.cm.Purples(0.7), edgecolor='none',
-                        label="Stratospheric - Flynn and Sutton (1990)*", alpha=0.8)
+                        label="Stratospheric - Flynn and Sutton (1991)*", alpha=0.8)
 
 
     # # --- Fulle et al. (2017), GIADA ---
@@ -14259,7 +14368,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\6)Wake TEST\Results\ORI-wakefit", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -14307,4 +14416,4 @@ if __name__ == "__main__":
                        tau_corrected, mm_size_corrected, mass_distr, kinetic_energy_all, energy_per_cs_before_erosion_backup, 
                        energy_per_mass_before_erosion_backup, erosion_beg_vel_backup, erosion_beg_mass_backup, erosion_beg_dyn_press_backup, 
                        mass_at_erosion_change_backup, dyn_press_at_erosion_change_backup, main_mass_exhaustion_ht_backup, main_bottom_ht_backup, kc_all,
-                       radiance_plot_flag=True, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot
+                       radiance_plot_flag=False, plot_correl_flag=False, plot_Kikwaya=False, plot_class=False) # cml_args.radiance_plot cml_args.correl_plot

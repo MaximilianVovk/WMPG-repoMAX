@@ -1,15 +1,25 @@
 """
 Re-distribute the density dimension of an IMEM STENVI (.sei) file.
 
-For every (azimuth, elevation, velocity, diameter, latitude) cell the IMEM
-flux is split into the part with rho < RHO_CUT and the part with rho > RHO_CUT
-(1.8 g/cm^3 by default).  The low part is spread over the new density bins
-following lodensity.txt, the high part following hidensity.txt:
+Two IMEM runs of the same case are used:
+  --sei   the 3-density run (0.6-1.8, 1.8-3.0, 3.0-4.2 g/cm^3), which says
+          where (direction / speed / size) the low- and high-density
+          populations are;
+  --sei1  the single-density run (0.6-4.2), whose flux is not biased by the
+          density split and is the flux that gets redistributed.
+Each (azimuth, elevation, velocity, diameter, latitude) cell is flagged from
+the 3-density run: low if it has any flux below RHO_CUT (1.8 g/cm^3 by
+default), otherwise high (cells empty in the 3-density run take the flag of
+their velocity/diameter bin).  Only the presence is used, not the magnitude,
+which IMEM biases with density.  The whole single-density flux F_1 of a cell
+then goes to the density model of its flag (F_lo = F_1 or F_hi = F_1), spread
+over the new density bins following lodensity.txt / hidensity.txt:
 
     F_new[..., k] = F_lo[...] * w_lo[k] + F_hi[...] * w_hi[k]
 
-so the flux in every direction / speed / size bin is unchanged; only the
-density spectrum is replaced.  The new density grid is 0.1 -> 8.0 g/cm^3 in
+so the single-density flux in every direction / speed / size bin is
+unchanged; only the density spectrum is replaced.  With --sei1 "" the
+3-density file's own flux is redistributed instead.  The new density grid is 0.1 -> 8.0 g/cm^3 in
 0.5 steps (16 bins, last one 7.6-8.0), as in the MEM3 -> SEI files.
 
 Size-dependent density (on by default, --no-size-density to disable): as in
@@ -19,7 +29,8 @@ smaller diameter bins the table densities below 4000 kg/m^3 are moved towards
 become w_lo[dia, k] / w_hi[dia, k].
 
 Usage:
-    python imem_newrho.py [--sei IN.sei] [--hi hidensity.txt] [--lo lodensity.txt]
+    python imem_newrho.py [--sei IN_3dens.sei] [--sei1 IN_1dens.sei]
+                          [--hi hidensity.txt] [--lo lodensity.txt]
                           [--out OUT.sei] [--cut 1.8] [--step 0.5]
                           [--size-density 0.15 | --no-size-density]
                           [--density-split 4000] [--ref-diameter 1e-3]
@@ -28,6 +39,8 @@ import argparse
 import os
 
 import numpy as np
+
+from sei_format import NEWLINE, interval_line, normalize_header, spectrum_line, write_distset
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # DEF_SEI = os.path.join(HERE, "IMEM_stenvi_5deg", "sunoriented.sei")
@@ -42,6 +55,8 @@ def read_sei(path):
         for line in f:
             if line.startswith("DISTSET"):
                 rows.append(line)
+                continue
+            if line.startswith("#-<EOF>"):  # re-written after the flux rows
                 continue
             key = line.split(" ", 1)[0]
             if key in edges:
@@ -101,11 +116,14 @@ def read_pdf(path, new_edges, shifts=(0.0,), split=0.0):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--sei", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\IMEM2_stenvi\stenvi_5deg\sunoriented.sei")
+    p.add_argument("--sei", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\IMEM2_stenvi\stenvi_3_vs_1_dens\sunoriented.sei",
+                   help="3-density IMEM run (gives the low/high density split per cell)")
+    p.add_argument("--sei1", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\IMEM2_stenvi\stenvi_3_vs_1_dens\sunoriented_1dens.sei",
+                   help="single-density IMEM run whose flux is redistributed ('' = use the --sei flux)")
     p.add_argument("--hi", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\L2_bodyfix\L2sei_newrho_speedW\hidensity.txt")
     p.add_argument("--lo", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\L2_bodyfix\L2sei_newrho_speedW\lodensity.txt")
-    p.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\IMEM2_stenvi\stenvi_5deg\sunoriented_IMEM2_newrho.sei")
-    p.add_argument("--cut", type=float, default=3.0, help="rho split [g/cm^3]")
+    p.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\IMEM2_stenvi\stenvi_3_vs_1_dens\sunoriented_IMEM2_newrho2.sei")
+    p.add_argument("--cut", type=float, default=1.8, help="rho split [g/cm^3]")
     p.add_argument("--rmin", type=float, default=0.1)
     p.add_argument("--rmax", type=float, default=8.0)
     p.add_argument("--step", type=float, default=0.5)
@@ -133,9 +151,30 @@ def main():
 
     # Fraction of each old IMEM density bin that lies below / above the cut
     old = edges["DISTDEN"]
-    f_lo = np.clip((a.cut - old[:, 0]) / (old[:, 1] - old[:, 0]), 0, 1)
-    F_lo = flux @ f_lo
-    F_hi = flux @ (1 - f_lo)
+    f_bin = np.clip((a.cut - old[:, 0]) / (old[:, 1] - old[:, 0]), 0, 1)
+    print("  per density bin: " + "  ".join(
+        f"{lo:g}-{hi:g}: {x:.4e} ({fb:.0%} below cut)"
+        for (lo, hi), x, fb in zip(old, flux.sum(axis=(0, 1, 2, 3, 4)), f_bin)))
+    F3_lo, F3 = flux @ f_bin, flux.sum(-1)
+    # Flag the cells where the 3-density run has any flux below the cut (only presence counts,
+    # not the density-biased magnitude); cells it leaves empty use their velocity/diameter bin
+    is_lo = np.where(F3 > 0, F3_lo > 0, (F3_lo.sum(axis=(0, 1, 4)) > 0)[None, None, :, :, None])
+
+    F = flux.sum(-1)
+    if a.sei1:
+        print(f"Reading {a.sei1}")
+        header, edges1, flux = read_sei(a.sei1)
+        for d in DIMS[:-1]:
+            if not np.allclose(edges1[d], edges[d]):
+                raise SystemExit(f"{d} bins differ between {a.sei} and {a.sei1}")
+        F = flux.sum(-1)
+        print(f"  flux array {flux.shape}, total {F.sum():.6e} /m^2/yr")
+    mixed = is_lo & (F3 > F3_lo)
+    print(f"  cells flagged rho<{a.cut}: {is_lo.sum()} (flux {F[is_lo].sum():.4e}, of which "
+          f"{F[mixed].sum():.4e} also has rho>{a.cut}), rho>{a.cut} only: {(~is_lo & (F > 0)).sum()} "
+          f"(flux {F[~is_lo].sum():.4e})")
+    # Whole unbiased flux of a cell goes to the density model it is flagged with
+    F_lo, F_hi = np.where(is_lo, F, 0.0), np.where(is_lo, 0.0, F)
 
     # Density weights per diameter bin [dia, den] (identical rows if size density is off)
     dia = edges["DISTDIA"]
@@ -153,22 +192,22 @@ def main():
 
     # Header: swap the DENSITY definition and the DISTDEN interval block
     out_hdr = []
-    for line in header:
+    for line in normalize_header(header):
         if line.startswith("DENSITY "):
-            line = f"DENSITY {nden} {a.rmin} {a.rmax} Density [g/cm^3]\n"
+            line = spectrum_line("DENSITY", nden, a.rmin, a.rmax)
         elif line.startswith("DISTDEN"):
-            if line.startswith("DISTDEN 1 "):
-                out_hdr += [f"DISTDEN {k + 1} {lo:.4e} {hi:.4e}\n"
+            if not out_hdr[-1].startswith("DISTDEN"):
+                out_hdr += [interval_line("DISTDEN", k + 1, lo, hi)
                             for k, (lo, hi) in enumerate(new_den)]
             continue
         out_hdr.append(line)
 
     print(f"Writing {out} ({new.size} DISTSET lines)")
     idx = np.indices(new.shape).reshape(new.ndim, -1).T + 1
-    with open(out, "w", newline="\n") as f:
-        f.writelines(out_hdr)
-        np.savetxt(f, np.column_stack([idx, new.ravel()]),
-                   fmt="DISTSET %d %d %d %d %d %d %.4e ")
+    with open(out, "w", newline=NEWLINE) as f:
+        f.write("\n".join(out_hdr) + "\n")
+        write_distset(f, idx, new.ravel())
+        f.write("#-<EOF>" + "-" * 73 + "\n")
     print("Done.")
 
 

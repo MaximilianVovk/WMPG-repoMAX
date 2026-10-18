@@ -29,6 +29,9 @@ from pathlib import Path
 
 import numpy as np
 
+from sei_format import (NEWLINE, interval_line, mission_line, normalize_header, orbit_line,
+                        spectrum_line, write_distset)
+
 
 # GM [km^3/s^2] of the MEM input origins (options.txt line 2), DE430 values
 MU = {"su": 1.32712440018e11, "ea": 398600.4418, "mo": 4902.800066,
@@ -80,7 +83,7 @@ DIMS = [  # (DIST card, spectrum card, label in the spectrum card)
 
 def read_template(path):
     lines = Path(path).read_text().splitlines()
-    end = next(i for i, l in enumerate(lines) if l.startswith("# Azi Ele Vel Dia Lat Den"))
+    end = next(i for i, l in enumerate(lines) if l.split()[:2] == ["#", "Azi"])
     header = lines[:end + 1]
     bins = {}
     for l in header:
@@ -197,29 +200,24 @@ def population_to_bins(run_dir, pop, bins, m0, fold_density, flip_azimuth, az_of
 
 
 def build_header(template_header, model, begin, end, a, e, inc, raan, argp, bins, replaced):
+    """Template header with this run's model, mission, spectrum and interval cards, in the fixed-column
+    layout of sei_format (the spectrum cards are always rebuilt so they match the intervals)."""
     repl = {
-        "MISSBEGIN": f"MISSBEGIN {begin:%Y %m %d %H} Begin [yyyy mm dd hh]",
-        "MISSEND": f"MISSEND {end:%Y %m %d %H} End [yyyy mm dd hh]",
-        "SEMIAXIS": f"SEMIAXIS {a:.1f} Semimajor axis [km]",
-        "ECCENTRI": f"ECCENTRI {e:.1E} Eccentricity of the orbit [-]",
-        "INCLIN": f"INCLIN {inc:.1f} Orbit inclination [deg]",
-        "RAAN": f"RAAN {raan:.1f} Right ascension of ascending node [deg]",
-        "ARGPERI": f"ARGPERI {argp:.1f} Argument of perigee [deg]",
+        "MISSBEGIN": mission_line("MISSBEGIN", begin),
+        "MISSEND": mission_line("MISSEND", end),
+        **{card: orbit_line(card, x) for card, x in
+           zip(("SEMIAXIS", "ECCENTRI", "INCLIN", "RAAN", "ARGPERI"), (a, e, inc, raan, argp))},
+        **{card: spectrum_line(card, len(bins[dist]), bins[dist][0, 0], bins[dist][-1, 1])
+           for dist, card, _ in DIMS},
     }
-    for dist, card, label in DIMS:
-        if dist in replaced:
-            b = bins[dist]
-            fmt = ".1E" if dist == "DISTDIA" else ".1f"
-            repl[card] = f"{card} {len(b)} {b[0, 0]:{fmt}} {b[-1, 1]:{fmt}} {label}"
-    out, prev = [], ""
-    for l in template_header:
+    out = []
+    for l in normalize_header(template_header):
         key = l.split()[0] if l.split() else ""
-        if prev.startswith("# Environment Model"):
-            l = model
-        prev = l
+        if key == "MODNAME":
+            l = f"MODNAME   {model}"
         if key in replaced:
             if not out[-1].startswith(key):  # first line of the block: write the new bins
-                out += [f"{key} {n} {lo:.4e} {hi:.4e}" for n, (lo, hi) in enumerate(bins[key], 1)]
+                out += [interval_line(key, n, lo, hi) for n, (lo, hi) in enumerate(bins[key], 1)]
             continue
         out.append(repl.get(key, l))
     return out
@@ -227,9 +225,9 @@ def build_header(template_header, model, begin, end, a, e, inc, raan, argp, bins
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\L2_bodyfix\L2sei", help="MEM 3 results folder")
-    ap.add_argument("--template", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\sun_stenvi_2025-1T_2025-2T\sun_stenvi_2025-1T_2025-2T.sei", help="template .sei file (bins + header)")
-    ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\L2_suncenter.sei", help="output .sei file")
+    ap.add_argument("--run", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\L2_bodyfix\L2sei_newrho_speedW", help="MEM 3 results folder")
+    ap.add_argument("--template", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\sun_stenvi_2025-1T_2025-2T\master_mtbg.sei", help="template .sei file (bins + header)")
+    ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\MEM3orbit\L2sei_newrho_speedW_new.sei", help="output .sei file")
     ap.add_argument("--no-fold-density", action="store_true",
                     help="drop flux of densities outside the SEI density range instead of adding it to the edge bins")
     ap.add_argument("--mem-azimuth", action="store_true",
@@ -308,7 +306,7 @@ def main():
 
     begin, end, a, e, inc, raan, argp = orbit_from_state_vectors(
         Path(args.run) / "input.txt", central_body_mu(args.run))
-    end = end.replace(minute=0, second=0, microsecond=0) + (timedelta(hours=1) if end.minute or end.second else timedelta())
+    begin, end = [t.replace(microsecond=0) + timedelta(seconds=round(t.microsecond / 1e6)) for t in (begin, end)]
     header = build_header(header, mem_version(args.run), begin, end, a, e, inc, raan, argp, bins, replaced)
 
     # Flux[az, el, vel, dia, lat, den] = sum_p dirvel_p[az, el, vel] * w_p[den, dia] / nlat,
@@ -319,7 +317,7 @@ def main():
     nden, ndia = h_w.shape
     sub = np.indices((ndia, nlat, nden)).reshape(3, -1).T + 1  # [dia, lat, den] in file order
     n_written, total = 0, 0.0
-    with open(args.out, "w") as fh:
+    with open(args.out, "w", newline=NEWLINE) as fh:
         fh.write("\n".join(header) + "\n")
         for chunk in np.array_split(cells, max(1, len(cells) // 2000)):
             a_, e_, v_ = chunk.T
@@ -328,8 +326,7 @@ def main():
             idx = np.concatenate([np.repeat(chunk + 1, len(sub), axis=0), np.tile(sub, (len(chunk), 1))], axis=1)
             vals = f.ravel()
             keep = vals > args.min_flux if skip_zeros else slice(None)
-            np.savetxt(fh, np.column_stack([idx[keep], vals[keep]]),
-                       fmt=["DISTSET %d"] + ["%d"] * 5 + ["%.4e "], delimiter=" ")
+            write_distset(fh, idx[keep], vals[keep])
             n_written += vals[keep].size
             total += vals.sum()
         fh.write("#-<EOF>" + "-" * 73 + "\n")

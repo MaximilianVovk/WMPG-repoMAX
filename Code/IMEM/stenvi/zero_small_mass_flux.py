@@ -2,8 +2,9 @@
 
 Each bin's mass is computed for a spherical particle, m = rho * pi/6 * d^3, from the
 DISTDIA (diameter [m]) and DISTDEN (density [g/cm^3]) intervals in the file header.
-Header definitions, bin indices, and retained rows are preserved unchanged.
-The file is processed one line at a time to handle large inputs.
+Header definitions, bin indices, and retained rows are kept; every line is re-written in
+the fixed-column layout of sei_format.py. The file is processed one line at a time to
+handle large inputs.
 
 Usage:
     python zero_small_mass_flux.py --sei L2_eclip.sei
@@ -12,6 +13,8 @@ Usage:
 import argparse
 import math
 import os
+
+from sei_format import NEWLINE, normalize_line
 
 
 def bin_value(lo, hi, mode, log=False):
@@ -31,7 +34,8 @@ def zero_small_mass(src, dst, mass_min=1e-6, mode="center"):
     removed_small = removed_zero = total = 0
     small = None  # set of (dia_idx, den_idx) to omit; built at the flux section
 
-    with open(src, newline="") as fin, open(dst, "w", newline="") as fout:  # keep original line endings
+    prev = ""
+    with open(src) as fin, open(dst, "w", newline=NEWLINE) as fout:
         for line in fin:
             if line.startswith("DISTSET"):
                 if small is None:
@@ -57,7 +61,8 @@ def zero_small_mass(src, dst, mass_min=1e-6, mode="center"):
             elif line.startswith("DISTDEN"):
                 p = line.split()
                 den[int(p[1])] = (float(p[2]), float(p[3]))
-            fout.write(line)
+            prev = normalize_line(line, prev)
+            fout.write(prev + "\n")
 
     kept = total - removed_small - removed_zero
     print(f"Removed {removed_small} below-threshold rows and {removed_zero} other zero-flux rows; "
@@ -66,7 +71,7 @@ def zero_small_mass(src, dst, mass_min=1e-6, mode="center"):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--sei", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\IMEM2_stenvi\stenvi_5deg\sunoriented_IMEM2_newrho.sei", help="input .sei file")
+    ap.add_argument("--sei", default=r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\Comparison\NewFormat\IMEM_newrho2\sunoriented_IMEM2_newrho2.sei", help="input .sei file")
     ap.add_argument("-m", "--mass", type=float, default=1e-6, help="mass threshold [g] (default 1e-6)")
     ap.add_argument("--mode", choices=["lower", "center", "upper"], default="center", # for IMEM lower for MEM center/newrho
                     help="bin edge used for diameter/density: center (geometric mean for diameter, "

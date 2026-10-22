@@ -3108,6 +3108,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     constjson_bestfit.__dict__['wake_heights'] = obs_data.wake_heights
     constjson_bestfit.__dict__['dens_co'] = obs_data.dens_co
     constjson_bestfit.__dict__['dt'] = obs_data.dt
+    constjson_bestfit.__dict__['erosion_bins_per_10mass'] = getattr(obs_data, 'erosion_bins_per_10mass', constjson_bestfit.erosion_bins_per_10mass)
     constjson_bestfit.__dict__['h_kill'] = obs_data.h_kill
     constjson_bestfit.__dict__['v_kill'] = obs_data.v_kill
 
@@ -6953,6 +6954,15 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             if 'dt' in fixed_values:
                 obs_data.dt = fixed_values['dt']
 
+            # USG fireballs: coarser erosion mass bins (as in the USG MetSim fits), otherwise the MetSim default
+            if getattr(obs_data, "is_usg", False):
+                obs_data.erosion_bins_per_10mass = 2
+            else:
+                obs_data.erosion_bins_per_10mass = Constants().erosion_bins_per_10mass
+            # a erosion_bins_per_10mass fixed in the .prior file has priority
+            if 'erosion_bins_per_10mass' in fixed_values:
+                obs_data.erosion_bins_per_10mass = fixed_values['erosion_bins_per_10mass']
+
             obs_data.disruption_on = False
 
             obs_data.lum_eff_type = 5
@@ -9012,7 +9022,8 @@ def constructConstants(parameter_guess, real_event, var_names, fix_var, dir_path
 
     # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
     const_nominal.dt = real_event.dt
-    # const_nominal.erosion_bins_per_10mass = 5
+    # 2 for USG fireballs, MetSim default otherwise (set with dt in the main setup)
+    const_nominal.erosion_bins_per_10mass = getattr(real_event, "erosion_bins_per_10mass", const_nominal.erosion_bins_per_10mass)
 
     const_nominal.P_0m = real_event.P_0m
 

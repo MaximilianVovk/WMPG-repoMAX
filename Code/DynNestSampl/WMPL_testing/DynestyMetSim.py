@@ -587,9 +587,11 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0, 
             json_plots_folder = os.path.join(out_folder, "json_plots")
             if not os.path.exists(json_plots_folder):
                 os.makedirs(json_plots_folder,  exist_ok=True)
-            if best_noise_lum!=0 and best_noise_lag!=0:
-                guess_manual.extend([best_noise_lum, best_noise_lag])
+            if best_noise_lum!=0:
+                guess_manual.append(best_noise_lum)
                 flags_dict_manual["noise_lum"] = ["invgamma"]
+            if best_noise_lag!=0:
+                guess_manual.append(best_noise_lag)
                 flags_dict_manual["noise_lag"] = ["invgamma"]
 
 
@@ -601,7 +603,7 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0, 
             var_names_manual = list(flags_dict_manual.keys())
             simulation_manual_MetSim_object = runSimulationDynesty(guess_manual, obs_data, var_names_manual, fixed_values_manual, flag_wake=False)
             print("the P_0m in the simulation_manual_MetSim_object is: ", simulation_manual_MetSim_object.const.P_0m)
-            if best_noise_lum!=0 and best_noise_lag!=0:
+            if best_noise_lum!=0 or best_noise_lag!=0:
                 print(f"{json_name} real LogL = {manual_logL:.1f}")
                 # Plot the data with residuals and the best fit
                 plotSimVsObsResiduals(obs_data, simulation_manual_MetSim_object, json_plots_folder, json_name, color_sim='slategray', label_sim=f'LogL={manual_logL:.1f}')
@@ -3706,6 +3708,9 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     ### PLOT JSON DATA VS OBS ###
 
     # check if dynesty_run_results_new.samples[sim_num] or fixed_values have noise_lag or noise_lum
+    # default to 0 (= not used) so lum-only or lag-only fits do not crash
+    best_noise_lag = 0
+    best_noise_lum = 0
     if 'noise_lag' in variables:
         best_noise_lag = dynesty_run_results_new.samples[sim_num][variables.index('noise_lag')]
     elif 'noise_lag' in fixed_values.keys():

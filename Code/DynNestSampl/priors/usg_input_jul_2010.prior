@@ -20,5 +20,5 @@ gamma,1.0,fix                                   # drag coefficient
 shape_factor,0.8,fix                            # shape factor
 
 # free parameters
-m_init,1e2,1e8                                  # m_init [kg] uniform as in the script (add log to sample in log10)
+m_init,1e2,1e8,log                                  # m_init [kg] uniform as in the script (add log to sample in log10)
 noise_lum,1.2e10+np.exp(22),1.2e10+np.exp(28),log   # noise_lum [W] = obs_sigma 1.2e10 + scatter, scatter e^22-e^28 log-uniform

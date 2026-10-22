@@ -651,10 +651,243 @@ def plotJSONDataVsObs(obs_data, out_folder, best_noise_lum=0, best_noise_lag=0, 
         print(f"Error encountered running wake simulation for obs_data probably use an old format: {e}")
 
 
+def _wakeOverviewCuts(sr, wake_containers, wake_samples=8,
+                      first_height_ratio=0.1, final_height_ratio=0.75,
+                      likelihood_sr=None, max_likelihood_heights=8):
+    """Return (simulation, index, reference height, likelihood cut) rows.
+
+    Keep the usual diagnostic cuts, add at most eight actual likelihood cuts,
+    and merge exact-height duplicates. The latter use the selected-height run,
+    not an approximation from the all-height diagnostic run.
+    """
+    valid = [i for i, w in enumerate(sr.wake_results) if w is not None]
+    count = min(int(wake_samples), len(valid))
+    if not wake_containers or count <= 0:
+        return []
+    heights = np.asarray([_wakeContainerHeight(w) for w in wake_containers])
+    rows = []
+    for i, fraction in enumerate(np.linspace(first_height_ratio, final_height_ratio, count)):
+        if len(valid) == count:
+            height = float(sr.leading_frag_height_arr[valid[i]])
+        else:
+            height = float(np.max(heights) - fraction * np.ptp(heights))
+        index = valid[int(np.argmin(np.abs(np.asarray(sr.brightest_height_arr)[valid] - height)))]
+        rows.append((sr, index, height, False))
+    if likelihood_sr is not None:
+        selected = [i for i, w in enumerate(likelihood_sr.wake_results) if w is not None]
+        limit = min(8, max(0, int(max_likelihood_heights)))
+        if len(selected) > limit:
+            selected = [selected[i] for i in np.linspace(0, len(selected)-1, limit, dtype=int)]
+        for index in selected:
+            height = float(likelihood_sr.leading_frag_height_arr[index])
+            row = (likelihood_sr, index, height, True)
+            duplicate = next((j for j, old in enumerate(rows)
+                              if np.isclose(old[2], height, rtol=0, atol=1e-6)), None)
+            if duplicate is None:
+                rows.append(row)
+            else:
+                rows[duplicate] = row
+        rows.sort(key=lambda row: row[2], reverse=True)
+    return rows
+
+
+def _wakePlotADUScale(wake_ref, wake_container, normalization_method, peak_region=20):
+    """Undo observation-to-model scaling for display only (not likelihoods)."""
+    obs_y = np.asarray([p.intens_sum for p in wake_container.points], dtype=float)
+    obs_x = np.asarray([p.leading_frag_length for p in wake_container.points], dtype=float)
+    sim_y = np.asarray(wake_ref.wake_luminosity_profile, dtype=float)
+    sim_x = np.asarray(wake_ref.length_array, dtype=float)
+    if normalization_method == "peak":
+        numerator, denominator = np.max(obs_y), np.max(sim_y)
+    elif normalization_method == "area":
+        region = np.inf if peak_region is None else peak_region
+        obs_mask = np.abs(obs_x - obs_x[np.argmax(obs_y)]) < region
+        sim_mask = np.abs(sim_x - sim_x[np.argmax(sim_y)]) < region
+        numerator = np.trapz(obs_y[obs_mask], obs_x[obs_mask])
+        denominator = np.trapz(sim_y[sim_mask], sim_x[sim_mask])
+    else:
+        # No normalisation: the caller supplies curves on the same intensity scale.
+        return 1.0
+    if not np.isfinite(denominator) or denominator == 0 or not np.isfinite(numerator):
+        raise ValueError("Cannot express this wake profile in ADUs: invalid normalisation")
+    return float(numerator / denominator)
+
+
+def computeBestFitWakeRMSD(all_height_sr, likelihood_sr, wake_data,
+                          normalization_method="peak", align_method="correlate",
+                          distance_range=(-80.0, 200.0), diagnostic_samples=8,
+                          peak_region=20.0):
+    """Noise-independent profile RMSD in observed ADUs, evaluated post-fit.
+
+    s is the raw observed along-track distance minus its intensity-peak position,
+    positive behind the head. Use the same fixed -80 <= s <= 200 m window in
+    both runs. This does not use sigma_wake or the noise-based logl_len_max.
+    Normalisation/alignment match the wake processing; outside model support
+    the existing interpolator predicts zero. Each observed profile is counted
+    once, with likelihood heights taking priority over diagnostic-only heights.
+    'Likelihood' means the selected-height simulation supplied by the caller;
+    in a luminosity+lag-only run these are evaluation/reference heights.
+    """
+    import hashlib
+
+    if wake_data is None or len(wake_data) == 0:
+        return None
+    if normalization_method not in ("peak", "area"):
+        raise ValueError("ADU RMSD requires peak or area normalisation")
+    lo, hi = map(float, distance_range)
+    if not np.isfinite(lo + hi) or lo >= hi:
+        raise ValueError("Invalid wake RMSD distance range")
+    wake_data = list(wake_data)
+    observed_heights = np.asarray([_wakeContainerHeight(wc) for wc in wake_data])
+    selected = []
+    if likelihood_sr is not None:
+        selected = [(likelihood_sr, i, float(likelihood_sr.leading_frag_height_arr[i]))
+                    for i, w in enumerate(likelihood_sr.wake_results) if w is not None]
+    diagnostic = [(sr, i, ht) for sr, i, ht, _ in
+                  _wakeOverviewCuts(all_height_sr, wake_data, wake_samples=diagnostic_samples)]
+    result = {
+        "schema_version": 1,
+        "settings": {"normalization": normalization_method, "alignment": align_method,
+                     "peak_region_m": float(peak_region), "distance_range_m": [lo, hi],
+                     "distance_reference": "observed_peak_positive_behind_head",
+                     "outside_model_support": "zero", "units": "ADU",
+                     "aggregation": "sqrt(sum_squared_residuals / n_points)"},
+        "groups": {}, "skipped": [],
+    }
+    used_observations = set()
+    for group, cuts in (("likelihood", selected), ("diagnostic_only", diagnostic)):
+        # Different requested heights can map to the same observed profile.
+        # Retain the simulation closest in height to that observation.
+        nearest = {}
+        for sr, index, ht in cuts:
+            ci = int(np.argmin(np.abs(observed_heights - ht)))
+            if ci in used_observations:
+                continue
+            error = abs(observed_heights[ci] - ht)
+            if ci not in nearest or error < nearest[ci][0]:
+                nearest[ci] = (error, sr, index, ht)
+        records = []
+        for ci, (_, sr, index, ht) in sorted(nearest.items()):
+            used_observations.add(ci)
+            wc = wake_data[ci]
+            try:
+                raw_x = np.asarray([p.leading_frag_length for p in wc.points], dtype=float)
+                raw_y = np.asarray([p.intens_sum for p in wc.points], dtype=float)
+                if not len(raw_y) or not np.all(np.isfinite(raw_x)) or not np.all(np.isfinite(raw_y)):
+                    raise ValueError("Non-finite or empty observed profile")
+                s = raw_x - raw_x[np.argmax(raw_y)]
+                mask = (s >= lo) & (s <= hi)
+                if not np.any(mask):
+                    raise ValueError("No observed samples inside RMSD window")
+                _, model, _, observed = wakeNormalizeAlignReduce(
+                    sr.wake_results[index], wc, peak_region=peak_region,
+                    normalization_method=normalization_method, align_method=align_method,
+                    lenMax=0, interp=True,
+                )
+                scale = _wakePlotADUScale(sr.wake_results[index], wc,
+                                          normalization_method, peak_region=peak_region)
+                model = np.asarray(model, dtype=float) * scale
+                observed = np.asarray(observed, dtype=float) * scale
+                if model.shape != raw_y.shape or observed.shape != raw_y.shape:
+                    raise ValueError("RMSD interpolation changed the observed sampling")
+                if not np.all(np.isfinite(model[mask])):
+                    raise ValueError("Non-finite simulated values inside RMSD window")
+                # raw_y is the measured ADU value; no fitted variance enters.
+                residual = model[mask] - raw_y[mask]
+                sse = float(np.sum(residual ** 2))
+                if not np.isfinite(sse):
+                    raise ValueError("Non-finite squared residual sum")
+                n = int(np.sum(mask))
+                # Hash original observed positions/intensities in the scoring
+                # window: downstream comparisons must use the same data.
+                data = np.column_stack((raw_x[mask], raw_y[mask])).astype("<f8")
+                fingerprint = hashlib.sha256(data.tobytes()).hexdigest()
+                records.append({
+                    "simulation_height_m": float(sr.leading_frag_height_arr[index]),
+                    "reference_height_m": float(ht),
+                    "observed_height_m": float(observed_heights[ci]),
+                    "site_id": str(getattr(wc, "site_id", "")),
+                    "frame_n": str(getattr(wc, "frame_n", "")),
+                    "observed_data_sha256": fingerprint,
+                    "n_points": n, "sum_squared_residuals_adu2": sse,
+                    "rmsd_adu": float(np.sqrt(sse / n)),
+                })
+            except (ValueError, FloatingPointError, ZeroDivisionError) as exc:
+                result["skipped"].append({"group": group, "reference_height_m": float(ht),
+                                          "reason": str(exc)})
+        n = sum(r["n_points"] for r in records)
+        sse = sum(r["sum_squared_residuals_adu2"] for r in records)
+        result["groups"][group] = {
+            "n_profiles": len(records), "n_points": n,
+            "sum_squared_residuals_adu2": sse,
+            "rmsd_adu": float(np.sqrt(sse / n)) if n else None,
+            "profiles": records,
+        }
+    return result
+
+
+def _writeBestFitWakeRMSD(stream, result):
+    """Write readable RMSD summaries and per-height values to the log only."""
+    if result is None:
+        return
+    settings = result["settings"]
+    lo, hi = settings["distance_range_m"]
+    stream.write("\nBest-fit wake RMSD (ADU; lower is better)\n")
+    stream.write(f"Processing: {settings['normalization']} normalisation; "
+                 f"{settings['alignment']} alignment\n")
+    stream.write(f"Distance window: {lo:g} to {hi:g} m from observed peak "
+                 "(positive behind the head)\n")
+    stream.write("RMSD = sqrt(sum of squared residuals / number of samples); "
+                 "no noise weighting.\n")
+    names = {"likelihood": "Likelihood heights", "diagnostic_only": "Diagnostic-only heights"}
+    for group, values in result["groups"].items():
+        rmsd = values["rmsd_adu"]
+        value = "unavailable" if rmsd is None else f"{rmsd:.3f} ADU"
+        stream.write(f"\n{names.get(group, group)}: {value} "
+                     f"({values['n_profiles']} profiles, {values['n_points']} samples)\n")
+        if values["profiles"]:
+            stream.write("  Observed height [km]  Simulated height [km]  Site  Frame  Samples  RMSD [ADU]\n")
+        for row in sorted(values["profiles"], key=lambda p: p["observed_height_m"], reverse=True):
+            stream.write(f"  {row['observed_height_m']/1000:20.3f}  "
+                         f"{row['simulation_height_m']/1000:21.3f}  "
+                         f"{row['site_id']:>4}  {row['frame_n']:>5}  "
+                         f"{row['n_points']:7d}  {row['rmsd_adu']:10.3f}\n")
+    for item in result.get("skipped", []):
+        stream.write(f"Skipped {item['group']} profile at "
+                     f"{item['reference_height_m']/1000:.3f} km: {item['reason']}\n")
+
+
+def _writeBestFitWakeScores(stream, score, n_lum, n_lag,
+                            normalization_method, align_method):
+    """Write best-fit wake-only scores; no rows for absent wake data."""
+    if score is None:
+        return
+    raw = score["log_likelihood"]
+    n = score["n_points"]
+    if n <= 0 or not np.isfinite(raw):
+        stream.write("Best fit wake logL: unavailable (no valid wake likelihood)\n")
+        return
+    alpha = (n_lum + n_lag) / n
+    stream.write(f"Best fit wake logL (unweighted): {raw:.12g}\n")
+    stream.write(f"Best fit wake logL (weighted contribution): {alpha * raw:.12g}\n")
+    stream.write(f"Best fit wake alpha: {alpha:.12g}; N_wake: {n}; "
+                 f"N_heights: {len(score['per_height'])}\n")
+    stream.write(f"Best fit wake processing: normalisation={normalization_method}; "
+                 f"alignment={align_method}; noise in likelihood intensity scale\n")
+    for row in score['per_height']:
+        stream.write(
+            "Best fit wake cut: "
+            f"h_sim={row['simulation_height_m']:.6f} m; "
+            f"h_obs={row['observed_height_m']:.6f} m; site={row['site_id']}; "
+            f"N={row['n_points']}; noise={row['noise']:.12g}; "
+            f"region={row['region_m']:.6f} m; logL={row['log_likelihood']:.12g}\n"
+        )
+
+
 def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=None, wake_samples=8,
                      first_height_ratio=0.1, final_height_ratio=0.75, peak_region=20,
                      normalization_method="peak", align_method="correlate", lenMax=0,
-                     noise_guess=None, color='black'):
+                     noise_guess=None, color='black', likelihood_sr=None, max_likelihood_heights=8):
     """ Plot the wake at a range of heights showing the match between the observed and simulated wake.
 
     Arguments:
@@ -675,28 +908,32 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
             wake will be used.
         lenMax: [float, array-like, or None] A scalar is used at every height, an array is matched to the wake
             heights, 0 shows the full wake, and None reads ``logl_len_max`` from each wake container.
+        likelihood_sr: [SimulationResults or None] Add the actual computed likelihood heights to the
+            diagnostic overview. Their simulated profiles are drawn in thick black.
+        max_likelihood_heights: [int] Maximum added likelihood heights (capped at eight).
         noise_guess: [float, array-like, or None] A scalar is used at every height, an array is matched to the wake
             heights, and None reads ``noise_wake`` from each wake container.
 
     """
 
-    wake_indices = [i for i, w in enumerate(sr.wake_results) if w is not None]
+    from matplotlib.lines import Line2D
+    from matplotlib.ticker import MaxNLocator
 
-    # # delete the ones that are not in wake_indices
-    # for i in sorted(set(range(len(sr.wake_results))) - set(wake_indices), reverse=True):
-    #     del sr.wake_results[i]
-    # count the wake_indices True values
-    if len(wake_indices)<wake_samples:
-        wake_samples = len(wake_indices)
+    # likelihood_sr adds actual log-likelihood cuts to the usual diagnostic set.
+    wake_containers = list(wake_containers)
+    if site_id is not None:
+        wake_containers = [w for w in wake_containers if w.site_id == site_id]
+    cuts = _wakeOverviewCuts(
+        sr, wake_containers, wake_samples, first_height_ratio, final_height_ratio,
+        likelihood_sr=likelihood_sr, max_likelihood_heights=max_likelihood_heights,
+    )
+    if not cuts:
+        raise ValueError("No observed/simulated wake profiles available to plot")
+    if peak_region is None:
+        peak_region = np.inf
 
-    # # filter the sr.wake_results only take those in wake_indices discard the rest
-    # sr.wake_results = [sr.wake_results[i] for i in wake_indices]
-
-    # Make N plots for wake_samples heights
-    height_fractions = np.linspace(first_height_ratio, final_height_ratio, wake_samples)
-
-    # Set up the plot. np.atleast_1d also handles wake_samples == 1.
-    fig, axes = plt.subplots(figsize=(8, 8), nrows=wake_samples, sharex=True)
+    fig, axes = plt.subplots(figsize=(8, max(8, 1.0 * len(cuts))),
+                             nrows=len(cuts), sharex=True)
     axes = np.atleast_1d(axes)
 
     # Keep the limits from all displayed cuts. Because the subplots share the
@@ -708,46 +945,10 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
     txt_len_coord = 50 # m
 
     # Loop through the heights
-    for i, height_fraction in enumerate(height_fractions):
-
-        if peak_region is None:
-            peak_region = np.inf
-
-        # Filter wake containers by site
-        if site_id is not None:
-            wake_containers = [wake_container for wake_container in wake_containers
-                            if wake_container.site_id == site_id]
-
-        # Get a list of all heights in the wake
-        wake_heights = [wake_container.points[0].ht for wake_container in wake_containers]
-
-        if len(wake_indices) == wake_samples:
-            # Compute the probing heights
-            ht_ref = sr.leading_frag_height_arr[wake_indices[i]] # sr.wake_results[len(height_fractions)-1 - i].leading_frag_length
-
-        else:
-            # Compute the range of heights
-            ht_range = np.max(wake_heights) - np.min(wake_heights)
-
-            # Compute the probing heights
-            ht_ref = np.max(wake_heights) - height_fraction*ht_range
-
-        # Find the container which are closest to reference height of the wake fraction
-        ht_ref_idx = np.argmin(np.abs(np.array(wake_heights) - ht_ref))
-
-        # Get the two containers with observations
+    for i, (cut_sr, wake_res_indx_ref, ht_ref, is_likelihood_cut) in enumerate(cuts):
+        wake_heights = np.asarray([_wakeContainerHeight(w) for w in wake_containers])
+        ht_ref_idx = int(np.argmin(np.abs(wake_heights - ht_ref)))
         wake_container_ref = wake_containers[ht_ref_idx]
-
-        # Find indices where the wake result is not None
-        valid_wake_indices = [i for i, w in enumerate(sr.wake_results) if w is not None]
-
-        if not valid_wake_indices:
-            # Should ideally handle this gracefully, but for now fallback to previous behavior which might error or return None
-            wake_res_indx_ref = np.nanargmin(np.abs(ht_ref - sr.brightest_height_arr))
-        else:
-            # Find the wake index closest to the given wake height, considering only valid wakes
-            closest_idx_in_valid = np.argmin(np.abs(ht_ref - sr.brightest_height_arr[valid_wake_indices]))
-            wake_res_indx_ref = valid_wake_indices[closest_idx_in_valid]
 
         # Resolve the LogL region at this altitude. ``lenMax=None`` uses the
         # value stored directly on the nearest wake container.
@@ -762,7 +963,8 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
         # Get the wake results
         ( wake_len_array, wake_lum_array, # Return the simulated wake at the ref ht
             obs_len_array, obs_lum_array # Return the observed wake at the ref ht
-        ) = wakeNormalizeAlignReduce(sr.wake_results[wake_res_indx_ref], wake_container_ref,
+        ) = wakeNormalizeAlignReduce(cut_sr.wake_results[wake_res_indx_ref], wake_container_ref,
+                                     peak_region=peak_region,
                                      normalization_method=normalization_method, align_method=align_method,
                                      lenMax=len_max_this_height, interp=interp_flag)
 
@@ -774,23 +976,29 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
             if finite_x.size:
                 plotted_x_arrays.append(finite_x)
 
-        # Extract the wake points from the containers
-        wake_ref_intensity_array = []
-        for wake_pt in wake_container_ref.points:
-            wake_ref_intensity_array.append(wake_pt.intens_sum)
-        wake_ref_intensity_array = np.array(wake_ref_intensity_array)
-
-        # Plot the observed wake
-        axes[i].plot(obs_len_array, obs_lum_array, color="black", linestyle="--", linewidth=1, alpha=0.75)
-
-        # Plot the simulated wake
-        axes[i].plot(wake_len_array, wake_lum_array, color=color, linestyle="solid", linewidth=1, alpha=0.75)
-
-        # put 2 ticks on the y axis at the max and min of the wake_lum_array
-        axes[i].set_yticks([((np.max(wake_lum_array)+np.min(wake_lum_array))/2), np.max(wake_lum_array)])
-        # now change thier values to be the wake_ref_intensity_array values at the corresponding indices
-        axes[i].set_yticklabels([f"{((np.max(wake_ref_intensity_array)+np.min(wake_ref_intensity_array))/2):.0f}",
-                                f"{np.max(wake_ref_intensity_array):.0f}"], fontsize=6)
+        # Retain the likelihood-scale arrays for the optional diagnostic score.
+        wake_lum_likelihood = wake_lum_array
+        obs_lum_likelihood = obs_lum_array
+        adu_scale = _wakePlotADUScale(
+            cut_sr.wake_results[wake_res_indx_ref], wake_container_ref,
+            normalization_method, peak_region=peak_region,
+        )
+        wake_lum_array = np.asarray(wake_lum_array) * adu_scale
+        obs_lum_array = np.asarray(obs_lum_array) * adu_scale
+        axes[i].plot(obs_len_array, obs_lum_array, color="black", linestyle="--",
+                     linewidth=1, alpha=0.75)
+        axes[i].plot(
+            wake_len_array, wake_lum_array,
+            color="black" if is_likelihood_cut else color,
+            linestyle="solid", linewidth=2.5 if is_likelihood_cut else 1,
+            alpha=1.0 if is_likelihood_cut else 0.75,
+        )
+        axes[i].set_ylabel("ADUs", fontsize=8)
+        axes[i].yaxis.set_major_locator(MaxNLocator(nbins=2))
+        axes[i].tick_params(axis="y", labelsize=6)
+        if is_likelihood_cut:
+            axes[i].text(0.98, 0.86, "Likelihood height", transform=axes[i].transAxes,
+                         ha="right", va="top", fontsize=8, fontweight="bold")
 
         # Get the height label as halfway between the peak model wake and 0
         txt_ht = np.max(wake_lum_array)/2
@@ -804,13 +1012,13 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
                 container_attr="noise_wake", default=1.0,
             )
             # compute the loglikehood between the two wakes
-            log_likelihood_wake = np.nansum(-0.5*np.log(2*np.pi*noise_logl**2) - 0.5/(noise_logl**2)*(obs_lum_array - wake_lum_array) ** 2)
+            log_likelihood_wake = np.nansum(-0.5*np.log(2*np.pi*noise_logl**2) - 0.5/(noise_logl**2)*(obs_lum_likelihood - wake_lum_likelihood) ** 2)
             txt_len_coord = -1*len_max_this_height + 30  # m
             # Set the height label
             axes[i].text(
                 txt_len_coord, txt_ht,
-                "{:.1f} km\nLogL={:.2f}\nNoise={:.2f}\nRegion={:.1f} m".format(
-                    ht_ref/1000, log_likelihood_wake, noise_logl, len_max_this_height
+                "{:.3f} km\nLogL={:.2f}\nNoise={:.2f} ADUs\nRegion={:.1f} m".format(
+                    ht_ref/1000, log_likelihood_wake, abs(adu_scale)*noise_logl, len_max_this_height
                 ),
                 fontsize=8, ha="left", va="center"
             )
@@ -849,6 +1057,17 @@ def plotWakeOverviewOptions(sr, wake_containers, plot_dir, event_name, site_id=N
 
     # Invert X axis. sharex=True propagates this range to every row.
     axes[-1].invert_xaxis()
+
+    handles = [Line2D([0], [0], color="black", linestyle="--", linewidth=1,
+                      label="Observed"),
+               Line2D([0], [0], color=color, linewidth=1, label="Simulated (diagnostic cut)")]
+    if likelihood_sr is not None:
+        handles.append(Line2D([0], [0], color="black", linewidth=2.5,
+                              label="Simulated (likelihood height)"))
+    fig.legend(handles=handles, loc="upper center", ncol=len(handles), fontsize=8)
+    # put the legend close to the top of the figure
+    fig.subplots_adjust(top=0.97)
+    # fig.suptitle("Linear intensity; independent y-scale for each height", y=0.945, fontsize=9)
 
     # Remove vertical space between subplots
     plt.subplots_adjust(hspace=0)
@@ -2686,7 +2905,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         log_file = os.path.join(output_folder, f"log_{file_name}.txt")
 
     flag_wake=False
-    if wake_data is not None:
+    if wake_data is not None and len(wake_data) > 0:
         flag_wake=True
         print("\nWake data provided. Will include wake parameters in the dynesty summary and plots if available.\n")
 
@@ -2895,8 +3114,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         if variable in constjson_bestfit.__dict__.keys():
             constjson_bestfit.__dict__[variable] = best_guess[variables.index(variable)]
 
-    normalization_method = "none"
-    align_method = "none"
+    normalization_method = "peak"
+    align_method = "correlate"
     # do te same for the fixed values
     for variable in fixed_values.keys():
         if variable in constjson_bestfit.__dict__.keys():
@@ -2994,6 +3213,17 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         os.makedirs(output_folder +os.sep+ 'fit_plots')
 
     best_guess_obj_plot = runSimulationDynesty(best_guess, obs_data, variables, fixed_values, flag_wake=flag_wake)
+
+    best_wake_score = None
+    best_wake_rmsd = None
+    if flag_wake:
+        # obs_data_logL retains the best sample's fitted/fixed noise, even when
+        # later truth/mode/mean/median evaluations change obs_data in place.
+        best_wake_score = computeWakeLogLikelihood(
+            best_guess_obj_plot, wake_data, obs_data_logL,
+            normalization_method=normalization_method, align_method=align_method,
+            return_details=True,
+        )
 
     tau_median = np.nan
     tau_min = np.nan
@@ -3185,22 +3415,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     plotObsVsHeight(obs_data_logL, best_guess_obj_plot, output_folder +os.sep+ 'fit_plots', file_name + "_best_fit")
     # plotObsVsHeight(obs_data, None, output_folder , file_name + "_data_only")
     if flag_wake:
-        noise_wake_plot = 1
-
-        # ceck if obs_data has noise_wake argument and if so use it as the default value for noise_wake_plot
-        if hasattr(obs_data, 'noise_wake'):
-            print(f"Using obs_data.noise_wake as default value for noise_wake_plot: {obs_data.noise_wake}")
-            noise_wake_plot = obs_data.noise_wake
-
-        if flag_wake_varing_noise:
-            print("Wake noise array provided. Will use the wake noise array in the log-likelihood calculation.")
-            noise_wake_plot = noise_wake_array
-
-        # check for each var_name in flags_dict if there is "log" in the flags_dict
-        for i, var_name in enumerate(variables):
-            if var_name == 'noise_wake' and flag_wake:
-                noise_wake_plot = best_guess[i]
-                print(f"Found noise_wake in variables and flag_wake is True, using noise_wake_plot: {noise_wake_plot} for the wake plot")
+        noise_wake_plot = (None if getattr(obs_data_logL, "noise_wake_array", None) is not None
+                           else obs_data_logL.noise_wake)
         try:
             plotWakeOverviewOptions(best_guess_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_bestLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, lenMax=None)
         except Exception as e:
@@ -3213,7 +3429,23 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         if 'wake_heights' in fixed_NoneWakeHeights:
             del fixed_NoneWakeHeights['wake_heights']
         best_guess_obj_plot_NoneWakeHeights = runSimulationDynesty(best_guess, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
+        # Post-fit diagnostic only: use existing simulations, no new inversion.
+        # Fixed observed-distance window; independent of fitted wake noise.
+        try:
+            best_wake_rmsd = computeBestFitWakeRMSD(
+                best_guess_obj_plot_NoneWakeHeights, best_guess_obj_plot, wake_data,
+                normalization_method=normalization_method, align_method=align_method,
+            )
+        except (ValueError, FloatingPointError, ZeroDivisionError) as exc:
+            print(f"Best-fit wake RMSD unavailable: {exc}")
         plotWakeOverviewOptions(best_guess_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_best", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot)
+        plotWakeOverviewOptions(
+            best_guess_obj_plot_NoneWakeHeights, wake_data, output_folder + os.sep + 'fit_plots',
+            file_name + "_best_withLikelihoodHeights",
+            normalization_method=normalization_method, align_method=align_method,
+            noise_guess=noise_wake_plot, color='black',
+            likelihood_sr=best_guess_obj_plot, max_likelihood_heights=8,
+        )
 
     _ = constructConstants(best_guess, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_BestGuess.json')
 
@@ -3401,6 +3633,13 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         
         approx_mode_obj_plot_NoneWakeHeights = runSimulationDynesty(approx_modes_all, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
         plotWakeOverviewOptions(approx_mode_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mode", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red')
+        plotWakeOverviewOptions(
+            approx_mode_obj_plot_NoneWakeHeights, wake_data, output_folder + os.sep + 'fit_plots',
+            file_name + "_mode_withLikelihoodHeights",
+            normalization_method=normalization_method, align_method=align_method,
+            noise_guess=noise_wake_plot, color='red',
+            likelihood_sr=approx_mode_obj_plot, max_likelihood_heights=8,
+        )
 
     _ = constructConstants(approx_modes_all, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_mode.json')
 
@@ -3424,6 +3663,13 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             print(f"Error plotting wake overview options for mean: {e}")    
         mean_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_mean, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
         plotWakeOverviewOptions(mean_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mean", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue')
+        plotWakeOverviewOptions(
+            mean_obj_plot_NoneWakeHeights, wake_data, output_folder + os.sep + 'fit_plots',
+            file_name + "_mean_withLikelihoodHeights",
+            normalization_method=normalization_method, align_method=align_method,
+            noise_guess=noise_wake_plot, color='blue',
+            likelihood_sr=mean_obj_plot, max_likelihood_heights=8,
+        )
 
     _ = constructConstants(all_samples_mean, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_mean.json')
 
@@ -3447,6 +3693,13 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             print(f"Error plotting wake overview options for median: {e}")
         median_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_median, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
         plotWakeOverviewOptions(median_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_median", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue')
+        plotWakeOverviewOptions(
+            median_obj_plot_NoneWakeHeights, wake_data, output_folder + os.sep + 'fit_plots',
+            file_name + "_median_withLikelihoodHeights",
+            normalization_method=normalization_method, align_method=align_method,
+            noise_guess=noise_wake_plot, color='cornflowerblue',
+            likelihood_sr=median_obj_plot, max_likelihood_heights=8,
+        )
 
     _ = constructConstants(all_samples_median, obs_data, variables, fixed_values, dir_path=output_folder +os.sep+ 'fit_plots', file_name= file_name + '_sim_fit_dynesty_median.json')
 
@@ -3782,6 +4035,11 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         except:
             pass
         f.write('\nBest fit logL: '+str(best_guess_logL)+'\n') # dynesty_run_results.logl[sim_num])+'\n')
+        _writeBestFitWakeScores(
+            f, best_wake_score, len(obs_data_logL.luminosity), len(obs_data_logL.lag),
+            normalization_method, align_method,
+        )
+        _writeBestFitWakeRMSD(f, best_wake_rmsd)
         if diff_logL is not None:
             f.write('REAL logL: '+str(real_logL)+'\n')
             f.write('Diff logL (Best fit - REAL): '+str(diff_logL)+'\n')
@@ -9036,6 +9294,98 @@ def validateMetSimConstants(const):
     return const
 
 
+def computeWakeLogLikelihood(simulation_results, wake_data, obs_metsim_obj,
+                             normalization_method="peak", align_method="correlate",
+                             return_details=False):
+    """Evaluate the original, unweighted wake term on all computed wake cuts.
+
+    Uses exactly the same nearest observed profiles, adaptive length regions,
+    interpolation, normalisation, alignment and noise selection as the sampler.
+    No plotting conversion or eight-height display cap is applied here.
+    """
+    if wake_data is None or len(wake_data) == 0:
+        return {"log_likelihood": -np.inf, "n_points": 0, "per_height": []}
+    # pick only the one that are not None simulation_results.wake_results
+    wake_indices = [i for i, w in enumerate(simulation_results.wake_results) if w is not None]
+    # # delete the ones that are not in wake_indices
+    # for ii in sorted(set(range(len(simulation_results.wake_results))) - set(wake_indices), reverse=True):
+    #     del simulation_results.wake_results[ii]
+    log_likelihood_wake_array = np.zeros(len(wake_indices))
+    per_height = []
+    tot_num_values = 0
+    # for each remaining simulation_results.wake_results get the height reference from the simulation results
+    for jj in range(len(wake_indices)):
+        # get the reference height from the simulation results
+        ht_ref = simulation_results.leading_frag_height_arr[wake_indices[jj]] # sr.wake_results[len(height_fractions)-1 - i].leading_frag_length
+        wake_heights = [wake_container.points[0].ht for wake_container in wake_data]
+
+        # Find the container which are closest to reference height of the wake fraction
+        ht_ref_idx = np.argmin(np.abs(np.array(wake_heights) - ht_ref))
+
+        # Get the two containers with observations
+        wake_container_ref = wake_data[ht_ref_idx]
+
+        # Resolve the per-altitude likelihood region directly from the
+        # wake container. resultsXalt_wake is only a fallback for older
+        # in-memory objects that do not yet carry the metadata.
+        len_max_this_height = _resolveWakeValue(
+            None, wake_data, ht_ref, container_attr="logl_len_max", default=None
+        )
+        if len_max_this_height is None:
+            len_max_values, len_max_heights = _wakeResultArrays(
+                getattr(obs_metsim_obj, "resultsXalt_wake", None), "logl_len_max"
+            )
+            len_max_this_height = _resolveWakeValue(
+                len_max_values, wake_data, ht_ref, altitudes=len_max_heights,
+                default=100.0,
+            )
+
+        # Get the wake results
+        (
+            _, wake_lum_array, # Return the simulated wake at the ref ht
+            _, obs_lum_array # Return the observed wake at the ref ht
+        ) = wakeNormalizeAlignReduce(simulation_results.wake_results[wake_indices[jj]], wake_container_ref,
+                                    normalization_method=normalization_method, align_method=align_method,
+                                    lenMax=len_max_this_height, interp=True)
+
+        # Use per-height noise unless noise_wake is sampled/fixed as a
+        # scalar, in which case noise_wake_array is cleared above.
+        if getattr(obs_metsim_obj, "noise_wake_array", None) is not None:
+            noise_wake_this_height = _resolveWakeValue(
+                None, wake_data, ht_ref, container_attr="noise_wake", default=None
+            )
+            if noise_wake_this_height is None:
+                noise_wake_this_height = _resolveWakeValue(
+                    obs_metsim_obj.noise_wake_array, wake_data, ht_ref,
+                    altitudes=getattr(obs_metsim_obj, "altitudes_noises_wake", None),
+                    default=obs_metsim_obj.noise_wake,
+                )
+        else:
+            noise_wake_this_height = float(obs_metsim_obj.noise_wake)
+
+        if not np.isfinite(noise_wake_this_height) or noise_wake_this_height <= 0:
+            return {"log_likelihood": -np.inf, "n_points": 0, "per_height": []}
+
+        log_likelihood_wake_array[jj] = np.nansum(-0.5*np.log(2*np.pi*noise_wake_this_height**2) - 0.5/(noise_wake_this_height**2)*(obs_lum_array - wake_lum_array) ** 2)
+        n_points = int(np.sum(~np.isnan(obs_lum_array)))
+        tot_num_values += n_points
+        if return_details:
+            per_height.append({
+                "simulation_height_m": float(ht_ref),
+                "observed_height_m": float(wake_container_ref.points[0].ht),
+                "site_id": str(getattr(wake_container_ref, "site_id", "")),
+                "n_points": n_points,
+                "noise": float(noise_wake_this_height),
+                "region_m": float(len_max_this_height),
+                "log_likelihood": float(log_likelihood_wake_array[jj]),
+            })
+        # print("number of wake values:", np.sum(~np.isnan(obs_lum_array)), "log_likelihood_wake_array[jj]:", log_likelihood_wake_array[jj])
+    log_likelihood_wake = np.sum(log_likelihood_wake_array)
+
+    return {"log_likelihood": float(log_likelihood_wake),
+            "n_points": int(tot_num_values), "per_height": per_height}
+
+
 def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout=20, wake_data=None):
     """ Calculate the log-likelihood for Dynesty.
 
@@ -9197,70 +9547,12 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
         return -np.inf
 
     if flag_wake:
-        # pick only the one that are not None simulation_results.wake_results
-        wake_indices = [i for i, w in enumerate(simulation_results.wake_results) if w is not None]
-        # # delete the ones that are not in wake_indices
-        # for ii in sorted(set(range(len(simulation_results.wake_results))) - set(wake_indices), reverse=True):
-        #     del simulation_results.wake_results[ii]
-        log_likelihood_wake_array = np.zeros(len(wake_indices))
-        tot_num_values = 0
-        # for each remaining simulation_results.wake_results get the height reference from the simulation results
-        for jj in range(len(wake_indices)):
-            # get the reference height from the simulation results
-            ht_ref = simulation_results.leading_frag_height_arr[wake_indices[jj]] # sr.wake_results[len(height_fractions)-1 - i].leading_frag_length
-            wake_heights = [wake_container.points[0].ht for wake_container in wake_data]
-
-            # Find the container which are closest to reference height of the wake fraction
-            ht_ref_idx = np.argmin(np.abs(np.array(wake_heights) - ht_ref))
-
-            # Get the two containers with observations
-            wake_container_ref = wake_data[ht_ref_idx]
-
-            # Resolve the per-altitude likelihood region directly from the
-            # wake container. resultsXalt_wake is only a fallback for older
-            # in-memory objects that do not yet carry the metadata.
-            len_max_this_height = _resolveWakeValue(
-                None, wake_data, ht_ref, container_attr="logl_len_max", default=None
-            )
-            if len_max_this_height is None:
-                len_max_values, len_max_heights = _wakeResultArrays(
-                    getattr(obs_metsim_obj, "resultsXalt_wake", None), "logl_len_max"
-                )
-                len_max_this_height = _resolveWakeValue(
-                    len_max_values, wake_data, ht_ref, altitudes=len_max_heights,
-                    default=100.0,
-                )
-
-            # Get the wake results
-            (
-                _, wake_lum_array, # Return the simulated wake at the ref ht
-                _, obs_lum_array # Return the observed wake at the ref ht
-            ) = wakeNormalizeAlignReduce(simulation_results.wake_results[wake_indices[jj]], wake_container_ref,
-                                        normalization_method=normalization_method, align_method=align_method,
-                                        lenMax=len_max_this_height, interp=True)
-
-            # Use per-height noise unless noise_wake is sampled/fixed as a
-            # scalar, in which case noise_wake_array is cleared above.
-            if getattr(obs_metsim_obj, "noise_wake_array", None) is not None:
-                noise_wake_this_height = _resolveWakeValue(
-                    None, wake_data, ht_ref, container_attr="noise_wake", default=None
-                )
-                if noise_wake_this_height is None:
-                    noise_wake_this_height = _resolveWakeValue(
-                        obs_metsim_obj.noise_wake_array, wake_data, ht_ref,
-                        altitudes=getattr(obs_metsim_obj, "altitudes_noises_wake", None),
-                        default=obs_metsim_obj.noise_wake,
-                    )
-            else:
-                noise_wake_this_height = float(obs_metsim_obj.noise_wake)
-
-            if not np.isfinite(noise_wake_this_height) or noise_wake_this_height <= 0:
-                return -np.inf
-
-            log_likelihood_wake_array[jj] = np.nansum(-0.5*np.log(2*np.pi*noise_wake_this_height**2) - 0.5/(noise_wake_this_height**2)*(obs_lum_array - wake_lum_array) ** 2)
-            tot_num_values += np.sum(~np.isnan(obs_lum_array))
-            # print("number of wake values:", np.sum(~np.isnan(obs_lum_array)), "log_likelihood_wake_array[jj]:", log_likelihood_wake_array[jj])
-        log_likelihood_wake = np.sum(log_likelihood_wake_array)
+        wake_score = computeWakeLogLikelihood(
+            simulation_results, wake_data, obs_metsim_obj,
+            normalization_method=normalization_method, align_method=align_method,
+        )
+        log_likelihood_wake = wake_score["log_likelihood"]
+        tot_num_values = wake_score["n_points"]
 
     # # create a plot with the obs_metsim_obj.luminosity and simulated_lc_intensity
     # plt.figure(figsize=(12,5))

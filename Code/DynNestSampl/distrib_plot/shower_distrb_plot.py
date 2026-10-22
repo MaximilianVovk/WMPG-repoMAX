@@ -11207,6 +11207,153 @@ def shower_distrb_plot(output_dir_show, shower_name, variables, num_meteors, fil
         plt.close(fig)
         print("Saved:", out_imem_rho)
 
+        ###############################################################################
+        # 3 blocks of fixed density, with heights matching the IMEM2 peaks.
+        ###############################################################################
+        # Fixed IMEM2 plateau heights.
+        heights = _peak_normalize(IMEM_rho_flux)
+        h1, h2, h3 = heights
+
+        # Use the same peak normalization as the plotted blue curve.
+        x = np.asarray(rho_compare_centers, dtype=float)
+        y = _peak_normalize(rho_total_dist)
+
+        valid = np.isfinite(x) & np.isfinite(y)
+        x, y = x[valid], y[valid]
+        order = np.argsort(x)
+        x, y = x[order], y[order]
+
+        if len(x) < 2 or np.any(np.diff(x) <= 0):
+            raise ValueError("At least two distinct density coordinates are required.")
+        if np.any(y < 0):
+            raise ValueError("The density distribution must be non-negative.")
+
+        # Match the actual lower and upper coordinates of the blue distribution.
+        rho_min = float(x[0])
+        rho_max = float(x[-1])
+
+        print(
+            f"Matching density range: "
+            f"{rho_min:.2f}–{rho_max:.2f} kg/m^3"
+        )
+
+        # Clip to the requested interval, interpolating at its endpoints.
+        inside = (x > rho_min) & (x < rho_max)
+        xx = np.r_[rho_min, x[inside], rho_max]
+        yy = np.interp(xx, x, y)
+        x, y = xx, yy
+
+        # Exact cumulative area for the piecewise-linear plotted curve.
+        dx = np.diff(x)
+        slopes = np.diff(y) / dx
+        cumulative = np.r_[0.0, np.cumsum(0.5 * (y[:-1] + y[1:]) * dx)]
+        target_area = cumulative[-1]
+
+        def area_to(z):
+            """Integral of the blue curve from rho_min to z."""
+            z = np.asarray(z, dtype=float)
+            i = np.clip(np.searchsorted(x, z, side="right") - 1, 0, len(x) - 2)
+            dz = z - x[i]
+            return cumulative[i] + y[i] * dz + 0.5 * slopes[i] * dz**2
+
+        # These bounds use the ordering of the supplied IMEM2 heights.
+        assert h1 < h3 < h2
+
+        minimum_area = h1 * (rho_max - rho_min)
+        maximum_area = h2 * (rho_max - rho_min)
+        if not minimum_area < target_area < maximum_area:
+            raise ValueError(
+                "Cannot match this area with three positive-width groups "
+                "at the fixed IMEM2 heights."
+            )
+
+        # Allowed first boundaries, enforcing rho_min <= a <= b <= rho_max.
+        a_min = max(
+            rho_min,
+            (h3 * rho_max - h1 * rho_min - target_area) / (h3 - h1),
+        )
+        a_max = min(
+            rho_max,
+            (h2 * rho_max - h1 * rho_min - target_area) / (h2 - h1),
+        )
+
+        # Search the remaining free boundary; b follows from exact area matching.
+        a_candidates = np.linspace(a_min, a_max, 50001)
+        b_candidates = (
+            target_area + h1 * rho_min - h3 * rho_max
+            + (h2 - h1) * a_candidates
+        ) / (h2 - h3)
+
+        F_a = area_to(a_candidates)
+        F_b = area_to(b_candidates)
+
+        # Integrated squared error, omitting integral(y**2), which is constant.
+        error = (
+            h1**2 * (a_candidates - rho_min)
+            + h2**2 * (b_candidates - a_candidates)
+            + h3**2 * (rho_max - b_candidates)
+            - 2.0 * (
+                h1 * F_a
+                + h2 * (F_b - F_a)
+                + h3 * (target_area - F_b)
+            )
+        )
+
+        best = np.argmin(error)
+        a, b = a_candidates[best], b_candidates[best]
+        edges = np.array([rho_min, a, b, rho_max])
+        group_areas = heights * np.diff(edges)
+
+        print("Density boundaries [kg/m^3]:", edges)
+        print(f"Blue area: {target_area:.6f}")
+        print(f"Combined flat area: {group_areas.sum():.6f}")
+        print("Flat-group area fractions:", group_areas / target_area)
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(
+            rho_compare_centers,
+            _peak_normalize(rho_total_dist),
+            color='blue', linewidth=2.2,
+            label='This work: total',
+        )
+
+        ax.plot(
+            IMEM_rho,
+            _peak_normalize(IMEM_rho_flux),
+            color='forestgreen', linestyle=':', marker='o',
+            markersize=6, linewidth=2,
+            label='IMEM2',
+        )
+
+        ax.stairs(
+            heights, edges,
+            baseline=None,
+            color="darkorange", linewidth=2.4,
+            label="Three flat groups: matched total area",
+        )
+
+        for boundary in (a, b):
+            ax.axvline(
+                boundary, color="darkorange",
+                linestyle="--", linewidth=1.0, alpha=0.6,
+            )
+
+        ax.set_xlabel(r'$\rho$ [kg/m$^3$]', fontsize=16)
+        ax.set_ylabel('Relative density distribution', fontsize=14)
+        ax.set_xlim(100, 8000)
+        ax.set_ylim(0, 1.05)
+        ax.tick_params(labelsize=13)
+        ax.grid(True, alpha=0.25)
+        ax.legend(fontsize=11)
+        fig.tight_layout()
+        os.makedirs(out_path, exist_ok=True)
+        out_imem_rho = os.path.join(
+            out_path, f"{shower_name}_posterior_vs_IMEM2_flat_overlay.png"
+        )
+        fig.savefig(out_imem_rho, bbox_inches='tight', dpi=300)
+        plt.close(fig)
+        print("Saved:", out_imem_rho)
+
         # --------------------------------------------------------------
         # MEMv3 native Lo/Hi distributions.
         # These files already give a fraction per 50 kg/m^3 density bin, so
@@ -14368,7 +14515,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
     
     arg_parser.add_argument('--input_dir', metavar='INPUT_PATH', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\6)Wake TEST\Results\ORI-wakefit", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final", # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Homogenus_sporadic-backup",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,

@@ -44,5 +44,5 @@ if __name__ == "__main__":
     setupDirAndRunDynesty(cml_args.input_dir, 
         cml_args.output_dir, cml_args.prior, use_all_cameras=cml_args.all_cameras, # resume=False, # use_wake_data=False,
         extraprior_file=cml_args.extraprior, save_backup=False, noise_wake_limit=-100, 
-        only_plot=True, region_method="threshold")#, priorFile_to_update_with_posteriors=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\stony_meteoroid_wake_update-fix.prior") or adaptive for region_method
+        only_plot=True, region_method="threshold") # ,sampler='nautilus' , priorFile_to_update_with_posteriors=r"C:\Users\maxiv\Documents\UWO\Papers\0.4)Wake\stony_meteoroid_wake_update-fix.prior") or adaptive for region_method
     

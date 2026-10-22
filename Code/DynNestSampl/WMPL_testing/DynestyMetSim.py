@@ -6994,6 +6994,18 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             diff_height= h_beg_wake_default-h_end_wake_default
             obs_data.wake_heights = [diff_height*0.9+h_end_wake_default, diff_height*0.7+h_end_wake_default, diff_height*0.5+h_end_wake_default]
 
+            # write in the log all the simulation constants not set in the .prior file (defaults or set by the code)
+            # sampled parameters get their lower bound as placeholder (needed to build fragments), they are not printed
+            const_defaults = constructConstants([low_val for low_val, _ in bounds], obs_data, list(flags_dict.keys()), fixed_values)
+            # sys.stdout = Logger(out_folder, os.path.basename(log_file_path))
+            print("  Other simulation values (not in the prior file, default or set by the code):")
+            with np.printoptions(threshold=20):
+                for const_name, const_val in sorted(const_defaults.__dict__.items()):
+                    if const_name not in flags_dict and const_name not in fixed_values and const_name != "fragmentation_entries":
+                        print(f"    {const_name}: {const_val}")
+            # sys.stdout.close()
+            # sys.stdout = sys.__stdout__
+
             ##################################################################################################
             if save_backup:
                 print("NOTE: Saving backup of dynesty files restuls.")

@@ -1,0 +1,31 @@
+Meteor: usg_input_jul_2010
+  File name:     ['C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\WMPL_testing\\usg_input_jul_2010.txt']
+  Report file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\WMPL_testing\
+  Dynesty file:  C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\WMPL_testing\usg_input_jul_2010.dynesty
+  Prior file:    ['C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\WMPL_testing\\usg_input_jul_2010.prior', 'C:\\Users\\maxiv\\WMPG-repoMAX\\Code\\DynNestSampl\\WMPL_testing\\usg_input_jul_2010.extraprior']
+  Output folder: C:\Users\maxiv\WMPG-repoMAX\Code\DynNestSampl\WMPL_testing\testUSG\usg_input_jul_2010
+  Bounds:
+    m_init: [100.0, 100000000.0] flags=[]
+    noise_lum: [10.192704377960311, 12.163834088976817] flags=['log']
+    height_EF0: [47723, 53723] flags=[]
+    mass_percent_EF0: [0, 100] flags=[]
+    erosion_coeff_EF0: [1e-08, 1e-05] flags=[]
+    grain_mass_min_EF0: [1e-05, 100.0] flags=[]
+    grain_mass_max_EF0: [0.0001, 1000.0] flags=[]
+    height_EF1: [33339.5, 39202] flags=[]
+    mass_percent_EF1: [0, 100] flags=[]
+    erosion_coeff_EF1: [1e-08, 1e-05] flags=[]
+    grain_mass_min_EF1: [1e-05, 100.0] flags=[]
+    grain_mass_max_EF1: [0.0001, 1000.0] flags=[]
+    height_EF2: [27477, 33339.5] flags=[]
+    mass_percent_EF2: [0, 100] flags=[]
+    erosion_coeff_EF2: [1e-08, 1e-05] flags=[]
+    grain_mass_min_EF2: [1e-05, 100.0] flags=[]
+    grain_mass_max_EF2: [0.0001, 1000.0] flags=[]
+    height_EF3: [19403, 25403] flags=[]
+    mass_percent_EF3: [0, 100] flags=[]
+    erosion_coeff_EF3: [1e-08, 1e-05] flags=[]
+    grain_mass_min_EF3: [1e-05, 100.0] flags=[]
+    grain_mass_max_EF3: [0.0001, 1000.0] flags=[]
+  Fixed Values:  {'P_0m': 3030, 'dt': 0.04, 'lum_eff_type': 0, 'lum_eff': 12.91, 'erosion_on': False, 'v_init': 15700, 'zenith_angle': 0.7895262293056536, 'rho': 1500, 'sigma': 5e-09, 'rho_grain': 3500, 'gamma': 1.0, 'shape_factor': 0.8, 'erosion_height_change': 1, 'number_EF0': 1, 'mass_index_EF0': 2.5, 'number_EF1': 1, 'mass_index_EF1': 2.5, 'number_EF2': 1, 'mass_index_EF2': 2.5, 'number_EF3': 1, 'mass_index_EF3': 2.5}
+  Wake data : False

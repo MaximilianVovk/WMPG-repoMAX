@@ -100,7 +100,7 @@ else:
 # suffix each one writes (nautilus requires an HDF5 '.h5' extension).
 SAMPLER_FILE_EXT = {"dynesty": ".dynesty", "nautilus": "_nautilus.h5"}
 
-from wmpl.MetSim.GUI import FragmentationEntry, SimulationResults, loadConstants, saveConstants, loadWakeFile, plotWakeOverview, WakeContainter
+from wmpl.MetSim.GUI import FragmentationEntry, SimulationResults, loadConstants, saveConstants, loadWakeFile, plotWakeOverview, WakeContainter, loadUSGInputFile
 from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
 from wmpl.MetSim.MetSimErosion import Constants, runSimulation, zenithAngleAtSimulationBegin
 from wmpl.MetSim.ML.GenerateSimulations import MetParam, generateErosionSim, saveProcessedList
@@ -4452,6 +4452,9 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
     n_lag0 = user_inputs.get("n_lag0", getattr(object_meteor, "noise_lag", np.nan))
     n_lum0 = user_inputs.get("n_lum0", getattr(object_meteor, "noise_lum", np.nan))
     n_wake0 = user_inputs.get("n_wake0", getattr(object_meteor, "noise_wake", np.nan))
+    peak_lum_default, low_lum_default = extractLumLimits(object_meteor)
+    peak_lum = float(user_inputs.get("peak_lum", peak_lum_default))
+    low_lum = float(user_inputs.get("low_lum", low_lum_default))
 
 
     flare_start_end, flare_start_init = findStrongestFlare(object_meteor.height_lum, object_meteor.absolute_magnitudes)
@@ -4513,6 +4516,12 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
         "noise_lum": ["invgamma"],
         "noise_wake": ["invgamma"]
     }
+
+    # scatter noise estimate (e.g. USG fireballs): flat prior between the start and end scatter of the light curve
+    noise_lum_bounds = getattr(object_meteor, "noise_lum_bounds", None)
+    if noise_lum_bounds is not None:
+        default_bounds["noise_lum"] = tuple(noise_lum_bounds)
+        default_flags["noise_lum"] = []
 
     rho_grain_real = 3000
     if hasattr(object_meteor, 'const'):
@@ -4591,6 +4600,7 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
             "flare_start_init": flare_start_init, "flare_start_end": flare_start_end,
             "v_0": v_0, "m_0": m_0, "zc_0": zc_0, "n_lag0": n_lag0, "n_lum0": n_lum0, "n_wake0": n_wake0,
             "h_beg_wake": h_beg_wake, "h_end_wake": h_end_wake,
+            "peak_lum": peak_lum, "low_lum": low_lum,
             "np": np
         }
 
@@ -4630,13 +4640,18 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
                 min_val = parts[1].strip() if len(parts) > 1 else "nan"
                 max_val = parts[2].strip() if len(parts) > 2 else "nan"
                 flags = [flag.strip() for flag in parts[3:]] if len(parts) > 3 else []
+                line_bounds, line_flags = default_bounds, default_flags
+                if name == "noise_lum" and noise_lum_bounds is not None and ("invgamma" in flags or "norm" in flags):
+                    # the scatter default is a flat range, for invgamma/norm go back to the (shape, mode) default
+                    line_bounds = {**default_bounds, "noise_lum": (5, object_meteor.noise_lum)}
+                    line_flags = {**default_flags, "noise_lum": ["invgamma"]}
                 # Handle NaN values and default replacement
-                min_val = safeEval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[0]
-                max_val = safeEval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else default_bounds.get(name, (np.nan, np.nan))[1]
+                min_val = safeEval(min_val) if isinstance(min_val, str) and min_val.lower() != "nan" else line_bounds.get(name, (np.nan, np.nan))[0]
+                max_val = safeEval(max_val) if isinstance(max_val, str) and max_val.lower() != "nan" else line_bounds.get(name, (np.nan, np.nan))[1]
                 # print(f"Setting bounds for '{name}': min={min_val}, max={max_val}, flags={flags}")
 
                 min_val, max_val, flags = boundsMinMaxFlags(
-                    name, object_meteor, min_val, max_val, flags, default_bounds, default_flags
+                    name, object_meteor, min_val, max_val, flags, line_bounds, line_flags
                 )
                 # Store flags
                 flags_dict[name] = flags
@@ -4703,6 +4718,9 @@ def appendExtraPriorsToBounds(object_meteor, bounds, flags_dict, fixed_values, f
     n_lag0 = user_inputs.get("n_lag0", getattr(object_meteor, "noise_lag", np.nan))
     n_lum0 = user_inputs.get("n_lum0", getattr(object_meteor, "noise_lum", np.nan))
     n_wake0 = user_inputs.get("n_wake0", getattr(object_meteor, "noise_wake", np.nan))
+    peak_lum_default, low_lum_default = extractLumLimits(object_meteor)
+    peak_lum = float(user_inputs.get("peak_lum", peak_lum_default))
+    low_lum = float(user_inputs.get("low_lum", low_lum_default))
 
     if not file_path.endswith(".extraprior"):
         print("WARNING: Provided file is not an .extraprior file, return bounds, flags and fixed parameters")
@@ -4768,6 +4786,7 @@ def appendExtraPriorsToBounds(object_meteor, bounds, flags_dict, fixed_values, f
         "flare_start_init": flare_start_init, "flare_start_end": flare_start_end,
         "v_0": v_0, "m_0": m_0, "zc_0": zc_0, "n_lag0": n_lag0, "n_lum0": n_lum0, "n_wake0": n_wake0,
         "h_beg_wake": h_beg_wake, "h_end_wake": h_end_wake,
+        "peak_lum": peak_lum, "low_lum": low_lum,
         "np": np
     }
 
@@ -5148,6 +5167,27 @@ def extractHeightsFromStations(object_meteor):
     return h_beg_default, h_end_default, h_peak_default, h_beg_wake_default, h_end_wake_default
 
 
+def isUSGInputFile(file_path):
+    """True for a USG/CNEOS MetSim input .txt file: 'usg' in the name and a usg_intensity_data block inside."""
+    file_name = os.path.basename(file_path).lower()
+    if not (file_name.endswith(".txt") and "usg" in file_name):
+        return False
+    try:
+        with open(file_path, 'r', errors='ignore') as f:
+            return "usg_intensity_data" in f.read()
+    except OSError:
+        return False
+
+
+def extractLumLimits(object_meteor):
+    """Return peak_lum (brightest luminosity) and low_lum (faintest positive luminosity) of the light curve in W."""
+    lum = np.asarray(getattr(object_meteor, "luminosity", []), dtype=float)
+    lum = lum[np.isfinite(lum) & (lum > 0)]
+    if lum.size == 0:
+        return np.nan, np.nan
+    return float(np.max(lum)), float(np.min(lum))
+
+
 ###############################################################################
 # Load observation data and create an object
 ###############################################################################
@@ -5290,14 +5330,19 @@ class ObservationData:
         P_0m_prior: [float] Prior override for P_0m (power of zero magnitude, in Watts). np.nan by default.
         pick_position: [int] Index to pick specific position/station data. 0 by default.
         prior_file_path: [str] Path to a prior file. Empty string by default.
+        lum_noise_method: [str] How to estimate noise_lum when not given in the prior file: 'snr' (SNR based,
+            invgamma prior), 'scatter' (flat prior between the scatter at the start and end of the light curve)
+            or 'auto' (snr for .pickle, scatter for USG .txt). 'auto' by default.
 
     """
     def __init__(self, obs_file_path, use_all_cameras=False, lag_noise_prior=40, lum_noise_prior=2.5, noise_wake_prior=100,
-                 fps_prior=np.nan, P_0m_prior=np.nan, pick_position=0, prior_file_path=""):
+                 fps_prior=np.nan, P_0m_prior=np.nan, pick_position=0, prior_file_path="", lum_noise_method="auto"):
         self.noise_lag = lag_noise_prior
         self.noise_lum = lum_noise_prior
         self.noise_wake = noise_wake_prior
         self.file_name = obs_file_path
+        self.is_usg = False
+        self.has_lag = True
 
         # check obs_file_path is a list if so take the first element
         if isinstance(obs_file_path, list):
@@ -5305,12 +5350,18 @@ class ObservationData:
 
         # check if the file is a json file
         if obs_file_path.endswith('.pickle'):
+            self.lum_noise_method = "snr" if lum_noise_method == "auto" else lum_noise_method
             self.loadPickleData(use_all_cameras,pick_position,prior_file_path, fps_prior, P_0m_prior)
         elif obs_file_path.endswith('.json'):
+            self.lum_noise_method = lum_noise_method
             self.loadJSONData(use_all_cameras)
+        elif obs_file_path.endswith('.txt'):
+            self.lum_noise_method = "scatter" if lum_noise_method == "auto" else lum_noise_method
+            self.has_lag = False
+            self.loadUSGData(prior_file_path, fps_prior, P_0m_prior)
         else:
             # file type not supported
-            raise ValueError("File type not supported, only .json and .pickle files are supported")
+            raise ValueError("File type not supported, only .json, .pickle and USG .txt files are supported")
 
     def saveToJSON(self, filepath="output.json"):
         """Save all attributes of self to a JSON file (numpy arrays converted to lists)."""
@@ -5637,7 +5688,9 @@ class ObservationData:
         self.time_lum = self.time_lum-np.min(self.time_lum)
 
         # usually noise_lum = 2.5
-        if np.isnan(self.noise_lum):
+        if self.lum_noise_method == "scatter":
+            self.fitLumNoiseScatter()
+        elif np.isnan(self.noise_lum):
             self.noise_lum = self.fitLumNoise()
             print('Assumed Noise in luminosity based on SNR:',self.noise_lum)
         self.noise_mag = 0.1
@@ -5714,74 +5767,7 @@ class ObservationData:
             # Average out the magnitudes
             time_arr, mag_arr = mergeClosePoints(time_arr, mag_arr, avg_t_diff_max, method='avg')
 
-            # # Calculate the radiated energy
-            # radiated_energy = calcRadiatedEnergy(np.array(time_arr), np.array(mag_arr), P_0m=self.P_0m)
-            lum_eff_type_val = None
-            lum_eff_type_fixed = False
-            luminous_efficiency = None
-            if prior_file_path != "":
-
-                with open(prior_file_path, 'r') as file:
-                    for line in file:
-                        stripped = line.strip().split('#')[0]  # Remove comments
-                        if not stripped or ',' not in stripped:
-                            continue
-
-                        parts = [p.strip() for p in stripped.split(',')]
-
-                        if parts[0] == 'lum_eff_type':
-                            try:
-                                lum_eff_type_val = int(parts[1])
-                                lum_eff_type_fixed = 'fix' in parts[2:]
-                            except (IndexError, ValueError):
-                                continue
-
-                        elif parts[0] == 'lum_eff':
-                            try:
-                                val1 = float(parts[1])
-                                val2 = None
-
-                                # Try parse second value if it exists and isn't 'fix'
-                                if len(parts) > 2:
-                                    second = parts[2].lower()
-                                    if second != 'fix':
-                                        val2 = float(second)
-                                is_fixed = 'fix' in parts[2:]
-
-                                if is_fixed:
-                                    luminous_efficiency = val1
-                                elif val2 is not None:
-                                    luminous_efficiency = np.mean([val1, val2])
-                                else:
-                                    luminous_efficiency = val1  # fallback to first
-                            except (IndexError, ValueError):
-                                continue
-
-                if not (lum_eff_type_val == 0 and lum_eff_type_fixed):
-                    luminous_efficiency = 0.7  # fallback default
-
-            else:
-                luminous_efficiency = 0.7
-
-
-
-            print("NOTE: The mass was computing using a constant luminous efficiency",luminous_efficiency,"%")
-
-            # Compute the photometric mass
-            photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=luminous_efficiency/100, P_0m=self.P_0m)
-
-            # run in case we have a diffrent lum_eff_type than constant luminous efficiency to better estimate the correct mass range
-            if lum_eff_type_val is not None and not (lum_eff_type_val == 0 and lum_eff_type_fixed):
-                # Get the luminous efficiency
-                tau_lum_eff_type = luminousEfficiency(lum_eff_type_val, luminous_efficiency, self.v_init, photom_mass)
-                print("NOTE: Adjusting luminous efficiency for the given lum_eff_type new luminous efficiency =", tau_lum_eff_type)
-                if tau_lum_eff_type <= 0:
-                    print("WARNING: Computed non-physical luminous efficiency. Using constant value instead.")
-                else:
-                    # Recompute the photometric mass with the new luminous efficiency
-                    photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), traj.orbit.v_avg, tau=tau_lum_eff_type, P_0m=self.P_0m)
-
-            m_init_list.append(photom_mass)
+            m_init_list.append(self._photometricMass(time_arr, mag_arr, traj.orbit.v_avg, prior_file_path))
 
         # do the mean of the zenith_angle_list and m_init_list
         self.zenith_angle = np.mean(zenith_angle_list)
@@ -5961,6 +5947,188 @@ class ObservationData:
         lum_noise = self.luminosity[index]/10**((apparent_mag-const)/(-2.5))
 
         return lum_noise
+
+    def fitLumNoiseScatter(self, edge_fraction=0.1, min_points=10):
+        """ Estimate the luminosity noise from the scatter at the start and at the end of the light curve.
+
+        The standard deviation of the luminosity in the first and last `edge_fraction` of the data are
+        used as the lower and upper bounds of a flat prior on noise_lum (stored in self.noise_lum_bounds).
+        If no noise was given in the prior file, self.noise_lum is set to their mean.
+        Meant for USG/CNEOS light curves that record the background before and after the fireball.
+        """
+        lum = np.asarray(self.luminosity, dtype=float)
+        lum = lum[np.isfinite(lum)]
+        n_edge = min(max(min_points, int(edge_fraction*len(lum))), len(lum)//2)
+        if n_edge < 2:
+            print("WARNING: Not enough luminosity points to estimate the scatter noise.")
+            return
+        sigma_start = float(np.std(lum[:n_edge]))
+        sigma_end = float(np.std(lum[-n_edge:]))
+        low, high = min(sigma_start, sigma_end), max(sigma_start, sigma_end)
+        # Avoid a degenerate flat prior when the two edges have almost the same scatter, use at least a factor 2 range
+        if high < 2*low:
+            center = np.sqrt(low*high)
+            low, high = center/np.sqrt(2), center*np.sqrt(2)
+        self.noise_lum_bounds = (low, high)
+        print(f"Luminosity noise from start/end scatter: start {sigma_start:.4g} W, end {sigma_end:.4g} W -> flat prior [{low:.4g}, {high:.4g}] W")
+        if np.isnan(self.noise_lum):
+            self.noise_lum = np.mean([sigma_start, sigma_end])
+            print('Assumed Noise in luminosity based on start/end scatter:', self.noise_lum)
+
+    def _photometricMass(self, time_arr, mag_arr, v_avg, prior_file_path=""):
+        """ Compute the photometric mass, using lum_eff and lum_eff_type from the prior file if given. """
+
+        # # Calculate the radiated energy
+        # radiated_energy = calcRadiatedEnergy(np.array(time_arr), np.array(mag_arr), P_0m=self.P_0m)
+        lum_eff_type_val = None
+        lum_eff_type_fixed = False
+        luminous_efficiency = None
+        if prior_file_path != "":
+
+            with open(prior_file_path, 'r') as file:
+                for line in file:
+                    stripped = line.strip().split('#')[0]  # Remove comments
+                    if not stripped or ',' not in stripped:
+                        continue
+
+                    parts = [p.strip() for p in stripped.split(',')]
+
+                    if parts[0] == 'lum_eff_type':
+                        try:
+                            lum_eff_type_val = int(parts[1])
+                            lum_eff_type_fixed = 'fix' in parts[2:]
+                        except (IndexError, ValueError):
+                            continue
+
+                    elif parts[0] == 'lum_eff':
+                        try:
+                            val1 = float(parts[1])
+                            val2 = None
+
+                            # Try parse second value if it exists and isn't 'fix'
+                            if len(parts) > 2:
+                                second = parts[2].lower()
+                                if second != 'fix':
+                                    val2 = float(second)
+                            is_fixed = 'fix' in parts[2:]
+
+                            if is_fixed:
+                                luminous_efficiency = val1
+                            elif val2 is not None:
+                                luminous_efficiency = np.mean([val1, val2])
+                            else:
+                                luminous_efficiency = val1  # fallback to first
+                        except (IndexError, ValueError):
+                            continue
+
+            if not (lum_eff_type_val == 0 and lum_eff_type_fixed):
+                luminous_efficiency = 0.7  # fallback default
+
+        else:
+            luminous_efficiency = 0.7
+
+        print("NOTE: The mass was computing using a constant luminous efficiency",luminous_efficiency,"%")
+
+        # Compute the photometric mass
+        photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), v_avg, tau=luminous_efficiency/100, P_0m=self.P_0m)
+
+        # run in case we have a diffrent lum_eff_type than constant luminous efficiency to better estimate the correct mass range
+        if lum_eff_type_val is not None and not (lum_eff_type_val == 0 and lum_eff_type_fixed):
+            # Get the luminous efficiency
+            tau_lum_eff_type = luminousEfficiency(lum_eff_type_val, luminous_efficiency, self.v_init, photom_mass)
+            print("NOTE: Adjusting luminous efficiency for the given lum_eff_type new luminous efficiency =", tau_lum_eff_type)
+            if tau_lum_eff_type <= 0:
+                print("WARNING: Computed non-physical luminous efficiency. Using constant value instead.")
+            else:
+                # Recompute the photometric mass with the new luminous efficiency
+                photom_mass = calcMass(np.array(time_arr), np.array(mag_arr), v_avg, tau=tau_lum_eff_type, P_0m=self.P_0m)
+
+        return photom_mass
+
+    def loadUSGData(self, prior_file_path="", fps_prior=np.nan, P_0m_prior=np.nan):
+        """ Load a USG/CNEOS input .txt file (WMPL MetSim USG format).
+
+        USG light curves only have luminosity (no lag/velocity data), the lag arrays are filled with
+        placeholders and only 'lum' is flagged as available for the log-likelihood.
+        By default P_0m comes from the file (P_0m_bolo, normally 3030 W), the fps from the frame time
+        step, and the simulation dt is set to 0.04 s in setupDirAndRunDynesty. All can be overridden in the .prior file.
+        """
+
+        usg_file = self.file_name[0] if isinstance(self.file_name, list) else self.file_name
+        print('Loading USG file:', usg_file)
+
+        usg_data, traj = loadUSGInputFile(*os.path.split(usg_file))
+        obs = traj.observations[0]
+        const = Constants()
+
+        self.is_usg = True
+        self.P_0m = float(usg_data.P_0m_bolo) if np.isnan(P_0m_prior) else P_0m_prior
+
+        # Sort by time, keep negative intensities (pure noise) as they are part of the measured scatter
+        time_data = np.asarray(obs.time_data, dtype=float)
+        sort_idx = np.argsort(time_data)
+        time_data = time_data[sort_idx]
+        height = np.asarray(obs.model_ht, dtype=float)[sort_idx]
+        intensity = np.asarray(usg_data.usg_intensity_data, dtype=float)[:, 1][sort_idx]
+        # same conversion used by wmpl for the magnitudes: M = -2.5 log10(I/248)
+        luminosity = self.P_0m*intensity/248
+
+        absolute_magnitudes = luminosityToAbsoluteMagnitude(luminosity, self.P_0m)
+        visible = np.isfinite(absolute_magnitudes)
+        # replace the non-positive points with the faintest magnitude so magnitude based tools do not break
+        absolute_magnitudes = np.where(visible, absolute_magnitudes, np.nanmax(absolute_magnitudes))
+
+        if np.isnan(fps_prior):
+            self.fps_lum = float(np.round(1/np.median(np.diff(time_data))))
+            print('Computed fps from the USG frame time:', self.fps_lum)
+        else:
+            self.fps_lum = fps_prior
+        self.fps_lag = self.fps_lum
+
+        self.v_init = float(traj.orbit.v_init)
+        self.lum_files = [usg_file]
+        self.lag_files = [usg_file]
+
+        # luminosity data
+        station = np.array([obs.station_id]*len(time_data))
+        self.height_lum = height
+        self.time_lum = time_data - time_data[0]
+        self.luminosity = luminosity
+        self.absolute_magnitudes = absolute_magnitudes
+        self.apparent_magnitudes = absolute_magnitudes.copy()
+        self.stations_lum = station
+
+        # no dynamics measured: placeholders on the luminosity points, not used in the fit
+        self.height_lag = height.copy()
+        self.time_lag = self.time_lum.copy()
+        self.lag = np.zeros_like(height)
+        self.length = self.v_init*self.time_lag
+        self.velocities = np.full_like(height, self.v_init)
+        self.stations_lag = station.copy()
+
+        # luminosity noise: flat prior between the scatter at the start and at the end of the data
+        if self.lum_noise_method == "snr":
+            print("WARNING: SNR luminosity noise is not available for USG data, use start/end scatter instead.")
+        self.fitLumNoiseScatter()
+        self.noise_mag = 0.1
+        # lag is not fitted, keep a finite value for the code that uses it
+        if np.isnan(self.noise_lag):
+            self.noise_lag = 1.0
+        self.noise_vel = self.noise_lag*np.sqrt(2)*self.fps_lag
+
+        # atmosphere density and zenith angle
+        dens_fit_ht_beg = 180000
+        dens_fit_ht_end = max(traj.rend_ele - 5000, 14000)
+        lat_mean = np.mean([traj.rbeg_lat, traj.rend_lat])
+        lon_mean = meanAngle([traj.rbeg_lon, traj.rend_lon])
+        self.dens_co = fitAtmPoly(lat_mean, lon_mean, dens_fit_ht_end, dens_fit_ht_beg, traj.jdt_ref)
+        self.zenith_angle = zenithAngleAtSimulationBegin(const.h_init, traj.rbeg_ele, traj.orbit.zc, const.r_earth)
+
+        # photometric mass only from the points clearly above the noise
+        significant = visible & (luminosity > 3*np.nanmin(self.noise_lum_bounds)) if hasattr(self, 'noise_lum_bounds') else visible
+        if np.sum(significant) < 2:
+            significant = visible
+        self.m_init = self._photometricMass(time_data[significant], absolute_magnitudes[significant], traj.orbit.v_avg, prior_file_path)
 
     def findIAUCode(self):
         # check if self.file_name is a array or a string
@@ -6565,10 +6733,65 @@ class ObservationData:
 # find dynestyfile and priors
 ###############################################################################
 
+FIT_DATA_TERMS = ("lum", "lag", "wake")
+FIT_DATA_NOISE = {"lum": "noise_lum", "lag": "noise_lag", "wake": "noise_wake"}
+
+
+def resolveFitData(fit_data, obs_data, wake_data=None, use_wake_data=True):
+    """ Select the data terms used in the log-likelihood.
+
+    Arguments:
+        fit_data: [str or list] 'auto' to use all the data available (lum, lag and wake if present and
+            use_wake_data), or a list/comma separated string of terms e.g. ['lum','lag'], 'lum', ['wake'].
+            An explicit list overrides use_wake_data (-NoWake).
+        obs_data: [ObservationData] Observation object.
+
+    Keyword arguments:
+        wake_data: [list] Wake containers or None.
+        use_wake_data: [bool] False to drop the wake in 'auto' mode (-NoWake).
+
+    Return:
+        terms: [list] Terms used in the log-likelihood.
+        unused_noise: [list] Noise parameters not to sample: the ones of terms with no data or explicitly excluded.
+    """
+    available = []
+    if np.any(np.isfinite(np.asarray(getattr(obs_data, "luminosity", []), dtype=float))):
+        available.append("lum")
+    if getattr(obs_data, "has_lag", True) and len(getattr(obs_data, "lag", [])) > 0:
+        available.append("lag")
+    if wake_data is not None:
+        available.append("wake")
+
+    if isinstance(fit_data, str):
+        fit_data = [t for t in re.split(r"[\s,;]+", fit_data.strip("[]() ").replace("'", "").replace('"', "").lower()) if t]
+    else:
+        fit_data = [str(t).strip().lower() for t in fit_data]
+
+    explicit = fit_data != ["auto"]
+    if explicit:
+        unknown = [t for t in fit_data if t not in FIT_DATA_TERMS]
+        if unknown:
+            raise ValueError(f"Unknown fit data {unknown}, use 'auto' or any of {list(FIT_DATA_TERMS)}")
+        missing = [t for t in fit_data if t not in available]
+        if missing:
+            print(f"WARNING: requested fit data {missing} not available for this event (available: {available})")
+        terms = [t for t in FIT_DATA_TERMS if t in fit_data and t in available]
+    else:
+        terms = [t for t in available if t != "wake" or use_wake_data]
+
+    if not terms:
+        raise ValueError(f"No data left to fit (requested {fit_data}, available {available})")
+    print("Data used in the log-likelihood:", terms)
+
+    # -NoWake alone keeps sampling noise_wake (as before) so older runs can still be resumed/plotted
+    unused_noise = [FIT_DATA_NOISE[t] for t in FIT_DATA_TERMS if t not in terms and (explicit or t not in available)]
+    return terms, unused_noise
+
+
 def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True,
     only_plot=True, cores=None, pool_MPI=None, pick_position=0, extraprior_file='', save_backup=True,
     use_wake_data=True, noise_wake_limit=-100, region_method="threshold", priorFile_to_update_with_posteriors="",
-    print_progress=True, sampler="dynesty", n_live=None):
+    print_progress=True, sampler="dynesty", n_live=None, fit_data="auto", lum_noise_method="auto"):
     """ Create the output folder if it doesn't exist and run the Dynesty simulation.
 
     Arguments:
@@ -6587,6 +6810,9 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
         save_backup: [bool] Flag to save a backup of the results. True by default.
         sampler: [str] Nested sampling backend, 'dynesty' (default) or 'nautilus'.
         n_live: [int] Number of live points. None uses the sampler default (dynesty 500, nautilus 2000).
+        fit_data: [str or list] Data used in the log-likelihood, 'auto' or a list of 'lum', 'lag', 'wake'
+            (see resolveFitData). Overrides use_wake_data. 'auto' by default.
+        lum_noise_method: [str] 'auto', 'snr' or 'scatter', how to estimate noise_lum (see ObservationData).
 
     Return:
         None
@@ -6669,7 +6895,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             extraprior_file=cml_args.extraprior_file,
             noise_wake_limit=noise_wake_limit,
             region_method=region_method,   # ADDED
-            sampler=sampler
+            sampler=sampler,
+            lum_noise_method=lum_noise_method
         )
 
         # check if finder is empty
@@ -6690,7 +6917,14 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             obs_data = finder.obsInstance(base_name)
             obs_data.file_name = pickle_file # update teh file name in the observation data object
             wake_data = finder.wakeInstance(base_name)
-            if use_wake_data == False:
+            # pick the data used in the log-likelihood (lum, lag, wake), --fit_data overrides -NoWake
+            obs_data.fit_data, unused_noise = resolveFitData(fit_data, obs_data, wake_data, use_wake_data)
+            for noise_name in unused_noise:
+                if noise_name in flags_dict:
+                    print(f"Not sampling {noise_name}, its data is not used in the log-likelihood")
+                    bounds = [b for b, key in zip(bounds, flags_dict) if key != noise_name]
+                    flags_dict.pop(noise_name)
+            if "wake" not in obs_data.fit_data:
                 wake_data = None
 
             # update the log file with the error join out_folder,"log_"+base_name+".txt"
@@ -6701,12 +6935,18 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             ### set up obs_data const values to run same simultaions in run_simulation #################
 
             # if the real_event has an initial velocity lower than 30000 set "dt": 0.005 to "dt": 0.01
-            if obs_data.v_init < 30000:
+            if getattr(obs_data, "is_usg", False):
+                # USG fireballs: coarser time step (as in the USG MetSim fits)
+                obs_data.dt = 0.04
+            elif obs_data.v_init < 30000:
                 obs_data.dt = 0.01
                 # const_nominal.erosion_bins_per_10mass = 5
             else:
                 obs_data.dt = 0.005
                 # const_nominal.erosion_bins_per_10mass = 10
+            # a dt fixed in the .prior file has priority
+            if 'dt' in fixed_values:
+                obs_data.dt = fixed_values['dt']
 
             obs_data.disruption_on = False
 
@@ -6724,6 +6964,9 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             # check if the v_kill is smaller than 0
             if obs_data.v_kill < 0:
                 obs_data.v_kill = 1
+            # USG has no measured deceleration (constant velocity placeholder), use the MetSim default
+            if getattr(obs_data, "is_usg", False):
+                obs_data.v_kill = Constants().v_kill
 
             obs_data.wake_psf = wake_psf # PSF width in meters base on the wmpl version used to run the simulation,
             # this is used to set the width of the wake in the dynesty model. The default value is 5 meters, which is based on the wmpl version used to run the simulation.
@@ -7685,10 +7928,13 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
     h_beg = np.nan
     h_end = np.nan
     h_peak = np.nan
+    peak_lum = np.nan
+    low_lum = np.nan
     if object_meteor is not None and hasattr(object_meteor, "height_lum") and hasattr(object_meteor, "luminosity"):
         h_beg  = float(np.max(object_meteor.height_lum))
         h_end  = float(np.min(object_meteor.height_lum))
         h_peak = float(object_meteor.height_lum[np.argmax(object_meteor.luminosity)])
+        peak_lum, low_lum = extractLumLimits(object_meteor)
 
     # Allow aliases
     if "n_lag0" in user_inputs and "noise_lag" not in user_inputs:
@@ -7710,6 +7956,9 @@ def readSimParams(file_path, user_inputs=None, object_meteor=None):
         "n_lag0": user_inputs.get("n_lag0", user_inputs.get("noise_lag", np.nan)),
         "n_lum0": user_inputs.get("n_lum0", user_inputs.get("noise_lum", np.nan)),
         "n_wake0": user_inputs.get("n_wake0", user_inputs.get("noise_wake", np.nan)),
+
+        "peak_lum": user_inputs.get("peak_lum", peak_lum),
+        "low_lum": user_inputs.get("low_lum", low_lum),
     }
 
 
@@ -8152,7 +8401,7 @@ class autoSetupDynestyFiles:
 
     def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False,
                  pick_position=0, extraprior_file="", noise_wake_limit=-100, region_method="threshold",
-                 sampler="dynesty"):
+                 sampler="dynesty", lum_noise_method="auto"):
         """ Initialize the autoSetupDynestyFiles class.
 
         Arguments:
@@ -8167,6 +8416,7 @@ class autoSetupDynestyFiles:
             extraprior_file: [str] Path to an extra prior file. Empty string by default.
             noise_wake_limit: [int] Threshold for wake noise computation (default -100 m).
             sampler: [str] Nested sampler backend, 'dynesty' or 'nautilus'. Sets the checkpoint file suffix.
+            lum_noise_method: [str] 'auto', 'snr' or 'scatter', how to estimate noise_lum (see ObservationData).
         """
         self.input_dir_or_file = input_dir_or_file
         self.prior_file = prior_file
@@ -8178,6 +8428,7 @@ class autoSetupDynestyFiles:
         self.noise_wake_limit = noise_wake_limit  # to be filled if found in prior file
         self.region_method = region_method  # ADDED: 'threshold' (default) or 'adaptive'
         self.file_ext = SAMPLER_FILE_EXT[sampler]  # '.dynesty' or '_nautilus.h5'
+        self.lum_noise_method = lum_noise_method
 
         # Prepare placeholders
         self.base_names = []        # [base_name, ...] (no extension)
@@ -8215,6 +8466,16 @@ class autoSetupDynestyFiles:
                 all_pickle_files.extend(os.path.join(root, f) for f in pickle_files)
 
             print(all_pickle_files)
+
+            # USG/CNEOS .txt input files (have 'usg' in the name), each one is a separate event
+            for root, dirs, files in os.walk(self.input_dir_or_file):
+                for f in files:
+                    if isUSGInputFile(os.path.join(root, f)):
+                        print("Found USG file:", os.path.join(root, f))
+                        self.mainDirConstructor(os.path.join(root, f), root, files)
+
+            if not all_pickle_files:
+                return
 
             # Call function to process found pickle files
             clusters = self.combinePickleFiles(all_pickle_files)
@@ -8514,9 +8775,18 @@ class autoSetupDynestyFiles:
                 prior_path = ""
 
         observation_instance = ObservationData(input_file, self.use_all_cameras, lag_noise_prior,
-            lum_noise_prior, noise_wake_prior, fps_prior, P_0m_prior, self.pick_position, prior_path)
+            lum_noise_prior, noise_wake_prior, fps_prior, P_0m_prior, self.pick_position, prior_path,
+            lum_noise_method=self.lum_noise_method)
 
-        self.makeWakeContainers(input_file)
+        if observation_instance.is_usg:
+            # USG light curves have no wake data
+            self.wake_containers = None
+            self.noise_wake = None
+            self.resultsXalt_wake = None
+            self.noise_wake_array = None
+            self.altitudes_noises_wake = None
+        else:
+            self.makeWakeContainers(input_file)
 
         observation_instance.noise_wake = self.noise_wake
         observation_instance.resultsXalt_wake = self.resultsXalt_wake
@@ -9414,8 +9684,13 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
     if guess_var.ndim != 1 or guess_var.size != len(flags_dict) or not np.all(np.isfinite(guess_var)):
         return -np.inf
 
+    # data terms used in the log-likelihood, set by resolveFitData() (default lum + lag + wake if present)
+    fit_data = getattr(obs_metsim_obj, "fit_data", ("lum", "lag", "wake"))
+    fit_lum = "lum" in fit_data
+    fit_lag = "lag" in fit_data
+
     flag_wake = False
-    if wake_data is not None:
+    if wake_data is not None and "wake" in fit_data:
         flag_wake = True
 
     align_method = "correlate"
@@ -9511,40 +9786,57 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
 
     ### LUM CALC ###
 
-    simulated_time = np.interp(obs_metsim_obj.height_lum,
-                                       np.flip(simulation_results.leading_frag_height_arr),
-                                       np.flip(simulation_results.time_arr))
-    # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
-    if np.sum(~np.isnan(simulated_time)) != np.sum(~np.isnan(obs_metsim_obj.time_lum)):
-        return -np.inf
-
-    # all simulated time is the time_arr subtract the first time of the simulation
-    all_simulated_time = simulation_results.time_arr- simulated_time[0]#
-    # find the integral of the luminosity in time in between FPS but not valid for CAMO narrowfield cameras as there is no smearing becuse it follows the meteor
-    if (1/obs_metsim_obj.fps_lum > simulation_results.const.dt): # and (not any('1T' in station for station in obs_metsim_obj.stations_lum) or not any('2T' in station for station in obs_metsim_obj.stations_lum)): # FPS is lower than the simulation time step need to integrate the luminosity
-        simulated_lc_intensity, _ = integrateLuminosity(all_simulated_time,obs_metsim_obj.time_lum,simulation_results.luminosity_arr,simulation_results.const.dt,obs_metsim_obj.fps_lum,obs_metsim_obj.P_0m)
-    else:
-        # too high frame rate, just interpolate the luminosity
-        simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum,
-                                           np.flip(simulation_results.leading_frag_height_arr),
-                                           np.flip(simulation_results.luminosity_arr))
-        # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
-        if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
+    if fit_lum and getattr(obs_metsim_obj, "is_usg", False):
+        # USG light curves extend before and after the fireball (pure noise), there the simulated luminosity is 0
+        sim_ht = np.asarray(simulation_results.leading_frag_height_arr, dtype=float)
+        valid = np.isfinite(sim_ht) & np.isfinite(simulation_results.luminosity_arr)
+        if np.sum(valid) < 2:
             return -np.inf
+        simulated_time = np.interp(obs_metsim_obj.height_lum, np.flip(sim_ht[valid]), np.flip(simulation_results.time_arr[valid]))
+        if 1/obs_metsim_obj.fps_lum > simulation_results.const.dt:
+            simulated_lc_intensity, _ = integrateLuminosity(simulation_results.time_arr - simulated_time[0], obs_metsim_obj.time_lum,
+                simulation_results.luminosity_arr, simulation_results.const.dt, obs_metsim_obj.fps_lum, obs_metsim_obj.P_0m)
+            simulated_lc_intensity = np.nan_to_num(simulated_lc_intensity, nan=0.0)
+        else:
+            simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum, np.flip(sim_ht[valid]),
+                np.flip(simulation_results.luminosity_arr[valid]), left=0.0, right=0.0)
+
+    elif fit_lum:
+        simulated_time = np.interp(obs_metsim_obj.height_lum,
+                                           np.flip(simulation_results.leading_frag_height_arr),
+                                           np.flip(simulation_results.time_arr))
+        # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
+        if np.sum(~np.isnan(simulated_time)) != np.sum(~np.isnan(obs_metsim_obj.time_lum)):
+            return -np.inf
+
+        # all simulated time is the time_arr subtract the first time of the simulation
+        all_simulated_time = simulation_results.time_arr- simulated_time[0]#
+        # find the integral of the luminosity in time in between FPS but not valid for CAMO narrowfield cameras as there is no smearing becuse it follows the meteor
+        if (1/obs_metsim_obj.fps_lum > simulation_results.const.dt): # and (not any('1T' in station for station in obs_metsim_obj.stations_lum) or not any('2T' in station for station in obs_metsim_obj.stations_lum)): # FPS is lower than the simulation time step need to integrate the luminosity
+            simulated_lc_intensity, _ = integrateLuminosity(all_simulated_time,obs_metsim_obj.time_lum,simulation_results.luminosity_arr,simulation_results.const.dt,obs_metsim_obj.fps_lum,obs_metsim_obj.P_0m)
+        else:
+            # too high frame rate, just interpolate the luminosity
+            simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum,
+                                               np.flip(simulation_results.leading_frag_height_arr),
+                                               np.flip(simulation_results.luminosity_arr))
+            # check if the length of the simulated_lc_intensity is the same as the length of the obs_metsim_obj.luminosity
+            if np.sum(~np.isnan(simulated_lc_intensity)) != np.sum(~np.isnan(obs_metsim_obj.luminosity)):
+                return -np.inf
 
     ### LAG CALC ###
 
-    lag_sim = simulation_results.leading_frag_length_arr - (obs_metsim_obj.v_init*simulation_results.time_arr)
+    if fit_lag:
+        lag_sim = simulation_results.leading_frag_length_arr - (obs_metsim_obj.v_init*simulation_results.time_arr)
 
-    simulated_lag = np.interp(obs_metsim_obj.height_lag,
-                              np.flip(simulation_results.leading_frag_height_arr),
-                              np.flip(lag_sim))
+        simulated_lag = np.interp(obs_metsim_obj.height_lag,
+                                  np.flip(simulation_results.leading_frag_height_arr),
+                                  np.flip(lag_sim))
 
-    lag_sim = simulated_lag - simulated_lag[0]
+        lag_sim = simulated_lag - simulated_lag[0]
 
-    # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
-    if np.sum(~np.isnan(lag_sim)) != np.sum(~np.isnan(obs_metsim_obj.lag)):
-        return -np.inf
+        # check if the length of the lag_sim is the same as the length of the obs_metsim_obj.lag
+        if np.sum(~np.isnan(lag_sim)) != np.sum(~np.isnan(obs_metsim_obj.lag)):
+            return -np.inf
 
     if flag_wake:
         wake_score = computeWakeLogLikelihood(
@@ -9576,16 +9868,25 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
 
     ### Log Likelihood ###
 
-    log_likelihood_lum = np.nansum(-0.5*np.log(2*np.pi*obs_metsim_obj.noise_lum**2) - 0.5/(obs_metsim_obj.noise_lum**2)*(obs_metsim_obj.luminosity - simulated_lc_intensity) ** 2)
-    # print("log_likelihood_lum:", log_likelihood_lum)
-    log_likelihood_lag = np.nansum(-0.5*np.log(2*np.pi*obs_metsim_obj.noise_lag**2) - 0.5/(obs_metsim_obj.noise_lag**2)*(obs_metsim_obj.lag - lag_sim) ** 2)
-    # print("log_likelihood_lag:", log_likelihood_lag)
-    log_likelihood_tot = log_likelihood_lum + log_likelihood_lag
+    log_likelihood_tot = 0.0
+    n_lum_lag = 0
+    if fit_lum:
+        log_likelihood_lum = np.nansum(-0.5*np.log(2*np.pi*obs_metsim_obj.noise_lum**2) - 0.5/(obs_metsim_obj.noise_lum**2)*(obs_metsim_obj.luminosity - simulated_lc_intensity) ** 2)
+        # print("log_likelihood_lum:", log_likelihood_lum)
+        log_likelihood_tot += log_likelihood_lum
+        n_lum_lag += len(obs_metsim_obj.luminosity)
+    if fit_lag:
+        log_likelihood_lag = np.nansum(-0.5*np.log(2*np.pi*obs_metsim_obj.noise_lag**2) - 0.5/(obs_metsim_obj.noise_lag**2)*(obs_metsim_obj.lag - lag_sim) ** 2)
+        # print("log_likelihood_lag:", log_likelihood_lag)
+        log_likelihood_tot += log_likelihood_lag
+        n_lum_lag += len(obs_metsim_obj.lag)
     if flag_wake:
         # weight by the number of points in the wake to avoid overweighting the wake if there are many points
         if tot_num_values <= 0:
             return -np.inf
-        log_likelihood_tot += ((len(obs_metsim_obj.lag)+len(obs_metsim_obj.luminosity))/tot_num_values)*log_likelihood_wake
+        # only wake fitted: no reweighting
+        wake_weight = n_lum_lag/tot_num_values if n_lum_lag > 0 else 1.0
+        log_likelihood_tot += wake_weight*log_likelihood_wake
         # log_likelihood_tot += ((np.max([len(obs_metsim_obj.lag),len(obs_metsim_obj.luminosity)]))/tot_num_values)*log_likelihood_wake
 
     if not np.isfinite(log_likelihood_tot):
@@ -9845,7 +10146,7 @@ if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description="Run dynesty with optional .prior file.")
 
     arg_parser.add_argument('input_dir', metavar='INPUT_PATH', type=str,
-        help="Path to walk and find .pickle file or specific single file .pickle or .json file."
+        help="Path to walk and find .pickle files and USG .txt files (with 'usg' in the name) or specific single file .pickle, .json or USG .txt file."
         "If you want multiple specific folder or files just divided them by ',' in between.")
 
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
@@ -9886,8 +10187,18 @@ if __name__ == "__main__":
         action="store_true")
 
     arg_parser.add_argument('-NoWake','--use_wake_data',
-        help="If wake data present not use it.",
+        help="If wake data present not use it. Overridden by --fit_data if it is not 'auto'.",
         action="store_false")
+
+    arg_parser.add_argument('--fit_data', metavar='FIT_DATA', type=str, default="auto",
+        help="Data used in the log-likelihood: 'auto' (default) uses all the data available (lum, lag and wake if present), "
+        "otherwise a list of lum, lag, wake e.g. \"['lum','lag']\" or lum,lag (no wake), lum (e.g. USG fireballs), wake. "
+        "Overrides -NoWake. The noise of the terms not fitted is not sampled.")
+
+    arg_parser.add_argument('--lum_noise_method', metavar='LUM_NOISE_METHOD', type=str, choices=('auto', 'snr', 'scatter'), default="auto",
+        help="How to estimate noise_lum if not given in the .prior file: 'snr' SNR based (invgamma prior), "
+        "'scatter' flat prior between the luminosity scatter at the start and at the end of the data, "
+        "'auto' (default) snr for .pickle and scatter for USG .txt files.")
 
     arg_parser.add_argument('--noise_wake_limit', metavar='NOISE_WAKE_LIMIT', type=float, default=-100.0,
         help="Fixed wake x-coordinate where the noise tail begins. It is also used as the LogL cutoff when --region_method=threshold (default: -100 m).")
@@ -9928,6 +10239,7 @@ if __name__ == "__main__":
                           pick_position=cml_args.pick_pos, extraprior_file=cml_args.extraprior, save_backup=cml_args.not_backup,
                           use_wake_data=cml_args.use_wake_data, noise_wake_limit=cml_args.noise_wake_limit, region_method=cml_args.region_method,
                           priorFile_to_update_with_posteriors=cml_args.priorposteriorupdate, print_progress=cml_args.print_progress,
-                          sampler=cml_args.sampler, n_live=cml_args.nlive)
+                          sampler=cml_args.sampler, n_live=cml_args.nlive, fit_data=cml_args.fit_data,
+                          lum_noise_method=cml_args.lum_noise_method)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

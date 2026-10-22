@@ -1,0 +1,39 @@
+# USG/CNEOS fireball 2010-07-06 fragmentation priors, translated from metsim_ns_scatter/metsim_ns_scatter.py
+# 4 eroding fragments (EF) of usg_input_jul_2010_sim_fit_latest.json
+# free: mass_percent 0-100 %, erosion_coeff 0.01-10 s^2/km^2, grain_mass_min 1e-5-1e2 kg, grain_mass_max 1e-4-1e3 kg,
+#       height +-3000 m around the json height, limited by the mid point to the nearby fragments
+# fixed: number 1, mass_index 2.5 (sigma and gamma taken from the main body)
+# NOTE: the script draws grain_mass_max between grain_mass_min and 1e3, here it is an independent 1e-4-1e3 range
+# name var, min, max, options
+- EF
+height,47723,53723
+number,1,fix
+mass_percent,0,100
+erosion_coeff,0.01e-6,10e-6
+grain_mass_min,1e-5,1e2
+grain_mass_max,1e-4,1e3
+mass_index,2.5,fix
+- EF
+height,33339.5,39202
+number,1,fix
+mass_percent,0,100
+erosion_coeff,0.01e-6,10e-6
+grain_mass_min,1e-5,1e2
+grain_mass_max,1e-4,1e3
+mass_index,2.5,fix
+- EF
+height,27477,33339.5
+number,1,fix
+mass_percent,0,100
+erosion_coeff,0.01e-6,10e-6
+grain_mass_min,1e-5,1e2
+grain_mass_max,1e-4,1e3
+mass_index,2.5,fix
+- EF
+height,19403,25403
+number,1,fix
+mass_percent,0,100
+erosion_coeff,0.01e-6,10e-6
+grain_mass_min,1e-5,1e2
+grain_mass_max,1e-4,1e3
+mass_index,2.5,fix

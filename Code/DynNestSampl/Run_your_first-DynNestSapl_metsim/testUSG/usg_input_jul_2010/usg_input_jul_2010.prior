@@ -1,0 +1,24 @@
+# USG/CNEOS fireball 2010-07-06 priors, translated from metsim_ns_scatter/metsim_ns_scatter.py
+# Everything is fixed to usg_input_jul_2010_sim_fit_latest.json except the luminosity noise and m_init,
+# the fragmentation priors are in usg_input_jul_2010.extraprior
+# name var, min/sigma/alpha, max/mean/mode, options
+
+# simulation setup (USG camera)
+P_0m,3030,fix                                   # bolometric power of a zero magnitude meteor [W]
+dt,0.04,fix                                     # simulation time step [s]
+lum_eff_type,0,fix                              # constant luminous efficiency
+lum_eff,12.91,fix                               # luminous efficiency [%]
+erosion_on,False,fix                            # no main body erosion in the json fit, only the EF fragments
+
+# fixed physical parameters (json values)
+v_init,15700,fix                                # v_init [m/s] (USG v = 15.70 km/s)
+zenith_angle,zc_0,fix                           # zenith_angle [rad] from the USG entry angle (json 0.78953)
+rho,1500,fix                                    # rho [kg/m^3]
+sigma,5e-9,fix                                  # sigma [kg/J]
+rho_grain,3500,fix                              # rho_grain [kg/m^3]
+gamma,1.0,fix                                   # drag coefficient
+shape_factor,0.8,fix                            # shape factor
+
+# free parameters
+m_init,1e2,1e8                                  # m_init [kg] uniform as in the script (add log to sample in log10)
+noise_lum,1.2e10+np.exp(22),1.2e10+np.exp(28),log   # noise_lum [W] = obs_sigma 1.2e10 + scatter, scatter e^22-e^28 log-uniform

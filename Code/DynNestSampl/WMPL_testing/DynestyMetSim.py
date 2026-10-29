@@ -3162,6 +3162,17 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         if variable == 'wake_align':
             align_method = fixed_values[variable]
 
+    # no wake options in the prior (wake not part of the fit): plot both peak and area normalizations
+    wake_in_prior = any(k in variables or k in fixed_values for k in ('noise_wake', 'wake_norm', 'wake_align'))
+    wake_norm_methods = [normalization_method] if wake_in_prior else ["peak", "area"]
+
+    def plotWakeOverviewAllNorms(*args, likelihood_heights=False, **kwargs):
+        # wake not in the prior: no likelihood heights assumed, only the plain overview
+        if likelihood_heights and not wake_in_prior:
+            return
+        for norm_method in wake_norm_methods:
+            plotWakeOverviewOptions(*args, normalization_method=norm_method, align_method=align_method, **kwargs)
+
     noise_wake_array = None
     altitudes_noises_wake = None
     flag_wake_varing_noise = False
@@ -3454,7 +3465,7 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         noise_wake_plot = (None if getattr(obs_data_logL, "noise_wake_array", None) is not None
                            else obs_data_logL.noise_wake)
         try:
-            plotWakeOverviewOptions(best_guess_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_bestLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, lenMax=None)
+            plotWakeOverviewAllNorms(best_guess_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_bestLogL", likelihood_heights=True, noise_guess=noise_wake_plot, lenMax=None)
         except Exception as e:
             print(f"Error plotting wake overview options: {e}")
         # put None to wake_heights in obs_data_NoneWakeHeights
@@ -3474,11 +3485,11 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             )
         except (ValueError, FloatingPointError, ZeroDivisionError) as exc:
             print(f"Best-fit wake RMSD unavailable: {exc}")
-        plotWakeOverviewOptions(best_guess_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_best", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot)
-        plotWakeOverviewOptions(
+        plotWakeOverviewAllNorms(best_guess_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_best", noise_guess=noise_wake_plot)
+        plotWakeOverviewAllNorms(
             best_guess_obj_plot_NoneWakeHeights, wake_data, output_folder + os.sep + 'fit_plots',
             file_name + "_best_withLikelihoodHeights",
-            normalization_method=normalization_method, align_method=align_method,
+            likelihood_heights=True,
             noise_guess=noise_wake_plot, color='black',
             likelihood_sr=best_guess_obj_plot, max_likelihood_heights=8,
         )
@@ -3663,16 +3674,16 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
             if var_name == 'noise_wake' and flag_wake:
                 noise_wake_plot = approx_modes_all[i]
         try:
-            plotWakeOverviewOptions(approx_mode_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_modeLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red', lenMax=None)
+            plotWakeOverviewAllNorms(approx_mode_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_modeLogL", likelihood_heights=True, noise_guess=noise_wake_plot, color = 'red', lenMax=None)
         except Exception as e:
             print(f"Error plotting wake overview options for mode: {e}")
         
         approx_mode_obj_plot_NoneWakeHeights = runSimulationDynesty(approx_modes_all, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
-        plotWakeOverviewOptions(approx_mode_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mode", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'red')
-        plotWakeOverviewOptions(
+        plotWakeOverviewAllNorms(approx_mode_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mode", noise_guess=noise_wake_plot, color = 'red')
+        plotWakeOverviewAllNorms(
             approx_mode_obj_plot_NoneWakeHeights, wake_data, output_folder + os.sep + 'fit_plots',
             file_name + "_mode_withLikelihoodHeights",
-            normalization_method=normalization_method, align_method=align_method,
+            likelihood_heights=True,
             noise_guess=noise_wake_plot, color='red',
             likelihood_sr=approx_mode_obj_plot, max_likelihood_heights=8,
         )
@@ -3694,15 +3705,15 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 noise_wake_plot = all_samples_mean[i]
 
         try:
-            plotWakeOverviewOptions(mean_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_meanLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue', lenMax=None)
+            plotWakeOverviewAllNorms(mean_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_meanLogL", likelihood_heights=True, noise_guess=noise_wake_plot, color = 'blue', lenMax=None)
         except Exception as e:
             print(f"Error plotting wake overview options for mean: {e}")    
         mean_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_mean, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
-        plotWakeOverviewOptions(mean_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mean", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'blue')
-        plotWakeOverviewOptions(
+        plotWakeOverviewAllNorms(mean_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_mean", noise_guess=noise_wake_plot, color = 'blue')
+        plotWakeOverviewAllNorms(
             mean_obj_plot_NoneWakeHeights, wake_data, output_folder + os.sep + 'fit_plots',
             file_name + "_mean_withLikelihoodHeights",
-            normalization_method=normalization_method, align_method=align_method,
+            likelihood_heights=True,
             noise_guess=noise_wake_plot, color='blue',
             likelihood_sr=mean_obj_plot, max_likelihood_heights=8,
         )
@@ -3724,15 +3735,15 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
                 noise_wake_plot = all_samples_median[i]
 
         try:
-            plotWakeOverviewOptions(median_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_medianLogL", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue', lenMax=None)
+            plotWakeOverviewAllNorms(median_obj_plot, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_medianLogL", likelihood_heights=True, noise_guess=noise_wake_plot, color = 'cornflowerblue', lenMax=None)
         except Exception as e:
             print(f"Error plotting wake overview options for median: {e}")
         median_obj_plot_NoneWakeHeights = runSimulationDynesty(all_samples_median, obs_data_NoneWakeHeights, variables, fixed_NoneWakeHeights, flag_wake=flag_wake)
-        plotWakeOverviewOptions(median_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_median", normalization_method=normalization_method, align_method=align_method, noise_guess=noise_wake_plot, color = 'cornflowerblue')
-        plotWakeOverviewOptions(
+        plotWakeOverviewAllNorms(median_obj_plot_NoneWakeHeights, wake_data, output_folder +os.sep+ 'fit_plots', file_name + "_median", noise_guess=noise_wake_plot, color = 'cornflowerblue')
+        plotWakeOverviewAllNorms(
             median_obj_plot_NoneWakeHeights, wake_data, output_folder + os.sep + 'fit_plots',
             file_name + "_median_withLikelihoodHeights",
-            normalization_method=normalization_method, align_method=align_method,
+            likelihood_heights=True,
             noise_guess=noise_wake_plot, color='cornflowerblue',
             likelihood_sr=median_obj_plot, max_likelihood_heights=8,
         )

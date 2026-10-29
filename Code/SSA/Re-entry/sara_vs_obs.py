@@ -1598,11 +1598,11 @@ def plot_velocity_check(components, segments, recorded, chain, out):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--sara_dir", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\DRAMA-SARA_V1")
-    ap.add_argument("--reports", default=[r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\skyfit_traj"], nargs="+", help="*_report.txt files or folders containing them")
-    ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\20250622\Wind", help="output folder (default: SARA folder)")
+    ap.add_argument("--sara_dir", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\AXIOM-3\DRAMA-AXIOM-3_breakup40_All")
+    ap.add_argument("--reports", default=[r"C:\Users\maxiv\Documents\UWO\Re-entry\AXIOM-3\observation"], nargs="+", help="*_report.txt files or folders containing them")
+    ap.add_argument("--out", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\AXIOM-3\results_AXIOM-3_breakup40_All", help="output folder (default: SARA folder)")
     ap.add_argument("--curved", action="store_true", help="use *_curved_report.txt")
-    ap.add_argument("--tle", default=None,
+    ap.add_argument("--tle", default=r"C:\Users\maxiv\Documents\UWO\Re-entry\AXIOM-3\observation\tle_AXIOM-3.txt",
                     help="TLE file of the object: its orbital plane gives the range of single-camera *.ecsv "
                          "observations (used when a --reports folder has no *_report.txt; needs sgp4)")
     ap.add_argument("--orbit_state", type=float, nargs=6, default=None, metavar=("X", "Y", "Z", "VX", "VY", "VZ"),

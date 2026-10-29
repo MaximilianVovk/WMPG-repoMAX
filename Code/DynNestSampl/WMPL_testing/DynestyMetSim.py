@@ -1186,6 +1186,9 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
 
     """
 
+    # no velocity/lag observations (e.g. USG light curve only): plot only the simulation in those panels
+    has_lag = getattr(obs_data, 'has_lag', True)
+
     # Create the figure and main GridSpec with specified height ratios
     fig = plt.figure(figsize=(14, 6))
     gs_main = gridspec.GridSpec(2, 4, figure=fig, height_ratios=[1, 1], width_ratios=[1, 1, 1, 1])
@@ -1214,7 +1217,7 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
                  color=station_colors[station], label=station)
     # chek if np.unique(obs_data.stations_lag) and np.unique(obs_data.stations_lum) are the same
     # print('testing unique stations plot',np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum))
-    if not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
+    if has_lag and not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
         # take the one that are not in the other in lag
         stations_lag = np.setdiff1d(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum))
         if len(stations_lag) != 0:
@@ -1276,7 +1279,7 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
                  obs_data.height_lum[np.where(obs_data.stations_lum == station)]/1000, 'x--', \
                  color=station_colors[station], label=station)
     # chek if np.unique(obs_data.stations_lag) and np.unique(obs_data.stations_lum) are the same
-    if not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
+    if has_lag and not np.array_equal(np.unique(obs_data.stations_lag), np.unique(obs_data.stations_lum)):
         if len(stations_lag) != 0:
             # print a horizonal along the x axis at the height_lag[0] darkgray
             ax4.axhline(y=max_height_lag/1000, color='gray', linestyle='-.', linewidth=1, label=f"{', '.join(stations_lag)}", zorder=2)
@@ -1304,12 +1307,15 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
     ### VELOCITY PLOT ###
 
     # Plot 2 and 6: Vertically stacked, sharing the x-axis (Time) with height ratios
-    gs_col2 = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_main[:, 2], hspace=0, height_ratios=[3, 1])
-    ax2 = fig.add_subplot(gs_col2[0, 0])
-    ax6 = fig.add_subplot(gs_col2[1, 0], sharex=ax2)
+    if has_lag:
+        gs_col2 = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_main[:, 2], hspace=0, height_ratios=[3, 1])
+        ax2 = fig.add_subplot(gs_col2[0, 0])
+        ax6 = fig.add_subplot(gs_col2[1, 0], sharex=ax2)
+    else:
+        ax2 = fig.add_subplot(gs_main[:, 2])
 
     # for each station in obs_data_plot
-    for station in np.unique(obs_data.stations_lag):
+    for station in (np.unique(obs_data.stations_lag) if has_lag else []):
         # Assign a unique color if not already used
         if station not in station_colors:
             station_colors[station] = cmap(len(station_colors) % 10)  # Use modulo to cycle colors
@@ -1320,22 +1326,25 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
                  vel_plot[1:], '.', \
                  color=station_colors[station], label=station)
     ax2.set_ylabel('Velocity [km/s]')
-    ax2.legend()
-    ax2.tick_params(labelbottom=False)  # Hide x-axis tick labels
     ax2.grid(True, linestyle='--', color='lightgray')
-    # save the x-axis limits
-    xlim_vel = ax2.get_xlim()
-    # fix the x-axis limits to xlim_vel
-    ax2.set_xlim(xlim_vel)
-    # save the y-axis limits
-    ylim_vel = ax2.get_ylim()
-    # fix the y-axis limits to ylim_vel
-    ax2.set_ylim(ylim_vel)
+    if has_lag:
+        ax2.legend()
+        ax2.tick_params(labelbottom=False)  # Hide x-axis tick labels
+        # save the x-axis limits
+        xlim_vel = ax2.get_xlim()
+        # fix the x-axis limits to xlim_vel
+        ax2.set_xlim(xlim_vel)
+        # save the y-axis limits
+        ylim_vel = ax2.get_ylim()
+        # fix the y-axis limits to ylim_vel
+        ax2.set_ylim(ylim_vel)
+    else:
+        ax2.set_xlabel('Time [s]')
 
 
     # pick the earliest "second" time across stations (fallback to first time)
     second_times = []
-    for station in np.unique(obs_data.stations_lag):
+    for station in (np.unique(obs_data.stations_lag) if has_lag else []):
         station_time = obs_data.time_lag[np.where(obs_data.stations_lag == station)]
         if station_time.size >= 2:
             second_times.append(np.sort(station_time)[1])
@@ -1348,22 +1357,26 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
         second_time = np.nanmin(second_times)
 
     # Plot 6: Res.Vel vs. Time
-    ax6.fill_between([second_time, np.max(obs_data.time_lag)], -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
-    ax6.fill_between([second_time, np.max(obs_data.time_lag)], -obs_data.noise_vel*2/1000, obs_data.noise_vel*2/1000, color='lightgray', alpha=0.2)
-    ax6.plot([second_time, np.max(obs_data.time_lag)], [0, 0], color='lightgray')
-    ax6.set_xlabel('Time [s]')
-    ax6.set_ylabel('Res.Vel [km/s]')
-    ax6.grid(True, linestyle='--', color='lightgray')
+    if has_lag:
+        ax6.fill_between([second_time, np.max(obs_data.time_lag)], -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
+        ax6.fill_between([second_time, np.max(obs_data.time_lag)], -obs_data.noise_vel*2/1000, obs_data.noise_vel*2/1000, color='lightgray', alpha=0.2)
+        ax6.plot([second_time, np.max(obs_data.time_lag)], [0, 0], color='lightgray')
+        ax6.set_xlabel('Time [s]')
+        ax6.set_ylabel('Res.Vel [km/s]')
+        ax6.grid(True, linestyle='--', color='lightgray')
 
     ### LAG PLOT ###
 
     # Plot 3 and 7: Vertically stacked, sharing the x-axis (Time) with height ratios
-    gs_col3 = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_main[:, 3], hspace=0, height_ratios=[3, 1])
-    ax3 = fig.add_subplot(gs_col3[0, 0])
-    ax7 = fig.add_subplot(gs_col3[1, 0], sharex=ax3)
+    if has_lag:
+        gs_col3 = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_main[:, 3], hspace=0, height_ratios=[3, 1])
+        ax3 = fig.add_subplot(gs_col3[0, 0])
+        ax7 = fig.add_subplot(gs_col3[1, 0], sharex=ax3)
+    else:
+        ax3 = fig.add_subplot(gs_main[:, 3])
 
     # for each station in obs_data_plot
-    for station in np.unique(obs_data.stations_lag):
+    for station in (np.unique(obs_data.stations_lag) if has_lag else []):
         # Assign a unique color if not already used
         if station not in station_colors:
             station_colors[station] = cmap(len(station_colors) % 10)  # Use modulo to cycle colors
@@ -1372,24 +1385,27 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
                  obs_data.lag[np.where(obs_data.stations_lag == station)], 'x:', \
                  color=station_colors[station], label=station)
     ax3.set_ylabel('Lag [m]')
-    ax3.tick_params(labelbottom=False)  # Hide x-axis tick labels
     ax3.grid(True, linestyle='--', color='lightgray')
-    # save the x-axis limits
-    xlim_lag = ax3.get_xlim()
-    # fix the x-axis limits to xlim_lag
-    ax3.set_xlim(xlim_lag)
-    # save the y-axis limits
-    ylim_lag = ax3.get_ylim()
-    # fix the y-axis limits to ylim_lag
-    ax3.set_ylim(ylim_lag)
+    if has_lag:
+        ax3.tick_params(labelbottom=False)  # Hide x-axis tick labels
+        # save the x-axis limits
+        xlim_lag = ax3.get_xlim()
+        # fix the x-axis limits to xlim_lag
+        ax3.set_xlim(xlim_lag)
+        # save the y-axis limits
+        ylim_lag = ax3.get_ylim()
+        # fix the y-axis limits to ylim_lag
+        ax3.set_ylim(ylim_lag)
 
-    # Plot 7: Res.Vel vs. Time
-    ax7.fill_between([np.min(obs_data.time_lag), np.max(obs_data.time_lag)], -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
-    ax7.fill_between([np.min(obs_data.time_lag), np.max(obs_data.time_lag)], -obs_data.noise_lag*2, obs_data.noise_lag*2, color='lightgray', alpha=0.2)
-    ax7.plot([np.min(obs_data.time_lag), np.max(obs_data.time_lag)], [0, 0], color='lightgray')
-    ax7.set_xlabel('Time [s]')
-    ax7.set_ylabel('Res.Lag [m]')
-    ax7.grid(True, linestyle='--', color='lightgray')
+        # Plot 7: Res.Vel vs. Time
+        ax7.fill_between([np.min(obs_data.time_lag), np.max(obs_data.time_lag)], -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
+        ax7.fill_between([np.min(obs_data.time_lag), np.max(obs_data.time_lag)], -obs_data.noise_lag*2, obs_data.noise_lag*2, color='lightgray', alpha=0.2)
+        ax7.plot([np.min(obs_data.time_lag), np.max(obs_data.time_lag)], [0, 0], color='lightgray')
+        ax7.set_xlabel('Time [s]')
+        ax7.set_ylabel('Res.Lag [m]')
+        ax7.grid(True, linestyle='--', color='lightgray')
+    else:
+        ax3.set_xlabel('Time [s]')
 
     # Adjust the overall layout to prevent overlap
     plt.subplots_adjust(wspace=0.4, hspace=0.4)
@@ -1446,7 +1462,8 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
 
         # make the difference between the no_noise_vel and the obs_data.velocities
         diff_vel = obs_data.velocities - no_noise_vel
-        ax6.plot(obs_data.time_lag, diff_vel/1000, '.', markersize=3, color='black', label='No Noise')
+        if has_lag:
+            ax6.plot(obs_data.time_lag, diff_vel/1000, '.', markersize=3, color='black', label='No Noise')
 
         # plot lag_arr vs leading_frag_time_arr withouth nan values
         lag_no_noise = (obs_data.leading_frag_length_arr-obs_data.leading_frag_length_arr[index])\
@@ -1463,7 +1480,8 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
 
         # make the difference between the no_noise_lag and the obs_data.lag
         diff_lag = obs_data.lag - no_noise_lag
-        ax7.plot(obs_data.time_lag, diff_lag, '.', markersize=3, color='black', label='No Noise')
+        if has_lag:
+            ax7.plot(obs_data.time_lag, diff_lag, '.', markersize=3, color='black', label='No Noise')
 
     #     fig.suptitle(f"Simulated Test case {file_name}", fontsize=16, fontweight='bold')  # Adjust y for better spacing
     # else:
@@ -1531,7 +1549,7 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
         sim_diff_vel = obs_data.velocities - sim_vel
 
         # for each station in obs_data_plot
-        for station in np.unique(obs_data.stations_lag):
+        for station in (np.unique(obs_data.stations_lag) if has_lag else []):
             time_plot= obs_data.time_lag[np.where(obs_data.stations_lag == station)]
             vel_plot = sim_diff_vel[np.where(obs_data.stations_lag == station)]/1000
             # plot the height vs. absolute_magnitudes
@@ -1556,7 +1574,7 @@ def plotSimVsObsResiduals(obs_data, sim_data=None, output_folder='', file_name='
         sim_diff_lag = obs_data.lag - sim_lag
 
         # for each station in obs_data_plot
-        for station in np.unique(obs_data.stations_lag):
+        for station in (np.unique(obs_data.stations_lag) if has_lag else []):
             # plot the height vs. absolute_magnitudes
             ax7.plot(obs_data.time_lag[np.where(obs_data.stations_lag == station)], \
                     sim_diff_lag[np.where(obs_data.stations_lag == station)], '.', \
@@ -2189,6 +2207,9 @@ def _plotBandsObsBest(
     heights_km_lum = np.asarray(hl, dtype=float)/1000.0
     heights_km_lag = np.asarray(hv, dtype=float)/1000.0
 
+    # no velocity/lag observations (e.g. USG light curve only): plot only the simulation in those panels
+    has_lag = getattr(obs_data, 'has_lag', True)
+
     fig = plt.figure(figsize=(15, 4))
     gs  = gridspec.GridSpec(1, 4, figure=fig, wspace=0.3)
 
@@ -2267,7 +2288,7 @@ def _plotBandsObsBest(
     shade(ax_vel, bands_vel["p00015"]/1000.0, bands_vel["p99985"]/1000.0,
                  bands_vel["p025"]/1000.0,   bands_vel["p975"]/1000.0,
                  bands_vel["p16"]/1000.0,    bands_vel["p84"]/1000.0, heights_km_lag)
-    for st in np.unique(getattr(obs_data, 'stations_lag', [])):
+    for st in (np.unique(getattr(obs_data, 'stations_lag', [])) if has_lag else []):
         if st not in station_colors:
             station_colors[st] = cmap(len(station_colors) % 10)
         vel_plot_st= obs_data.velocities[np.where(obs_data.stations_lag == st)]/1000
@@ -2292,7 +2313,7 @@ def _plotBandsObsBest(
                  bands_lag["p025"],   bands_lag["p975"],
                  bands_lag["p16"],    bands_lag["p84"], heights_km_lag)
 
-    for st in np.unique(getattr(obs_data, 'stations_lag', [])):
+    for st in (np.unique(getattr(obs_data, 'stations_lag', [])) if has_lag else []):
         if st not in station_colors:
             station_colors[st] = cmap(len(station_colors) % 10)
         m = obs_data.stations_lag == st
@@ -2451,9 +2472,15 @@ def plotObsVsHeight(obs_data, sim_data=None, output_folder='', file_name='', col
             station_colors[station] = cmap(len(station_colors) % 10)
         return station_colors[station]
 
+    # no velocity/lag observations (e.g. USG light curve only): plot only the simulation in those panels, no residuals
+    has_lag = getattr(obs_data, 'has_lag', True)
+
     # Define plotting grid pairs (main, residual) with shared y-axis
     axes = []
     for i in range(4):
+        if i >= 2 and not has_lag:
+            axes.append((fig.add_subplot(gs_main[0, i]), None))
+            continue
         gs = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_main[0, i], wspace=0, width_ratios=[3, 1])
         ax_main = fig.add_subplot(gs[0])
         ax_resid = fig.add_subplot(gs[1], sharey=ax_main)
@@ -2508,7 +2535,7 @@ def plotObsVsHeight(obs_data, sim_data=None, output_folder='', file_name='', col
     ax_mag_res.tick_params(labelleft=False)
 
     # VELOCITY
-    for station in np.unique(obs_data.stations_lag):
+    for station in (np.unique(obs_data.stations_lag) if has_lag else []):
         mask = obs_data.stations_lag == station
         color = getColor(station)
         height_plot = obs_data.height_lag[mask]/1000
@@ -2517,15 +2544,16 @@ def plotObsVsHeight(obs_data, sim_data=None, output_folder='', file_name='', col
     ax_vel.set_xlabel("Velocity [km/s]")
     ax_vel.grid(True, linestyle='--', color='lightgray')
 
-    ax_vel_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
-    ax_vel_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -2*obs_data.noise_vel/1000, 2*obs_data.noise_vel/1000, color='lightgray', alpha=0.2)
-    ax_vel_res.plot([0, 0], ax_vel.get_ylim(), color='lightgray')
-    ax_vel_res.set_xlabel("Res. Vel")
-    ax_vel_res.grid(True, linestyle='--', color='lightgray')
-    ax_vel_res.tick_params(labelleft=False)
+    if has_lag:
+        ax_vel_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -obs_data.noise_vel/1000, obs_data.noise_vel/1000, color='darkgray', alpha=0.2)
+        ax_vel_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -2*obs_data.noise_vel/1000, 2*obs_data.noise_vel/1000, color='lightgray', alpha=0.2)
+        ax_vel_res.plot([0, 0], ax_vel.get_ylim(), color='lightgray')
+        ax_vel_res.set_xlabel("Res. Vel")
+        ax_vel_res.grid(True, linestyle='--', color='lightgray')
+        ax_vel_res.tick_params(labelleft=False)
 
     # LAG
-    for station in np.unique(obs_data.stations_lag):
+    for station in (np.unique(obs_data.stations_lag) if has_lag else []):
         mask = obs_data.stations_lag == station
         color = getColor(station)
         # obs_data.lag[mask] = (obs_data.length[mask]) - ((24610)*(obs_data.time_lag[mask]))
@@ -2534,15 +2562,20 @@ def plotObsVsHeight(obs_data, sim_data=None, output_folder='', file_name='', col
     ax_lag.set_xlabel("Lag [m]")
     ax_lag.grid(True, linestyle='--', color='lightgray')
 
-    ax_lag_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
-    ax_lag_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -2*obs_data.noise_lag, 2*obs_data.noise_lag, color='lightgray', alpha=0.2)
-    ax_lag_res.plot([0, 0], ax_lag.get_ylim(), color='lightgray')
-    ax_lag_res.set_xlabel("Res. Lag")
-    ax_lag_res.grid(True, linestyle='--', color='lightgray')
-    ax_lag_res.tick_params(labelleft=False)
+    if has_lag:
+        ax_lag_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -obs_data.noise_lag, obs_data.noise_lag, color='darkgray', alpha=0.2)
+        ax_lag_res.fill_betweenx([np.min(obs_data.height_lag)/1000,np.max(obs_data.height_lag)/1000], -2*obs_data.noise_lag, 2*obs_data.noise_lag, color='lightgray', alpha=0.2)
+        ax_lag_res.plot([0, 0], ax_lag.get_ylim(), color='lightgray')
+        ax_lag_res.set_xlabel("Res. Lag")
+        ax_lag_res.grid(True, linestyle='--', color='lightgray')
+        ax_lag_res.tick_params(labelleft=False)
 
     ### FIX AXIS LIMITS BEFORE PLOTTING SIM DATA ###
     for ax_main, ax_res in axes:
+        if ax_res is None:
+            # simulation only panel: same heights as the light curve, x range set by the simulation
+            ax_main.set_ylim(ax_lum.get_ylim())
+            continue
         xlim = ax_main.get_xlim()
         ylim = ax_main.get_ylim()
         ax_main.set_xlim(xlim)
@@ -2658,14 +2691,14 @@ def plotObsVsHeight(obs_data, sim_data=None, output_folder='', file_name='', col
             ax_mag_res.plot(mag_res[mask], obs_data.height_lum[mask]/1000, '.', color=station_colors[station])
 
         # VELOCITY residuals (station-based)
-        for station in np.unique(obs_data.stations_lag):
+        for station in (np.unique(obs_data.stations_lag) if has_lag else []):
             mask = np.where(obs_data.stations_lag == station)
             height_plot = obs_data.height_lag[mask]/1000
             vel_plot = vel_res[mask]
             ax_vel_res.plot(vel_plot[1:], height_plot[1:], '.', color=station_colors[station])
 
         # LAG residuals (station-based)
-        for station in np.unique(obs_data.stations_lag):
+        for station in (np.unique(obs_data.stations_lag) if has_lag else []):
             mask = np.where(obs_data.stations_lag == station)
             ax_lag_res.plot(lag_res[mask], obs_data.height_lag[mask]/1000, '.', color=station_colors[station])
 
@@ -4002,6 +4035,16 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
         f.write(latex_str)
         f.close()
 
+    # drop the summary of a previous call (e.g. a -plot run on the checkpoint while the run was still going),
+    # so the log keeps only the latest summary after the header
+    if os.path.isfile(log_file):
+        with open(log_file, "r") as f:
+            log_text = f.read()
+        old_summary = re.search(r"\n\s*Summary[^\n]*\n=+\n", log_text)
+        if old_summary:
+            with open(log_file, "w") as f:
+                f.write(log_text[:old_summary.start()]+'\n')
+
     # add to the log_file
     with open(log_file, "a") as f:
         f.write('\n'+summary_str)
@@ -4675,6 +4718,13 @@ def loadPriorsAndGenerateBounds(object_meteor, file_path="", user_inputs=None):
         fixed_values['rho_grain'] = rho_grain_real
     if 'erosion_height_change' not in variable_loaded:
         fixed_values['erosion_height_change'] = 1
+    # USG fireballs: constant Brown et al. (2002) luminous efficiency if lum_eff is not in the .prior file
+    lum_eff_brown = getattr(object_meteor, 'lum_eff_brown', None)
+    if lum_eff_brown is not None and 'lum_eff' not in variable_loaded and 'lum_eff_type' not in flags_dict \
+            and fixed_values.get('lum_eff_type', 0) == 0:
+        fixed_values['lum_eff_type'] = 0
+        fixed_values['lum_eff'] = lum_eff_brown
+        print(f"USG: lum_eff not in the prior, fixed to the Brown et al. (2002) value {lum_eff_brown:.2f} % (lum_eff_type=0)")
 
     # if len(bounds) + len(fixed_values) < 10:
     #     raise ValueError("The number of bounds and fixed values should 10 or above")
@@ -5438,7 +5488,8 @@ class ObservationData:
                     elif "2" == obs.station_id:
                         obs.station_id = obs.station_id.replace("2", "02T")
                     else:
-                        P_0m = 840
+                        # P_0m of the photometry if stored in the trajectory (e.g. 1500 W for EN fireballs)
+                        P_0m = getattr(traj, 'P_0m', 840)
                 else:
                     P_0m = P_0m_prior
 
@@ -5581,19 +5632,21 @@ class ObservationData:
                 # print(unique_stations,'no known camera found')
                 # return
                 if np.isnan(P_0m_prior):
-                    print('P_0m is not set, consider it as P_0m=840')
-                    self.P_0m = 840
+                    # P_0m of the photometry if stored in the trajectory (e.g. 1500 W for EN fireballs)
+                    self.P_0m = getattr(traj, 'P_0m', 840)
+                    print(f'P_0m is not set, consider it as P_0m={self.P_0m}')
                 else:
                     self.P_0m = P_0m_prior
                 if np.isnan(fps_prior):
-                    # take for each of the station the average time in betwen the time and time lag with the same flag_station
+                    # take for each of the station with photometry the median time in betwen the frames (robust to missing frames)
                     for station in unique_stations:
-                        indices = np.where(lum_data['flag_station'] == station)[0]
-                        # Assign the average time lag to the station
+                        indices = np.where((lum_data['flag_station'] == station) & (lum_data['absolute_magnitudes'] < 8))[0]
+                        if len(indices) < 2:
+                            continue
                         time_diffs = np.diff(lum_data['time'][indices])
-                        self.fps_lum = np.round(1/np.mean(time_diffs)) # if time_diffs.size > 0 or np.mean(time_diffs) != 0 else 32
-                        self.fps_lag = np.round(1/np.mean(time_diffs)) # if time_diffs.size > 0 or np.mean(time_diffs) != 0 else 32
-                    print('Computed fps_lag and fps_lum for each camera', np.round(1/np.mean(time_diffs)))
+                        self.fps_lum = np.round(1/np.median(time_diffs))
+                        self.fps_lag = np.round(1/np.median(time_diffs))
+                    print('Computed fps_lag and fps_lum for each camera', self.fps_lum)
                 else:
                     self.fps_lum = fps_prior
                     self.fps_lag = fps_prior
@@ -5981,8 +6034,8 @@ class ObservationData:
             self.noise_lum = np.mean([sigma_start, sigma_end])
             print('Assumed Noise in luminosity based on start/end scatter:', self.noise_lum)
 
-    def _photometricMass(self, time_arr, mag_arr, v_avg, prior_file_path=""):
-        """ Compute the photometric mass, using lum_eff and lum_eff_type from the prior file if given. """
+    def _photometricMass(self, time_arr, mag_arr, v_avg, prior_file_path="", default_lum_eff=0.7):
+        """ Compute the photometric mass, using lum_eff and lum_eff_type from the prior file if given, default_lum_eff [%] otherwise. """
 
         # # Calculate the radiated energy
         # radiated_energy = calcRadiatedEnergy(np.array(time_arr), np.array(mag_arr), P_0m=self.P_0m)
@@ -6028,10 +6081,10 @@ class ObservationData:
                             continue
 
             if not (lum_eff_type_val == 0 and lum_eff_type_fixed):
-                luminous_efficiency = 0.7  # fallback default
+                luminous_efficiency = default_lum_eff  # fallback default
 
         else:
-            luminous_efficiency = 0.7
+            luminous_efficiency = default_lum_eff
 
         print("NOTE: The mass was computing using a constant luminous efficiency",luminous_efficiency,"%")
 
@@ -6078,6 +6131,12 @@ class ObservationData:
         intensity = np.asarray(usg_data.usg_intensity_data, dtype=float)[:, 1][sort_idx]
         # same conversion used by wmpl for the magnitudes: M = -2.5 log10(I/248)
         luminosity = self.P_0m*intensity/248
+
+        # Brown et al. (2002) median luminous efficiency: tau = 0.1212 Eo^0.115, Eo optical energy in kt TNT
+        # (isotropic emission, Eo = 4pi int(I dt)), used by default if lum_eff is not in the .prior file
+        optical_energy_kt = 4*np.pi*np.trapz(intensity, time_data)/4.185e12
+        self.lum_eff_brown = 100*0.1212*optical_energy_kt**0.115
+        print(f'USG optical energy: {optical_energy_kt:.4f} kt -> Brown et al. (2002) luminous efficiency: {self.lum_eff_brown:.2f} %')
 
         absolute_magnitudes = luminosityToAbsoluteMagnitude(luminosity, self.P_0m)
         visible = np.isfinite(absolute_magnitudes)
@@ -6134,7 +6193,7 @@ class ObservationData:
         significant = visible & (luminosity > 3*np.nanmin(self.noise_lum_bounds)) if hasattr(self, 'noise_lum_bounds') else visible
         if np.sum(significant) < 2:
             significant = visible
-        self.m_init = self._photometricMass(time_data[significant], absolute_magnitudes[significant], traj.orbit.v_avg, prior_file_path)
+        self.m_init = self._photometricMass(time_data[significant], absolute_magnitudes[significant], traj.orbit.v_avg, prior_file_path, default_lum_eff=self.lum_eff_brown)
 
     def findIAUCode(self):
         # check if self.file_name is a array or a string
@@ -6966,6 +7025,9 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             obs_data.disruption_on = False
 
             obs_data.lum_eff_type = 5
+            # a lum_eff_type fixed in the .prior file (or the USG Brown et al. 2002 default) has priority
+            if 'lum_eff_type' in fixed_values:
+                obs_data.lum_eff_type = int(fixed_values['lum_eff_type'])
 
             obs_data.h_kill = np.min([np.min(obs_data.height_lum),np.min(obs_data.height_lag)])-1000
             # check if the h_kill is smaller than 0
@@ -6974,6 +7036,11 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             # check if np.min(obs_data.velocity[-1]) is smaller than v_init-10000
             if np.min(obs_data.velocities) < obs_data.v_init-10000:
                 obs_data.v_kill = obs_data.v_init-10000
+                # strongly decelerating fireballs: the slowest 10% of the points (robust to single noisy velocities)
+                # are below the cap, go 5 km/s below them to not kill the simulation before the end of the data
+                slowest = np.sort(obs_data.velocities)[:max(3, len(obs_data.velocities)//10)]
+                if np.median(slowest) < obs_data.v_init-10000:
+                    obs_data.v_kill = np.median(slowest)-5000
             else:
                 obs_data.v_kill = np.min(obs_data.velocities)-5000
             # check if the v_kill is smaller than 0

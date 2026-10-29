@@ -5,6 +5,8 @@ Requirements: Python >= 3.8, numpy, matplotlib.
 Run without arguments to use the Windows paths in DEFAULT_SEI / DEFAULT_CSV.
 Optional: --sei FILE --csv FILE --out-dir DIR --rho-min 100 --rho-max 8000
           --min-bin-width 50 --bounds centers --overwrite
+          --flux-csv TABDATA.csv  (bin heights + diameter flux from IMEM tabdata)
+          --size-density [STRENGTH] --density-split 4000 --ref-diameter 1e-3
 
 Method follows the requested peak-normalized shape comparison:
   * Sum DISTSET flux by its sixth index (density), then divide by max(sum).
@@ -19,6 +21,16 @@ Between centres the curve is linear; on the two outer half-bins it is constant.
 Use --bounds centers to reproduce the previous centre-to-centre calculation.
 Explicit bounds may clip the curve or extend it only to its inferred bin edges.
 
+--flux-csv: take the three step heights from the rows with quantity_code "dens"
+(flux per density bin, averaged over orbital points, sorted by density) instead
+of summing the SEI DISTSET rows. The SEI is still the template that is rewritten.
+
+--size-density: the reference distribution holds for mm-size particles. As in
+mem3_to_sei.py, densities below --density-split are shifted towards the split
+for smaller diameters following the Divine (1986) radius law, and the shifted
+distributions are mixed with the flux fraction of each SEI diameter bin (from
+--flux-csv "dia" rows if given, else from the SEI DISTSET rows).
+
 IMPORTANT: step heights here represent relative BIN TOTALS, not flux per unit
 density. With unequal widths, their geometric area fractions differ from the
 SEI bin flux fractions. Only DENSITY and DISTDEN definitions are changed;
@@ -28,6 +40,7 @@ or a recomputation of mass/diameter consistency.
 """
 
 import argparse
+import csv
 import itertools
 import json
 import re
@@ -38,9 +51,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from mem3_to_sei import density_shift, overlap_matrix
 
-DEFAULT_SEI = Path(r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\Comparison\NewFormat\IMEM\IMEM2_sunoriented_mgt1e-06.sei")
-DEFAULT_CSV = Path(r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\Sporadic_final_rho_full_posterior_distributions.csv")
+
+DEFAULT_SEI = Path(r"C:\Users\maxiv\Documents\UWO\IMEM2_implement\1densitychange\Comparison\NewFormat\IMEM\IMEM2_sunoriented_mgt1e-06.sei")
+DEFAULT_CSV = Path(r"C:\Users\maxiv\WMPG-repoMAX\Code\IMEM\stenvi\Sporadic_final_rho_full_posterior_distributions.csv")
 
 
 def number(s):
@@ -50,6 +65,8 @@ def number(s):
 def read_sei(path):
     flux = np.zeros(3)
     counts = np.zeros(3, dtype=int)
+    dia_flux = {}
+    dia_bins = {}
     intervals = {}
     density_headers = []
     with path.open("rb") as handle:
@@ -69,6 +86,9 @@ def read_sei(path):
                     raise ValueError("Invalid flux at line %d" % line_number)
                 flux[den - 1] += value
                 counts[den - 1] += 1
+                dia_flux[indices[3]] = dia_flux.get(indices[3], 0.0) + value
+            elif parts[0] == b"DISTDIA":
+                dia_bins[int(parts[1])] = [number(parts[2]), number(parts[3])]
             elif parts[0] == b"DISTDEN":
                 index = int(parts[1])
                 if index in intervals:
@@ -83,10 +103,40 @@ def read_sei(path):
         raise ValueError("Original density intervals must be ordered and contiguous.")
     if flux.max() <= 0:
         raise ValueError("The SEI contains no positive flux.")
-    return flux, counts, np.r_[old[:, 0], old[-1, 1]] * 1000.0
+    dia = np.array([dia_bins[i] for i in sorted(dia_bins)])  # [m]
+    dia_flux = np.array([dia_flux.get(i, 0.0) for i in sorted(dia_bins)])
+    return flux, counts, np.r_[old[:, 0], old[-1, 1]] * 1000.0, dia, dia_flux
 
 
-def read_reference(path, bounds, lower, upper):
+def read_tabdata(path, code):
+    """Mean flux over orbital points per x_value for one quantity_code of an IMEM tabdata CSV."""
+    sums, counts = {}, {}
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        for row in csv.DictReader(handle):
+            if row["quantity_code"] == code:
+                x = float(row["x_value"])
+                sums[x] = sums.get(x, 0.0) + float(row["y_value"])
+                counts[x] = counts.get(x, 0) + 1
+    if not sums:
+        raise ValueError("No rows with quantity_code '%s' in %s." % (code, path))
+    x = np.array(sorted(sums))
+    return x, np.array([sums[v] / counts[v] for v in x])
+
+
+def size_shifted_reference(x, y, dia, dia_flux, strength, split, ref_diameter):
+    """Flux-weighted mix over diameter bins of the reference with densities below `split`
+    moved by t(D) towards the split (see mem3_to_sei.population_to_bins)."""
+    half = np.diff(x) / 2
+    lo, hi = x - np.r_[half[0], half], x + np.r_[half, half[-1]]
+    t = density_shift(dia[:, 0], dia[:, 1], strength, split, ref_diameter)
+    out = np.zeros_like(y)
+    for w, tk in zip(dia_flux / dia_flux.sum(), t):
+        lo_k, hi_k = [np.where(e < split, e + tk * (split - e), e) for e in (lo, hi)]
+        out += w * (y @ overlap_matrix(lo_k, hi_k, lo, hi))
+    return out
+
+
+def read_reference(path, bounds, lower, upper, size_density=None):
     data = np.genfromtxt(str(path), delimiter=",", names=True, encoding="utf-8-sig")
     names = ("rho_center_kg_m3", "this_work_total_fraction")
     if not all(n in (data.dtype.names or ()) for n in names):
@@ -98,6 +148,8 @@ def read_reference(path, bounds, lower, upper):
     x, y = x[order], y[order]
     if np.any(np.diff(x) <= 0) or np.any(y < 0) or y.max() <= 0:
         raise ValueError("CSV densities must be distinct and fractions nonnegative with a positive peak.")
+    if size_density is not None:
+        y = size_shifted_reference(x, y, *size_density)
     dx = np.diff(x)
     spacing = float(np.median(dx))
     uniform = np.allclose(dx, spacing, rtol=1e-6, atol=1e-8)
@@ -257,15 +309,39 @@ def main():
     parser.add_argument("--rho-max", type=float, help="Outer upper bound in kg/m^3")
     parser.add_argument("--min-bin-width", type=float, help="kg/m^3; default: median CSV spacing")
     parser.add_argument("--overwrite", action="store_true", help="Replace previously generated outputs")
+    parser.add_argument("--flux-csv", type=Path, default=r"C:\Users\maxiv\WMPG-repoMAX\Code\IMEM\stenvi\debris-result-ISSspor10-3-10g_tabdata.csv",
+                        help="IMEM tabdata CSV: step heights from quantity_code 'dens' instead of the SEI flux")
+    parser.add_argument("--size-density", nargs="?", const=0.15, type=float, metavar="STRENGTH", # default=0.15,
+                        help="raise reference densities below --density-split for particles smaller than "
+                             "--ref-diameter (Divine 1986 radius law, as in mem3_to_sei.py); STRENGTH = max "
+                             "fraction of the gap to the split (default 0.15)")
+    parser.add_argument("--density-split", type=float, default=4000.0, metavar="KG_M3",
+                        help="with --size-density: densities below this are shifted (default 4000 kg/m^3)")
+    parser.add_argument("--ref-diameter", type=float, default=1e-3, metavar="M",
+                        help="with --size-density: reference distribution holds at and above this diameter "
+                             "(default 1e-3 m)")
     args = parser.parse_args()
-    flux, counts, old_edges = read_sei(args.sei)
-    x, y, spacing = read_reference(args.csv, args.bounds, args.rho_min, args.rho_max)
-    heights = flux / flux.max()
+    flux, counts, old_edges, dia, dia_flux = read_sei(args.sei)
+    bar_flux = flux
+    if args.flux_csv:
+        bar_flux = read_tabdata(args.flux_csv, "dens")[1]
+        if len(bar_flux) != 3:
+            raise ValueError("Expected 3 'dens' values in --flux-csv, found %d." % len(bar_flux))
+        dia_flux = read_tabdata(args.flux_csv, "dia")[1]
+        if len(dia_flux) != len(dia):
+            raise ValueError("--flux-csv has %d diameter values, the SEI has %d DISTDIA bins."
+                             % (len(dia_flux), len(dia)))
+    size_density = None
+    if args.size_density is not None:
+        size_density = (dia, dia_flux, args.size_density, args.density_split, args.ref_diameter)
+    x, y, spacing = read_reference(args.csv, args.bounds, args.rho_min, args.rho_max, size_density)
+    heights = bar_flux / bar_flux.max()
     min_width = spacing if args.min_bin_width is None else args.min_bin_width
     edges, target_area, squared_error = fit_intervals(x, y, heights, min_width)
     output_dir = args.out_dir or args.sei.parent / "density_refit"
     output_dir.mkdir(parents=True, exist_ok=True)
-    stem = args.sei.stem + "_density_refit"
+    stem = (args.sei.stem + ("_tab" if args.flux_csv else "")
+            + ("_sizerho%g" % args.size_density if size_density else "") + "_density_refit")
     output_sei, output_plot, output_json = [output_dir / (stem + ext) for ext in (".sei", ".png", ".json")]
     if output_sei.resolve() == args.sei.resolve():
         raise ValueError("Output must not replace the input SEI.")
@@ -274,7 +350,7 @@ def main():
             raise FileExistsError("%s already exists; use --overwrite or another --out-dir." % path)
     saved_edges = rewrite_sei(args.sei, output_sei, edges)
     # Read back the emitted header and flux sums to validate the actual output.
-    flux_check, counts_check, edges_check = read_sei(output_sei)
+    flux_check, counts_check, edges_check = read_sei(output_sei)[:3]
     if not np.array_equal(flux, flux_check) or not np.array_equal(counts, counts_check):
         raise RuntimeError("Output flux validation failed.")
     if not np.allclose(saved_edges, edges_check, rtol=0, atol=1e-9):
@@ -284,7 +360,11 @@ def main():
         raise RuntimeError("SEI rounding exceeded the permitted relative area error (1e-6).")
 
     fig, ax = plt.subplots(figsize=(11, 5.5))
-    ax.plot(x, y, color="blue", linewidth=2.2, label="This work: total")
+    if size_density:
+        x0, y0, _ = read_reference(args.csv, args.bounds, args.rho_min, args.rho_max)
+        ax.plot(x0, y0, color="lightsteelblue", linestyle="--", linewidth=1.6, label="This work: total (1 mm)")
+    ax.plot(x, y, color="blue", linewidth=2.2,
+            label="This work: total" + (" (size-shifted, flux-weighted)" if size_density else ""))
     ax.stairs(heights, old_edges, baseline=None, color="forestgreen", linestyle="--", linewidth=2,
               label="IMEM2: original density intervals")
     ax.stairs(heights, saved_edges, baseline=None, color="darkorange", linewidth=2.4,
@@ -306,8 +386,11 @@ def main():
 
     summary = {
         "input_sei": str(args.sei), "input_csv": str(args.csv),
-        "flux_column_units": "As stated in the input SEI; no unit conversion applied",
-        "flux_by_density_bin": flux.tolist(), "flux_fractions": (flux / flux.sum()).tolist(),
+        "input_flux_csv": str(args.flux_csv) if args.flux_csv else None,
+        "bar_height_source": "flux CSV quantity_code 'dens'" if args.flux_csv else "SEI DISTSET sum",
+        "flux_column_units": "As stated in the input SEI / flux CSV; no unit conversion applied",
+        "sei_flux_by_density_bin": flux.tolist(),
+        "flux_by_density_bin": bar_flux.tolist(), "flux_fractions": (bar_flux / bar_flux.sum()).tolist(),
         "peak_normalized_heights": heights.tolist(), "DISTSET_rows_by_bin": counts.tolist(),
         "original_edges_kg_m3": old_edges.tolist(), "fitted_edges_kg_m3": edges.tolist(),
         "saved_edges_kg_m3": saved_edges.tolist(), "saved_edges_g_cm3": (saved_edges / 1000).tolist(),
@@ -317,12 +400,18 @@ def main():
         "relative_area_error": (saved_area - target_area) / target_area,
         "integrated_squared_error_before_rounding": squared_error,
         "step_geometric_area_fractions": (heights * np.diff(saved_edges) / saved_area).tolist(),
+        "size_density": None if size_density is None else {
+            "strength": args.size_density, "split_kg_m3": args.density_split,
+            "ref_diameter_m": args.ref_diameter, "diameter_bins_m": dia.tolist(),
+            "diameter_flux": np.asarray(dia_flux).tolist(),
+            "shift_fraction_t": density_shift(dia[:, 0], dia[:, 1], args.size_density,
+                                              args.density_split, args.ref_diameter).tolist()},
         "reference_endpoint_policy": "Linear between centres; constant to inferred outer edges if included",
         "interpretation": "Requested bin-total height comparison; not a flux-per-unit-density PDF. "
                           "Flux rows are unchanged; only the density interval definitions are reassigned.",
     }
     output_json.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print("Summed flux (bins 1, 2, 3):", flux)
+    print("Flux (bins 1, 2, 3):      ", bar_flux, "(flux CSV)" if args.flux_csv else "(SEI)")
     print("Peak-normalized heights:  ", heights)
     print("New edges [kg/m^3]:       ", saved_edges)
     print("New edges [g/cm^3]:       ", saved_edges / 1000)

@@ -3787,7 +3787,8 @@ def plotDynestyResults(dynesty_run_results, obs_data, flags_dict, fixed_values, 
     if save_backup:
 
         # check if there is a _posterior_backup.pkl.gz file in the output_folder
-        backup_file_check = os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz")
+        backup_file_check = (findCombinedNameVariant(output_folder, file_name, "_posterior_backup.pkl.gz")
+                             or os.path.join(output_folder, f"{file_name}_posterior_backup.pkl.gz"))
         # if exists load it, unless finish_run is True then it has to run again just to overwrite any
         if os.path.exists(backup_file_check) and finish_run == False:
             print(f"Loading existing backup file: {backup_file_check}")
@@ -6867,7 +6868,7 @@ def resolveFitData(fit_data, obs_data, wake_data=None, use_wake_data=True):
 def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True,
     only_plot=True, cores=None, pool_MPI=None, pick_position=0, extraprior_file='', save_backup=True,
     use_wake_data=True, noise_wake_limit=-100, region_method="threshold", priorFile_to_update_with_posteriors="",
-    print_progress=True, sampler="dynesty", n_live=None, fit_data="auto", lum_noise_method="auto"):
+    print_progress=True, sampler=None, n_live=None, fit_data="auto", lum_noise_method="auto"):
     """ Create the output folder if it doesn't exist and run the Dynesty simulation.
 
     Arguments:
@@ -6884,7 +6885,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
         pick_position: [int] Index to pick specific position/station data. 0 by default.
         extraprior_file: [str] Path to an extra prior file. Empty string by default.
         save_backup: [bool] Flag to save a backup of the results. True by default.
-        sampler: [str] Nested sampling backend, 'dynesty' (default) or 'nautilus'.
+        sampler: [str] Nested sampling backend, 'dynesty' or 'nautilus'. None (default) uses the sampler of the
+            results file already present (.dynesty or _nautilus.h5), dynesty if there is none.
         n_live: [int] Number of live points. None uses the sampler default (dynesty 500, nautilus 2000).
         fit_data: [str or list] Data used in the log-likelihood, 'auto' or a list of 'lum', 'lag', 'wake'
             (see resolveFitData). Overrides use_wake_data. 'auto' by default.
@@ -6895,7 +6897,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
 
     """
 
-    if sampler not in SAMPLER_FILE_EXT:
+    if sampler is not None and sampler not in SAMPLER_FILE_EXT:
         raise ValueError(f"Unknown sampler '{sampler}', choose one of {list(SAMPLER_FILE_EXT)}.")
     if sampler == "dynesty" and not DYNESTY_FOUND:
         print("Dynesty package not found. Install dynesty or run with sampler='nautilus'.")
@@ -6903,7 +6905,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
     if sampler == "nautilus" and not NAUTILUS_FOUND:
         print("Nautilus package not found. Install nautilus-sampler or run with sampler='dynesty'.")
         return
-    print(f"Nested sampler: {sampler}")
+    print(f"Nested sampler: {sampler or 'auto (existing results file, dynesty if none)'}")
 
     # initlize cml_args
     class cml_args:
@@ -6990,6 +6992,13 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             finder.report_txt)):
 
             dynesty_file, pickle_file, bounds, flags_dict, fixed_values = dynesty_info
+            # sampler not given: use the one of the results file found (dynesty for a new run)
+            event_sampler = sampler or samplerFromFile(dynesty_file)
+            if sampler is None:
+                print(f"Nested sampler for {base_name}: {event_sampler} ({os.path.basename(dynesty_file)})")
+                if not (DYNESTY_FOUND if event_sampler == "dynesty" else NAUTILUS_FOUND):
+                    print(f"{event_sampler} package not found, cannot use {dynesty_file}. Skipping {base_name}.")
+                    continue
             obs_data = finder.obsInstance(base_name)
             obs_data.file_name = pickle_file # update teh file name in the observation data object
             wake_data = finder.wakeInstance(base_name)
@@ -7102,7 +7111,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                 start_time = time.time()
                 # Run dynesty
                 try:
-                    if sampler == "nautilus":
+                    if event_sampler == "nautilus":
                         dsampler_results = nautilusMainRun(dynesty_file, obs_data, bounds, flags_dict, fixed_values, cml_args.cores, output_folder=out_folder,
                                                            pool_MPI=pool_MPI, wake_data=wake_data, print_progress=print_progress, n_live=n_live)
                     else:
@@ -7140,7 +7149,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                         print(f"\nError encountered loading the dynestsy file: {e}\nNote: .dynesty files can be finicky and may fail to load if they were created on a different machine or under a slightly different conda environment.\n")
 
                         # try to load the backup dynesty file if present {base_name}_posterior_backup.pkl.gz
-                        backup_dynesty_file = os.path.join(out_folder, f"{base_name}_posterior_backup.pkl.gz")
+                        backup_dynesty_file = (findCombinedNameVariant(out_folder, base_name, "_posterior_backup.pkl.gz")
+                                               or os.path.join(out_folder, f"{base_name}_posterior_backup.pkl.gz"))
                         if os.path.isfile(backup_dynesty_file):
                             try:
                                 dsampler_results, _ , _ = restoreBackupDynesty(backup_dynesty_file)
@@ -7198,7 +7208,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                 # Print the time to run dynesty in hours, minutes, and seconds
                 print(f"Time to run dynesty: {elapsed_time}")
 
-            elif cml_args.only_plot and os.path.isfile(dynesty_file):
+            # only plot also from a posterior backup alone (named with or without _combined)
+            elif cml_args.only_plot and (os.path.isfile(dynesty_file) or findCombinedNameVariant(out_folder, base_name, "_posterior_backup.pkl.gz")):
                 print("Only plotting requested. Skipping dynesty run.")
 
                 try:
@@ -7210,7 +7221,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
                     print(f"\nError encountered loading the dynestsy file: {e}\nNote: .dynesty files can be finicky and may fail to load if they were created on a different machine or under a slightly different conda environment.\n")
 
                     # try to load the backup dynesty file if present {base_name}_posterior_backup.pkl.gz
-                    backup_dynesty_file = os.path.join(out_folder, f"{base_name}_posterior_backup.pkl.gz")
+                    backup_dynesty_file = (findCombinedNameVariant(out_folder, base_name, "_posterior_backup.pkl.gz")
+                                           or os.path.join(out_folder, f"{base_name}_posterior_backup.pkl.gz"))
                     if os.path.isfile(backup_dynesty_file):
                         try:
                             dsampler_results, _ , _ = restoreBackupDynesty(backup_dynesty_file)
@@ -7428,6 +7440,30 @@ def restoreBackupDynesty(backup_file: str):
 def samplerFromFile(file_path):
     """ Return which nested sampler ('dynesty' or 'nautilus') wrote a checkpoint file, based on its suffix. """
     return "nautilus" if str(file_path).endswith(SAMPLER_FILE_EXT["nautilus"]) else "dynesty"
+
+
+def findCombinedNameVariant(folder, base_name, suffix):
+    """ Find an existing file folder/<name><suffix> where name is base_name with or without '_combined'
+    (also the bare YYYYMMDD_HHMMSS timestamp), so runs saved under the other naming are still loaded.
+
+    Arguments:
+        folder: [str] Folder to look in.
+        base_name: [str] Base name of the event (e.g. '20191023_091225_combined' or '20191023_091225_trajectory').
+        suffix: [str] File suffix, e.g. '.dynesty', '_nautilus.h5' or '_posterior_backup.pkl.gz'.
+
+    Return:
+        path: [str] Path of the first existing variant, None if none exists.
+    """
+    stem = base_name.replace('_combined', '')
+    names = [base_name, stem, stem + '_combined']
+    timestamp = re.match(r"^(\d{8}_\d{6})", stem)
+    if timestamp:
+        names += [timestamp.group(1), timestamp.group(1) + '_combined']
+    for name in dict.fromkeys(names):
+        path = os.path.join(folder, name + suffix)
+        if os.path.isfile(path):
+            return path
+    return None
 
 
 def nautilusToResults(sampler):
@@ -7820,7 +7856,8 @@ def updatePriorsFromPosteriors(dynesty_file, bounds, flags_dict, fixed_values, b
         dsampler_results = restoreSamplerResults(dynesty_file, bounds, flags_dict)
     except Exception as e:
         # try to load the backup dynesty file if present {base_name}_posterior_backup.pkl.gz
-        backup_dynesty_file = os.path.join(dynesty_folder, f"{base_name}_posterior_backup.pkl.gz")
+        backup_dynesty_file = (findCombinedNameVariant(dynesty_folder, base_name, "_posterior_backup.pkl.gz")
+                               or os.path.join(dynesty_folder, f"{base_name}_posterior_backup.pkl.gz"))
         if os.path.isfile(backup_dynesty_file):
             try:
                 dsampler_results, _ , _ = restoreBackupDynesty(backup_dynesty_file)
@@ -8506,7 +8543,7 @@ class autoSetupDynestyFiles:
 
     def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False,
                  pick_position=0, extraprior_file="", noise_wake_limit=-100, region_method="threshold",
-                 sampler="dynesty", lum_noise_method="auto"):
+                 sampler=None, lum_noise_method="auto"):
         """ Initialize the autoSetupDynestyFiles class.
 
         Arguments:
@@ -8521,6 +8558,7 @@ class autoSetupDynestyFiles:
             extraprior_file: [str] Path to an extra prior file. Empty string by default.
             noise_wake_limit: [int] Threshold for wake noise computation (default -100 m).
             sampler: [str] Nested sampler backend, 'dynesty' or 'nautilus'. Sets the checkpoint file suffix.
+                None (default) takes an existing .dynesty or _nautilus.h5 file, .dynesty for a new run.
             lum_noise_method: [str] 'auto', 'snr' or 'scatter', how to estimate noise_lum (see ObservationData).
         """
         self.input_dir_or_file = input_dir_or_file
@@ -8532,7 +8570,8 @@ class autoSetupDynestyFiles:
         self.extraprior_file = extraprior_file  # to be filled if found
         self.noise_wake_limit = noise_wake_limit  # to be filled if found in prior file
         self.region_method = region_method  # ADDED: 'threshold' (default) or 'adaptive'
-        self.file_ext = SAMPLER_FILE_EXT[sampler]  # '.dynesty' or '_nautilus.h5'
+        self.sampler = sampler
+        self.file_ext = SAMPLER_FILE_EXT[sampler or "dynesty"]  # '.dynesty' or '_nautilus.h5'
         self.lum_noise_method = lum_noise_method
 
         # Prepare placeholders
@@ -8949,18 +8988,16 @@ class autoSetupDynestyFiles:
 
         possible_dynesty = os.path.join(root, file_name_no_ext + self.file_ext)
 
-        # Check for existing .dynesty in the same folder
-        existing_dynesty_list = [f for f in files if f.endswith(self.file_ext)]
-        if existing_dynesty_list:
-            # There is at least one .dynesty in this folder
-            if os.path.exists(possible_dynesty) or (os.path.basename(possible_dynesty) in existing_dynesty_list):
-                # Matches the .pickle base
-                if self.resume:
-                    dynesty_file = possible_dynesty
-                else:
-                    dynesty_file = self.constructNewDynestyName(possible_dynesty)
+        # Check for an existing .dynesty in the same folder, also named with or without '_combined'
+        # (sampler not given: either a .dynesty or a _nautilus.h5, dynesty first)
+        sampler_exts = [self.file_ext] if self.sampler else list(SAMPLER_FILE_EXT.values())
+        existing_dynesty = next((path for path in (findCombinedNameVariant(root, os.path.basename(file_name_no_ext), ext)
+                                                   for ext in sampler_exts) if path), None)
+        if existing_dynesty is not None:
+            if self.resume:
+                dynesty_file = existing_dynesty
             else:
-                dynesty_file = possible_dynesty
+                dynesty_file = self.constructNewDynestyName(existing_dynesty)
         else:
             # No .dynesty => create from .pickle base name
             dynesty_file = possible_dynesty
@@ -9062,7 +9099,7 @@ class autoSetupDynestyFiles:
 
         """
         folder = os.path.dirname(existing_dynesty_path)
-        ext = self.file_ext
+        ext = SAMPLER_FILE_EXT[samplerFromFile(existing_dynesty_path)]
         base = os.path.basename(existing_dynesty_path)[:-len(ext)]
 
         counter = 1
@@ -10323,8 +10360,9 @@ if __name__ == "__main__":
     arg_parser.add_argument('--cores', metavar='CORES', type=int, default=None,
         help="Number of cores to use. Default = all available.")
 
-    arg_parser.add_argument('--sampler', metavar='SAMPLER', type=str, choices=tuple(SAMPLER_FILE_EXT), default="dynesty",
-        help="Nested sampling backend: 'dynesty' (default, checkpoint .dynesty) or 'nautilus' (checkpoint _nautilus.h5). "
+    arg_parser.add_argument('--sampler', metavar='SAMPLER', type=str, choices=tuple(SAMPLER_FILE_EXT), default=None,
+        help="Nested sampling backend: 'dynesty' (checkpoint .dynesty) or 'nautilus' (checkpoint _nautilus.h5). "
+        "Default = the sampler of the results file already present, dynesty if there is none. "
         "All other inputs and outputs are the same for both.")
 
     arg_parser.add_argument('--nlive', metavar='NLIVE', type=int, default=None,

@@ -26,6 +26,7 @@ import time
 import traceback
 import warnings
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Iterator
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -5474,15 +5475,24 @@ class ObservationData:
         if not isinstance(self.file_name, list):
             self.file_name = [self.file_name]
 
+        trajs = {current_file_name: loadPickle(*os.path.split(current_file_name)) for current_file_name in self.file_name}
+
+        # each pickle has the time_data relative to its own jdt_ref (all start ~0 s), with more pickles of the
+        # same meteor shift them to the UTC reference time of the earliest one so the frames line up in time
+        jdt_ref_common = min([traj.jdt_ref for traj in trajs.values() if hasattr(traj, 'orbit')], default=None)
+
         obs_dict = []  # accumulates everything from all files
         # Loop over each pickle file
-        for current_file_name in self.file_name:
-            traj = loadPickle(*os.path.split(current_file_name))
+        for current_file_name, traj in trajs.items():
 
             # Skip if there's no .orbit attribute
             if not hasattr(traj, 'orbit'):
                 print(f"Trajectory data not found in file: {current_file_name}")
                 continue
+
+            time_shift = (traj.jdt_ref - jdt_ref_common)*86400 # s
+            if len(trajs) > 1:
+                print(f"Time shift of {os.path.basename(current_file_name)} to the common reference time: {time_shift:.4f} s")
 
             # self.v_init=traj.orbit.v_init+100
             # self.stations = []
@@ -5538,12 +5548,12 @@ class ObservationData:
                     'height': np.array(obs.model_ht), # m
                     'absolute_magnitudes': absolute_magnitudes, # mag
                     'luminosity': np.array(P_0m*(10 ** (absolute_magnitudes/(-2.5)))), # const.P_0m)
-                    'time': np.array(obs.time_data), # s
+                    'time': np.array(obs.time_data) + time_shift, # s
                     'ignore_list': np.array(obs.ignore_list),
                     'velocities': np.array(obs.velocities), # m/s
                     'lag': np.array(obs.lag), # m
                     'length': np.array(obs.state_vect_dist), # m
-                    'time_lag': np.array(obs.time_data), # s
+                    'time_lag': np.array(obs.time_data) + time_shift, # s
                     'height_lag': np.array(obs.model_ht), # m
                     'apparent_magnitudes': apparent_magnitudes_test#np.array(meteorAbsMagnitudeToApparent(np.array(obs.absolute_magnitudes), np.array(obs.meas_range))) # model_range
                     }
@@ -6868,7 +6878,7 @@ def resolveFitData(fit_data, obs_data, wake_data=None, use_wake_data=True):
 def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_all_cameras=True,
     only_plot=True, cores=None, pool_MPI=None, pick_position=0, extraprior_file='', save_backup=True,
     use_wake_data=True, noise_wake_limit=-100, region_method="threshold", priorFile_to_update_with_posteriors="",
-    print_progress=True, sampler=None, n_live=None, fit_data="auto", lum_noise_method="auto"):
+    print_progress=True, sampler=None, n_live=None, fit_data="auto", lum_noise_method="auto", force_wake=False):
     """ Create the output folder if it doesn't exist and run the Dynesty simulation.
 
     Arguments:
@@ -6891,6 +6901,8 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
         fit_data: [str or list] Data used in the log-likelihood, 'auto' or a list of 'lum', 'lag', 'wake'
             (see resolveFitData). Overrides use_wake_data. 'auto' by default.
         lum_noise_method: [str] 'auto', 'snr' or 'scatter', how to estimate noise_lum (see ObservationData).
+        force_wake: [bool] Compute the wake heights from the main trajectory pickle, mapping the wid site IDs
+            (e.g. 1) to the stations at the same site (e.g. 01T), so no extra pickle with the wid site IDs is needed. False by default.
 
     Return:
         None
@@ -6973,6 +6985,7 @@ def setupDirAndRunDynesty(input_dir, output_dir='', prior='', resume=True, use_a
             extraprior_file=cml_args.extraprior_file,
             noise_wake_limit=noise_wake_limit,
             region_method=region_method,   # ADDED
+            force_wake=force_wake,
             sampler=sampler,
             lum_noise_method=lum_noise_method
         )
@@ -7442,14 +7455,20 @@ def samplerFromFile(file_path):
     return "nautilus" if str(file_path).endswith(SAMPLER_FILE_EXT["nautilus"]) else "dynesty"
 
 
-def findCombinedNameVariant(folder, base_name, suffix):
+def findCombinedNameVariant(folder, base_name, suffix, time_tol=2):
     """ Find an existing file folder/<name><suffix> where name is base_name with or without '_combined'
     (also the bare YYYYMMDD_HHMMSS timestamp), so runs saved under the other naming are still loaded.
+    If none exists, take any <suffix> file in the folder starting with a timestamp within time_tol seconds,
+    e.g. 20200520_035855_trajectory.dynesty for 20200520_035856_combined (combined pickles can shift the
+    timestamp by a second).
 
     Arguments:
         folder: [str] Folder to look in.
         base_name: [str] Base name of the event (e.g. '20191023_091225_combined' or '20191023_091225_trajectory').
         suffix: [str] File suffix, e.g. '.dynesty', '_nautilus.h5' or '_posterior_backup.pkl.gz'.
+
+    Keyword arguments:
+        time_tol: [float] Max difference in seconds between the timestamps. 2 by default.
 
     Return:
         path: [str] Path of the first existing variant, None if none exists.
@@ -7463,7 +7482,24 @@ def findCombinedNameVariant(folder, base_name, suffix):
         path = os.path.join(folder, name + suffix)
         if os.path.isfile(path):
             return path
-    return None
+
+    if not timestamp or not os.path.isdir(folder):
+        return None
+    base_time = datetime.datetime.strptime(timestamp.group(1), "%Y%m%d_%H%M%S")
+    candidates = []
+    for file_name in os.listdir(folder):
+        file_time = re.match(r"^(\d{8}_\d{6})", file_name)
+        if not file_name.endswith(suffix) or not file_time:
+            continue
+        dt = abs((datetime.datetime.strptime(file_time.group(1), "%Y%m%d_%H%M%S") - base_time).total_seconds())
+        if dt <= time_tol:
+            # closest in time first, then the shortest name (e.g. not the _n1 copies)
+            candidates.append((dt, len(file_name), file_name))
+    if not candidates:
+        return None
+    path = os.path.join(folder, min(candidates)[2])
+    print(f"No {base_name}{suffix} found, using {os.path.basename(path)} (timestamp within {time_tol} s)")
+    return path
 
 
 def nautilusToResults(sampler):
@@ -7543,6 +7579,47 @@ def restoreSamplerResults(sampler_file, bounds, flags_dict):
                                    filepath=sampler_file, resume=True)
         return nautilusToResults(sampler)
     return dynesty.DynamicNestedSampler.restore(sampler_file).results
+
+
+def wakeSiteAliasTrajectory(traj, wake_files):
+    """ Make a trajectory usable by loadWakeFile when its station IDs do not match the wid site IDs.
+
+    loadWakeFile looks up the station position with the site ID of the wid file name (wid_01_045.txt -> '1'),
+    which may only exist in another pickle of the meteor. Here each missing site is mapped to the station of the
+    trajectory at the same site (e.g. '1' -> "01T'-Mirfit", CAMO 'T' stations preferred over '01G'), the
+    wake heights are then the projection of the wake line of sight on this trajectory.
+
+    Arguments:
+        traj: [Trajectory] Trajectory object.
+        wake_files: [list] Paths of the wid_*.txt files.
+
+    Return:
+        traj: [Trajectory or SimpleNamespace] The same trajectory if all the sites are present, otherwise a
+            copy with the aliased stations added.
+    """
+    station_ids = [str(obs.station_id) for obs in traj.observations]
+    site_ids = sorted({str(int(os.path.basename(f).split('_')[1])) for f in wake_files})
+
+    alias_obs = []
+    for site_id in site_ids:
+        if site_id in station_ids:
+            continue
+        # stations at the same site: '01T', "01T'-Mirfit", '01G', '1G'... not '011' or '10T'
+        candidates = [obs for obs in traj.observations
+                      if re.match(rf"^0*{site_id}(?!\d)", str(obs.station_id))]
+        if not candidates:
+            print(f"-forcewake: no station found for wake site {site_id} among {station_ids}")
+            continue
+        candidates.sort(key=lambda obs: not re.match(rf"^0*{site_id}T", str(obs.station_id)))
+        print(f"-forcewake: wake site {site_id} -> station {candidates[0].station_id}")
+        alias_obs.append(SimpleNamespace(station_id=site_id, lat=candidates[0].lat,
+                                         lon=candidates[0].lon, ele=candidates[0].ele))
+
+    if not alias_obs:
+        return traj
+
+    return SimpleNamespace(observations=list(traj.observations) + alias_obs, jdt_ref=traj.jdt_ref,
+                           state_vect_mini=traj.state_vect_mini, radiant_eci_mini=traj.radiant_eci_mini)
 
 
 def saveWakeContainersJson(wake_containers, out_json_path, metadata=None):
@@ -8543,7 +8620,7 @@ class autoSetupDynestyFiles:
 
     def __init__(self, input_dir_or_file, prior_file="", resume=False, output_dir="", use_all_cameras=False,
                  pick_position=0, extraprior_file="", noise_wake_limit=-100, region_method="threshold",
-                 sampler=None, lum_noise_method="auto"):
+                 sampler=None, lum_noise_method="auto", force_wake=False):
         """ Initialize the autoSetupDynestyFiles class.
 
         Arguments:
@@ -8560,6 +8637,8 @@ class autoSetupDynestyFiles:
             sampler: [str] Nested sampler backend, 'dynesty' or 'nautilus'. Sets the checkpoint file suffix.
                 None (default) takes an existing .dynesty or _nautilus.h5 file, .dynesty for a new run.
             lum_noise_method: [str] 'auto', 'snr' or 'scatter', how to estimate noise_lum (see ObservationData).
+            force_wake: [bool] Compute the wake heights from the main trajectory, mapping the wid site IDs to
+                the stations at the same site, instead of needing a pickle with the wid site IDs. False by default.
         """
         self.input_dir_or_file = input_dir_or_file
         self.prior_file = prior_file
@@ -8573,6 +8652,7 @@ class autoSetupDynestyFiles:
         self.sampler = sampler
         self.file_ext = SAMPLER_FILE_EXT[sampler or "dynesty"]  # '.dynesty' or '_nautilus.h5'
         self.lum_noise_method = lum_noise_method
+        self.force_wake = force_wake
 
         # Prepare placeholders
         self.base_names = []        # [base_name, ...] (no extension)
@@ -8671,7 +8751,13 @@ class autoSetupDynestyFiles:
         if not isinstance(pickle_files, list):
             pickle_files = [pickle_files]
 
-        for pk in pickle_files:
+        # try every pickle with its own station IDs first, then with -forcewake map the wid site IDs to the
+        # stations at the same site (e.g. 1 -> 01T) if no pickle has them
+        attempts = [(pk, False) for pk in pickle_files]
+        if self.force_wake:
+            attempts += [(pk, True) for pk in pickle_files]
+
+        for pk, alias_sites in attempts:
             input_dir = os.path.dirname(pk)
 
             print(f"Searching for wake files in directory: {input_dir}")
@@ -8707,11 +8793,13 @@ class autoSetupDynestyFiles:
 
             print(f"Found {len(wake_files)} wake files in the input directory.")
 
+            wake_containers = []
             try:
                 traj = loadPickle(*os.path.split(pk))
                 if hasattr(traj, "observations") and hasattr(traj, "jdt_ref") and hasattr(traj, "rbeg_ele"):
                         print(f"Loaded trajectory pickle: {pk}")
-                wake_containers = []
+                if alias_sites:
+                    traj = wakeSiteAliasTrajectory(traj, wake_files)
                 for pk in wake_files:
                     try:
                         wc = loadWakeFile(traj, pk)
@@ -8849,6 +8937,12 @@ class autoSetupDynestyFiles:
 
             base_str = avg_dt.strftime("%Y%m%d_%H%M%S")
             msec = avg_dt.microsecond // 1000
+            # name after the timestamp of the earliest file (e.g. 20190629_064913_trajectory.pickle and
+            # 20190629_064914_trajectory_wake.pickle -> 20190629_064913) so it matches the folder and
+            # the existing dynesty/backup files, the averaged JD can round to the next second
+            first_file_time = re.match(r"^(\d{8}_\d{6})", os.path.basename(cluster_rows[0]['filename']))
+            if first_file_time:
+                base_str = first_file_time.group(1)
             # cluster_name = f"{base_str}-{msec:03d}_combined"
             cluster_name = f"{base_str}_combined"
 
@@ -10333,6 +10427,11 @@ if __name__ == "__main__":
         help="If wake data present not use it. Overridden by --fit_data if it is not 'auto'.",
         action="store_false")
 
+    arg_parser.add_argument('-forcewake','-force_wake','--force_wake',
+        help="Compute the wake heights from the main trajectory pickle mapping the wid site IDs (e.g. wid_01 -> 01T) "
+        "to the stations at the same site, so no extra pickle with the wid site IDs is needed.",
+        action="store_true")
+
     arg_parser.add_argument('--fit_data', metavar='FIT_DATA', type=str, default="auto",
         help="Data used in the log-likelihood: 'auto' (default) uses all the data available (lum, lag and wake if present), "
         "otherwise a list of lum, lag, wake e.g. \"['lum','lag']\" or lum,lag (no wake), lum (e.g. USG fireballs), wake. "
@@ -10384,6 +10483,6 @@ if __name__ == "__main__":
                           use_wake_data=cml_args.use_wake_data, noise_wake_limit=cml_args.noise_wake_limit, region_method=cml_args.region_method,
                           priorFile_to_update_with_posteriors=cml_args.priorposteriorupdate, print_progress=cml_args.print_progress,
                           sampler=cml_args.sampler, n_live=cml_args.nlive, fit_data=cml_args.fit_data,
-                          lum_noise_method=cml_args.lum_noise_method)
+                          lum_noise_method=cml_args.lum_noise_method, force_wake=cml_args.force_wake)
 
     print("\nDONE: Completed processing of all files in the input directory.\n")

@@ -49,7 +49,7 @@ from wmpl.Formats.WmplTrajectorySummary import loadTrajectorySummaryFast
 
 def infer_shower_name_from_path(path_str):
     u = path_str.upper()
-    for tag in ["GEM", "PER", "ORI", "CAP", "DRA"]:
+    for tag in ["GEM", "PER", "ORI", "CAP", "DRA", "TAH"]:
         if tag in u:
             return tag
     # fallback
@@ -70,6 +70,8 @@ def infer_shower_iau_no(shower_name):
         return 8
     if "DRA" in shower_name:
         return 9
+    if "TAH" in shower_name:
+        return 61
     return -1
 
 
@@ -88,6 +90,8 @@ def infer_gmn_files(shower_name):
         return ["traj_summary_monthly_202410.txt"]
     if "DRA" in shower_name:
         return ["traj_summary_monthly_202410.txt"]
+    if "TAH" in shower_name:
+        return ["traj_summary_monthly_202205.txt"]
     # default
     return ["traj_summary_monthly_202402.txt"]
 
@@ -103,17 +107,17 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--reports_root",
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.3)Phaethon\Base_GEM",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\7)Tah_erc\Results-dynesty\EMCCD\TAH-cz-nautilus500",
         help="Root folder containing CAMO subfolders with YYYYMMDD_hhmmss_report.txt"
     )
     parser.add_argument(
         "--output-dir",
-        default=None,
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\7)Tah_erc\radiance",
         help="Output directory for plots; defaults to reports_root"
     )
     parser.add_argument(
         "--gmn-dir",
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\7)Tah_erc",
         help="Directory with GMN traj_summary_monthly_*.txt / *.pickle (default is your usual path)"
     )
 
@@ -126,7 +130,7 @@ if __name__ == "__main__":
     shower_name = infer_shower_name_from_path(reports_root)
     iau_no = infer_shower_iau_no(shower_name)
     gmn_files = infer_gmn_files(shower_name)
-
+    shower_name = "TAH"
     print(f"Reports root: {reports_root}")
     print(f"Inferred shower: {shower_name} (IAU = {iau_no})")
     print(f"GMN dir: {gmn_dir}")
@@ -255,6 +259,11 @@ if __name__ == "__main__":
             # save the csv_file to a file called: "traj_summary_monthly_202408.csv"
             stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results\traj_summary_monthly_202410.csv", index=False)
             shower_iau_no = 9#"00009"
+        elif "TAH" in shower_name:  
+            stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\7)Tah_erc","traj_summary_monthly_202205.txt","traj_summary_monthly_202205.pickle")
+            # save the csv_file to a file called: "traj_summary_monthly_202405.csv"
+            stream_data.to_csv(r"C:\Users\maxiv\Documents\UWO\Papers\7)Tah_erc\traj_summary_monthly_202405.csv", index=False)
+            shower_iau_no = 61#"00061"
         else:
             stream_data = loadTrajectorySummaryFast(r"C:\Users\maxiv\Documents\UWO\Papers\2)ORI-CAP-PER-DRA\Results","traj_summary_monthly_202402.txt","traj_summary_monthly_202402.pickle")
             # save the csv_file to a file called: "traj_summary_monthly_202402.csv"
@@ -343,7 +352,11 @@ if __name__ == "__main__":
                 # put an x lim and a y lim
                 plt.xlim(xlim[0], 65)
                 plt.ylim(77, 80.5)
-
+            elif "TAH" in shower_name:  
+                print("Plotting TAH shower data...")
+                # put an x lim and a y lim
+                plt.xlim(123, 128)
+                plt.ylim(33, 40)
             # if shower_iau_no == -1:
             #     lg_min_la_sun = np.where(lg_min_la_sun > 180, lg_min_la_sun - 360, lg_min_la_sun)
 

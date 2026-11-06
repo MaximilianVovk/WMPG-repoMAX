@@ -130,7 +130,7 @@ if __name__ == "__main__":
     shower_name = infer_shower_name_from_path(reports_root)
     iau_no = infer_shower_iau_no(shower_name)
     gmn_files = infer_gmn_files(shower_name)
-    shower_name = "TAH"
+
     print(f"Reports root: {reports_root}")
     print(f"Inferred shower: {shower_name} (IAU = {iau_no})")
     print(f"GMN dir: {gmn_dir}")

@@ -51,10 +51,13 @@ from matplotlib.ticker import MaxNLocator, NullLocator, ScalarFormatter
 from scipy.stats import gaussian_kde
 from wmpl.Formats.WmplTrajectorySummary import loadTrajectorySummaryFast
 from multiprocessing import Pool
+from tempfile import TemporaryDirectory
 from wmpl.MetSim.MetSimErosion import energyReceivedBeforeErosion
 from wmpl.Utils.AtmosphereDensity import fitAtmPoly, atmDensPoly, getAtmDensity
 from wmpl.MetSim.MetSimErosionCyTools import atmDensityPoly
 from types import SimpleNamespace
+from unittest.mock import patch
+from wmpl.MetSim import MetSimErosion
 
 # try to resolve dynesty's internal _hist2d no matter how it's imported
 try:
@@ -884,7 +887,305 @@ def _ground_camera_profile_payload(sim_result, scenario_name):
     }
 
 
-def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor=False):
+FINAL_SPEED_MS = 2500.0
+ABLATION_MASS_KG = 1e-13
+
+
+def _main_remnant_endpoint(fitted_const, planet):
+    """Return endpoint status, mass (kg), bulk density (kg/m³), speed (m/s) and height (m)."""
+    const = copy.deepcopy(fitted_const)
+    const.v_kill = FINAL_SPEED_MS
+    # MetSim kills on <=. Keep a mass exactly at the cutoff on the surviving side of the threshold.
+    const.m_kill = np.nextafter(ABLATION_MASS_KG, 0.0)
+    const.h_kill = 0.0
+    const.len_kill = -1.0
+    if planet == "Mars":
+        # The Mars run inherits Earth's settings but supplies its own density polynomial.
+        const.atm_density_model = "polynomial"
+
+    # Some MetSim versions read gravity from their module rather than from const.G0.
+    gravity = getattr(const, "G0", getattr(MetSimErosion, "G0", 9.81))
+    with patch.object(MetSimErosion, "G0", gravity, create=True):
+        frag, steps, _ = runSimulation(const, compute_wake=False)
+
+    if frag is None:
+        return "missing_main_fragment", np.nan, np.nan, np.nan, np.nan
+
+    mass, rho, speed, height = map(float, (frag.m, frag.rho, frag.v, frag.h))
+    if not np.all(np.isfinite([mass, rho, speed, height])) or rho <= 0 or speed < 0:
+        return "invalid_endpoint", np.nan, np.nan, speed, height
+
+    mass = max(mass, 0.0)
+    if speed <= FINAL_SPEED_MS or height <= 0:
+        # Ignore padded rows after the main fragment is inactive. Match its mass to
+        # its own velocity, since the leading fragment may be a different object.
+        prev_v, prev_h, prev_m = const.v_init, const.h_init, const.m_init
+        for step in reversed(steps):
+            # Final five raw MetSim columns are main mass, height, length, speed, pressure.
+            # Raw speeds are in the same atmospheric frame as the solver's speed cutoff.
+            m, h, _, v, _ = step[-5:]
+            if v >= FINAL_SPEED_MS and h > 0 and np.isfinite([m, h, v]).all():
+                prev_v, prev_h, prev_m = v, h, m
+                break
+
+        # Compare crossings within the terminal step when it also crosses the surface.
+        speed_fraction = np.inf
+        if speed <= FINAL_SPEED_MS:
+            speed_fraction = (prev_v - FINAL_SPEED_MS)/(prev_v - speed) if prev_v > speed else 1.0
+        ground_fraction = prev_h/(prev_h - height) if height <= 0 else np.inf
+        at_speed = speed_fraction <= ground_fraction
+        fraction = speed_fraction if at_speed else ground_fraction
+        mass = max(0.0, prev_m + fraction*(mass - prev_m)) if fraction < 1 else mass
+        speed = FINAL_SPEED_MS if at_speed else prev_v + fraction*(speed - prev_v)
+        height = prev_h + fraction*(height - prev_h) if at_speed else 0.0
+        if not at_speed:
+            # For the final-mass comparison, a faster surface arrival is fully ablated.
+            return "fully_ablated", 0.0, rho, speed, height
+        if mass >= ABLATION_MASS_KG:
+            return "reached_2.5_km_s", mass, rho, speed, height
+
+    if mass < ABLATION_MASS_KG:
+        return "fully_ablated", mass, rho, speed, height
+    return "stopped_before_2.5_km_s", np.nan, rho, speed, height
+
+
+def _plot_remnant_mass_summary(table, output_dir):
+    """Plot summed main-remnant masses and counts per decade for the two planets."""
+    planets = ("Earth", "Mars")
+    colors = ("#286eaa", "#c64c3c")
+    initial_mass = table["initial_mass_kg"].sum()
+    masses = {
+        planet: table.loc[table[f"{planet}_status"] == "reached_2.5_km_s",
+                          f"{planet}_final_mass_kg"].to_numpy()
+        for planet in planets
+    }
+    largest = max((values.max() for values in masses.values() if values.size),
+                  default=ABLATION_MASS_KG)
+    first_decade = int(np.floor(np.log10(ABLATION_MASS_KG)))
+    last_decade = int(np.floor(np.log10(largest))) + 1
+    exponents = np.arange(first_decade, last_decade + 1)
+    edges = np.float_power(10., exponents)
+    fig, (total_ax, hist_ax) = plt.subplots(
+        1, 2, figsize=(14.2, 5.6), gridspec_kw={"width_ratios": [1, 2.05]})
+    fig.subplots_adjust(left=.067, right=.98, top=.75, bottom=.25, wspace=.2)
+    fig.text(.067, .92, f"Meteoroid main-remnant mass at {FINAL_SPEED_MS/1000:g} km/s",
+             fontsize=21, weight="bold", color="#142c38")
+    fig.text(.067, .85, f"{len(table)} meteoroids   ·   Total initial mass {initial_mass*1e6:,.1f} mg",
+             fontsize=11, color="#42555e")
+
+    hist_ax.set_xscale("log")
+    summary = []
+    for i, (planet, color) in enumerate(zip(planets, colors)):
+        values = masses[planet]
+        total_mg = values.sum()*1e6
+        percent = 100*values.sum()/initial_mass
+        total_ax.bar(i, total_mg, width=.64, color=color)
+        total_ax.annotate(f"{total_mg:.1f} mg", (i, total_mg), xytext=(0, 4),
+                          textcoords="offset points", ha="center", weight="bold", fontsize=12)
+        if total_mg > 0:
+            total_ax.text(i, total_mg/2, f"{percent:.2f}%\nof initial mass",
+                          ha="center", va="center", color="white", fontsize=10)
+
+        counts, _ = np.histogram(values, bins=edges)
+        left = np.float_power(10., exponents[:-1] + .10 + i*.41)
+        right = left * 10**.38
+        hist_ax.bar(left, counts, width=right-left, align="edge", color=color,
+                    label=f"{planet} ({values.size} remnants)")
+        for center, count in zip(np.sqrt(left*right), counts):
+            hist_ax.annotate(str(count), (center, count), xytext=(0, 2),
+                             textcoords="offset points", ha="center", color=color, fontsize=9)
+
+        status = table[f"{planet}_status"]
+        ablated = (status == "fully_ablated").sum()
+        surface = table[f"{planet}_surface_above_2_5_km_s"].sum()
+        other = len(status) - ablated - values.size
+        detail = f"{planet}: {ablated} fully ablated (includes {surface} fast surface arrivals)"
+        if other:
+            detail += f", {other} other unresolved"
+        summary.append(detail)
+
+    total_ax.set_title("Total remaining mass", loc="left", fontsize=14, pad=10)
+    total_ax.set_ylabel("Main-remnant mass (mg)")
+    total_ax.set_xticks([0, 1], labels=planets)
+    total_ax.set_xlim(-.65, 1.65)
+    hist_ax.set_title("Final mass distribution", loc="left", fontsize=14, pad=10)
+    hist_ax.set(xlim=(edges[0], edges[-1]), xlabel="Final main-remnant mass (kg)",
+                ylabel="Number of meteoroids")
+    hist_ax.set_xticks(edges, labels=[rf"$10^{{{e}}}$" for e in exponents])
+    hist_ax.xaxis.set_minor_locator(NullLocator())
+    hist_ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    hist_ax.legend(loc="upper right", ncol=2, frameon=False)
+    for ax in (total_ax, hist_ax):
+        ax.margins(y=.22)
+        ax.set_ylim(bottom=0)
+        ax.set_axisbelow(True)
+        ax.grid(axis="y", color="#dce2e4", linewidth=.7)
+        ax.spines[["right", "top"]].set_visible(False)
+    fig.text(.067, .095, f"Main remnants with final mass below {ABLATION_MASS_KG:.0e} kg "
+             "are considered fully ablated and contribute zero to the plotted totals.", fontsize=10)
+    fig.text(.067, .05, ".   ".join(summary) + ".", fontsize=10, color="#42555e")
+    path = os.path.join(output_dir, "Earth_Mars_remnant_mass_comparison.png")
+    fig.savefig(path, dpi=240)
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
+def _final_mass_row(task):
+    """Calculate both planetary endpoints for one meteor in the same process."""
+    name, earth, mars = task
+    m0, rho0 = earth.m_init, earth.rho
+    if not (m0 > 0 and rho0 > 0 and np.isfinite([m0, rho0]).all()):
+        raise ValueError(f"Invalid initial mass or density for {name}")
+    row = {
+        "meteor": name,
+        "initial_mass_kg": m0,
+        "initial_density_kg_m3": rho0,
+        "initial_diameter_mm": 1000*np.cbrt(6*m0/(np.pi*rho0)),
+    }
+    for planet, const in (("Earth", earth), ("Mars", mars)):
+        status, mass, density, speed, height = _main_remnant_endpoint(const, planet)
+        row.update({
+            f"{planet}_entry_speed_km_s": const.v_init/1000,
+            f"{planet}_final_mass_kg": mass,
+            f"{planet}_mass_change_pct": 100*(mass - m0)/m0,
+            f"{planet}_final_diameter_mm": 1000*np.cbrt(6*mass/(np.pi*density)),
+            f"{planet}_endpoint_density_kg_m3": density,
+            f"{planet}_endpoint_speed_km_s": speed/1000,
+            f"{planet}_endpoint_height_km": height/1000,
+            f"{planet}_status": status,
+            f"{planet}_surface_above_2_5_km_s": status == "fully_ablated" and height == 0 and speed > FINAL_SPEED_MS,
+        })
+    print(f"Completed final mass for {name}", flush=True)
+    return row
+
+
+def _compute_final_mass_table(all_names, file_bright_dict, mass_workers):
+    """Run the paired endpoint simulations and return the rows in event order."""
+    tasks = []
+    for name in all_names:
+        # Send only the fitted constants for Earth and density-matched Mars.
+        earth, _, mars, _, _ = file_bright_dict[name][-5:]
+        tasks.append((name, earth, mars))
+    if not tasks:
+        print("No paired Earth/Mars meteoroids available for the final-mass comparison.")
+        return
+
+    if mass_workers is None:
+        if hasattr(os, "process_cpu_count"):
+            mass_workers = os.process_cpu_count() or 1
+        elif hasattr(os, "sched_getaffinity"):
+            mass_workers = len(os.sched_getaffinity(0))
+        else:
+            mass_workers = os.cpu_count() or 1
+    if mass_workers < 1:
+        raise ValueError("mass_workers must be at least 1")
+    workers = min(mass_workers, len(tasks))
+    print(f"Computing final masses for {len(tasks)} meteors with {workers} worker(s).", flush=True)
+    if workers == 1:
+        rows = list(map(_final_mass_row, tasks))
+    else:
+        with Pool(processes=workers) as pool:
+            # Runtimes vary by meteor. Schedule individually and retain input order.
+            rows = pool.map(_final_mass_row, tasks, chunksize=1)
+
+    return pd.DataFrame(rows)
+
+
+def _read_final_mass_table(path, all_names):
+    """Read the tab-separated output, including tables written before surface flags existed."""
+    table = pd.read_csv(path, sep="\t", comment="#", dtype={"meteor": str},
+                        float_precision="round_trip")
+    if sorted(table["meteor"].dropna()) != sorted(map(str, all_names)) or table["meteor"].isna().any():
+        raise ValueError("cached meteor IDs differ from this run")
+    initial = table["initial_mass_kg"]
+    if not (np.isfinite(initial) & (initial > 0)).all():
+        raise ValueError("invalid initial mass in cached table")
+
+    for planet in ("Earth", "Mars"):
+        status = f"{planet}_status"
+        mass = f"{planet}_final_mass_kg"
+        table[mass] = pd.to_numeric(table[mass])
+        entry = table[f"{planet}_entry_speed_km_s"]
+        if table[status].isna().any() or not np.isfinite(entry).all():
+            raise ValueError(f"incomplete {planet} endpoint rows")
+
+        # Older tables label fast surface arrivals separately and can store NaN mass.
+        surface = table[status].eq("surface_before_2.5_km_s") | (
+            (table[f"{planet}_endpoint_height_km"] <= 0)
+            & (table[f"{planet}_endpoint_speed_km_s"] > FINAL_SPEED_MS/1000)
+            & table[status].isin(["reached_2.5_km_s", "fully_ablated"])
+        )
+        table[f"{planet}_surface_above_2_5_km_s"] = surface
+        table.loc[surface, status] = "fully_ablated"
+        table.loc[surface, mass] = 0.0
+        reached = table[status].eq("reached_2.5_km_s")
+        if not np.isfinite(table.loc[reached, mass]).all():
+            raise ValueError(f"missing {planet} remnant mass")
+        table.loc[reached & (table[mass] < ABLATION_MASS_KG), status] = "fully_ablated"
+    return table
+
+
+def _save_final_mass_comparison(all_names, file_bright_dict, output_dir, mass_workers=None):
+    """Reuse the output folder's final masses when available, then regenerate both plots."""
+    all_names = list(all_names)
+    basename = os.path.join(output_dir, "Final_mass_vs_entry_speed_Earth_Mars")
+    path = basename + ".txt"
+    try:
+        table = _read_final_mass_table(path, all_names)
+    except FileNotFoundError:
+        table = None
+    except (KeyError, ValueError, TypeError) as error:
+        print(f"Cannot reuse {path} ({error}). Recomputing final masses.")
+        table = None
+    else:
+        print(f"Loaded {len(table)} meteors from {path}. Skipping final-mass simulations.")
+
+    if table is None:
+        table = _compute_final_mass_table(all_names, file_bright_dict, mass_workers)
+        if table is None:
+            return
+        # Publish only a complete table, even if two runs use the same output folder.
+        with TemporaryDirectory(dir=output_dir) as tmp_dir:
+            tmp_path = os.path.join(tmp_dir, "final_mass.txt")
+            with open(tmp_path, "w", encoding="utf-8", newline="") as out:
+                out.write("# Main remnant only (released grains excluded). Mars uses density-matched erosion.\n"
+                          "# Remnant mass is evaluated when the main fragment reaches 2.5 km/s at or above the surface.\n"
+                          f"# Main remnants with final mass below {ABLATION_MASS_KG:.0e} kg are considered fully ablated.\n"
+                          "# Subthreshold residuals are recorded here and count as zero in the plotted totals.\n"
+                          "# Mass change (%) = 100 * (final - initial) / initial.\n"
+                          "# Diameters are equivalent-sphere diameters using the modeled density at each endpoint.\n"
+                          "# Surface arrivals above 2.5 km/s count as fully ablated with zero assigned final mass. Their impact speed is retained.\n"
+                          "# Mars endpoints below 40 km extrapolate the existing 40-180 km atmosphere fit.\n")
+                table.to_csv(out, sep="\t", index=False, na_rep="NaN", float_format="%.17g")
+            os.replace(tmp_path, path)
+
+    fig, ax = plt.subplots(figsize=(8, 5.5), constrained_layout=True)
+    for planet, color in (("Earth", "blue"), ("Mars", "red")):
+        entry = table[f"{planet}_entry_speed_km_s"]
+        status = table[f"{planet}_status"]
+        reached = status == "reached_2.5_km_s"
+        ablated = status == "fully_ablated"
+        ax.scatter(entry[reached], table.loc[reached, f"{planet}_final_mass_kg"],
+                   color=color, marker="o", alpha=0.7, label=f"{planet} · remnant")
+        ax.scatter(entry[ablated], np.full(ablated.sum(), ABLATION_MASS_KG),
+                   color=color, marker="x", label=f"{planet} · fully ablated")
+        surface = table[f"{planet}_surface_above_2_5_km_s"].sum()
+        unresolved = len(table) - int(reached.sum() + ablated.sum())
+        print(f"{planet}: {reached.sum()} remnants, {ablated.sum()} fully ablated "
+              f"(includes {surface} fast surface arrivals), {unresolved} unresolved (listed in the table).")
+    ax.axhline(ABLATION_MASS_KG, color="0.55", linestyle=":", linewidth=0.9, zorder=0)
+    ax.set_yscale("log")
+    ax.set_xlabel("Atmospheric entry speed (km/s)")
+    ax.set_ylabel("Final main-remnant mass (kg)")
+    ax.set_title("Main-remnant mass at 2.5 km/s")
+    ax.legend(ncol=2)
+    fig.savefig(basename + ".png", dpi=220)
+    plt.close(fig)
+    print(f"Saved {basename}.png")
+    _plot_remnant_mass_summary(table, output_dir)
+
+
+def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor=False, mass_workers=None):
     """
     Function to plot the distribution of the parameters from the dynesty files and save them as a table in LaTeX format.
     """
@@ -1718,8 +2019,10 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
     else:
         print(f"Loading pre-computed Mars data for all meteors from {input_dirfile}")
         marsmeteor_total_path = os.path.join(input_dirfile, "all_meteors_data.marsmeteor_total")
+        print(f"Loading data from {marsmeteor_total_path}...")
         with open(marsmeteor_total_path, "rb") as f:
             total_data = pickle.load(f)
+            print(f"Loaded data for {len(total_data['all_names'])} meteors from {marsmeteor_total_path}")
 
         file_bright_dict = total_data["file_bright_dict"]
         file_ground_camera_dict = total_data.get("file_ground_camera_dict", {})
@@ -1742,6 +2045,8 @@ def Mars_distrb_plot(input_dirfile, output_dir_show, shower_name, new_marsmeteor
 
 
 
+
+    _save_final_mass_comparison(all_names, file_bright_dict, output_dir_show, mass_workers=mass_workers)
 
     ############ PLOTTING SUMMARY ##############
     print("\nPlotting Vinf distribution...")
@@ -4203,11 +4508,11 @@ if __name__ == "__main__":
                             # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform\Fastsporad_CAMOnew+EMCCD_unif_density\fastsporad_EMCCD+CAMO_CAP"
                             # "C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadics_rho-uniform"
                             # "C:\Users\maxiv\Documents\UWO\Papers\4)Mars meteors\Results\CAMO-EMCCDonly"
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\3)Sporadics\Results\Sporadic_final-allUseMars",
         help="Path to walk and find .pickle files.")
     
     arg_parser.add_argument('--output_dir', metavar='OUTPUT_DIR', type=str,
-        default=r"C:\Users\maxiv\Documents\UWO\Papers\0.5)METEORCAM-Strawman\EMCCD_on_Mars\144-meteors",
+        default=r"C:\Users\maxiv\Documents\UWO\Papers\5)Mars meteors\Mars-results261116",
         help="Output directory, if not given is the same as input_dir.")
     
     arg_parser.add_argument('--name', metavar='NAME', type=str,
@@ -4218,8 +4523,14 @@ if __name__ == "__main__":
         help="recompute the .marsmeteor files even if they exist.",
         action="store_true")
 
+    arg_parser.add_argument("--mass-workers", type=int, default=None,
+                            help="Processes for final-mass calculations (default: available CPUs, 1 for serial).")
+
     # Parse
     cml_args = arg_parser.parse_args()
+
+    if cml_args.mass_workers is not None and cml_args.mass_workers < 1:
+        arg_parser.error("--mass-workers must be at least 1")
 
     # check if the input_dir exists
     if not os.path.exists(cml_args.input_dir):
@@ -4238,4 +4549,4 @@ if __name__ == "__main__":
         cml_args.name = cml_args.input_dir.split(os.sep)[-1]
         print(f"Setting name to {cml_args.name}")
 
-    Mars_distrb_plot(cml_args.input_dir, cml_args.output_dir, cml_args.name, cml_args.new_marsmeteor) # cml_args.radiance_plot cml_args.correl_plot
+    Mars_distrb_plot(cml_args.input_dir, cml_args.output_dir, cml_args.name, cml_args.new_marsmeteor, mass_workers=cml_args.mass_workers) # cml_args.radiance_plot cml_args.correl_plot

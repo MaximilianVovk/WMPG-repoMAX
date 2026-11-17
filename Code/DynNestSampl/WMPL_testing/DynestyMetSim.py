@@ -10055,6 +10055,9 @@ def logLikelihoodDynesty(guess_var, obs_metsim_obj, flags_dict, fix_var, timeout
         # find the integral of the luminosity in time in between FPS but not valid for CAMO narrowfield cameras as there is no smearing becuse it follows the meteor
         if (1/obs_metsim_obj.fps_lum > simulation_results.const.dt): # and (not any('1T' in station for station in obs_metsim_obj.stations_lum) or not any('2T' in station for station in obs_metsim_obj.stations_lum)): # FPS is lower than the simulation time step need to integrate the luminosity
             simulated_lc_intensity, _ = integrateLuminosity(all_simulated_time,obs_metsim_obj.time_lum,simulation_results.luminosity_arr,simulation_results.const.dt,obs_metsim_obj.fps_lum,obs_metsim_obj.P_0m)
+            # frames after the simulation ended are NaN: the meteor emits no light there (0 W), so they must be
+            # penalized, otherwise np.nansum drops them and simulations that end early are rewarded
+            simulated_lc_intensity = np.nan_to_num(simulated_lc_intensity, nan=0.0)
         else:
             # too high frame rate, just interpolate the luminosity
             simulated_lc_intensity = np.interp(obs_metsim_obj.height_lum,
